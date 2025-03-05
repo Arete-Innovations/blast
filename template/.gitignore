@@ -1,0 +1,28 @@
+# Rust build artifacts
+/target
+Cargo.lock
+
+# Generated files
+/public
+/storage/logs/*
+
+# Environment and configuration
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# Documentation
+CLAUDE.md
+
+# OS-specific files
+.DS_Store
+Thumbs.db
