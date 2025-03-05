@@ -1,0 +1,42 @@
+[package]
+name = "blast"
+version = "0.1.0"
+edition = "2021"
+
+# Exclude build artifacts and template-specific files
+exclude = [
+    "target/",
+    "**/*.rs.bk",
+    ".git/",
+    ".gitignore",
+    "template/target/",
+    "template/Cargo.lock",
+    "template/storage/logs/*.log",
+    "tests/"
+]
+
+[dependencies]
+include_dir = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+console = "0.15.8"
+dialoguer = {version ="0.11.0", features = ["history", "completion", "fuzzy-select"]}
+diesel = { version = "2.2.3", features = ["postgres", "64-column-tables", "chrono"] }
+dotenv = "0.15.0"
+indicatif = "0.17.8"
+toml = "0.8.19"
+clap = "4.5.30"
+toml_edit = "0.22.24"
+reqwest = {version = "0.12.12", features = ["blocking"] } 
+tokio = { version = "1.40.0", features = ["full"] } 
+sass-rs = "0.2.2"
+futures = "0.3.31"
+css-minify = "0.5.2"
+walkdir = "2.5.0"
+tokio-stream = "0.1.17"
+regex = "1.11.1"
+rand = "0.9.0"
+lazy_static = "1.4.0"
+chrono = "0.4.34"
+libc = "0.2.153"
+termion = "2.0.3"
