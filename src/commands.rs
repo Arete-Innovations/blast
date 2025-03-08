@@ -1,10 +1,102 @@
 use crate::configs::Config;
 use crate::dependencies::DependencyManager;
+use crate::progress;
 use crate::{assets, dashboard, database, locale, models, project, structs};
 use std::error::Error;
 use std::process::Command;
 
-// Define action as enum to be used by both CLI and interactive mode
+// Function to run post-generation hooks defined in Catalyst.toml
+fn run_post_generation_hooks(config: &Config, hook_type: &str) -> bool {
+    // Check if hooks are enabled
+    let hooks_enabled = config
+        .assets
+        .get("codegen")
+        .and_then(|c| c.get("hooks"))
+        .and_then(|h| h.get("enabled"))
+        .and_then(|e| e.as_bool())
+        .unwrap_or(false);
+    
+    if !hooks_enabled {
+        return true; // Hooks disabled, return success
+    }
+    
+    // Get the hooks for the specific type
+    let specific_hooks: Vec<String> = config
+        .assets
+        .get("codegen")
+        .and_then(|c| c.get("hooks"))
+        .and_then(|h| h.get(&format!("post_{}", hook_type)))
+        .and_then(|h| h.as_array())
+        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    
+    // Get the hooks for any generation
+    let any_hooks: Vec<String> = config
+        .assets
+        .get("codegen")
+        .and_then(|c| c.get("hooks"))
+        .and_then(|h| h.get("post_any"))
+        .and_then(|h| h.as_array())
+        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    
+    // Combine both hook lists
+    let hooks: Vec<String> = [specific_hooks, any_hooks].concat();
+    
+    if hooks.is_empty() {
+        return true; // No hooks defined, return success
+    }
+    
+    println!("Running post-generation hooks for {}", hook_type);
+    
+    let mut success = true;
+    
+    for hook in hooks {
+        let progress = progress::ProgressManager::new_spinner();
+        progress.set_message(&format!("Running hook: {}", hook));
+        
+        // Split the command string into program and arguments
+        let parts: Vec<&str> = hook.split_whitespace().collect();
+        if parts.is_empty() {
+            progress.error("Empty hook command");
+            success = false;
+            continue;
+        }
+        
+        let program = parts[0];
+        let args = &parts[1..];
+        
+        // Run the command
+        let result = Command::new(program)
+            .args(args)
+            .output();
+        
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    progress.success(&format!("Hook executed successfully: {}", hook));
+                    
+                    // Print command output if non-empty
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    if !stdout.trim().is_empty() {
+                        println!("Output: {}", stdout);
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    progress.error(&format!("Hook failed: {} - {}", hook, stderr));
+                    success = false;
+                }
+            }
+            Err(e) => {
+                progress.error(&format!("Failed to execute hook: {} - {}", hook, e));
+                success = false;
+            }
+        }
+    }
+    
+    success
+}
+
 #[derive(PartialEq, Clone)]
 pub enum Action {
     NewProject(String),
@@ -20,6 +112,7 @@ pub enum Action {
     TranspileScss,
     MinifyCss,
     ProcessJs,
+    PublishCss,
     DownloadCdn,
     RunDevServer,
     RunProdServer,
@@ -32,6 +125,8 @@ pub enum Action {
     GitPush,
     GitCommit,
     CatalystManager,
+    CargoAdd(String),    // Add a new dependency with optional search term
+    CargoRemove,         // Remove a dependency
     Exit,
     Help,
 }
@@ -62,6 +157,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Action> {
         Some("locale-manager") => Some(Action::LocaleManager),
         Some("scss") => Some(Action::TranspileScss),
         Some("css") => Some(Action::MinifyCss),
+        Some("publish-css") => Some(Action::PublishCss),
         Some("js") => Some(Action::ProcessJs),
         Some("cdn") => Some(Action::DownloadCdn),
 
@@ -78,6 +174,13 @@ pub fn parse_cli_args(args: &[String]) -> Option<Action> {
 
         // Catalyst manager
         Some("catalyst") => Some(Action::CatalystManager),
+        
+        // Cargo commands
+        Some("cargo") if args.get(2).map(|s| s.as_str()) == Some("add") => {
+            let search_term = args.get(3).map(|s| s.clone()).unwrap_or_default();
+            Some(Action::CargoAdd(search_term))
+        },
+        Some("cargo") if args.get(2).map(|s| s.as_str()) == Some("remove") => Some(Action::CargoRemove),
 
         // Legacy command handling
         Some("serve") => Some(Action::RunDevServer),
@@ -115,8 +218,13 @@ pub fn show_help() {
     println!("  locale-manager       Launch interactive locale management interface");
     println!("  scss                 Transpile SCSS files");
     println!("  css                  Minify CSS files");
+    println!("  publish-css          Copy CSS files from src/assets/css to public/css with optional minification");
     println!("  js                   Process JS files");
     println!("  cdn                  Download CDN assets");
+    println!();
+    println!("CARGO COMMANDS:");
+    println!("  cargo add [search]    Add a dependency - search crates.io if term provided");
+    println!("  cargo remove          Remove a dependency interactively");
     println!();
     println!("GIT COMMANDS:");
     println!("  git                  Launch interactive Git manager");
@@ -285,14 +393,20 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
         }
         Action::GenerateStructs => {
             let success = structs::generate(&current_config);
-            if !success {
+            if success {
+                // Run post-generation hooks for structs
+                run_post_generation_hooks(&current_config, "structs");
+            } else {
                 println!("Warning: Some struct generation issues occurred");
             }
             Ok(())
         }
         Action::GenerateModels => {
             let success = models::generate(&current_config);
-            if !success {
+            if success {
+                // Run post-generation hooks for models
+                run_post_generation_hooks(&current_config, "models");
+            } else {
                 println!("Warning: Some model generation issues occurred");
             }
             Ok(())
@@ -336,7 +450,18 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             log_message("🔧 Generating schema and structs...");
             let schema_ok = database::generate_schema();
             let structs_ok = structs::generate(&current_config);
+            
+            // Run post-generation hooks for structs if generation was successful
+            if structs_ok {
+                run_post_generation_hooks(&current_config, "structs");
+            }
+            
             let models_ok = models::generate(&current_config);
+            
+            // Run post-generation hooks for models if generation was successful
+            if models_ok {
+                run_post_generation_hooks(&current_config, "models");
+            }
 
             if rollback_ok && migrations_ok && seed_ok && schema_ok && structs_ok && models_ok {
                 log_message("\x1b[32m✔\x1b[0m App refresh complete!");
@@ -352,6 +477,7 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             assets::transpile_all_scss(&current_config).await
         }
         Action::MinifyCss => assets::minify_css_files(&current_config).await,
+        Action::PublishCss => assets::publish_css(&current_config).await,
         Action::ProcessJs => assets::process_js(&current_config).await,
         Action::DownloadCdn => {
             println!("Downloading CDN assets...");
@@ -415,6 +541,14 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             println!("Run `blast scss`, `blast css`, or `blast js` to rebuild assets with new settings");
 
             Ok(())
+        }
+        Action::CargoAdd(search_term) => {
+            println!("Searching for crates and adding dependency...");
+            crate::cargo::add_dependency(&current_config, &search_term).await
+        }
+        Action::CargoRemove => {
+            println!("Managing dependencies...");
+            crate::cargo::remove_dependency(&current_config)
         }
         Action::Help => {
             show_help();

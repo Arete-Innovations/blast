@@ -23,9 +23,9 @@ async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> 
     let project_dir = &config.project_dir;
 
     let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
-    let materialize_dir = public_dir.join(config.assets["assets"]["materialize"]["public_dir"].as_str().unwrap());
+    let materialize_dir = public_dir.join("js").join("materialize");
 
-    fs::create_dir_all(&materialize_dir.join("js")).await?;
+    fs::create_dir_all(&materialize_dir).await?;
 
     let js_url = config.assets["assets"]["materialize"]["js_url"].as_str().unwrap();
 
@@ -36,7 +36,7 @@ async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> 
         // In interactive mode, log messages directly without progress bar
         let _ = crate::output::log("Downloading Materialize JS");
 
-        let js_path = materialize_dir.join("js").join("materialize.min.js");
+        let js_path = materialize_dir.join("materialize.min.js");
         download_file(js_url, &js_path).await?;
 
         let _ = crate::output::log("Materialize JS downloaded successfully.");
@@ -50,10 +50,305 @@ async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> 
         pb.set_style(pb_style);
 
         pb.set_message("Downloading Materialize JS");
-        let js_path = materialize_dir.join("js").join("materialize.min.js");
+        let js_path = materialize_dir.join("materialize.min.js");
         download_file(js_url, &js_path).await?;
         pb.finish_with_message("Materialize JS downloaded successfully.");
     }
+
+    Ok(())
+}
+
+async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error>> {
+    let project_dir = &config.project_dir;
+    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
+    let fa_base_url = config.assets["assets"]["fontawesome"]["base_url"].as_str().unwrap();
+    let fa_public_dir = public_dir.join("fonts").join("fontawesome");
+
+    // Create FontAwesome directories
+    fs::create_dir_all(&fa_public_dir).await?;
+    fs::create_dir_all(&fa_public_dir.join("css")).await?;
+    fs::create_dir_all(&fa_public_dir.join("js")).await?;
+    fs::create_dir_all(&fa_public_dir.join("sprites")).await?;
+    fs::create_dir_all(&fa_public_dir.join("webfonts")).await?;
+
+    // Check if we're in interactive mode
+    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
+
+    // Get FA assets to download from config
+    let css_assets = config.assets["assets"]["fontawesome"]["css"].as_array().unwrap();
+    let js_assets = config.assets["assets"]["fontawesome"]["js"].as_array().unwrap();
+    let sprite_assets = config.assets["assets"]["fontawesome"]["sprites"].as_array().unwrap();
+    let webfont_assets = config.assets["assets"]["fontawesome"]["webfonts"].as_array().unwrap();
+
+    let total_assets = css_assets.len() + js_assets.len() + sprite_assets.len() + webfont_assets.len();
+
+    if is_interactive {
+        // In interactive mode, log progress directly
+        let _ = crate::output::log(&format!("Downloading {} FontAwesome assets...", total_assets));
+
+        // Download CSS files
+        for css in css_assets {
+            let css_path = css.as_str().unwrap();
+            let dest_path = fa_public_dir.join(css_path);
+            let url = format!("{}/{}", fa_base_url, css_path);
+            let _ = crate::output::log(&format!("Downloading {}", css_path));
+            download_file(&url, &dest_path).await?;
+        }
+
+        // Download JS files
+        for js in js_assets {
+            let js_path = js.as_str().unwrap();
+            let dest_path = fa_public_dir.join(js_path);
+            let url = format!("{}/{}", fa_base_url, js_path);
+            let _ = crate::output::log(&format!("Downloading {}", js_path));
+            download_file(&url, &dest_path).await?;
+        }
+
+        // Download sprite files
+        for sprite in sprite_assets {
+            let sprite_path = sprite.as_str().unwrap();
+            let dest_path = fa_public_dir.join(sprite_path);
+            let url = format!("{}/{}", fa_base_url, sprite_path);
+            let _ = crate::output::log(&format!("Downloading {}", sprite_path));
+            download_file(&url, &dest_path).await?;
+        }
+
+        // Download webfont files
+        for font in webfont_assets {
+            let font_path = font.as_str().unwrap();
+            let dest_path = fa_public_dir.join(font_path);
+            let url = format!("{}/{}", fa_base_url, font_path);
+            let _ = crate::output::log(&format!("Downloading {}", font_path));
+            download_file(&url, &dest_path).await?;
+        }
+
+        let _ = crate::output::log("FontAwesome downloaded successfully.");
+    } else {
+        // Create a progress bar for visual feedback
+        let pb = ProgressBar::new(total_assets as u64);
+        let pb_style = ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-");
+        pb.set_style(pb_style);
+
+        // Use a shared progress counter
+        let progress = Arc::new(Mutex::new(0usize));
+        let mut tasks = FuturesUnordered::new();
+
+        // Download CSS files
+        for css in css_assets {
+            let css_path = css.as_str().unwrap().to_string();
+            let dest_path = fa_public_dir.join(&css_path);
+            let url = format!("{}/{}", fa_base_url, css_path);
+            let pb_clone = pb.clone();
+            let progress_clone = Arc::clone(&progress);
+
+            tasks.push(tokio::spawn(async move {
+                match download_file(&url, &dest_path).await {
+                    Ok(_) => {
+                        let mut progress = progress_clone.lock().unwrap();
+                        *progress += 1;
+                        pb_clone.set_message(format!("Downloaded {} ({}/{})", css_path, *progress, total_assets));
+                        pb_clone.inc(1);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to download {}: {}", css_path, e)),
+                }
+            }));
+        }
+
+        // Download JS files
+        for js in js_assets {
+            let js_path = js.as_str().unwrap().to_string();
+            let dest_path = fa_public_dir.join(&js_path);
+            let url = format!("{}/{}", fa_base_url, js_path);
+            let pb_clone = pb.clone();
+            let progress_clone = Arc::clone(&progress);
+
+            tasks.push(tokio::spawn(async move {
+                match download_file(&url, &dest_path).await {
+                    Ok(_) => {
+                        let mut progress = progress_clone.lock().unwrap();
+                        *progress += 1;
+                        pb_clone.set_message(format!("Downloaded {} ({}/{})", js_path, *progress, total_assets));
+                        pb_clone.inc(1);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to download {}: {}", js_path, e)),
+                }
+            }));
+        }
+
+        // Download sprite files
+        for sprite in sprite_assets {
+            let sprite_path = sprite.as_str().unwrap().to_string();
+            let dest_path = fa_public_dir.join(&sprite_path);
+            let url = format!("{}/{}", fa_base_url, sprite_path);
+            let pb_clone = pb.clone();
+            let progress_clone = Arc::clone(&progress);
+
+            tasks.push(tokio::spawn(async move {
+                match download_file(&url, &dest_path).await {
+                    Ok(_) => {
+                        let mut progress = progress_clone.lock().unwrap();
+                        *progress += 1;
+                        pb_clone.set_message(format!("Downloaded {} ({}/{})", sprite_path, *progress, total_assets));
+                        pb_clone.inc(1);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to download {}: {}", sprite_path, e)),
+                }
+            }));
+        }
+
+        // Download webfont files
+        for font in webfont_assets {
+            let font_path = font.as_str().unwrap().to_string();
+            let dest_path = fa_public_dir.join(&font_path);
+            let url = format!("{}/{}", fa_base_url, font_path);
+            let pb_clone = pb.clone();
+            let progress_clone = Arc::clone(&progress);
+
+            tasks.push(tokio::spawn(async move {
+                match download_file(&url, &dest_path).await {
+                    Ok(_) => {
+                        let mut progress = progress_clone.lock().unwrap();
+                        *progress += 1;
+                        pb_clone.set_message(format!("Downloaded {} ({}/{})", font_path, *progress, total_assets));
+                        pb_clone.inc(1);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to download {}: {}", font_path, e)),
+                }
+            }));
+        }
+
+        // Wait for all downloads to complete
+        let mut has_errors = false;
+        while let Some(result) = tasks.next().await {
+            if let Ok(Err(e)) = result {
+                println!("Error: {}", e);
+                has_errors = true;
+            }
+        }
+
+        if has_errors {
+            pb.finish_with_message("FontAwesome download completed with some errors.");
+        } else {
+            pb.finish_with_message("FontAwesome downloaded successfully.");
+        }
+    }
+
+    Ok(())
+}
+
+async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Error>> {
+    let project_dir = &config.project_dir;
+    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
+    
+    let mi_base_url = config.assets["assets"]["materialicons"]["base_url"].as_str().unwrap();
+    let mi_public_dir = public_dir.join("fonts").join("material-icons");
+    
+    let woff2_file = config.assets["assets"]["materialicons"]["woff2"].as_str().unwrap();
+    let ttf_file = config.assets["assets"]["materialicons"]["ttf"].as_str().unwrap();
+    
+    // Create Material Icons directory
+    fs::create_dir_all(&mi_public_dir).await?;
+    
+    // Check if we're in interactive mode
+    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
+    
+    if is_interactive {
+        // In interactive mode, log progress directly
+        let _ = crate::output::log("Downloading Material Icons webfonts...");
+        
+        // Download WOFF2
+        let woff2_url = format!("{}/{}", mi_base_url, woff2_file);
+        let woff2_path = mi_public_dir.join(woff2_file);
+        let _ = crate::output::log(&format!("Downloading {}", woff2_file));
+        download_file(&woff2_url, &woff2_path).await?;
+        
+        // Download TTF
+        let ttf_url = format!("{}/{}", mi_base_url, ttf_file);
+        let ttf_path = mi_public_dir.join(ttf_file);
+        let _ = crate::output::log(&format!("Downloading {}", ttf_file));
+        download_file(&ttf_url, &ttf_path).await?;
+        
+        let _ = crate::output::log("Material Icons downloaded successfully.");
+    } else {
+        // Create a progress bar for visual feedback
+        let pb = ProgressBar::new(2);
+        let pb_style = ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-");
+        pb.set_style(pb_style);
+        
+        // Download WOFF2
+        let woff2_url = format!("{}/{}", mi_base_url, woff2_file);
+        let woff2_path = mi_public_dir.join(woff2_file);
+        pb.set_message(format!("Downloading {}", woff2_file));
+        download_file(&woff2_url, &woff2_path).await?;
+        pb.inc(1);
+        
+        // Download TTF
+        let ttf_url = format!("{}/{}", mi_base_url, ttf_file);
+        let ttf_path = mi_public_dir.join(ttf_file);
+        pb.set_message(format!("Downloading {}", ttf_file));
+        download_file(&ttf_url, &ttf_path).await?;
+        pb.inc(1);
+        
+        pb.finish_with_message("Material Icons downloaded successfully.");
+    }
+    
+    Ok(())
+}
+
+async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
+    let project_dir = &config.project_dir;
+
+    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
+    let htmx_dir = public_dir.join("js").join("htmx");
+
+    fs::create_dir_all(&htmx_dir).await?;
+
+    let js_url = config.assets["assets"]["htmx"]["js_url"].as_str().unwrap();
+
+    // Check if we're in interactive mode
+    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
+
+    if is_interactive {
+        // In interactive mode, log messages directly without progress bar
+        let _ = crate::output::log("Downloading HTMX JS");
+
+        let js_path = htmx_dir.join("htmx.min.js");
+        download_file(js_url, &js_path).await?;
+
+        let _ = crate::output::log("HTMX JS downloaded successfully.");
+    } else {
+        // In CLI mode, use progress bar
+        let pb = ProgressBar::new(1);
+        let pb_style = ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {msg}")
+            .unwrap()
+            .progress_chars("#>-");
+        pb.set_style(pb_style);
+
+        pb.set_message("Downloading HTMX JS");
+        let js_path = htmx_dir.join("htmx.min.js");
+        download_file(js_url, &js_path).await?;
+        pb.finish_with_message("HTMX JS downloaded successfully.");
+    }
+
+    Ok(())
+}
+
+pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>> {
+    download_fontawesome_async(config).await?;
+    download_materialicons_async(config).await?;
+    download_materialize_js(config).await?;
+    download_htmx_js(config).await?;
 
     Ok(())
 }
@@ -96,8 +391,8 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
 
         for scss_file in scss_files {
             let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
-            let output_file = css_dir.join(format!("{}.css", file_stem));
-            let minified_output_file = css_dir.join(format!("{}.min.css", file_stem));
+            // Only use .min.css files
+            let output_file = css_dir.join(format!("{}.min.css", file_stem));
 
             // Set up options for SCSS compilation
             let mut sass_options = Options::default();
@@ -114,17 +409,8 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
             // Compile SCSS to CSS with appropriate output style
             match compile_file(scss_file.to_str().unwrap(), sass_options) {
                 Ok(css_content) => {
-                    // Write the CSS file
+                    // Write the CSS file (always as .min.css)
                     fs::write(&output_file, &css_content).await?;
-
-                    // In production mode, the .min.css file is the same as the .css file
-                    // since the OutputStyle is already Compressed
-                    if is_production {
-                        fs::write(&minified_output_file, &css_content).await?;
-                    } else {
-                        // In development mode, also create the .min.css variant
-                        fs::write(&minified_output_file, &css_content).await?;
-                    }
                 }
                 Err(e) => {
                     let _ = crate::output::log(&format!("Error compiling {}: {}", scss_file.to_string_lossy(), e));
@@ -149,8 +435,8 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
 
         for scss_file in scss_files {
             let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
-            let output_file = css_dir.join(format!("{}.css", file_stem));
-            let minified_output_file = css_dir.join(format!("{}.min.css", file_stem));
+            // Only use .min.css files
+            let output_file = css_dir.join(format!("{}.min.css", file_stem));
 
             // Set up options for SCSS compilation
             let mut sass_options = Options::default();
@@ -167,17 +453,8 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
             // Compile SCSS to CSS with appropriate output style
             match compile_file(scss_file.to_str().unwrap(), sass_options) {
                 Ok(css_content) => {
-                    // Write the CSS file
+                    // Write the CSS file (always as .min.css)
                     fs::write(&output_file, &css_content).await?;
-
-                    // In production mode, the .min.css file is the same as the .css file
-                    // since the OutputStyle is already Compressed
-                    if is_production {
-                        fs::write(&minified_output_file, &css_content).await?;
-                    } else {
-                        // In development mode, also create the .min.css variant
-                        fs::write(&minified_output_file, &css_content).await?;
-                    }
                 }
                 Err(e) => {
                     pb.println(format!("Error compiling {}: {}", scss_file.to_string_lossy(), e));
@@ -199,366 +476,106 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
 }
 
 pub async fn minify_css_files(config: &Config) -> Result<(), Box<dyn Error>> {
-    let project_dir = &config.project_dir;
-    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
-    let is_production = config.environment == "prod" || config.environment == "production";
-
     // Check if we're in interactive mode
     let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
-
-    // Create a progress bar for visual feedback
-    let mut css_files = Vec::new();
-
-    // Collect files first before showing any output
-    for entry in WalkDir::new(&public_dir).into_iter().filter_map(Result::ok) {
-        let path = entry.path();
-        // Only process CSS files that:
-        // 1. Have .css extension
-        // 2. Don't end with .min.css (already minified)
-        // 3. Didn't come from SCSS compilation (we don't reprocess SCSS-generated files)
-        if path.extension().is_some_and(|ext| ext == "css") && !path.file_name().unwrap_or_default().to_string_lossy().ends_with(".min.css") {
-            // Check if this is a file we just generated from SCSS
-            // This is a basic heuristic - if it's in the css dir and we have a matching .scss file
-            let scss_dir = project_dir.join("src/assets/sass");
-            let file_stem = path.file_stem().unwrap_or_default().to_string_lossy();
-            let potential_scss = scss_dir.join(format!("{}.scss", file_stem));
-
-            // Only add this CSS file if there's no matching SCSS file (to avoid double processing)
-            if !potential_scss.exists() {
-                css_files.push(path.to_path_buf());
-            }
-        }
-    }
-
-    if css_files.is_empty() {
-        return Ok(());
-    }
-
+    
+    // In the new asset system, all CSS processing is handled by publish_css
+    // minify_css_files is kept for backward compatibility
+    
     if is_interactive {
-        // In interactive mode, log directly without progress bar
-        let _ = crate::output::log(&format!("Processing {} CSS files...", css_files.len()));
-
-        // Process each file with logging
-        for path in css_files {
-            let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-            let _ = crate::output::log(&format!("Processing {}", file_name));
-
-            let css_content = fs::read_to_string(&path).await?;
-            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-            let new_file_path = path.with_file_name(format!("{}.min.css", stem));
-
-            // If in production mode, minify the CSS
-            if is_production {
-                match Minifier::default().minify(&css_content, Level::Three) {
-                    Ok(minified_css) => {
-                        // Write the minified content
-                        fs::write(&new_file_path, &minified_css).await?;
-                    }
-                    Err(_e) => {
-                        // Fallback - just copy the original content if minification fails
-                        fs::write(&new_file_path, &css_content).await?;
-                    }
-                }
-            } else {
-                // In development mode, just copy the file
-                fs::write(&new_file_path, &css_content).await?;
-            }
-        }
-
-        // Show success message based on environment
-        if is_production {
-            let _ = crate::output::log("CSS minification complete (production mode).");
-        } else {
-            let _ = crate::output::log("CSS processing complete (development mode - no minification).");
-        }
+        let _ = crate::output::log("CSS minification now handled by publish-css command - skipping");
     } else {
-        // Only show the file count as a summary, let the progress bar track individual files
-
-        // Set up progress bar with proper styling
-        let pb = ProgressBar::new(css_files.len() as u64);
-        let pb_style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("#>-");
-        pb.set_style(pb_style);
-        pb.set_message("Minifying CSS files");
-
-        // Process each file with the progress bar
-        for path in css_files {
-            let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-            pb.set_message(format!("Processing {}", file_name));
-
-            let css_content = fs::read_to_string(&path).await?;
-            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-            let new_file_path = path.with_file_name(format!("{}.min.css", stem));
-
-            // If in production mode, minify the CSS
-            if is_production {
-                match Minifier::default().minify(&css_content, Level::Three) {
-                    Ok(minified_css) => {
-                        // Write the minified content
-                        fs::write(&new_file_path, &minified_css).await?;
-
-                        // Calculate size reduction but don't print individual files
-                        let _reduction = (1.0 - (minified_css.len() as f64 / css_content.len() as f64)) * 100.0;
-                    }
-                    Err(_e) => {
-                        // Fallback - just copy the original content if minification fails
-                        fs::write(&new_file_path, &css_content).await?;
-                    }
-                }
-            } else {
-                // In development mode, just copy the file
-                fs::write(&new_file_path, &css_content).await?;
-            }
-
-            pb.inc(1);
-        }
-
-        // Show success message based on environment
-        if is_production {
-            pb.finish_with_message("✅ CSS minification complete (production mode).");
-        } else {
-            pb.finish_with_message("✅ CSS processing complete (development mode - no minification).");
-        }
+        println!("CSS minification now handled by publish-css command - skipping");
     }
-
-    Ok(())
-}
-
-async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error>> {
-    let project_dir = &config.project_dir;
-
-    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
-    let fa_dir = public_dir.join(config.assets["assets"]["fontawesome"]["public_dir"].as_str().unwrap());
-
-    fs::create_dir_all(&fa_dir.join("css")).await?;
-    fs::create_dir_all(&fa_dir.join("js")).await?;
-    fs::create_dir_all(&fa_dir.join("sprites")).await?;
-    fs::create_dir_all(&fa_dir.join("webfonts")).await?;
-
-    let base_url = config.assets["assets"]["fontawesome"]["base_url"].as_str().expect("base_url not found");
-
-    // Check if we're in interactive mode
-    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
-
-    let total_files = config.assets["assets"]["fontawesome"]
-        .as_table()
-        .map_or(0, |table| table.values().filter_map(|value| value.as_array()).map(|arr| arr.len()).sum());
-
-    if is_interactive {
-        // In interactive mode, log directly without progress bar
-        let _ = crate::output::log(&format!("Downloading {} FontAwesome files...", total_files));
-
-        // Use a simple counter to track progress
-        let counter = Arc::new(Mutex::new(0));
-        let mut futures = FuturesUnordered::new();
-
-        let process_files = |files: &Option<&Vec<Value>>, dir: &Path| {
-            if let Some(file_list) = files {
-                for file in *file_list {
-                    if let Some(path) = file.as_str() {
-                        let url = format!("{}/{}", base_url, path);
-                        let filename = path.split('/').last().unwrap().to_string();
-                        let dest_path = dir.join(filename.clone());
-                        let counter_clone = Arc::clone(&counter);
-                        futures.push(async move {
-                            download_file(&url, &dest_path).await?;
-                            let mut count = counter_clone.lock().unwrap();
-                            *count += 1;
-                            Ok::<(), Box<dyn Error>>(())
-                        });
-                    }
-                }
-            }
-        };
-
-        process_files(&config.assets["assets"]["fontawesome"]["css"].as_array(), &fa_dir.join("css"));
-        process_files(&config.assets["assets"]["fontawesome"]["js"].as_array(), &fa_dir.join("js"));
-        process_files(&config.assets["assets"]["fontawesome"]["sprites"].as_array(), &fa_dir.join("sprites"));
-        process_files(&config.assets["assets"]["fontawesome"]["webfonts"].as_array(), &fa_dir.join("webfonts"));
-
-        while futures.next().await.is_some() {}
-
-        let _ = crate::output::log("FontAwesome assets downloaded successfully.");
-    } else {
-        // In CLI mode, use progress bar
-        let pb = Arc::new(Mutex::new(ProgressBar::new(total_files as u64)));
-        let pb_style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("#>-");
-        pb.lock().unwrap().set_style(pb_style);
-
-        let mut futures = FuturesUnordered::new();
-
-        let process_files = |files: &Option<&Vec<Value>>, dir: &Path| {
-            if let Some(file_list) = files {
-                for file in *file_list {
-                    if let Some(path) = file.as_str() {
-                        let url = format!("{}/{}", base_url, path);
-                        let filename = path.split('/').last().unwrap().to_string();
-                        let dest_path = dir.join(filename.clone());
-                        let pb_clone = Arc::clone(&pb);
-                        futures.push(async move {
-                            download_file(&url, &dest_path).await?;
-                            let pb = pb_clone.lock().unwrap();
-                            pb.set_message(format!("Downloaded {}", filename));
-                            pb.inc(1);
-                            Ok::<(), Box<dyn Error>>(())
-                        });
-                    }
-                }
-            }
-        };
-
-        process_files(&config.assets["assets"]["fontawesome"]["css"].as_array(), &fa_dir.join("css"));
-        process_files(&config.assets["assets"]["fontawesome"]["js"].as_array(), &fa_dir.join("js"));
-        process_files(&config.assets["assets"]["fontawesome"]["sprites"].as_array(), &fa_dir.join("sprites"));
-        process_files(&config.assets["assets"]["fontawesome"]["webfonts"].as_array(), &fa_dir.join("webfonts"));
-
-        while futures.next().await.is_some() {}
-
-        pb.lock().unwrap().finish_with_message("FontAwesome assets downloaded successfully.");
-    }
-
-    Ok(())
-}
-
-async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Error>> {
-    let project_dir = &config.project_dir;
-
-    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
-    let mi_dir = public_dir.join(config.assets["assets"]["materialicons"]["public_dir"].as_str().unwrap());
-
-    // Create necessary directories
-    fs::create_dir_all(&mi_dir).await?;
-
-    let base_url = config.assets["assets"]["materialicons"]["base_url"].as_str().expect("base_url not found");
-
-    // Check if we're in interactive mode
-    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
-
-    if is_interactive {
-        // In interactive mode, log directly without progress bar
-        let _ = crate::output::log("Downloading Material Icons...");
-
-        if let Some(woff2_path) = config.assets["assets"]["materialicons"]["woff2"].as_str() {
-            let url = format!("{}/{}", base_url, woff2_path);
-            let filename = woff2_path.split('/').last().unwrap();
-            let dest_path = mi_dir.join(filename);
-            let _ = crate::output::log(&format!("Downloading {}", filename));
-            download_file(&url, &dest_path).await?;
-        }
-
-        if let Some(ttf_path) = config.assets["assets"]["materialicons"]["ttf"].as_str() {
-            let url = format!("{}/{}", base_url, ttf_path);
-            let filename = ttf_path.split('/').last().unwrap();
-            let dest_path = mi_dir.join(filename);
-            let _ = crate::output::log(&format!("Downloading {}", filename));
-            download_file(&url, &dest_path).await?;
-        }
-
-        let _ = crate::output::log("Material Icons downloaded successfully.");
-    } else {
-        // In CLI mode, use progress bar
-        let total_files = 2;
-        let pb = ProgressBar::new(total_files);
-        let pb_style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("#>-");
-        pb.set_style(pb_style);
-
-        if let Some(woff2_path) = config.assets["assets"]["materialicons"]["woff2"].as_str() {
-            let url = format!("{}/{}", base_url, woff2_path);
-            let filename = woff2_path.split('/').last().unwrap();
-            let dest_path = mi_dir.join(filename);
-            pb.set_message(format!("Downloading {}", filename));
-            download_file(&url, &dest_path).await?;
-            pb.inc(1);
-        }
-
-        if let Some(ttf_path) = config.assets["assets"]["materialicons"]["ttf"].as_str() {
-            let url = format!("{}/{}", base_url, ttf_path);
-            let filename = ttf_path.split('/').last().unwrap();
-            let dest_path = mi_dir.join(filename);
-            pb.set_message(format!("Downloading {}", filename));
-            download_file(&url, &dest_path).await?;
-            pb.inc(1);
-        }
-
-        pb.finish_with_message("Material Icons downloaded successfully.");
-    }
-
-    Ok(())
+    
+    // Call publish_css to handle all CSS processing
+    publish_css(config).await
 }
 
 pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
+    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
     let is_production = config.environment == "prod" || config.environment == "production";
 
-    let js_dir = project_dir.join("src/assets/js");
-    let public_js_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public")).join("js");
+    // Source and destination directories
+    let src_js_dir = project_dir.join("src").join("assets").join("js");
+    let dest_js_dir = public_dir.join("js").join("app");
 
-    // Create the output directory if it doesn't exist
-    fs::create_dir_all(&public_js_dir).await?;
+    // Create destination directory if it doesn't exist
+    fs::create_dir_all(&dest_js_dir).await?;
 
-    // Find all JS files
-    let mut js_files = Vec::new();
-    if js_dir.exists() {
-        let mut entries = fs::read_dir(&js_dir).await?;
-
-        while let Some(entry) = entries.next_entry().await? {
-            if entry.path().extension().is_some_and(|ext| ext == "js") {
-                js_files.push(entry.path());
-            }
-        }
-    }
-
-    if js_files.is_empty() {
+    // Check if the source directory exists
+    if !src_js_dir.exists() {
+        // Source dir doesn't exist, create it and return
+        fs::create_dir_all(&src_js_dir).await?;
         return Ok(());
     }
 
     // Check if we're in interactive mode
     let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
+
+    // Find all JS files
+    let mut js_files = Vec::new();
+    for entry in WalkDir::new(&src_js_dir).into_iter().filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "js") {
+            js_files.push(path.to_path_buf());
+        }
+    }
+
+    if js_files.is_empty() {
+        if is_interactive {
+            let _ = crate::output::log("No JS files found to process!");
+        } else {
+            println!("No JS files found to process!");
+        }
+        return Ok(());
+    }
 
     if is_interactive {
         // In interactive mode, log directly without progress bar
         let _ = crate::output::log(&format!("Processing {} JS files...", js_files.len()));
 
-        for js_file in js_files {
-            let file_stem = js_file.file_stem().unwrap().to_str().unwrap();
-            let output_file = public_js_dir.join(format!("{}.js", file_stem));
-            let minified_output_file = public_js_dir.join(format!("{}.min.js", file_stem));
+        for js_file in &js_files {
+            // Determine relative path from src_js_dir
+            let rel_path = js_file.strip_prefix(&src_js_dir).unwrap();
+            // Only use .min.js files for consistency with our CSS strategy
+            let min_dest_path = dest_js_dir.join(rel_path.with_file_name(format!(
+                "{}.min.js",
+                rel_path.file_stem().unwrap().to_str().unwrap()
+            )));
 
-            let _ = crate::output::log(&format!("Processing {}", file_stem));
+            // Create parent directory if needed
+            if let Some(parent) = min_dest_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
 
-            // Read the JS file
-            let js_content = fs::read_to_string(&js_file).await?;
+            // Read the file content
+            let content = fs::read_to_string(js_file).await?;
 
-            // Always create the .js file with original content
-            fs::write(&output_file, &js_content).await?;
-
-            // In production mode, minify JS (simulated for now)
-            // For actual minification, you would use a JS minifier library
+            // In production mode, minify JS (or simulate it)
             if is_production {
-                // Placeholder for actual minification
-                fs::write(&minified_output_file, &js_content).await?;
+                let _ = crate::output::log(&format!("Minifying {}", rel_path.display()));
+                
+                // TODO: Implement actual JS minification
+                // For now, just copy the file with .min.js extension
+                fs::write(&min_dest_path, &content).await?;
             } else {
-                // In development mode, just copy the file
-                fs::write(&minified_output_file, &js_content).await?;
+                let _ = crate::output::log(&format!("Copying {}", rel_path.display()));
+                
+                // In development mode, just copy the file with .min.js extension
+                fs::write(&min_dest_path, &content).await?;
             }
         }
 
         // Show success message based on environment
         if is_production {
-            let _ = crate::output::log("JS processing complete (production mode).");
+            let _ = crate::output::log("JS processing complete - all files saved as .min.js (production mode).");
         } else {
-            let _ = crate::output::log("JS processing complete (development mode).");
+            let _ = crate::output::log("JS processing complete - all files saved as .min.js (development mode).");
         }
     } else {
-        // Set up progress bar for CLI mode
+        // In CLI mode, use progress bar
         let pb = ProgressBar::new(js_files.len() as u64);
         let pb_style = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
@@ -566,29 +583,35 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
             .progress_chars("#>-");
         pb.set_style(pb_style);
 
-        for js_file in js_files {
-            let file_stem = js_file.file_stem().unwrap().to_str().unwrap();
-            let output_file = public_js_dir.join(format!("{}.js", file_stem));
-            let minified_output_file = public_js_dir.join(format!("{}.min.js", file_stem));
+        for js_file in &js_files {
+            // Determine relative path from src_js_dir
+            let rel_path = js_file.strip_prefix(&src_js_dir).unwrap();
+            // Only use .min.js files for consistency with our CSS strategy
+            let min_dest_path = dest_js_dir.join(rel_path.with_file_name(format!(
+                "{}.min.js",
+                rel_path.file_stem().unwrap().to_str().unwrap()
+            )));
 
-            pb.set_message(format!("Processing {}", file_stem));
+            // Create parent directory if needed
+            if let Some(parent) = min_dest_path.parent() {
+                fs::create_dir_all(parent).await?;
+            }
 
-            // Read the JS file
-            let js_content = fs::read_to_string(&js_file).await?;
+            // Read the file content
+            let content = fs::read_to_string(js_file).await?;
 
-            // Always create the .js file with original content
-            fs::write(&output_file, &js_content).await?;
-
-            // In production mode, minify JS (simulated for now)
-            // For actual minification, you would use a JS minifier library
+            // In production mode, minify JS (or simulate it)
             if is_production {
-                // Placeholder for actual minification
-                // In a real implementation, you would use a minifier like minify-js
-                // Example: let minified = minify_js(&js_content);
-                fs::write(&minified_output_file, &js_content).await?;
+                pb.set_message(format!("Minifying {}", rel_path.display()));
+                
+                // TODO: Implement actual JS minification
+                // For now, just copy the file with .min.js extension
+                fs::write(&min_dest_path, &content).await?;
             } else {
-                // In development mode, just copy the file
-                fs::write(&minified_output_file, &js_content).await?;
+                pb.set_message(format!("Copying {}", rel_path.display()));
+                
+                // In development mode, just copy the file with .min.js extension
+                fs::write(&min_dest_path, &content).await?;
             }
 
             pb.inc(1);
@@ -596,20 +619,100 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
 
         // Show success message based on environment
         if is_production {
-            pb.finish_with_message("JS processing complete (production mode).");
+            pb.finish_with_message("JS processing complete - all files saved as .min.js (production mode).");
         } else {
-            pb.finish_with_message("JS processing complete (development mode).");
+            pb.finish_with_message("JS processing complete - all files saved as .min.js (development mode).");
         }
     }
 
     Ok(())
 }
 
-// Download all CDN assets without processing other assets
-pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>> {
-    download_fontawesome_async(config).await?;
-    download_materialicons_async(config).await?;
-    download_materialize_js(config).await?;
+// Publish CSS files from src/assets/css to public/css with environment-based minification
+pub async fn publish_css(config: &Config) -> Result<(), Box<dyn Error>> {
+    let is_production = config.environment == "prod" || config.environment == "production";
+    let project_dir = &config.project_dir;
+
+    // Source and destination directories
+    let src_css_dir = project_dir.join("src").join("assets").join("css");
+    let public_dir = project_dir.join(config.assets["assets"]["public_dir"].as_str().unwrap_or("public"));
+    let dest_css_dir = public_dir.join("css").join("app");
+
+    // Create destination directory if it doesn't exist
+    fs::create_dir_all(&dest_css_dir).await?;
+
+    // Check if we're in interactive mode
+    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
+
+    // Setup progress tracking
+    let progress = if is_interactive {
+        let _ = crate::output::log(&format!("Publishing CSS files ({} mode)...", if is_production { "production" } else { "development" }));
+        None
+    } else {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} {msg}").unwrap());
+        pb.set_message(format!("Publishing CSS files ({} mode)...", if is_production { "production" } else { "development" }));
+        Some(pb)
+    };
+
+    // Get all CSS files in the source directory
+    let css_files = WalkDir::new(&src_css_dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file() && e.path().extension().map_or(false, |ext| ext == "css") && !e.path().to_str().unwrap_or("").contains(".min.css"))
+        .collect::<Vec<_>>();
+
+    // Store the count for later use
+    let file_count = css_files.len();
+
+    // Process each CSS file
+    for entry in css_files {
+        let src_path = entry.path();
+        let rel_path = src_path.strip_prefix(&src_css_dir).unwrap();
+        
+        // Only generate .min.css files (changed from original behavior)
+        let min_dest_path = dest_css_dir.join(rel_path.with_file_name(format!("{}.min.css", rel_path.file_stem().unwrap().to_str().unwrap())));
+
+        // Read the file content
+        let content = fs::read_to_string(src_path).await?;
+
+        if let Some(pb) = &progress {
+            pb.set_message(format!("Processing {}", rel_path.display()));
+        } else {
+            let _ = crate::output::log(&format!("Processing {}", rel_path.display()));
+        }
+
+        // Create parent directory if needed
+        if let Some(parent) = min_dest_path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+
+        // Always minify in production mode, but we can keep expanded content in dev mode
+        // while still using the .min.css extension for consistency
+        if is_production {
+            // Minify the content
+            let minified = Minifier::default()
+                .minify(&content, Level::Three)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("CSS minification error: {}", e)))?;
+
+            // Write the minified content
+            fs::write(&min_dest_path, &minified).await?;
+        } else {
+            // In development mode, write expanded content but still use .min.css extension
+            fs::write(&min_dest_path, &content).await?;
+        }
+    }
+
+    // Update progress indicator
+    if let Some(pb) = &progress {
+        if is_production {
+            pb.finish_with_message(format!("Published {} CSS files as .min.css (minified for production)", file_count));
+        } else {
+            pb.finish_with_message(format!("Published {} CSS files as .min.css (expanded for development)", file_count));
+        }
+    } else {
+        let _ = crate::output::log(&format!("Published {} CSS files as .min.css", file_count));
+    }
 
     Ok(())
 }
@@ -620,6 +723,7 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
     download_fontawesome_async(config).await?;
     download_materialicons_async(config).await?;
     download_materialize_js(config).await?;
+    download_htmx_js(config).await?;
 
     // Process SCSS files - they will be automatically compressed in production mode
     transpile_all_scss(config).await?;
@@ -630,6 +734,9 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
 
     // Process JS files based on environment
     process_js(config).await?;
+    
+    // Publish CSS files from src/assets/css to public/css
+    publish_css(config).await?;
 
     Ok(())
 }

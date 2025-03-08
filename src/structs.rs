@@ -91,6 +91,8 @@ fn fix_struct_name(generated_name: &str, schema_tables: &[String]) -> (String, S
     if !candidate.ends_with('s') {
         let candidate_plural = format!("{}s", candidate);
         if schema_tables.contains(&candidate_plural) {
+            // IMPORTANT: Return the pluralized table name for both the PascalCase struct name 
+            // and the exact table name to ensure consistency in imports and table_name attribute
             return (to_pascal(&candidate_plural), candidate_plural);
         }
     }
@@ -378,6 +380,9 @@ pub struct New{1} {{
     // First remove any existing schema import that might be incorrect
     let schema_import_pattern = Regex::new(r"use crate::database::schema::[^;]+;").unwrap();
     let mut final_struct_def = schema_import_pattern.replace_all(&new_struct_def, "").to_string();
+    
+    // Debug logging to help diagnose import issues
+    println!("For struct: {}, using table_name: {} for schema import", fixed_struct_name, table_name);
     
     // Now add the correct import using the exact table_name from schema
     final_struct_def = format!("use crate::database::schema::{};\n{}{}", 

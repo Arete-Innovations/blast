@@ -27,7 +27,7 @@ indicatif = "0.17.8"
 toml = "0.8.19"
 clap = "4.5.30"
 toml_edit = "0.22.24"
-reqwest = {version = "0.12.12", features = ["blocking"] } 
+reqwest = {version = "0.12.12", features = ["blocking", "json"] } 
 tokio = { version = "1.40.0", features = ["full"] } 
 sass-rs = "0.2.2"
 futures = "0.3.31"

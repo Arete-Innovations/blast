@@ -7,6 +7,25 @@ structs_dir = "src/structs/generated"
 models_dir = "src/models/generated"
 schema_file = "src/database/schema.rs"
 
+# Post-generation hooks section - scripts to run after code generation
+[codegen.hooks]
+# Set to true to enable running post-generation hooks
+enabled = true
+# Scripts to run after specific generation tasks
+# The paths should be relative to the project root
+post_structs = [
+  # "scripts/post_structs_generation.sh arg1 arg2",
+  # "cargo fmt",
+]
+post_models = [
+  # "scripts/post_models_generation.sh",
+  # "cargo clippy",
+]
+# Script to run after any generation task
+post_any = [
+  # "scripts/notify_generation_complete.sh",
+]
+
 [codegen.models]
 ignore= [
   "users",
@@ -67,7 +86,11 @@ default_language = "en"
 
 [assets.materialize]
 js_url = "https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"
-public_dir = "materialize"
+public_dir = "js/materialize"
+
+[assets.htmx]
+js_url = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js"
+public_dir = "js/htmx"
 
 [assets.materialicons]
 base_url = "https://raw.githubusercontent.com/google/material-design-icons/master/font"
