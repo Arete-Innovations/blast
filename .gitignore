@@ -1,0 +1,28 @@
+# Rust build artifacts
+/target
+Cargo.lock
+
+# Project configuration
+
+# Documentation (internal)
+CLAUDE.md
+
+# Test directories
+tests/*
+!tests/README.md
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.log
