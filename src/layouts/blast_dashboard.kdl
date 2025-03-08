@@ -20,11 +20,11 @@ layout {
                 }
             }
             pane split_direction="horizontal" size="35%" {
-                pane name="🧰 Menu" command="bash" size="35%" {
+                pane name="🧰 Menu" command="bash" size="45%" {
                     args "-c" "blast cli"
                         focus true
                 }
-                pane name="Blast Log" command="bash" size="65%" {
+                pane name="Blast Log" command="bash" size="35%" {
                     args "-c" "tail -n60 -f storage/blast/blast.log"
                 }
             }

@@ -8,13 +8,24 @@ use std::process::Command;
 
 fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
     let content = fs::read_to_string(schema_path)?;
-    let re = Regex::new(r"table!\s*\{\s*(\w+)\s*\(").unwrap();
+    
+    // IMPORTANT: Use a better regex that captures the actual table name correctly
+    // This regex looks for table declarations like: table! { city_boundaries (id) {
+    let re = Regex::new(r"table!\s*\{\s*([A-Za-z0-9_]+)\s*\(").unwrap();
+    
     let mut tables = Vec::new();
     for cap in re.captures_iter(&content) {
         if let Some(table_name) = cap.get(1) {
-            tables.push(table_name.as_str().to_string());
+            let table_name_str = table_name.as_str().to_string();
+            println!("Found table in schema: {}", &table_name_str);
+            tables.push(table_name_str);
         }
     }
+    
+    if tables.is_empty() {
+        println!("WARNING: No tables found in schema file at {}", schema_path);
+    }
+    
     Ok(tables)
 }
 
@@ -71,14 +82,26 @@ fn to_pascal(s: &str) -> String {
 fn fix_struct_name(generated_name: &str, schema_tables: &[String]) -> (String, String) {
     let candidate = camel_to_snake(generated_name);
 
+    // First check: does this name exist exactly as-is in the schema tables?
     if schema_tables.contains(&candidate) {
         return (to_pascal(&candidate), candidate);
     }
 
+    // Try pluralization if it doesn't end with 's'
     if !candidate.ends_with('s') {
         let candidate_plural = format!("{}s", candidate);
         if schema_tables.contains(&candidate_plural) {
             return (to_pascal(&candidate_plural), candidate_plural);
+        }
+    }
+    
+    // Finally, check all schema tables explicitly to find exact matches
+    // This ensures table names like "city_boundaries" are preserved exactly
+    for table_name in schema_tables {
+        // Convert both to lowercase for case-insensitive comparison
+        if table_name.to_lowercase().contains(&candidate.to_lowercase()) ||
+           candidate.to_lowercase().contains(&table_name.to_lowercase()) {
+            return (to_pascal(table_name), table_name.clone());
         }
     }
 
@@ -138,6 +161,7 @@ fn parse_and_process_structs(content: &str, config: &Config, schema_tables: &[St
                         continue;
                     }
                     let (fixed_name, table_name) = fix_struct_name(generated_name, schema_tables);
+                    
                     if write_struct_file(config, &fixed_name, &table_name, &current_struct, output_dir) {
                         processed_tables.push(table_name);
                     }
@@ -232,6 +256,9 @@ fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str,
         eprintln!("Error creating directory {}: {}", output_dir, e);
         return false;
     }
+    
+    // We always use the EXACT table_name from the schema for the file name
+    // This ensures city_boundaries stays city_boundaries, not city_boundary
 
     // Create insertable directory for New* structs
     let insertable_dir = format!("{}/insertable", output_dir);
@@ -305,6 +332,7 @@ fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str,
     // No ChangeSet structs - they're removed
 
     // Create the insertable struct definition (will go in a separate file)
+    // Create the insertable struct definition (will go in a separate file)
     let insertable_struct = format!(
         r#"use crate::database::schema::{0};
 use diesel::{{Insertable, Queryable, AsChangeset}};
@@ -346,17 +374,24 @@ pub struct New{1} {{
 
     let additional_imports_str: String = imports.iter().map(|imp| format!("use {};", imp)).collect::<Vec<String>>().join("\n") + "\n";
 
-    // Combine everything for the main struct file - no ChangeSet structs anymore
-    if !new_struct_def.contains(&format!("use crate::database::schema::{}", table_name)) {
-        new_struct_def = format!("use crate::database::schema::{};\n{}{}", table_name, additional_imports_str, new_struct_def);
-    } else {
-        new_struct_def = format!("{}\n{}", additional_imports_str, new_struct_def);
-    }
+    // CRITICAL FIX: Ensure the correct schema import is used
+    // First remove any existing schema import that might be incorrect
+    let schema_import_pattern = Regex::new(r"use crate::database::schema::[^;]+;").unwrap();
+    let mut final_struct_def = schema_import_pattern.replace_all(&new_struct_def, "").to_string();
+    
+    // Now add the correct import using the exact table_name from schema
+    final_struct_def = format!("use crate::database::schema::{};\n{}{}", 
+        table_name, // This is the exact name from schema.rs
+        additional_imports_str, 
+        final_struct_def);
 
-    // Write the main struct file
+    // IMPORTANT: Always use the exact table_name for the file name
+    // Don't singularize or modify the table name for file paths
     let file_name = format!("{}/{}.rs", output_dir, table_name);
+    
+    println!("Writing struct file: {} for table: {}", file_name, table_name); // Debug log
 
-    let struct_write_ok = if let Err(e) = fs::write(&file_name, new_struct_def) {
+    let struct_write_ok = if let Err(e) = fs::write(&file_name, final_struct_def) {
         eprintln!("Error writing struct file {}: {}", file_name, e);
         false
     } else {
@@ -368,8 +403,10 @@ pub struct New{1} {{
         // Skip insertable struct generation
         true
     } else {
-        // Write the insertable struct file
+        // Write the insertable struct file - use exact table name
         let insertable_file_name = format!("{}/{}.rs", insertable_dir, table_name);
+        
+        println!("Writing insertable struct file: {} for table: {}", insertable_file_name, table_name); // Debug log
 
         if let Err(e) = fs::write(&insertable_file_name, insertable_struct) {
             eprintln!("Error writing insertable struct file {}: {}", insertable_file_name, e);
