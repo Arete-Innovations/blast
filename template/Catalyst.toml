@@ -13,8 +13,14 @@ ignore= [
 ]
 
 [codegen.structs]
-ignored_structs = [
+ignore = [
   "users"
+]
+
+[codegen.structs.insertable]
+# Tables to skip insertable struct generation
+ignore = [
+  "spatial_ref_sys"
 ]
 derives = [
   "Debug",
@@ -28,6 +34,13 @@ imports = [
   "serde::Deserialize",
   "diesel::Queryable"
 ]
+
+# Example of struct-specific imports (replace ExampleStruct with your struct name)
+# [codegen.structs.ExampleStruct]
+# imports = [
+#   "chrono::NaiveDateTime",
+#   "uuid::Uuid"
+# ]
 
 [assets]
 public_dir = "public"

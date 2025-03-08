@@ -96,14 +96,25 @@ fn parse_and_process_structs(content: &str, config: &Config, schema_tables: &[St
 
     let output_dir = config.assets.get("codegen").and_then(|codegen| codegen.get("structs_dir")).and_then(|v| v.as_str()).unwrap_or("src/structs");
 
+    // Try the new naming convention first (ignore), then fall back to the old one (ignored_structs)
     let ignore_list: Vec<String> = config
         .assets
         .get("codegen")
         .and_then(|codegen| codegen.get("structs"))
-        .and_then(|s| s.get("ignored_structs"))
+        .and_then(|s| s.get("ignore"))
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            // Fallback to old naming convention
+            config
+                .assets
+                .get("codegen")
+                .and_then(|codegen| codegen.get("structs"))
+                .and_then(|s| s.get("ignored_structs"))
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                .unwrap_or_default()
+        });
 
     let mut current_struct = String::new();
     let mut inside_struct = false;
@@ -229,6 +240,19 @@ fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str,
         return false;
     }
 
+    // Check if this struct should be skipped for insertable generation using nested config
+    let insertable_ignore_list: Vec<String> = config
+        .assets
+        .get("codegen")
+        .and_then(|codegen| codegen.get("structs"))
+        .and_then(|s| s.get("insertable"))
+        .and_then(|i| i.get("ignore"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    let skip_insertable = insertable_ignore_list.iter().any(|ignored| ignored.eq_ignore_ascii_case(table_name));
+
     // Get the auto-generated fields for this table by examining migration files
     let auto_fields = check_migration_for_serial_fields(table_name);
 
@@ -294,8 +318,8 @@ pub struct New{1} {{
         table_name, fixed_struct_name, insertable_fields
     );
 
-    // Add the imports
-    let additional_imports: Vec<String> = config
+    // Get global imports
+    let global_imports: Vec<String> = config
         .assets
         .get("codegen")
         .and_then(|codegen| codegen.get("structs"))
@@ -304,8 +328,21 @@ pub struct New{1} {{
         .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
         .unwrap_or_default();
 
+    // Check for struct-specific imports
+    let struct_specific_imports: Vec<String> = config
+        .assets
+        .get("codegen")
+        .and_then(|codegen| codegen.get("structs"))
+        .and_then(|s| s.get(&format!("{}", fixed_struct_name))) // Look for a section with the struct name
+        .and_then(|s| s.get("imports"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    // Combine global and struct-specific imports
     let mut imports = vec!["diesel::Insertable".to_string(), "diesel::AsChangeset".to_string()];
-    imports.extend(additional_imports);
+    imports.extend(global_imports);
+    imports.extend(struct_specific_imports);
 
     let additional_imports_str: String = imports.iter().map(|imp| format!("use {};", imp)).collect::<Vec<String>>().join("\n") + "\n";
 
@@ -318,7 +355,6 @@ pub struct New{1} {{
 
     // Write the main struct file
     let file_name = format!("{}/{}.rs", output_dir, table_name);
-    let insertable_file_name = format!("{}/{}.rs", insertable_dir, table_name);
 
     let struct_write_ok = if let Err(e) = fs::write(&file_name, new_struct_def) {
         eprintln!("Error writing struct file {}: {}", file_name, e);
@@ -327,28 +363,39 @@ pub struct New{1} {{
         true
     };
 
-    // Write the insertable struct file
-    let insertable_write_ok = if let Err(e) = fs::write(&insertable_file_name, insertable_struct) {
-        eprintln!("Error writing insertable struct file {}: {}", insertable_file_name, e);
-        false
-    } else {
+    // Only write insertable struct if not in ignore list
+    let insertable_write_ok = if skip_insertable {
+        // Skip insertable struct generation
         true
-    };
+    } else {
+        // Write the insertable struct file
+        let insertable_file_name = format!("{}/{}.rs", insertable_dir, table_name);
 
-    // Update the insertable mod.rs file to include the new file
-    let insertable_mod_path = format!("{}/insertable/mod.rs", output_dir);
-    let mut mod_content = fs::read_to_string(&insertable_mod_path).unwrap_or_default();
-    let mod_declaration = format!("pub mod {};", table_name);
-    let pub_use = format!("pub use {}::*;", table_name);
+        if let Err(e) = fs::write(&insertable_file_name, insertable_struct) {
+            eprintln!("Error writing insertable struct file {}: {}", insertable_file_name, e);
+            false
+        } else {
+            // Update the insertable mod.rs file to include the new file
+            let insertable_mod_path = format!("{}/insertable/mod.rs", output_dir);
+            let mut mod_content = fs::read_to_string(&insertable_mod_path).unwrap_or_default();
+            let mod_declaration = format!("pub mod {};", table_name);
+            let pub_use = format!("pub use {}::*;", table_name);
 
-    if !mod_content.contains(&mod_declaration) {
-        mod_content.push_str(&format!("\n{}", mod_declaration));
-        mod_content.push_str(&format!("\n{}", pub_use));
+            if !mod_content.contains(&mod_declaration) {
+                mod_content.push_str(&format!("\n{}", mod_declaration));
+                mod_content.push_str(&format!("\n{}", pub_use));
 
-        if let Err(e) = fs::write(&insertable_mod_path, mod_content) {
-            eprintln!("Error updating insertable mod.rs: {}", e);
+                if let Err(e) = fs::write(&insertable_mod_path, mod_content) {
+                    eprintln!("Error updating insertable mod.rs: {}", e);
+                    false
+                } else {
+                    true
+                }
+            } else {
+                true
+            }
         }
-    }
+    };
 
     struct_write_ok && insertable_write_ok
 }
@@ -404,15 +451,25 @@ pub fn generate(config: &Config) -> bool {
         return false;
     }
 
-    // Get ignored structs list from Catalyst.toml - proper path is codegen.structs.ignored_structs
+    // Get ignored structs list from Catalyst.toml - try both naming conventions
     let ignore_list: Vec<String> = config
         .assets
         .get("codegen")
         .and_then(|codegen| codegen.get("structs"))
-        .and_then(|s| s.get("ignored_structs"))
+        .and_then(|s| s.get("ignore"))
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            // Fallback to old naming convention
+            config
+                .assets
+                .get("codegen")
+                .and_then(|codegen| codegen.get("structs"))
+                .and_then(|s| s.get("ignored_structs"))
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                .unwrap_or_default()
+        });
 
     // Print ignored structs for debugging
     if !ignore_list.is_empty() {

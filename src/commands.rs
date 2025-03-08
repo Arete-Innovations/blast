@@ -75,7 +75,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Action> {
         Some("git") if args.get(2).map(|s| s.as_str()) == Some("pull") => Some(Action::GitPull),
         Some("git") if args.get(2).map(|s| s.as_str()) == Some("push") => Some(Action::GitPush),
         Some("git") if args.get(2).map(|s| s.as_str()) == Some("commit") => Some(Action::GitCommit),
-        
+
         // Catalyst manager
         Some("catalyst") => Some(Action::CatalystManager),
 
@@ -150,11 +150,29 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
         crate::output::set_quiet_mode(true);
     }
 
+    // Always reload the config at the beginning of each action execution
+    let mut current_config = if let Some(cfg) = config {
+        cfg.clone()
+    } else {
+        match crate::configs::get_project_info() {
+            Ok(cfg) => cfg,
+            Err(_) => {
+                // Use default config for actions that don't require it
+                Config {
+                    environment: "dev".to_string(),
+                    project_name: "unknown".to_string(),
+                    assets: toml::Value::Table(toml::value::Table::new()),
+                    project_dir: std::env::current_dir().unwrap_or_default(),
+                    show_compiler_warnings: true,
+                }
+            }
+        }
+    };
+
     match action {
         Action::RunInteractiveCli => {
-            let config = config.expect("Config required for interactive CLI");
             // Run the interactive CLI directly without going through execute_action
-            crate::interactive::run_interactive_cli(config.clone(), dep_manager).await
+            crate::interactive::run_interactive_cli(current_config, dep_manager).await
         }
         Action::GitManager => {
             println!("Launching Git manager...");
@@ -182,9 +200,8 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             Ok(())
         }
         Action::CatalystManager => {
-            let config = config.expect("Config required for Catalyst manager");
             println!("Launching Catalyst.toml configuration manager...");
-            crate::configs::launch_manager(config);
+            crate::configs::launch_manager(&mut current_config);
             Ok(())
         }
         Action::NewProject(name) => {
@@ -196,13 +213,13 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             let cwd = std::env::current_dir()?;
             let project_dir = format!("{}/{}", cwd.display(), name);
             let config_path = format!("{}/Catalyst.toml", project_dir);
-            let config = crate::configs::get_project_info_with_paths(&config_path, &project_dir)?;
+            let project_config = crate::configs::get_project_info_with_paths(&config_path, &project_dir)?;
 
             println!("🔧 Downloading CDN assets...");
-            assets::download_assets_async(&config).await?;
-            
+            assets::download_assets_async(&project_config).await?;
+
             println!("🔧 Processing frontend assets...");
-            assets::process_all_assets(&config).await?;
+            assets::process_all_assets(&project_config).await?;
 
             // Change to the project directory to run migrations
             std::env::set_current_dir(&project_dir)?;
@@ -223,11 +240,11 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
 
             println!("🔧 Generating Rust structs from database schema...");
             // Generate structs
-            let structs_ok = structs::generate(&config);
+            let structs_ok = structs::generate(&project_config);
 
             println!("🔧 Generating model implementations...");
             // Generate models
-            let models_ok = models::generate(&config);
+            let models_ok = models::generate(&project_config);
 
             // Determine overall success
             if migrations_ok && seeds_ok && schema_ok && structs_ok && models_ok {
@@ -275,16 +292,14 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             Ok(())
         }
         Action::GenerateStructs => {
-            let config = config.expect("Config required");
-            let success = structs::generate(config);
+            let success = structs::generate(&current_config);
             if !success {
                 println!("Warning: Some struct generation issues occurred");
             }
             Ok(())
         }
         Action::GenerateModels => {
-            let config = config.expect("Config required");
-            let success = models::generate(config);
+            let success = models::generate(&current_config);
             if !success {
                 println!("Warning: Some model generation issues occurred");
             }
@@ -328,9 +343,8 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
 
             log_message("🔧 Generating schema and structs...");
             let schema_ok = database::generate_schema();
-            let config = config.expect("Config required");
-            let structs_ok = structs::generate(config);
-            let models_ok = models::generate(config);
+            let structs_ok = structs::generate(&current_config);
+            let models_ok = models::generate(&current_config);
 
             if rollback_ok && migrations_ok && seed_ok && schema_ok && structs_ok && models_ok {
                 log_message("\x1b[32m✔\x1b[0m App refresh complete!");
@@ -343,29 +357,21 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             // Ensure sass is installed
             dep_manager.ensure_installed(&["sass"], true)?;
 
-            let config = config.expect("Config required");
-            assets::transpile_all_scss(config).await
+            assets::transpile_all_scss(&current_config).await
         }
-        Action::MinifyCss => {
-            let config = config.expect("Config required");
-            assets::minify_css_files(config).await
-        }
-        Action::ProcessJs => {
-            let config = config.expect("Config required");
-            assets::process_js(config).await
-        }
+        Action::MinifyCss => assets::minify_css_files(&current_config).await,
+        Action::ProcessJs => assets::process_js(&current_config).await,
         Action::DownloadCdn => {
-            let config = config.expect("Config required");
             println!("Downloading CDN assets...");
-            assets::download_assets_async(config).await
+            assets::download_assets_async(&current_config).await
         }
         Action::RunDevServer => {
-            let config = config.expect("Config required");
-
-            if let Ok(pid) = crate::dashboard::start_server(config, true) {
+            if let Ok(pid) = crate::dashboard::start_server(&current_config, true) {
                 println!("Development server started with PID: {}", pid);
             } else {
-                Command::new("script").args(["-q", "-c", &format!("cargo run --bin {}", &config.project_name), "storage/logs/server.log"]).spawn()?;
+                Command::new("script")
+                    .args(["-q", "-c", &format!("cargo run --bin {}", &current_config.project_name), "storage/logs/server.log"])
+                    .spawn()?;
                 println!("Development server started with cargo run --bin");
             }
 
@@ -373,13 +379,11 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
         }
 
         Action::RunProdServer => {
-            let config = config.expect("Config required");
-
-            if let Ok(pid) = crate::dashboard::start_server(config, false) {
+            if let Ok(pid) = crate::dashboard::start_server(&current_config, false) {
                 println!("Production server started with PID: {}", pid);
             } else {
                 // Check if the binary exists in the target/release directory
-                let binary_path = format!("target/release/{}", &config.project_name);
+                let binary_path = format!("target/release/{}", &current_config.project_name);
                 if std::path::Path::new(&binary_path).exists() {
                     // Use the compiled binary
                     Command::new("script").args(["-q", "-c", &binary_path, "storage/logs/server.log"]).spawn()?;
@@ -387,7 +391,7 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
                 } else {
                     // Fallback to cargo run --release
                     Command::new("script")
-                        .args(["-q", "-c", &format!("cargo run --release --bin {}", &config.project_name), "storage/logs/server.log"])
+                        .args(["-q", "-c", &format!("cargo run --release --bin {}", &current_config.project_name), "storage/logs/server.log"])
                         .spawn()?;
                     println!("Production server started with cargo run --release");
                     println!("Tip: Build with 'cargo build --release' for faster startup next time");
@@ -397,23 +401,19 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             Ok(())
         }
         Action::LaunchDashboard => {
-            let config = config.expect("Config required");
-
             // Silently ensure required dependencies are installed
             dep_manager.ensure_installed(&["zellij", "diesel"], false)?;
 
-            dashboard::launch_dashboard(config)?;
+            dashboard::launch_dashboard(&current_config)?;
             Ok(())
         }
         Action::ToggleEnvironment => {
-            let config = config.expect("Config required");
-
             // Toggle environment
-            let old_env = config.environment.clone();
-            crate::configs::toggle_environment(config)?;
+            let old_env = current_config.environment.clone();
+            crate::configs::toggle_environment(&mut current_config)?;
 
             // Print confirmation message
-            let env_msg = if config.environment == "prod" || config.environment == "production" {
+            let env_msg = if current_config.environment == "prod" || current_config.environment == "production" {
                 format!("Switched from {} to production mode", old_env)
             } else {
                 format!("Switched from {} to development mode", old_env)
