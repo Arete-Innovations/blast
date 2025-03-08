@@ -74,8 +74,12 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
         "[Locale] Edit Key",
         "[Assets] Transpile SCSS",
         "[Assets] Minify CSS",
+        "[Assets] Publish CSS",
         "[Assets] Publish JS",
         "[Assets] Download CDN",
+        // Cargo commands
+        "[CARGO] Add Dependency",
+        "[CARGO] Remove Dependency",
         // Git commands
         "[GIT] Manager",
         "[GIT] Status",
@@ -163,9 +167,14 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
             "[Locale] Edit Key" => Action::EditLocaleKey,
             "[Assets] Transpile SCSS" => Action::TranspileScss,
             "[Assets] Minify CSS" => Action::MinifyCss,
+            "[Assets] Publish CSS" => Action::PublishCss,
             "[Assets] Publish JS" => Action::ProcessJs,
             "[Assets] Download CDN" => Action::DownloadCdn,
 
+            // Cargo commands
+            "[CARGO] Add Dependency" => Action::CargoAdd(String::new()),
+            "[CARGO] Remove Dependency" => Action::CargoRemove,
+            
             // Git commands
             "[GIT] Manager" => Action::GitManager,
             "[GIT] Status" => Action::GitStatus,
@@ -370,6 +379,11 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
                 Ok(_) => true,
                 Err(_) => false,
             };
+            log_progress("  → Publishing CSS...")?;
+            let publish_css_ok = match crate::assets::publish_css(config).await {
+                Ok(_) => true,
+                Err(_) => false,
+            };
             log_progress("  → Processing JS...")?;
             let js_ok = match crate::assets::process_js(config).await {
                 Ok(_) => true,
@@ -377,7 +391,7 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
             };
 
             // Report overall success
-            if rollback_ok && migrations_ok && seed_ok && schema_ok && structs_ok && models_ok && cdn_ok && scss_ok && css_ok && js_ok {
+            if rollback_ok && migrations_ok && seed_ok && schema_ok && structs_ok && models_ok && cdn_ok && scss_ok && css_ok && publish_css_ok && js_ok {
                 log_progress("\x1b[32m✔\x1b[0m App refresh complete!")?;
             } else {
                 log_progress("\x1b[32m✔\x1b[0m App refresh completed with some warnings")?;
@@ -393,6 +407,10 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
             log_progress("Minifying CSS files")?;
             crate::assets::minify_css_files(config).await
         }
+        Action::PublishCss => {
+            log_progress("Publishing CSS files")?;
+            crate::assets::publish_css(config).await
+        }
         Action::ProcessJs => {
             log_progress("Processing JS files")?;
             crate::assets::process_js(config).await
@@ -400,6 +418,14 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
         Action::DownloadCdn => {
             log_progress("Downloading CDN assets")?;
             crate::assets::download_assets_async(config).await
+        }
+        Action::CargoAdd(_) => {
+            log_progress("Adding dependency to Cargo.toml")?;
+            crate::cargo::add_dependency(config, "").await
+        }
+        Action::CargoRemove => {
+            log_progress("Managing dependencies in Cargo.toml")?;
+            crate::cargo::remove_dependency(config)
         }
         Action::RunDevServer => {
             // Use the setting from Config

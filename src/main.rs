@@ -3,6 +3,7 @@ use std::env;
 use std::process;
 
 mod assets;
+mod cargo;
 mod commands;
 mod configs;
 mod dashboard;
