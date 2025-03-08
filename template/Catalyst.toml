@@ -9,12 +9,27 @@ schema_file = "src/database/schema.rs"
 
 [codegen.models]
 ignore= [
-  "users"
+  "users",
+  "spatial_ref_sys"
 ]
 
 [codegen.structs]
 ignore = [
-  "users"
+  "users",
+  "spatial_ref_sys"
+]
+derives = [
+  "Debug",
+  "Queryable",
+  "Clone", 
+  "Serialize", 
+  "Deserialize"
+]
+imports = [
+  "serde::Serialize",
+  "serde::Deserialize",
+  "diesel::Identifiable",
+  "diesel::Queryable"
 ]
 
 [codegen.structs.insertable]
@@ -32,6 +47,7 @@ derives = [
 imports = [
   "serde::Serialize",
   "serde::Deserialize",
+  "diesel::Identifiable",
   "diesel::Queryable"
 ]
 

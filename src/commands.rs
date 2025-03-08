@@ -238,16 +238,8 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             // Generate schema
             let schema_ok = database::generate_schema();
 
-            println!("🔧 Generating Rust structs from database schema...");
-            // Generate structs
-            let structs_ok = structs::generate(&project_config);
-
-            println!("🔧 Generating model implementations...");
-            // Generate models
-            let models_ok = models::generate(&project_config);
-
             // Determine overall success
-            if migrations_ok && seeds_ok && schema_ok && structs_ok && models_ok {
+            if migrations_ok && seeds_ok && schema_ok {
                 println!("\x1b[32m✔\x1b[0m Project setup complete!");
             } else {
                 println!("\x1b[32m✔\x1b[0m Project setup completed with some warnings");
