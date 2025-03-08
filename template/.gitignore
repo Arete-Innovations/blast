@@ -7,7 +7,6 @@ Cargo.lock
 /storage/logs/*
 
 # Environment and configuration
-.env
 .env.local
 .env.development
 .env.test
