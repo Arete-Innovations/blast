@@ -59,6 +59,7 @@ This approach results in a framework that's powerful enough for real-world appli
 - 🧩 Scaffold controllers, models, and views
 - 🛠️ Interactive dashboard mode for project management
 - 🔍 Comprehensive configuration management
+- 🪝 Post-generation hooks for custom scripts and automation
 
 ### 💾 Database Operations
 - 📊 Generate schemas from existing databases
@@ -69,14 +70,18 @@ This approach results in a framework that's powerful enough for real-world appli
 ### 🌐 Frontend Assets
 - 📦 CDN asset management and downloading
 - 🌍 Locale/internationalization system
-- 🎭 SCSS transpiling
+- 🎭 SCSS transpiling with automatic minification
 - 📱 Responsive design helpers
+- 📊 Consistent asset organization in css/js/fonts folders
+- 🧩 Simplified importing with .min.css/.min.js convention
 
 ### 🧰 Development Tools
 - 🏃‍♂️ Development server with hot reloading
 - 📝 Code generation utilities
 - 🔌 Editor integration
 - 🔄 Git workflow support
+- 📦 Cargo dependency management with crates.io search
+- 🔄 Post-generation hooks for custom scripts
 
 ## 🚀 Installation
 
@@ -131,6 +136,12 @@ blast generate struct User
 
 # Create a migration
 blast migration create
+
+# Add a dependency with crates.io search
+blast cargo add serde
+
+# Remove dependencies interactively
+blast cargo remove
 ```
 
 ### Running Your Application
@@ -323,6 +334,7 @@ The actual implementation from `services/logger.rs` provides:
 - 🗂️ Automatic log file organization by log level
 - 💾 File logging without ANSI color codes
 - 🚨 Integrated panic hook for capturing application crashes
+- 🔄 Automatic log rotation and organization
 
 Example output format:
 
@@ -368,11 +380,21 @@ The framework follows a clear layered architecture that separates concerns:
    - Uses partials for reusable components
    - Provides layouts and includes
 
-7. **Asset Management** (in `assets/`):
-   - Stylesheets (CSS and SASS)
-   - JavaScript for client-side functionality
-   - Locale files for internationalization
-   - Static images and resources
+7. **Asset Management** (in `assets/` and compiled to `public/`):
+   - **CSS Management**:
+     - SCSS compilation with automatic minification
+     - All CSS files output as .min.css for consistent imports
+     - Custom CSS files from src/assets/css
+   - **JS Processing**:
+     - All JS files output as .min.js
+     - Organized in library-specific folders
+   - **Directory Structure**:
+     - `/public/css/` - For all CSS files
+     - `/public/js/` - For all JavaScript files
+     - `/public/fonts/` - For all font files
+   - **Environment Handling**:
+     - Production: Minified content with .min.css/.min.js extensions
+     - Development: Readable content with .min.css/.min.js extensions
 
 This architecture makes the codebase maintainable and testable by ensuring each component has a single responsibility and clear boundaries between layers.
 
@@ -401,6 +423,20 @@ structs_dir = "src/structs/generated"
 models_dir = "src/models/generated"
 schema_file = "src/database/schema.rs"
 
+# Post-generation hooks - scripts to run after code generation
+[codegen.hooks]
+enabled = true
+post_structs = [
+  "scripts/format_structs.sh",
+  "cargo fmt"
+]
+post_models = [
+  "scripts/validate_models.sh"
+]
+post_any = [
+  "scripts/notify_generation_complete.sh"
+]
+
 # Tables to ignore in code generation
 [codegen.models]
 ignore = ["migrations", "schema_migrations"]
@@ -408,7 +444,7 @@ ignore = ["migrations", "schema_migrations"]
 # Struct generation configuration
 [codegen.structs]
 # Tables to ignore in struct generation 
-ignored_structs = ["migrations", "schema_migrations"]
+ignore = ["migrations", "schema_migrations"]
 # Traits to derive on generated structs
 derives = [
   "Debug",
@@ -532,6 +568,18 @@ Blast provides Git configuration directly from the CLI:
 - Configure Git username and email
 - Apply Git settings to the local repository
 - Initialize new projects with Git automatically
+- Interactive Git operations through dashboard
+
+## 📦 Dependency Management
+
+Blast includes cargo dependency management:
+
+- Search crates.io for packages
+- View download statistics and descriptions
+- Add dependencies with version selection
+- Interactively remove packages
+- Manage workspace members
+- Auto-update after adding dependencies
 
 ## 🤝 Contributing
 
