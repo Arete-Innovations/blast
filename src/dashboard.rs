@@ -185,22 +185,22 @@ pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, Box<dyn Error>
     // Determine cargo flags based on config setting
     // We still check environment variable as a way to override the config setting if needed
     let env_setting = std::env::var("BLAST_SHOW_WARNINGS").ok();
-    let show_warnings = env_setting
-        .map(|v| v == "true")
-        .unwrap_or(config.show_compiler_warnings);
-    
+    let show_warnings = env_setting.map(|v| v == "true").unwrap_or(config.show_compiler_warnings);
+
     // Set up command with appropriate flags to control warnings
     let (cargo_env, cargo_flags) = if show_warnings {
         // Show warnings (default behavior)
         ("".to_string(), "".to_string())
     } else {
         // Hide warnings - both set RUSTFLAGS and use --quiet
-        ("RUSTFLAGS=\"-Awarnings\"".to_string(), "--quiet".to_string())  
+        ("RUSTFLAGS=\"-Awarnings\"".to_string(), "--quiet".to_string())
     };
-    
+
     let run_command = if is_dev {
-        format!("nohup script -q -f -c \"{} cargo run {} --bin {}\" storage/logs/server.log </dev/null >/dev/null 2>&1 & echo $!", 
-                cargo_env, cargo_flags, &config.project_name)
+        format!(
+            "nohup script -q -f -c \"{} cargo run {} --bin {}\" storage/logs/server.log </dev/null >/dev/null 2>&1 & echo $!",
+            cargo_env, cargo_flags, &config.project_name
+        )
     } else {
         format!(
             "nohup script -q -f -c \"{} cargo run {} --release --bin {}\" storage/logs/server.log </dev/null >/dev/null 2>&1 & echo $!",

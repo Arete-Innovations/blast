@@ -610,7 +610,7 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
     download_fontawesome_async(config).await?;
     download_materialicons_async(config).await?;
     download_materialize_js(config).await?;
-    
+
     Ok(())
 }
 

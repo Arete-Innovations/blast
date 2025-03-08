@@ -59,7 +59,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
     let commands = vec![
         // APP commands first (most important)
         "[APP] Refresh",
-        "[APP] Run Server", 
+        "[APP] Run Server",
         "[APP] Launch Dashboard",
         "[APP] Toggle Dev/Prod",
         // Code generation group
@@ -139,7 +139,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
                 // Set environment variable based on Config
                 let show_warnings = config.show_compiler_warnings.to_string();
                 std::env::set_var("BLAST_SHOW_WARNINGS", show_warnings);
-                
+
                 if config.environment == "prod" || config.environment == "production" {
                     Action::RunProdServer
                 } else {
@@ -165,7 +165,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
             "[Assets] Minify CSS" => Action::MinifyCss,
             "[Assets] Publish JS" => Action::ProcessJs,
             "[Assets] Download CDN" => Action::DownloadCdn,
-            
+
             // Git commands
             "[GIT] Manager" => Action::GitManager,
             "[GIT] Status" => Action::GitStatus,
@@ -182,17 +182,13 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
             // Log the exit
             let _ = log_operation("Killing Zellij session...");
             let _ = update_progress("Killing Zellij session...");
-            
+
             // Use zellij to exit the session
-            let _ = std::process::Command::new("zellij")
-                .args(["kill-session"])
-                .spawn();
-                
+            let _ = std::process::Command::new("zellij").args(["kill-session"]).spawn();
+
             // If that doesn't work, kill all sessions
-            let _ = std::process::Command::new("zellij")
-                .args(["kill-all-sessions", "-y"])
-                .spawn();
-                
+            let _ = std::process::Command::new("zellij").args(["kill-all-sessions", "-y"]).spawn();
+
             // Break the loop - though we might not get here if zellij properly terminates
             break;
         } else {
@@ -282,7 +278,7 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
             log_progress("Launching Catalyst.toml configuration manager")?;
             crate::configs::launch_manager(config);
             Ok(())
-        },
+        }
         Action::NewMigration => {
             dep_manager.ensure_installed(&["diesel"], true)?;
             log_progress("Creating new migration")?;
@@ -347,7 +343,7 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
             let migrations_ok = crate::database::migrate();
             log_progress("🔧 Seeding database...")?;
             let seed_ok = crate::database::seed(Some(0));
-            
+
             // Code generation operations
             log_progress("🔧 Running code generation...")?;
             log_progress("  → Generating schema...")?;
@@ -356,33 +352,32 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
             let structs_ok = crate::structs::generate(config);
             log_progress("  → Generating models...")?;
             let models_ok = crate::models::generate(config);
-            
+
             // Asset operations
             log_progress("🔧 Processing frontend assets...")?;
             log_progress("  → Downloading CDN assets...")?;
             let cdn_ok = match crate::assets::download_assets_async(config).await {
                 Ok(_) => true,
-                Err(_) => false
+                Err(_) => false,
             };
             log_progress("  → Transpiling SCSS...")?;
             let scss_ok = match crate::assets::transpile_all_scss(config).await {
                 Ok(_) => true,
-                Err(_) => false
+                Err(_) => false,
             };
             log_progress("  → Processing CSS...")?;
             let css_ok = match crate::assets::minify_css_files(config).await {
                 Ok(_) => true,
-                Err(_) => false
+                Err(_) => false,
             };
             log_progress("  → Processing JS...")?;
             let js_ok = match crate::assets::process_js(config).await {
                 Ok(_) => true,
-                Err(_) => false
+                Err(_) => false,
             };
-            
+
             // Report overall success
-            if rollback_ok && migrations_ok && seed_ok && schema_ok && structs_ok && 
-               models_ok && cdn_ok && scss_ok && css_ok && js_ok {
+            if rollback_ok && migrations_ok && seed_ok && schema_ok && structs_ok && models_ok && cdn_ok && scss_ok && css_ok && js_ok {
                 log_progress("\x1b[32m✔\x1b[0m App refresh complete!")?;
             } else {
                 log_progress("\x1b[32m✔\x1b[0m App refresh completed with some warnings")?;
@@ -409,22 +404,18 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
         Action::RunDevServer => {
             // Use the setting from Config
             let show_warnings = config.show_compiler_warnings;
-            
+
             if let Ok(pid) = crate::dashboard::start_server(config, true) {
                 let warnings_mode = if show_warnings { "with" } else { "without" };
                 log_progress(&format!("Development server started {} warnings (PID: {})", warnings_mode, pid))?;
             } else {
                 // Set up proper environment and flags to control warnings
-                let (cargo_env, cargo_flags) = if show_warnings {
-                    ("", "")
-                } else {
-                    ("RUSTFLAGS=\"-Awarnings\" ", "--quiet ")
-                };
-                
+                let (cargo_env, cargo_flags) = if show_warnings { ("", "") } else { ("RUSTFLAGS=\"-Awarnings\" ", "--quiet ") };
+
                 std::process::Command::new("script")
                     .args(["-q", "-c", &format!("{} cargo run {}--bin {}", cargo_env, cargo_flags, &config.project_name), "storage/logs/server.log"])
                     .spawn()?;
-                
+
                 let warnings_mode = if show_warnings { "with" } else { "without" };
                 log_progress(&format!("Development server started {} warnings using cargo run", warnings_mode))?;
             }
@@ -433,7 +424,7 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
         Action::RunProdServer => {
             // Use the setting from Config
             let show_warnings = config.show_compiler_warnings;
-            
+
             if let Ok(pid) = crate::dashboard::start_server(config, false) {
                 let warnings_mode = if show_warnings { "with" } else { "without" };
                 log_progress(&format!("Production server started {} warnings (PID: {})", warnings_mode, pid))?;
@@ -447,16 +438,12 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
                 } else {
                     // Fallback to cargo run --release
                     // Set up proper environment and flags to control warnings
-                    let (cargo_env, cargo_flags) = if show_warnings {
-                        ("", "")
-                    } else {
-                        ("RUSTFLAGS=\"-Awarnings\" ", "--quiet ")
-                    };
-                    
+                    let (cargo_env, cargo_flags) = if show_warnings { ("", "") } else { ("RUSTFLAGS=\"-Awarnings\" ", "--quiet ") };
+
                     std::process::Command::new("script")
                         .args(["-q", "-c", &format!("{} cargo run {}--release --bin {}", cargo_env, cargo_flags, &config.project_name), "storage/logs/server.log"])
                         .spawn()?;
-                    
+
                     let warnings_mode = if show_warnings { "with" } else { "without" };
                     log_progress(&format!("Production server started {} warnings using cargo run --release", warnings_mode))?;
                     log_progress("Tip: Build with 'cargo build --release' for faster startup next time")?;

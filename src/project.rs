@@ -91,10 +91,10 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
     let env_path = project_path.join(".env");
     let mut env_file = fs::OpenOptions::new().append(true).create(true).open(env_path)?;
     writeln!(env_file, "JWT_SECRET={}", generate_jwt_secret())?;
-    
+
     // Initialize git repository
     initialize_git_repository(project_path)?;
-    
+
     Ok(())
 }
 
@@ -102,25 +102,24 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
 fn initialize_git_repository(project_path: &Path) -> std::io::Result<()> {
     // Get the current directory to return to it later
     let current_dir = std::env::current_dir()?;
-    
+
     // Change to the project directory
     std::env::set_current_dir(project_path)?;
-    
+
     // Initialize git repository
     println!("Initializing git repository...");
     match Command::new("git").arg("init").output() {
         Ok(output) => {
             if !output.status.success() {
-                println!("Warning: Failed to initialize git repository: {}", 
-                         String::from_utf8_lossy(&output.stderr));
+                println!("Warning: Failed to initialize git repository: {}", String::from_utf8_lossy(&output.stderr));
             }
-        },
+        }
         Err(e) => {
             println!("Warning: Failed to initialize git repository: {}", e);
             // Continue with project creation, even if git init fails
         }
     }
-    
+
     // Create .gitignore file
     let gitignore_path = project_path.join(".gitignore");
     let gitignore_contents = "\
@@ -144,14 +143,14 @@ Cargo.lock
 /public/css/
 /public/js/
 ";
-    
+
     match fs::write(&gitignore_path, gitignore_contents) {
         Ok(_) => println!("Created .gitignore file"),
-        Err(e) => println!("Warning: Failed to create .gitignore file: {}", e)
+        Err(e) => println!("Warning: Failed to create .gitignore file: {}", e),
     }
-    
+
     // Return to the original directory
     std::env::set_current_dir(current_dir)?;
-    
+
     Ok(())
 }
