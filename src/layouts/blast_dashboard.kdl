@@ -8,7 +8,7 @@ layout {
 
     tab name="💥 Dashboard" focus=true {
         pane split_direction="vertical" {
-            pane split_direction="horizontal" size="65%" {
+            pane split_direction="horizontal" size="60%" {
                 pane name="Server Output" command="bash" size="60%" {
                     args "-c" "tail -n100 -f storage/logs/server.log"
                 }
@@ -19,7 +19,7 @@ layout {
                     args "-c" "tail -n30 -f storage/logs/error.log"
                 }
             }
-            pane split_direction="horizontal" size="35%" {
+            pane split_direction="horizontal" size="40%" {
                 pane name="🧰 Menu" command="bash" size="45%" {
                     args "-c" "blast cli"
                         focus true
