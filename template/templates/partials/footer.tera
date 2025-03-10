@@ -1,5 +1,5 @@
-<script type="text/javascript" src="/public/js/materialize.min.js"></script>
-<script type="text/javascript" src="/public/js/app.js"></script>
+<script type="text/javascript" src="/public/js/materialize/materialize.min.js"></script>
+<script type="text/javascript" src="/public/js/app/app.min.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     M.AutoInit();
