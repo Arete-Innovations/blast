@@ -887,6 +887,38 @@ pub fn new_migration() {
     log_message(&format!("Migration files created at:\n- {}\n- {}", up_file, down_file));
 }
 
+// Function to seed a specific file by name
+pub fn seed_specific_file(file_name: &str) -> bool {
+    let progress = ProgressManager::new_spinner();
+    progress.set_message(&format!("Running seed file {}", file_name));
+
+    // Try to establish a database connection first
+    let connection_result = establish_connection();
+    let mut connection = match connection_result {
+        Ok(conn) => conn,
+        Err(e) => {
+            progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
+            return false;
+        }
+    };
+    
+    // Check if file exists
+    let seed_path = format!("src/database/seeds/{}", file_name);
+    if !Path::new(&seed_path).exists() {
+        progress.error(&format!("Seed file {} not found", file_name));
+        return false;
+    }
+    
+    let result = run_seed_file(&mut connection, file_name);
+    if result {
+        progress.success(&format!("Seed file {} executed successfully", file_name));
+    } else {
+        progress.error(&format!("Failed to execute seed file {}", file_name));
+    }
+    
+    result
+}
+
 pub fn seed(selection: Option<usize>) -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Running database seed operations...");

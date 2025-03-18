@@ -19,6 +19,20 @@ pub fn get_project_info() -> Result<Config, Box<dyn std::error::Error>> {
     get_project_info_with_paths(&config_path, &cwd)
 }
 
+// Reload configuration from Catalyst.toml for a specific Config instance
+pub fn reload_config(config: &mut Config) -> Result<(), Box<dyn std::error::Error>> {
+    let config_path = config.project_dir.join("Catalyst.toml");
+    let refreshed_config = get_project_info_with_paths(&config_path.to_string_lossy(), &config.project_dir)?;
+    
+    // Update existing config with fresh values
+    config.environment = refreshed_config.environment;
+    config.project_name = refreshed_config.project_name;
+    config.assets = refreshed_config.assets;
+    config.show_compiler_warnings = refreshed_config.show_compiler_warnings;
+    
+    Ok(())
+}
+
 // Toggle the environment between dev and prod
 // Launch Catalyst.toml configuration manager
 pub fn launch_manager(config: &mut Config) {

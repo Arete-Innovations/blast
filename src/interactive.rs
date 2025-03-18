@@ -70,6 +70,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
         "[DB] New Migration",
         "[DB] Migrate",
         "[DB] Rollback",
+        "[DB] Seed",
         // Assets management
         "[Locale] Edit Key",
         "[Assets] Transpile SCSS",
@@ -162,6 +163,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
             "[DB] New Migration" => Action::NewMigration,
             "[DB] Migrate" => Action::Migrate,
             "[DB] Rollback" => Action::Rollback,
+            "[DB] Seed" => Action::Seed(None),
 
             // Asset management
             "[Locale] Edit Key" => Action::EditLocaleKey,
@@ -256,6 +258,13 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
         crate::output::log(message)?;
         Ok(())
     };
+    
+    // Always reload the configuration before executing any action
+    if let Err(e) = crate::configs::reload_config(config) {
+        log_progress(&format!("Warning: Failed to reload configuration: {}", e))?;
+    } else {
+        log_progress("Configuration reloaded from Catalyst.toml")?;
+    }
 
     match action {
         Action::GitManager => {
@@ -308,6 +317,47 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
             dep_manager.ensure_installed(&["diesel"], true)?;
             log_progress("Rolling back migrations")?;
             crate::database::rollback_all();
+            Ok(())
+        }
+        Action::Seed(file_name) => {
+            dep_manager.ensure_installed(&["diesel"], true)?;
+            
+            if let Some(file) = file_name {
+                log_progress(&format!("Running specific seed file: {}", file))?;
+                crate::database::seed_specific_file(&file);
+            } else {
+                // Interactive mode - allow choosing seed file
+                log_progress("Running database seeds")?;
+                let seed_dir = std::path::Path::new("src/database/seeds");
+                
+                if !seed_dir.exists() {
+                    log_progress("No seed files found. Seed directory does not exist.")?;
+                    return Ok(());
+                }
+                
+                let seed_files: Vec<String> = std::fs::read_dir(seed_dir)
+                    .map_err(|e| format!("Failed to read seed directory: {}", e))?
+                    .filter_map(|entry| {
+                        if let Ok(entry) = entry {
+                            let path = entry.path();
+                            if path.is_file() {
+                                path.file_name().map(|name| name.to_string_lossy().into_owned())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                
+                if seed_files.is_empty() {
+                    log_progress("No seed files found in seed directory.")?;
+                    return Ok(());
+                }
+                
+                crate::database::seed(None);
+            }
             Ok(())
         }
         Action::GenerateSchema => {
