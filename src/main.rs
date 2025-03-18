@@ -12,6 +12,7 @@ mod dependencies;
 mod git;
 mod interactive;
 mod locale;
+mod logger;
 mod models;
 mod output;
 mod progress;

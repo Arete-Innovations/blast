@@ -313,6 +313,24 @@ The framework follows a clear separation between generated and custom code:
 
 This separation ensures that you can regenerate database models without losing your custom implementation logic.
 
+### 📜 Log Management
+
+Blast provides tools to manage your application logs efficiently:
+
+- **Log Truncation**: Easily clear log files to prevent them from growing too large
+  - Truncate all logs: `blast log truncate`
+  - Truncate specific log: `blast log truncate server.log`
+  - Interactive selection via dashboard: Choose `[LOG] Truncate Logs` from the menu
+
+- **Log Storage**:
+  - Application logs in `storage/logs/` directory
+    - `server.log`: Server output and errors
+    - `error.log`: Application errors 
+    - `info.log`: Information logs
+    - `debug.log`: Debug information
+    - `warning.log`: Warning messages
+  - Dashboard log in `storage/blast/blast.log`
+
 ### 📝 The `cata_log!` Macro
 
 The `cata_log!` macro provides structured logging with source location tracking:
