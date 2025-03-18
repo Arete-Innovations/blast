@@ -120,6 +120,7 @@ pub enum Action {
     CatalystManager,
     CargoAdd(String), // Add a new dependency with optional search term
     CargoRemove,      // Remove a dependency
+    LogTruncate(Option<String>), // Truncate logs (all or specific file)
     Exit,
     Help,
 }
@@ -182,6 +183,15 @@ pub fn parse_cli_args(args: &[String]) -> Option<Action> {
         }
         Some("cargo") if args.get(2).map(|s| s.as_str()) == Some("remove") => Some(Action::CargoRemove),
 
+        // Log management
+        Some("logs") | Some("log") if args.get(2).map(|s| s.as_str()) == Some("truncate") => {
+            if args.len() >= 4 {
+                Some(Action::LogTruncate(Some(args[3].clone())))
+            } else {
+                Some(Action::LogTruncate(None))
+            }
+        },
+
         // Legacy command handling
         Some("serve") => Some(Action::RunDevServer),
         Some("serve-prod") => Some(Action::RunProdServer),
@@ -226,6 +236,9 @@ pub fn show_help() {
     println!("CARGO COMMANDS:");
     println!("  cargo add [search]    Add a dependency - search crates.io if term provided");
     println!("  cargo remove          Remove a dependency interactively");
+    println!();
+    println!("LOG MANAGEMENT:");
+    println!("  log truncate [file]   Truncate log files (all or specific file)");
     println!();
     println!("GIT COMMANDS:");
     println!("  git                  Launch interactive Git manager");
@@ -574,6 +587,11 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
         Action::CargoRemove => {
             println!("Managing dependencies...");
             crate::cargo::remove_dependency(&current_config)
+        }
+        Action::LogTruncate(file_name) => {
+            println!("Managing log files...");
+            crate::logger::ensure_log_files_exist(&current_config)?;
+            crate::logger::truncate_specific_log(&current_config, file_name)
         }
         Action::Help => {
             show_help();

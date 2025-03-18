@@ -81,6 +81,8 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
         // Cargo commands
         "[CARGO] Add Dependency",
         "[CARGO] Remove Dependency",
+        // Log management
+        "[LOG] Truncate Logs",
         // Git commands
         "[GIT] Manager",
         "[GIT] Status",
@@ -176,6 +178,9 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &DependencyMan
             // Cargo commands
             "[CARGO] Add Dependency" => Action::CargoAdd(String::new()),
             "[CARGO] Remove Dependency" => Action::CargoRemove,
+            
+            // Log management
+            "[LOG] Truncate Logs" => Action::LogTruncate(None),
             
             // Git commands
             "[GIT] Manager" => Action::GitManager,
@@ -476,6 +481,11 @@ async fn handle_action(action: Action, config: &mut Config, dep_manager: &Depend
         Action::CargoRemove => {
             log_progress("Managing dependencies in Cargo.toml")?;
             crate::cargo::remove_dependency(config)
+        }
+        Action::LogTruncate(file_name) => {
+            log_progress("Managing log files")?;
+            crate::logger::ensure_log_files_exist(config)?;
+            crate::logger::truncate_specific_log(config, file_name)
         }
         Action::RunDevServer => {
             // Use the setting from Config
