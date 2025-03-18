@@ -8,18 +8,12 @@ use std::process::Command;
 // Function to run post-generation hooks defined in Catalyst.toml
 fn run_post_generation_hooks(config: &Config, hook_type: &str) -> bool {
     // Check if hooks are enabled
-    let hooks_enabled = config
-        .assets
-        .get("codegen")
-        .and_then(|c| c.get("hooks"))
-        .and_then(|h| h.get("enabled"))
-        .and_then(|e| e.as_bool())
-        .unwrap_or(false);
-    
+    let hooks_enabled = config.assets.get("codegen").and_then(|c| c.get("hooks")).and_then(|h| h.get("enabled")).and_then(|e| e.as_bool()).unwrap_or(false);
+
     if !hooks_enabled {
         return true; // Hooks disabled, return success
     }
-    
+
     // Get the hooks for the specific type
     let specific_hooks: Vec<String> = config
         .assets
@@ -29,7 +23,7 @@ fn run_post_generation_hooks(config: &Config, hook_type: &str) -> bool {
         .and_then(|h| h.as_array())
         .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
         .unwrap_or_default();
-    
+
     // Get the hooks for any generation
     let any_hooks: Vec<String> = config
         .assets
@@ -39,22 +33,22 @@ fn run_post_generation_hooks(config: &Config, hook_type: &str) -> bool {
         .and_then(|h| h.as_array())
         .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
         .unwrap_or_default();
-    
+
     // Combine both hook lists
     let hooks: Vec<String> = [specific_hooks, any_hooks].concat();
-    
+
     if hooks.is_empty() {
         return true; // No hooks defined, return success
     }
-    
+
     println!("Running post-generation hooks for {}", hook_type);
-    
+
     let mut success = true;
-    
+
     for hook in hooks {
         let progress = progress::ProgressManager::new_spinner();
         progress.set_message(&format!("Running hook: {}", hook));
-        
+
         // Split the command string into program and arguments
         let parts: Vec<&str> = hook.split_whitespace().collect();
         if parts.is_empty() {
@@ -62,20 +56,18 @@ fn run_post_generation_hooks(config: &Config, hook_type: &str) -> bool {
             success = false;
             continue;
         }
-        
+
         let program = parts[0];
         let args = &parts[1..];
-        
+
         // Run the command
-        let result = Command::new(program)
-            .args(args)
-            .output();
-        
+        let result = Command::new(program).args(args).output();
+
         match result {
             Ok(output) => {
                 if output.status.success() {
                     progress.success(&format!("Hook executed successfully: {}", hook));
-                    
+
                     // Print command output if non-empty
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     if !stdout.trim().is_empty() {
@@ -93,7 +85,7 @@ fn run_post_generation_hooks(config: &Config, hook_type: &str) -> bool {
             }
         }
     }
-    
+
     success
 }
 
@@ -103,6 +95,7 @@ pub enum Action {
     NewMigration,
     Migrate,
     Rollback,
+    Seed(Option<String>), // Run database seed with optional specific file
     GenerateSchema,
     GenerateStructs,
     GenerateModels,
@@ -125,8 +118,8 @@ pub enum Action {
     GitPush,
     GitCommit,
     CatalystManager,
-    CargoAdd(String),    // Add a new dependency with optional search term
-    CargoRemove,         // Remove a dependency
+    CargoAdd(String), // Add a new dependency with optional search term
+    CargoRemove,      // Remove a dependency
     Exit,
     Help,
 }
@@ -148,6 +141,13 @@ pub fn parse_cli_args(args: &[String]) -> Option<Action> {
         Some("migration") => Some(Action::NewMigration),
         Some("migrate") => Some(Action::Migrate),
         Some("rollback") => Some(Action::Rollback),
+        Some("seed") => {
+            if args.len() >= 3 {
+                Some(Action::Seed(Some(args[2].clone())))
+            } else {
+                Some(Action::Seed(None))
+            }
+        },
         Some("schema") => Some(Action::GenerateSchema),
 
         // Asset management
@@ -174,12 +174,12 @@ pub fn parse_cli_args(args: &[String]) -> Option<Action> {
 
         // Catalyst manager
         Some("catalyst") => Some(Action::CatalystManager),
-        
+
         // Cargo commands
         Some("cargo") if args.get(2).map(|s| s.as_str()) == Some("add") => {
             let search_term = args.get(3).map(|s| s.clone()).unwrap_or_default();
             Some(Action::CargoAdd(search_term))
-        },
+        }
         Some("cargo") if args.get(2).map(|s| s.as_str()) == Some("remove") => Some(Action::CargoRemove),
 
         // Legacy command handling
@@ -209,6 +209,7 @@ pub fn show_help() {
     println!("  migration            Create a new migration");
     println!("  migrate              Run all pending migrations");
     println!("  rollback             Rollback all migrations");
+    println!("  seed [file]          Run database seeds (all or specific file)");
     println!("  schema               Generate database schema");
     println!();
     println!("ASSET MANAGEMENT:");
@@ -258,10 +259,17 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
         crate::output::set_quiet_mode(true);
     }
 
-    // Always reload the config at the beginning of each action execution
+    // Get the configuration to use for this action
     let mut current_config = if let Some(cfg) = config {
-        cfg.clone()
+        // If a config was provided, reload it from disk to ensure it's fresh
+        let mut cfg_clone = cfg.clone();
+
+        // Try to reload the config, but don't fail if it doesn't work
+        let _ = crate::configs::reload_config(&mut cfg_clone);
+
+        cfg_clone
     } else {
+        // No config provided, load a fresh one or use defaults
         match crate::configs::get_project_info() {
             Ok(cfg) => cfg,
             Err(_) => {
@@ -381,6 +389,23 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             }
             Ok(())
         }
+        Action::Seed(file_name) => {
+            // Ensure diesel is installed
+            dep_manager.ensure_installed(&["diesel"], true)?;
+            
+            let success = if let Some(file) = file_name {
+                // Run specific seed file
+                database::seed_specific_file(&file)
+            } else {
+                // Run all seed files
+                database::seed(Some(0))
+            };
+            
+            if !success {
+                println!("Warning: Some seeding issues occurred");
+            }
+            Ok(())
+        }
         Action::GenerateSchema => {
             // Ensure diesel is installed
             dep_manager.ensure_installed(&["diesel"], true)?;
@@ -450,14 +475,14 @@ pub async fn execute_action(action: Action, config: Option<&mut Config>, dep_man
             log_message("🔧 Generating schema and structs...");
             let schema_ok = database::generate_schema();
             let structs_ok = structs::generate(&current_config);
-            
+
             // Run post-generation hooks for structs if generation was successful
             if structs_ok {
                 run_post_generation_hooks(&current_config, "structs");
             }
-            
+
             let models_ok = models::generate(&current_config);
-            
+
             // Run post-generation hooks for models if generation was successful
             if models_ok {
                 run_post_generation_hooks(&current_config, "models");
