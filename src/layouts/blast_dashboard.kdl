@@ -35,21 +35,17 @@ layout {
 
     tab name="📜Logs" {
         pane split_direction="horizontal" {
-            pane split_direction="vertical" {
-                pane name="Error Logs" command="bash" {
-                    args "-c" "tail -n100 -f storage/logs/error.log"
-                }
-                pane name="Warning Logs" command="bash" {
-                    args "-c" "tail -n100 -f storage/logs/warning.log"
-                }
+            pane name="Error Logs" command="bash" {
+                args "-c" "tail -n100 -f storage/logs/error.log"
             }
-            pane split_direction="vertical" {
-                pane name="Info Logs" command="bash" {
-                    args "-c" "tail -n100 -f storage/logs/info.log"
-                }
-                pane name="Debug Logs" command="bash" {
-                    args "-c" "tail -n100 -f storage/logs/debug.log"
-                }
+            pane name="Warning Logs" command="bash" {
+                args "-c" "tail -n100 -f storage/logs/warning.log"
+            }
+            pane name="Info Logs" command="bash" {
+                args "-c" "tail -n100 -f storage/logs/info.log"
+            }
+            pane name="Debug Logs" command="bash" {
+                args "-c" "tail -n100 -f storage/logs/debug.log"
             }
         }
     }
@@ -59,12 +55,12 @@ layout {
             args "-c" "db_url=$(grep 'DATABASE_URL=' .env | cut -d '=' -f2); db_url=\"${db_url}?\"; lazysql \"${db_url}sslmode=disable\""
         }
     }
-    
+
     tab name="  Locale" {
         pane split_direction="vertical" {
             pane name="Language Manager" command="bash" size="65%" {
                 args "-c" "blast locale-manager"
-                focus true
+                    focus true
             }
             pane split_direction="horizontal" size="35%" {
                 pane name="Language Files" command="bash" {
@@ -73,27 +69,27 @@ layout {
             }
         }
     }
-    
+
     tab name=" Git" {
         pane split_direction="vertical" {
             pane name="Git Manager" command="bash" size="65%" {
                 args "-c" "blast git"
-                focus true
+                    focus true
             }
             pane split_direction="horizontal" size="35%" {
                 pane name="Git Status" command="bash" {
                     args "-c" "git status; echo ''; git log --oneline -n 5"
                 }
-            
+
             }
         }
     }
-    
+
     tab name="🔧Catalyst" {
         pane split_direction="vertical" {
             pane name="Catalyst Manager" command="bash" size="65%" {
                 args "-c" "blast catalyst"
-                focus true
+                    focus true
             }
             pane split_direction="horizontal" size="35%" {
                 pane name="Catalyst.toml" command="bash" {
@@ -103,4 +99,3 @@ layout {
         }
     }
 }
-
