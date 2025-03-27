@@ -1,7 +1,8 @@
+use crate::middleware::*;
 use crate::structs::*;
 use rocket::async_trait;
 use rocket::http::Status;
-use rocket::outcome::Outcome::{Error, Success};
+use rocket::outcome::Outcome::{Error, Forward, Success};
 use rocket::request::{FromRequest, Outcome, Request};
 
 pub struct AdminGuard;
@@ -11,14 +12,20 @@ impl<'r> FromRequest<'r> for AdminGuard {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        if let Some(cookie) = req.cookies().get("user_id") {
-            if let Ok(user_id) = cookie.value().parse::<i32>() {
-                if Users::is_admin(user_id) {
-                    return Success(AdminGuard);
+        match req.guard::<JWT>().await {
+            Success(jwt) => match jwt_to_id(&jwt) {
+                Ok(user_id) => {
+                    if Users::is_admin(user_id) {
+                        Success(AdminGuard)
+                    } else {
+                        Error((Status::Forbidden, ()))
+                    }
                 }
-            }
+                Err(status) => Error((status, ())),
+            },
+            Error((status, _)) => Error((status, ())),
+            Forward(status) => Forward(status),
         }
-        Error((Status::Forbidden, ()))
     }
 }
 

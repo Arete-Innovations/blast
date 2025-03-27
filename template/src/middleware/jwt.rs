@@ -20,16 +20,43 @@ impl<'r> FromRequest<'r> for JWT {
 
     async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
         let cookies = request.cookies();
-        if let Some(token_cookie) = cookies.get("token") {
-            let token = token_cookie.value().to_string();
-            let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-
-            match decode::<Claims>(&token, &DecodingKey::from_secret(secret.as_ref()), &Validation::default()) {
-                Ok(data) => Outcome::Success(JWT(data.claims)),
-                Err(_) => Outcome::Error((Status::Unauthorized, ())),
+        let token_cookie = match cookies.get("token") {
+            Some(cookie) => cookie,
+            None => {
+                return Outcome::Error((Status::Unauthorized, ()));
             }
-        } else {
-            Outcome::Error((Status::Unauthorized, ()))
+        };
+
+        let token = token_cookie.value().to_string();
+        let secret = match env::var("JWT_SECRET") {
+            Ok(s) => s,
+            Err(_) => {
+                eprintln!("FATAL: JWT_SECRET environment variable not set!");
+                return Outcome::Error((Status::InternalServerError, ()));
+            }
+        };
+
+        match decode::<Claims>(&token, &DecodingKey::from_secret(secret.as_ref()), &Validation::default()) {
+            Ok(token_data) => {
+                if let Some(user_id_cookie) = cookies.get("user_id") {
+                    let user_id_from_cookie = user_id_cookie.value();
+                    let user_id_from_jwt = &token_data.claims.sub;
+
+                    if user_id_from_cookie != user_id_from_jwt {
+                        eprintln!("JWT/Cookie User ID mismatch: Cookie='{}', JWT='{}'", user_id_from_cookie, user_id_from_jwt);
+                        return Outcome::Error((Status::Forbidden, ()));
+                    }
+                } else {
+                    eprintln!("No user_id cookie found");
+                    return Outcome::Error((Status::Forbidden, ()));
+                }
+
+                Outcome::Success(JWT(token_data.claims))
+            }
+            Err(e) => {
+                eprintln!("JWT validation failed: {:?}", e);
+                Outcome::Error((Status::Forbidden, ()))
+            }
         }
     }
 }
