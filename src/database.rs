@@ -206,6 +206,239 @@ pub fn rollback_all() -> bool {
     !has_error
 }
 
+// Get a list of available connection names from the .env file
+fn get_connection_names() -> Vec<String> {
+    dotenv().ok();
+    
+    let mut names = Vec::new();
+    names.push("default".to_string()); // Default connection is always available
+    
+    // Look for any DATABASE_URL_* variables
+    for (key, _) in env::vars() {
+        if key.starts_with("DATABASE_URL_") {
+            let name = key.replace("DATABASE_URL_", "").to_lowercase();
+            names.push(name);
+        }
+    }
+    
+    names
+}
+
+// Generate schema for a specific database connection
+pub fn generate_schema_for_connection(conn_name: &str) -> bool {
+    let progress = ProgressManager::new_spinner();
+    progress.set_message(&format!("Generating schema for {} connection...", conn_name));
+
+    // Make sure the directory exists
+    if !Path::new("src/database").exists() {
+        if let Err(e) = fs::create_dir_all("src/database") {
+            progress.error(&format!("Error creating schema directory: {}", e));
+            return false;
+        }
+    }
+
+    // Determine the environment variable to use
+    let env_var = if conn_name == "default" { 
+        "DATABASE_URL".to_string() 
+    } else { 
+        format!("DATABASE_URL_{}", conn_name.to_uppercase())
+    };
+
+    // Get the database URL
+    let database_url = match env::var(&env_var) {
+        Ok(url) => url,
+        Err(_) => {
+            progress.error(&format!("{} not found in environment", env_var));
+            return false;
+        }
+    };
+
+    // Determine the output file path
+    let schema_file = if conn_name == "default" {
+        "src/database/schema.rs".to_string()
+    } else {
+        format!("src/database/schema_{}.rs", conn_name.to_lowercase())
+    };
+
+    // Run diesel print-schema command with the appropriate DATABASE_URL
+    let output = match Command::new("diesel")
+        .arg("print-schema")
+        .env("DATABASE_URL", &database_url)
+        .stdout(Stdio::piped())
+        .spawn() {
+            Ok(child) => match child.wait_with_output() {
+                Ok(output) => output,
+                Err(e) => {
+                    progress.error(&format!("Error executing diesel print-schema: {}", e));
+                    return false;
+                }
+            },
+            Err(e) => {
+                progress.error(&format!("Error spawning diesel print-schema: {}", e));
+                return false;
+            }
+        };
+
+    if !output.status.success() {
+        progress.error("diesel print-schema command failed");
+        return false;
+    }
+
+    let schema_str = String::from_utf8_lossy(&output.stdout);
+
+    // Create the schema file
+    match File::create(&schema_file) {
+        Ok(mut file) => {
+            if let Err(e) = file.write_all(schema_str.as_bytes()) {
+                progress.error(&format!("Error writing schema file: {}", e));
+                false
+            } else {
+                // Count number of tables in the schema
+                let table_count = schema_str.matches("table!").count();
+                progress.success(&format!("Generated schema for {} with {} tables", conn_name, table_count));
+                true
+            }
+        }
+        Err(e) => {
+            progress.error(&format!("Error creating schema file: {}", e));
+            false
+        }
+    }
+}
+
+// Generate schemas for all databases in the .env file
+pub fn generate_all_schemas() -> bool {
+    let progress = ProgressManager::new_spinner();
+    progress.set_message("Generating schemas for all database connections...");
+
+    let connections = get_connection_names();
+    if connections.is_empty() {
+        progress.error("No database connections found in .env file");
+        return false;
+    }
+
+    let mut success = true;
+    let mut generated_connections = Vec::new();
+    
+    for conn_name in connections {
+        generated_connections.push(conn_name.clone());
+        if !generate_schema_for_connection(&conn_name) {
+            success = false;
+        }
+    }
+
+    if success {
+        progress.success("Generated schemas for all database connections");
+    } else {
+        progress.error("Some schema generations failed");
+    }
+
+    // Update the mod.rs file to include all schemas
+    update_schema_mod_file(&generated_connections);
+
+    success
+}
+
+// Update the mod.rs file to include all schemas
+fn update_schema_mod_file(connections: &[String]) {
+    let mod_path = "src/database/mod.rs";
+    
+    // First, read the existing file if any
+    let existing_content = fs::read_to_string(mod_path).unwrap_or_default();
+    
+    // Extract any non-schema module declarations
+    let mut other_modules = Vec::new();
+    for line in existing_content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("pub mod ") && 
+           !trimmed.starts_with("pub mod schema") && 
+           !trimmed.contains("schema_") {
+            other_modules.push(line.to_string());
+        }
+    }
+    
+    // Build new content with schema declarations first
+    let mut content = String::new();
+    
+    // Add schema modules without duplication
+    let mut added_modules = std::collections::HashSet::new();
+    
+    // First add default schema
+    if connections.contains(&"default".to_string()) {
+        content.push_str("pub mod schema;\n");
+        added_modules.insert("schema".to_string());
+    }
+    
+    // Then add other schemas
+    for conn_name in connections {
+        if conn_name != "default" {
+            let module_name = format!("schema_{}", conn_name);
+            if !added_modules.contains(&module_name) {
+                content.push_str(&format!("pub mod {};\n", module_name));
+                added_modules.insert(module_name);
+            }
+        }
+    }
+    
+    // Add other modules after schema declarations
+    for module in other_modules {
+        content.push_str(&format!("{}\n", module));
+    }
+    
+    // Write the mod.rs file
+    if let Err(e) = fs::write(mod_path, content) {
+        eprintln!("Error updating schema mod.rs file: {}", e);
+    }
+    
+    // Now update the db.rs file with connection functions for each database
+    update_db_connection_functions(connections);
+}
+
+// Generate simple connection functions in db.rs for each database
+fn update_db_connection_functions(connections: &[String]) {
+    let db_path = "src/database/db.rs";
+    
+    // Try to read the existing db.rs file
+    if let Ok(existing_content) = fs::read_to_string(db_path) {
+        // Extract the base part (up to the comment about additional functions)
+        let base_parts: Vec<&str> = existing_content.split("// Additional connection functions").collect();
+        
+        let mut new_content = if base_parts.len() > 1 {
+            // If we found the marker comment, use everything before it
+            base_parts[0].to_string()
+        } else {
+            // Otherwise use the whole file
+            existing_content.clone()
+        };
+        
+        // Add the marker comment
+        new_content.push_str("// Additional connection functions will be generated by the blast tool\n");
+        new_content.push_str("// based on DATABASE_URL_* entries in the .env file\n");
+        
+        // Add connection functions for each additional database
+        for conn_name in connections {
+            if conn_name != "default" {
+                let func_name = format!("establish_connection_{}", conn_name);
+                let env_var = format!("DATABASE_URL_{}", conn_name.to_uppercase());
+                
+                new_content.push_str(&format!(r#"
+pub fn {}() -> PgConnection {{
+    dotenv().ok();
+    let database_url = env::var("{}").expect("{} must be set");
+    PgConnection::establish(&database_url)
+        .expect(&format!("Error connecting to {{}}", database_url))
+}}
+"#, func_name, env_var, env_var));
+            }
+        }
+        
+        // Write the updated db.rs file
+        if let Err(e) = fs::write(db_path, new_content) {
+            eprintln!("Error updating db.rs file: {}", e);
+        }
+    }
+}
+
 pub fn generate_schema() -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating database schema...");
@@ -230,46 +463,34 @@ pub fn generate_schema() -> bool {
         }
     }
 
-    // Run diesel print-schema command
-    let output = match Command::new("diesel").arg("print-schema").stdout(Stdio::piped()).spawn() {
-        Ok(child) => match child.wait_with_output() {
-            Ok(output) => output,
-            Err(e) => {
-                progress.error(&format!("Error executing diesel print-schema: {}", e));
+    // Check if we should generate multiple schemas
+    let connections = get_connection_names();
+    if connections.len() > 1 {
+        // Ask user if they want to generate schema for all connections
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(&format!("Found {} database connections. Generate schema for:", connections.len()))
+            .items(&["Default database only", "All database connections"])
+            .default(0)
+            .interact();
+
+        match selection {
+            Ok(0) => {
+                // Generate just the default schema
+                return generate_schema_for_connection("default");
+            }
+            Ok(1) => {
+                // Generate schema for all connections
+                return generate_all_schemas();
+            }
+            _ => {
+                progress.error("Schema generation cancelled");
                 return false;
             }
-        },
-        Err(e) => {
-            progress.error(&format!("Error spawning diesel print-schema: {}", e));
-            return false;
-        }
-    };
-
-    if !output.status.success() {
-        progress.error("diesel print-schema command failed");
-        return false;
-    }
-
-    let schema_str = String::from_utf8_lossy(&output.stdout);
-
-    // Create the schema file
-    match File::create("src/database/schema.rs") {
-        Ok(mut file) => {
-            if let Err(e) = file.write_all(schema_str.as_bytes()) {
-                progress.error(&format!("Error writing schema file: {}", e));
-                false
-            } else {
-                // Count number of tables in the schema
-                let table_count = schema_str.matches("table!").count();
-                progress.success(&format!("Generated schema with {} tables", table_count));
-                true
-            }
-        }
-        Err(e) => {
-            progress.error(&format!("Error creating schema file: {}", e));
-            false
         }
     }
+
+    // If there's only one connection, just generate for default
+    generate_schema_for_connection("default")
 }
 
 fn get_existing_tables() -> Vec<String> {
