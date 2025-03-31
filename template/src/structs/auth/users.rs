@@ -36,6 +36,7 @@ pub struct NewUser {
 pub struct LoginForm {
     pub username: String,
     pub password: String,
+    pub authenticity_token: String,
 }
 
 #[derive(FromForm, Deserialize, Serialize)]
@@ -46,6 +47,7 @@ pub struct RegisterForm {
     pub last_name: String,
     pub password: String,
     pub confirm_password: String,
+    pub authenticity_token: String,
 }
 
 #[derive(FromForm, Deserialize, Serialize)]
