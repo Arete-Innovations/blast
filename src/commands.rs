@@ -212,104 +212,95 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
         }
 
         Command::InitProject => {
-            // Check verbose mode
-            let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
-            
-            // Always show this initial message
+            // Always show an initial message to indicate we're starting
             println!("Initializing project...");
 
-            // Create a progress tracker for the overall process
-            let mut main_progress = logger::create_progress(None);
-            main_progress.set_message("Setting up your project");
+            // Create a progress tracker for the overall process with known steps
+            let total_steps = 6; // Dependencies, DB, Schema, Code Gen, Assets, SCSS/CSS/JS
+            let mut main_progress = logger::create_progress(Some(total_steps));
+            main_progress.set_message("Project initialization (1/6): Setting up dependencies");
 
             // 1. Ensure dependencies are installed
-            if is_verbose {
-                logger::info("Checking required dependencies...")?;
-            }
             dep_manager.ensure_installed(&["diesel"], true)?;
+            main_progress.inc(1);
 
             // 2. Database operations
-            if is_verbose {
-                logger::info("Setting up database...")?;
-            }
-            main_progress.set_message("Running database migrations");
-
+            main_progress.set_message("Project initialization (2/6): Setting up database");
+            
             // Run migrations
             let migrations_ok = crate::database::migrate();
-            if !migrations_ok && is_verbose {
-                logger::warning("Some migration issues occurred - check database configuration")?;
+            if !migrations_ok {
+                main_progress.warning("Some migration issues occurred - check database configuration")?;
             }
-
-            // Run seeds
-            main_progress.set_message("Seeding database");
+            
+            // Run seeds - don't increment progress yet, this is part of DB setup
             let seed_ok = crate::database::seed(Some(0));
-            if !seed_ok && is_verbose {
-                logger::warning("Some seeding issues occurred - this may be normal for new projects")?;
+            if !seed_ok {
+                main_progress.warning("Some seeding issues occurred - this may be normal for new projects")?;
             }
+            
+            main_progress.inc(1);
 
-            // Generate schema
-            main_progress.set_message("Generating database schema");
+            // 3. Generate schema
+            main_progress.set_message("Project initialization (3/6): Generating database schema");
             let schema_ok = crate::database::generate_schema();
-            if !schema_ok && is_verbose {
-                logger::warning("Some schema generation issues occurred")?;
+            if !schema_ok {
+                main_progress.warning("Some schema generation issues occurred")?;
             }
+            main_progress.inc(1);
 
-            // 3. Code generation
-            main_progress.set_message("Generating code files");
+            // 4. Code generation
+            main_progress.set_message("Project initialization (4/6): Generating code files");
 
-            // Generate structs
+            // Generate structs and models - don't increment progress yet, part of code gen
             let structs_ok = crate::structs::generate(config);
-            if !structs_ok && is_verbose {
-                logger::warning("Some struct generation issues occurred - this may be normal for empty schemas")?;
+            if !structs_ok {
+                main_progress.warning("Some struct generation issues occurred - may be normal for empty schemas")?;
             }
 
-            // Generate models
             let models_ok = crate::models::generate(config);
-            if !models_ok && is_verbose {
-                logger::warning("Some model generation issues occurred - this may be normal for empty schemas")?;
+            if !models_ok {
+                main_progress.warning("Some model generation issues occurred - may be normal for empty schemas")?;
             }
+            main_progress.inc(1);
 
-            // 4. Download assets
-            main_progress.set_message("Setting up assets");
-
-            // Download assets (including Materialize SCSS from git)
+            // 5. Download assets 
+            main_progress.set_message("Project initialization (5/6): Downloading assets");
             let assets_result = crate::assets::download_assets_async(config).await;
-            if assets_result.is_err() && is_verbose {
-                if let Err(e) = &assets_result {
-                    logger::warning(&format!("Some asset downloads failed: {}", e))?;
-                }
+            if let Err(e) = &assets_result {
+                main_progress.warning(&format!("Some asset downloads failed: {}", e))?;
             }
+            main_progress.inc(1);
 
-            // Process SCSS files
-            main_progress.set_message("Processing SCSS files");
+            // 6. Process assets (SCSS, CSS, JS)
+            main_progress.set_message("Project initialization (6/6): Processing asset files");
+            
+            // Process SCSS files - these are part of final step, don't increment yet
             let scss_result = crate::assets::transpile_all_scss(config).await;
-            if scss_result.is_err() && is_verbose {
-                if let Err(e) = &scss_result {
-                    logger::warning(&format!("SCSS processing error: {}", e))?;
-                }
+            if let Err(e) = &scss_result {
+                main_progress.warning(&format!("SCSS processing error: {}", e))?;
             }
 
             // Process CSS files
-            main_progress.set_message("Publishing CSS files");
             let css_result = crate::assets::publish_css(config).await;
-            if css_result.is_err() && is_verbose {
-                if let Err(e) = &css_result {
-                    logger::warning(&format!("CSS publishing error: {}", e))?;
-                }
+            if let Err(e) = &css_result {
+                main_progress.warning(&format!("CSS publishing error: {}", e))?;
             }
 
             // Process JS files
-            main_progress.set_message("Processing JS files");
             let js_result = crate::assets::process_js(config).await;
-            if js_result.is_err() && is_verbose {
-                if let Err(e) = &js_result {
-                    logger::warning(&format!("JS processing error: {}", e))?;
-                }
+            if let Err(e) = &js_result {
+                main_progress.warning(&format!("JS processing error: {}", e))?;
             }
-
-            // 5. Final steps - always show final success message
-            main_progress.set_message("✅ Project initialization complete!");
-            println!("\nProject is ready to run! 🚀");
+            
+            // Final step completion
+            main_progress.inc(1);
+            
+            // Finish with success message - clear the progress bar first
+            main_progress.success("Project initialization complete!");
+            
+            // Show next steps for the user
+            println!("Your project is ready to run! 🚀");
             println!("\nNext steps:");
             println!("  1. Run 'blast run' to start the development server");
             println!("  2. Run 'blast dashboard' to launch the interactive dashboard");

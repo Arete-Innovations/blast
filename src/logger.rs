@@ -108,8 +108,8 @@ fn get_mode() -> RuntimeMode {
 pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
 
-    // Format message with emoji for visual recognition
-    let _emoji = match level {
+    // Get emoji for the log level
+    let emoji = match level {
         LogLevel::Debug => "🔍",
         LogLevel::Info => "ℹ️",
         LogLevel::Warning => "⚠️",
@@ -131,35 +131,19 @@ pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
         message
     );
 
-    // Check if we should show this message based on verbosity settings
-    // Always show errors, warnings, and successes regardless of verbosity
+    // Determine if this message should be shown in stdout based on level and verbosity
     let should_show_stdout = match level {
+        // Debug messages only in verbose mode
         LogLevel::Debug => is_verbose(),
-        LogLevel::Info => is_verbose(),
+        // Info messages in verbose mode or if they're critical
+        LogLevel::Info => is_verbose() || message.contains("critical"),
+        // Always show warnings, errors and success messages
         LogLevel::Warning => true,
         LogLevel::Error => true,
         LogLevel::Success => true,
     };
 
-    // Format message for stdout (with colors) if we should show it
-    let stdout_message = if should_show_stdout {
-        format!(
-            "{} {} {}",
-            style(format!("[{}]", timestamp)).dim(),
-            match level {
-                LogLevel::Debug => style("[DEBUG]").dim(),
-                LogLevel::Info => style("[INFO]").cyan(),
-                LogLevel::Warning => style("[WARNING]").yellow(),
-                LogLevel::Error => style("[ERROR]").red(),
-                LogLevel::Success => style("[SUCCESS]").green(),
-            },
-            message
-        )
-    } else {
-        String::new() // Empty string if we shouldn't show it
-    };
-
-    // Always write to log file
+    // Always write to log file when in dashboard mode or if file path is set
     let log_path_guard = LOG_FILE_PATH.lock().unwrap();
     if let Some(log_path) = &*log_path_guard {
         let mut file = OpenOptions::new().create(true).write(true).append(true).open(log_path)?;
@@ -167,8 +151,54 @@ pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
     }
 
     // Only print to stdout if in CLI mode and not quiet and we should show this level
-    if get_mode() == RuntimeMode::Cli && !is_quiet() && should_show_stdout && !stdout_message.is_empty() {
-        println!("{}", stdout_message);
+    if get_mode() == RuntimeMode::Cli && !is_quiet() && should_show_stdout {
+        // Format with colors for better readability
+        match level {
+            LogLevel::Debug => {
+                // Debug messages with dimmed styling
+                println!("{} {} {}", 
+                    style(format!("[{}]", timestamp)).dim(),
+                    style("[DEBUG]").dim(), 
+                    message
+                );
+            },
+            LogLevel::Info => {
+                // Info messages with cyan styling
+                println!("{} {} {} {}", 
+                    style(format!("[{}]", timestamp)).dim(),
+                    style("[INFO]").cyan(),
+                    emoji,
+                    message
+                );
+            },
+            LogLevel::Warning => {
+                // Warning messages with yellow styling
+                println!("{} {} {} {}", 
+                    style(format!("[{}]", timestamp)).dim(),
+                    style("[WARNING]").yellow().bold(),
+                    emoji,
+                    message
+                );
+            },
+            LogLevel::Error => {
+                // Error messages with red styling
+                println!("{} {} {} {}", 
+                    style(format!("[{}]", timestamp)).dim(),
+                    style("[ERROR]").red().bold(),
+                    emoji,
+                    message
+                );
+            },
+            LogLevel::Success => {
+                // Success messages with green styling
+                println!("{} {} {} {}", 
+                    style(format!("[{}]", timestamp)).dim(),
+                    style("[SUCCESS]").green().bold(),
+                    emoji,
+                    message
+                );
+            }
+        }
     }
 
     Ok(())
@@ -176,7 +206,7 @@ pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
 
 // Helper functions for specific log levels
 pub fn debug(message: &str) -> Result<(), Box<dyn Error>> {
-    // Only log in verbose mode
+    // Only log debug messages in verbose mode
     if is_verbose() {
         log(LogLevel::Debug, message)?;
     }
@@ -184,19 +214,25 @@ pub fn debug(message: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn info(message: &str) -> Result<(), Box<dyn Error>> {
-    // Only log in verbose mode
+    // Show info messages in both modes but with different verbosity
     if is_verbose() {
+        // Show detailed info in verbose mode
         log(LogLevel::Info, message)?;
+    } else {
+        // In non-verbose mode, show only short info without timestamp
+        if get_mode() == RuntimeMode::Cli && !is_quiet() {
+            println!("ℹ️ {}", message);
+        } else {
+            // Still log to file in dashboard mode
+            log(LogLevel::Info, message)?;
+        }
     }
     Ok(())
 }
 
 pub fn warning(message: &str) -> Result<(), Box<dyn Error>> {
-    // Only log in verbose mode
-    if is_verbose() {
-        log(LogLevel::Warning, message)?;
-    }
-    Ok(())
+    // Always show warnings
+    log(LogLevel::Warning, message)
 }
 
 pub fn error(message: &str) -> Result<(), Box<dyn Error>> {
@@ -205,11 +241,8 @@ pub fn error(message: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn success(message: &str) -> Result<(), Box<dyn Error>> {
-    // Only log in verbose mode
-    if is_verbose() {
-        log(LogLevel::Success, message)?;
-    }
-    Ok(())
+    // Always show success messages
+    log(LogLevel::Success, message)
 }
 
 // Create a progress bar that works in both CLI and dashboard modes
@@ -232,15 +265,22 @@ impl Progress {
         let bar = match steps {
             Some(total) => {
                 let pb = ProgressBar::new(total);
-                let style = ProgressStyle::default_bar().template("[{bar:40.cyan/blue}] {pos}/{len} {msg}").unwrap().progress_chars("#>-");
+                // Use a cleaner template with clear counters (pos/len) and message
+                let style = ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                    .unwrap()
+                    .progress_chars("█▓▒░");
                 pb.set_style(style);
                 pb
             }
             None => {
                 let pb = ProgressBar::new_spinner();
-                let style = ProgressStyle::default_spinner().template("{spinner:.green} {msg}").unwrap();
+                // Include more detailed template for spinners too
+                let style = ProgressStyle::default_spinner()
+                    .template("{spinner:.green} {wide_msg}")
+                    .unwrap();
                 pb.set_style(style);
-                pb.enable_steady_tick(std::time::Duration::from_millis(120));
+                pb.enable_steady_tick(std::time::Duration::from_millis(100));
                 pb
             }
         };
@@ -257,14 +297,11 @@ impl Progress {
     pub fn set_message(&mut self, msg: &str) -> &mut Self {
         self.last_message = msg.to_string();
 
-        // In non-verbose mode, suppress almost all messages except critical errors
-        // Display more information only in verbose mode
-        let should_log = (msg.contains("Error") && msg.contains("critical")) || is_verbose();
-
         match get_mode() {
             RuntimeMode::Cli => {
-                if !is_quiet() && should_log {
-                    // Update progress bar only - don't double log to file
+                if !is_quiet() {
+                    // Always update the progress bar message in CLI mode
+                    // This ensures the progress bar always shows the current status
                     self.bar.set_message(msg.to_string());
                 }
             }
@@ -329,7 +366,10 @@ impl Progress {
         match get_mode() {
             RuntimeMode::Cli => {
                 if !is_quiet() {
-                    self.bar.finish_with_message(formatted_msg);
+                    // Use finish_and_clear to ensure the progress bar is properly finalized
+                    self.bar.finish_and_clear();
+                    // Print success message on a new line
+                    println!("{}", formatted_msg);
                 }
             }
             RuntimeMode::Dashboard => {
@@ -345,7 +385,10 @@ impl Progress {
         match get_mode() {
             RuntimeMode::Cli => {
                 if !is_quiet() {
-                    self.bar.finish_with_message(formatted_msg);
+                    // Use finish_and_clear to ensure the progress bar is properly finalized
+                    self.bar.finish_and_clear();
+                    // Print error message on a new line
+                    eprintln!("{}", formatted_msg);
                 }
             }
             RuntimeMode::Dashboard => {
@@ -361,7 +404,11 @@ impl Progress {
         match get_mode() {
             RuntimeMode::Cli => {
                 if !is_quiet() {
-                    self.bar.set_message(formatted_msg);
+                    // Pause the progress bar temporarily
+                    self.bar.suspend(|| {
+                        // Print the warning message on a separate line
+                        println!("{}", formatted_msg);
+                    });
                 }
             }
             RuntimeMode::Dashboard => {
