@@ -1,7 +1,9 @@
 use crate::configs::Config;
 use crate::dependencies::DependencyManager;
 use crate::logger;
-use std::error::Error;
+
+// Type alias for consistent error handling
+type BlastResult = Result<(), String>;
 
 // Single enum for all possible commands
 #[derive(Debug, Clone, PartialEq)]
@@ -22,8 +24,7 @@ pub enum Command {
     GenerateModels,
 
     // Asset commands
-    EditLocaleKey,
-    ManageLocales,
+    // Locale commands removed
     TranspileScss,
     MinifyCss,
     PublishCss,
@@ -40,17 +41,6 @@ pub enum Command {
 
     // Environment commands
     ToggleEnvironment,
-
-    // Git commands
-    GitManager,
-    GitStatus,
-    GitPull,
-    GitPush,
-    GitCommit,
-
-    // Cargo commands
-    CargoAdd(String),
-    CargoRemove,
 
     // Log commands
     LogTruncate(Option<String>),
@@ -93,8 +83,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         // Asset/code generation
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("structs") => Some(Command::GenerateStructs),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("models") => Some(Command::GenerateModels),
-        Some("locale") => Some(Command::EditLocaleKey),
-        Some("locale-manager") => Some(Command::ManageLocales),
+        // Locale commands removed
         Some("scss") => Some(Command::TranspileScss),
         Some("css") => Some(Command::MinifyCss),
         Some("publish-css") => Some(Command::PublishCss),
@@ -103,20 +92,6 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
 
         // Help
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
-
-        // Git commands
-        Some("git") if args.len() < 3 => Some(Command::GitManager),
-        Some("git") if args.get(2).map(|s| s.as_str()) == Some("status") => Some(Command::GitStatus),
-        Some("git") if args.get(2).map(|s| s.as_str()) == Some("pull") => Some(Command::GitPull),
-        Some("git") if args.get(2).map(|s| s.as_str()) == Some("push") => Some(Command::GitPush),
-        Some("git") if args.get(2).map(|s| s.as_str()) == Some("commit") => Some(Command::GitCommit),
-
-        // Cargo commands
-        Some("cargo") if args.get(2).map(|s| s.as_str()) == Some("add") => {
-            let search_term = args.get(3).map(|s| s.clone()).unwrap_or_default();
-            Some(Command::CargoAdd(search_term))
-        }
-        Some("cargo") if args.get(2).map(|s| s.as_str()) == Some("remove") => Some(Command::CargoRemove),
 
         // Log management
         Some("logs") | Some("log") if args.get(2).map(|s| s.as_str()) == Some("truncate") => {
@@ -159,27 +134,15 @@ pub fn show_help() {
     println!("ASSET MANAGEMENT:");
     println!("  gen structs          Generate structs from schema");
     println!("  gen models           Generate model implementations");
-    println!("  locale               Edit locale keys");
-    println!("  locale-manager       Launch interactive locale management interface");
+    // Locale commands removed from help
     println!("  scss                 Transpile SCSS files");
     println!("  css                  Minify CSS files");
     println!("  publish-css          Copy CSS files from src/assets/css to public/css with optional minification");
     println!("  js                   Process JS files");
     println!("  cdn                  Download assets (git clone for Materialize, CDN for others)");
     println!();
-    println!("CARGO COMMANDS:");
-    println!("  cargo add [search]    Add a dependency - search crates.io if term provided");
-    println!("  cargo remove          Remove a dependency interactively");
-    println!();
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
-    println!();
-    println!("GIT COMMANDS:");
-    println!("  git                  Launch interactive Git manager");
-    println!("  git status           Show Git repository status");
-    println!("  git pull             Pull from remote repository");
-    println!("  git push             Push to remote repository");
-    println!("  git commit           Commit changes with a message");
     println!();
     println!("OTHER COMMANDS:");
     println!("  new <project_name>   Create a new project");
@@ -191,7 +154,7 @@ pub fn show_help() {
 }
 
 // Execute a command with config and dependency manager
-pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyManager) -> Result<(), Box<dyn Error>> {
+pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult {
     // Only try to reload config for commands that require an existing project
     if cmd != Command::Help && !matches!(cmd, Command::NewProject(_)) {
         // Reload config if it's been modified
@@ -266,7 +229,7 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
 
             // 5. Download assets 
             main_progress.set_message("Project initialization (5/6): Downloading assets");
-            let assets_result = crate::assets::download_assets_async(config).await;
+            let assets_result = crate::assets::download_assets(config);
             if let Err(e) = &assets_result {
                 main_progress.warning(&format!("Some asset downloads failed: {}", e))?;
             }
@@ -276,19 +239,19 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
             main_progress.set_message("Project initialization (6/6): Processing asset files");
             
             // Process SCSS files - these are part of final step, don't increment yet
-            let scss_result = crate::assets::transpile_all_scss(config).await;
+            let scss_result = crate::assets::transpile_all_scss(config);
             if let Err(e) = &scss_result {
                 main_progress.warning(&format!("SCSS processing error: {}", e))?;
             }
 
             // Process CSS files
-            let css_result = crate::assets::publish_css(config).await;
+            let css_result = crate::assets::publish_css(config);
             if let Err(e) = &css_result {
                 main_progress.warning(&format!("CSS publishing error: {}", e))?;
             }
 
             // Process JS files
-            let js_result = crate::assets::process_js(config).await;
+            let js_result = crate::assets::process_js(config);
             if let Err(e) = &js_result {
                 main_progress.warning(&format!("JS processing error: {}", e))?;
             }
@@ -309,8 +272,8 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
         }
 
         Command::RunInteractiveCLI => {
-            // Use Box::pin to avoid recursive async fn issues
-            return Box::pin(crate::interactive::run_interactive_cli(config.clone(), dep_manager)).await;
+            // Now sync, no need for Box::pin
+            return crate::interactive::run_interactive_cli(config.clone(), dep_manager);
         }
 
         Command::NewMigration => {
@@ -372,15 +335,7 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
             Ok(())
         }
 
-        Command::EditLocaleKey => {
-            crate::locale::edit_key();
-            Ok(())
-        }
-
-        Command::ManageLocales => {
-            crate::locale::launch_manager();
-            Ok(())
-        }
+        // Locale commands removed
 
         Command::RefreshApp => {
             // App refresh involves multiple steps
@@ -418,18 +373,29 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
 
         Command::TranspileScss => {
             // Use the built-in Rust sass-rs crate, no external dependency needed
-            crate::assets::transpile_all_scss(config).await
+            crate::assets::transpile_all_scss(config)
         }
 
-        Command::MinifyCss => crate::assets::minify_css_files(config).await,
+        Command::MinifyCss => crate::assets::minify_css_files(config),
 
-        Command::PublishCss => crate::assets::publish_css(config).await,
+        Command::PublishCss => crate::assets::publish_css(config),
 
-        Command::ProcessJs => crate::assets::process_js(config).await,
+        Command::ProcessJs => crate::assets::process_js(config),
 
         Command::DownloadCdn => {
-            logger::info("Downloading CDN assets...")?;
-            crate::assets::download_assets_async(config).await
+            // The download_assets_async function now handles environment mode setting internally
+            // to ensure consistent behavior between CLI and dashboard modes
+            match crate::assets::download_assets(config) {
+                Ok(_) => {
+                    // Success already logged by the function
+                    Ok(())
+                },
+                Err(e) => {
+                    // Error handling - the function will already log specific errors
+                    logger::error(&format!("Failed to download CDN assets: {}", e))?;
+                    Err(e)
+                }
+            }
         }
 
         Command::RunDevServer => {
@@ -437,7 +403,7 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
                 logger::success(&format!("Development server started with PID: {}", pid))?;
             } else {
                 let cmd = format!("cargo run --bin {}", &config.project_name);
-                std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn()?;
+                std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn().map_err(|e| e.to_string())?;
                 logger::success("Development server started with cargo run")?;
             }
             Ok(())
@@ -450,11 +416,11 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
                 // Check if binary exists
                 let binary_path = format!("target/release/{}", &config.project_name);
                 if std::path::Path::new(&binary_path).exists() {
-                    std::process::Command::new("script").args(["-q", "-c", &binary_path, "storage/logs/server.log"]).spawn()?;
+                    std::process::Command::new("script").args(["-q", "-c", &binary_path, "storage/logs/server.log"]).spawn().map_err(|e| e.to_string())?;
                     logger::success(&format!("Production server started using compiled binary: {}", binary_path))?;
                 } else {
                     let cmd = format!("cargo run --release --bin {}", &config.project_name);
-                    std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn()?;
+                    std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn().map_err(|e| e.to_string())?;
                     logger::success("Production server started with cargo run --release")?;
                     logger::info("Tip: Build with 'cargo build --release' for faster startup next time")?;
                 }
@@ -473,46 +439,6 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
             config.toggle_environment()?;
             logger::info("Run `blast scss`, `blast css`, or `blast js` to rebuild assets with new settings")?;
             Ok(())
-        }
-
-        Command::GitManager => {
-            logger::info("Launching Git manager")?;
-            crate::git::launch_manager();
-            Ok(())
-        }
-
-        Command::GitStatus => {
-            logger::info("Git repository status:")?;
-            crate::git::git_status();
-            Ok(())
-        }
-
-        Command::GitPull => {
-            logger::info("Pulling from remote repository...")?;
-            crate::git::git_pull();
-            Ok(())
-        }
-
-        Command::GitPush => {
-            logger::info("Pushing to remote repository...")?;
-            crate::git::git_push();
-            Ok(())
-        }
-
-        Command::GitCommit => {
-            logger::info("Committing changes...")?;
-            crate::git::git_commit();
-            Ok(())
-        }
-
-        Command::CargoAdd(search_term) => {
-            logger::info(&format!("Adding dependency {}...", if search_term.is_empty() { "(interactive)" } else { &search_term }))?;
-            crate::cargo::add_dependency(config, &search_term).await
-        }
-
-        Command::CargoRemove => {
-            logger::info("Managing dependencies...")?;
-            crate::cargo::remove_dependency(config)
         }
 
         Command::LogTruncate(file_name) => {

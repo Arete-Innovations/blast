@@ -2,15 +2,13 @@ use std::env;
 use std::process;
 
 mod assets;
-mod cargo;
 mod commands;
 mod configs;
 mod dashboard;
 mod database;
 mod dependencies;
-mod git;
 mod interactive;
-mod locale;
+// Locale module removed
 mod logger;
 mod models;
 mod output; // Keep temporarily until we migrate references
@@ -18,8 +16,7 @@ mod progress; // Keep temporarily until we migrate references
 mod project;
 mod structs;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // Initialize components
     let mut dep_manager = dependencies::DependencyManager::new();
 
@@ -47,7 +44,7 @@ async fn main() {
                 match configs::get_project_info() {
                     Ok(mut config) => {
                         // Execute the command
-                        if let Err(e) = commands::execute(cmd.clone(), &mut config, &mut dep_manager).await {
+                        if let Err(e) = commands::execute(cmd.clone(), &mut config, &mut dep_manager) {
                             eprintln!("Error executing command: {}", e);
                             process::exit(1);
                         }
@@ -68,7 +65,7 @@ async fn main() {
                                 last_modified: std::time::SystemTime::now(),
                             };
 
-                            if let Err(e) = commands::execute(cmd, &mut default_config, &mut dep_manager).await {
+                            if let Err(e) = commands::execute(cmd, &mut default_config, &mut dep_manager) {
                                 eprintln!("Error executing command: {}", e);
                                 process::exit(1);
                             }
@@ -95,7 +92,7 @@ async fn main() {
             logger::setup_for_mode(&config, true).unwrap_or_default();
 
             // Launch dashboard
-            if let Err(e) = commands::execute(commands::Command::LaunchDashboard, &mut config, &mut dep_manager).await {
+            if let Err(e) = commands::execute(commands::Command::LaunchDashboard, &mut config, &mut dep_manager) {
                 eprintln!("Error launching dashboard: {}", e);
                 process::exit(1);
             }

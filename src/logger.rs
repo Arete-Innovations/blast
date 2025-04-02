@@ -4,7 +4,9 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
 use std::env;
-use std::error::Error;
+
+// Type alias for consistent error handling
+type BlastResult = Result<(), String>;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -39,7 +41,7 @@ lazy_static! {
 pub const STANDARD_LOG_FILES: [&str; 5] = ["server.log", "error.log", "info.log", "debug.log", "warning.log"];
 
 // Initialize the logging system
-pub fn init(mode: RuntimeMode, log_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
+pub fn init(mode: RuntimeMode, log_path: Option<&Path>) -> BlastResult {
     // Set runtime mode
     let mut current_mode = RUNTIME_MODE.lock().unwrap();
     *current_mode = mode;
@@ -48,15 +50,15 @@ pub fn init(mode: RuntimeMode, log_path: Option<&Path>) -> Result<(), Box<dyn Er
     if let Some(path) = log_path {
         // Ensure directory exists
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
 
         // Open log file
-        let mut file = OpenOptions::new().create(true).write(true).append(true).open(path)?;
+        let mut file = OpenOptions::new().create(true).write(true).append(true).open(path).map_err(|e| e.to_string())?;
 
         // Write session header
         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-        writeln!(file, "\n--- New Blast Session: {} ---", timestamp)?;
+        writeln!(file, "\n--- New Blast Session: {} ---", timestamp).map_err(|e| e.to_string())?;
 
         // Update global log path
         let mut log_path_guard = LOG_FILE_PATH.lock().unwrap();
@@ -67,10 +69,6 @@ pub fn init(mode: RuntimeMode, log_path: Option<&Path>) -> Result<(), Box<dyn Er
 }
 
 // Environment checks
-pub fn is_interactive_mode() -> bool {
-    env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1"
-}
-
 pub fn set_quiet_mode(quiet: bool) {
     let mut quiet_mode = QUIET_MODE.lock().unwrap();
     *quiet_mode = quiet;
@@ -108,7 +106,7 @@ fn get_icon(level: LogLevel) -> &'static str {
 }
 
 // Simple logging function
-pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
+pub fn log(level: LogLevel, message: &str) -> BlastResult {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
     let icon = get_icon(level);
     
@@ -119,7 +117,7 @@ pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
     if get_mode() == RuntimeMode::Dashboard {
         if let Some(log_path) = &*LOG_FILE_PATH.lock().unwrap() {
             if let Ok(mut file) = OpenOptions::new().create(true).write(true).append(true).open(log_path) {
-                writeln!(file, "{}", log_msg)?;
+                writeln!(file, "{}", log_msg).map_err(|e| e.to_string())?;
             }
         }
         return Ok(());
@@ -163,23 +161,23 @@ fn level_to_string(level: LogLevel) -> &'static str {
 }
 
 // Helper functions for specific log levels
-pub fn debug(message: &str) -> Result<(), Box<dyn Error>> {
+pub fn debug(message: &str) -> BlastResult {
     log(LogLevel::Debug, message)
 }
 
-pub fn info(message: &str) -> Result<(), Box<dyn Error>> {
+pub fn info(message: &str) -> BlastResult {
     log(LogLevel::Info, message)
 }
 
-pub fn warning(message: &str) -> Result<(), Box<dyn Error>> {
+pub fn warning(message: &str) -> BlastResult {
     log(LogLevel::Warning, message)
 }
 
-pub fn error(message: &str) -> Result<(), Box<dyn Error>> {
+pub fn error(message: &str) -> BlastResult {
     log(LogLevel::Error, message)
 }
 
-pub fn success(message: &str) -> Result<(), Box<dyn Error>> {
+pub fn success(message: &str) -> BlastResult {
     log(LogLevel::Success, message)
 }
 
@@ -191,7 +189,6 @@ pub fn create_progress(steps: Option<u64>) -> Progress {
 #[derive(Clone)]
 pub struct Progress {
     bar: ProgressBar,
-    total: Option<u64>,
 }
 
 impl Progress {
@@ -219,7 +216,6 @@ impl Progress {
 
         Progress {
             bar,
-            total: steps,
         }
     }
 
@@ -280,7 +276,7 @@ impl Progress {
         }
     }
 
-    pub fn warning(&mut self, msg: &str) -> Result<(), Box<dyn Error>> {
+    pub fn warning(&mut self, msg: &str) -> BlastResult {
         // Dashboard mode - log to file
         if get_mode() == RuntimeMode::Dashboard {
             warning(msg)?;
@@ -299,34 +295,34 @@ impl Progress {
 }
 
 // File system operations for logs
-pub fn ensure_log_files_exist(config: &Config) -> Result<(), Box<dyn Error>> {
+pub fn ensure_log_files_exist(config: &Config) -> BlastResult {
     let logs_dir = config.project_dir.join("storage").join("logs");
     let blast_dir = config.project_dir.join("storage").join("blast");
     
     // Create directories
-    fs::create_dir_all(&logs_dir)?;
-    fs::create_dir_all(&blast_dir)?;
+    fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&blast_dir).map_err(|e| e.to_string())?;
     
     // Create standard log files
     for log_file in STANDARD_LOG_FILES.iter() {
         let log_path = logs_dir.join(log_file);
         if !log_path.exists() {
-            let mut file = OpenOptions::new().create(true).write(true).open(&log_path)?;
-            writeln!(file, "--- Log file initialized: {} ---", log_file)?;
+            let mut file = OpenOptions::new().create(true).write(true).open(&log_path).map_err(|e| e.to_string())?;
+            writeln!(file, "--- Log file initialized: {} ---", log_file).map_err(|e| e.to_string())?;
         }
     }
     
     // Create blast log
     let blast_log = blast_dir.join("blast.log");
     if !blast_log.exists() {
-        let mut file = OpenOptions::new().create(true).write(true).open(&blast_log)?;
-        writeln!(file, "--- Blast log initialized ---")?;
+        let mut file = OpenOptions::new().create(true).write(true).open(&blast_log).map_err(|e| e.to_string())?;
+        writeln!(file, "--- Blast log initialized ---").map_err(|e| e.to_string())?;
     }
     
     Ok(())
 }
 
-pub fn setup_for_mode(config: &Config, interactive: bool) -> Result<(), Box<dyn Error>> {
+pub fn setup_for_mode(config: &Config, interactive: bool) -> BlastResult {
     // Ensure log files exist
     ensure_log_files_exist(config)?;
     
@@ -387,21 +383,21 @@ pub fn get_log_files(config: &Config) -> Vec<PathBuf> {
     log_files
 }
 
-pub fn truncate_log_file(log_path: &Path) -> Result<(), Box<dyn Error>> {
+pub fn truncate_log_file(log_path: &Path) -> BlastResult {
     info(&format!("Truncating log file: {}", log_path.display()))?;
     
     // Create empty file
-    let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(log_path)?;
+    let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(log_path).map_err(|e| e.to_string())?;
     
     // Write header
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-    writeln!(file, "--- Log file truncated at {} ---", timestamp)?;
+    writeln!(file, "--- Log file truncated at {} ---", timestamp).map_err(|e| e.to_string())?;
     
     success(&format!("Truncated log file: {}", log_path.display()))?;
     Ok(())
 }
 
-pub fn truncate_all_logs(config: &Config) -> Result<(), Box<dyn Error>> {
+pub fn truncate_all_logs(config: &Config) -> BlastResult {
     let log_files = get_log_files(config);
     
     if log_files.is_empty() {
@@ -418,7 +414,7 @@ pub fn truncate_all_logs(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn truncate_specific_log(config: &Config, file_name: Option<String>) -> Result<(), Box<dyn Error>> {
+pub fn truncate_specific_log(config: &Config, file_name: Option<String>) -> BlastResult {
     // Truncate all if no specific file
     if file_name.is_none() {
         return truncate_all_logs(config);

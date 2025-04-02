@@ -5,11 +5,10 @@ use crate::logger;
 use console::Style;
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 use std::env;
-use std::error::Error;
 use std::io::Write;
 
 // Main interactive CLI function
-pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManager) -> Result<(), Box<dyn Error>> {
+pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManager) -> Result<(), String> {
     // Set up logging for interactive mode
     logger::setup_for_mode(&config, true)?;
 
@@ -18,7 +17,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut Dependenc
 
     // Clear screen
     print!("\x1B[2J\x1B[1;1H");
-    std::io::stdout().flush()?;
+    std::io::stdout().flush().map_err(|e| e.to_string())?;
 
     // Define the menu items
     let commands = vec![
@@ -37,23 +36,13 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut Dependenc
         "[DB] Rollback",
         "[DB] Seed",
         // Assets management
-        "[Locale] Edit Key",
         "[Assets] Transpile SCSS",
         "[Assets] Minify CSS",
         "[Assets] Publish CSS",
         "[Assets] Publish JS",
         "[Assets] Download CDN",
-        // Cargo commands
-        "[CARGO] Add Dependency",
-        "[CARGO] Remove Dependency",
         // Log management
         "[LOG] Truncate Logs",
-        // Git commands
-        "[GIT] Manager",
-        "[GIT] Status",
-        "[GIT] Pull",
-        "[GIT] Push",
-        "[GIT] Commit",
         // Exit is always last
         "[Exit] Kill Session",
     ];
@@ -68,7 +57,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut Dependenc
 
         // Clear screen before showing menu
         print!("\x1B[2J\x1B[1;1H");
-        std::io::stdout().flush()?;
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
 
         // Create prompt based on environment
         let prompt = if config.environment == "prod" {
@@ -78,7 +67,12 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut Dependenc
         };
 
         // Show the menu
-        let selection = FuzzySelect::with_theme(&ColorfulTheme::default()).with_prompt(prompt).items(&commands).default(0).interact()?;
+        let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
+            .with_prompt(prompt)
+            .items(&commands)
+            .default(0)
+            .interact()
+            .map_err(|e| e.to_string())?;
 
         // Convert selection to command
         let cmd = match commands[selection] {
@@ -102,23 +96,13 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut Dependenc
             "[DB] Rollback" => Command::Rollback,
             "[DB] Seed" => Command::Seed(None),
 
-            "[Locale] Edit Key" => Command::EditLocaleKey,
             "[Assets] Transpile SCSS" => Command::TranspileScss,
             "[Assets] Minify CSS" => Command::MinifyCss,
             "[Assets] Publish CSS" => Command::PublishCss,
             "[Assets] Publish JS" => Command::ProcessJs,
             "[Assets] Download CDN" => Command::DownloadCdn,
 
-            "[CARGO] Add Dependency" => Command::CargoAdd(String::new()),
-            "[CARGO] Remove Dependency" => Command::CargoRemove,
-
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
-
-            "[GIT] Manager" => Command::GitManager,
-            "[GIT] Status" => Command::GitStatus,
-            "[GIT] Pull" => Command::GitPull,
-            "[GIT] Push" => Command::GitPush,
-            "[GIT] Commit" => Command::GitCommit,
 
             "[Exit] Kill Session" => {
                 // Log the exit
@@ -142,10 +126,10 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut Dependenc
 
         // Clear screen before executing command
         print!("\x1B[2J\x1B[1;1H");
-        std::io::stdout().flush()?;
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
 
         // Execute the command
-        match crate::commands::execute(cmd, &mut config, dep_manager).await {
+        match crate::commands::execute(cmd, &mut config, dep_manager) {
             Ok(_) => {
                 // Success message already logged by command handler
                 // Sleep briefly to make sure user sees any output
@@ -157,7 +141,7 @@ pub async fn run_interactive_cli(mut config: Config, dep_manager: &mut Dependenc
                 // Make sure the user sees the error
                 println!("\nPress Enter to continue...");
                 let mut buffer = String::new();
-                std::io::stdin().read_line(&mut buffer)?;
+                std::io::stdin().read_line(&mut buffer).map_err(|e| e.to_string())?;
             }
         }
     }

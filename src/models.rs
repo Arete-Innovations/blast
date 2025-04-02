@@ -16,13 +16,12 @@ fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
     for cap in re.captures_iter(&content) {
         if let Some(table_name) = cap.get(1) {
             let table_name_str = table_name.as_str().to_string();
-            println!("Found table in schema for models: {}", &table_name_str);
             tables.push(table_name_str);
         }
     }
 
     if tables.is_empty() {
-        println!("WARNING: No tables found in schema file for models at {}", schema_path);
+        crate::logger::warning(&format!("No tables found in schema file for models at {}", schema_path)).unwrap_or_default();
     }
 
     Ok(tables)
@@ -58,7 +57,7 @@ fn write_model_file(config: &Config, table_name: &str, struct_name: &str) -> boo
 
     // Create the output directory if it doesn't exist
     if let Err(e) = fs::create_dir_all(output_dir) {
-        eprintln!("Error creating directory {}: {}", output_dir, e);
+        crate::logger::error(&format!("Error creating directory {}: {}", output_dir, e)).unwrap_or_default();
         return false;
     }
 
@@ -181,7 +180,7 @@ impl {1} {{
 
     // Write the model file
     if let Err(e) = fs::write(&file_path, model_template) {
-        eprintln!("Error writing model file {}: {}", file_path, e);
+        crate::logger::error(&format!("Error writing model file {}: {}", file_path, e)).unwrap_or_default();
         false
     } else {
         true
@@ -218,7 +217,7 @@ fn update_mod_file(config: &Config, processed_tables: &[String]) -> bool {
 
     if updated {
         if let Err(e) = fs::write(&mod_file_path, mod_file_content) {
-            eprintln!("Error writing mod.rs file: {}", e);
+            crate::logger::error(&format!("Error writing mod.rs file: {}", e)).unwrap_or_default();
             return false;
         }
     }

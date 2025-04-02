@@ -1,7 +1,6 @@
 use crate::logger;
 use dialoguer::Confirm;
 use std::collections::HashMap;
-use std::error::Error;
 use std::process::Command;
 
 // A centralized dependency manager for all external tools
@@ -48,7 +47,7 @@ impl DependencyManager {
     }
 
     // Ensure that a dependency is installed
-    pub fn ensure_installed(&mut self, deps: &[&str], prompt: bool) -> Result<(), Box<dyn Error>> {
+    pub fn ensure_installed(&mut self, deps: &[&str], prompt: bool) -> Result<(), String> {
         let mut missing = Vec::new();
 
         // Find missing dependencies
@@ -66,10 +65,10 @@ impl DependencyManager {
         // In prompt mode, ask user before installing
         if prompt {
             let deps_list = missing.join(", ");
-            let confirm = Confirm::new().with_prompt(format!("Missing dependencies: {}. Install now?", deps_list)).default(true).interact()?;
+            let confirm = Confirm::new().with_prompt(format!("Missing dependencies: {}. Install now?", deps_list)).default(true).interact().map_err(|e| e.to_string())?;
 
             if !confirm {
-                return Err(format!("Required dependencies not installed: {}", deps_list).into());
+                return Err(format!("Required dependencies not installed: {}", deps_list));
             }
         }
 
@@ -82,7 +81,7 @@ impl DependencyManager {
     }
 
     // Install a specific dependency
-    fn install_dependency(&mut self, name: &str) -> Result<(), Box<dyn Error>> {
+    fn install_dependency(&mut self, name: &str) -> Result<(), String> {
         if let Some(install_cmd) = self.dependencies.get(name) {
             let mut progress = logger::create_progress(None);
             progress.set_message(&format!("Installing {}...", name));
@@ -90,14 +89,14 @@ impl DependencyManager {
             // Split the install command into program and args
             let parts: Vec<&str> = install_cmd.split_whitespace().collect();
             if parts.is_empty() {
-                return Err(format!("Invalid install command for {}", name).into());
+                return Err(format!("Invalid install command for {}", name));
             }
 
             let program = parts[0];
             let args = &parts[1..];
 
             // Run the installation command
-            let status = Command::new(program).args(args).status()?;
+            let status = Command::new(program).args(args).status().map_err(|e| e.to_string())?;
 
             if status.success() {
                 // Mark as installed in the cache
@@ -106,10 +105,10 @@ impl DependencyManager {
                 Ok(())
             } else {
                 progress.error(&format!("Failed to install {}", name));
-                Err(format!("Failed to install {}", name).into())
+                Err(format!("Failed to install {}", name))
             }
         } else {
-            Err(format!("No installer found for dependency: {}", name).into())
+            Err(format!("No installer found for dependency: {}", name))
         }
     }
 

@@ -82,7 +82,7 @@ fn handle_diesel_output(output: &std::process::Output) -> bool {
         if is_interactive {
             let _ = crate::output::log(&formatted_line);
         } else {
-            println!("{}", formatted_line);
+            crate::logger::log(crate::logger::LogLevel::Info, &formatted_line).unwrap_or_default();
         }
     };
 
@@ -306,7 +306,7 @@ fn update_schema_mod_file(connections: &[String]) {
 
     // Write the mod.rs file
     if let Err(e) = fs::write(mod_path, content) {
-        eprintln!("Error updating schema mod.rs file: {}", e);
+        crate::logger::error(&format!("Error updating schema mod.rs file: {}", e)).unwrap_or_default();
     }
 
     // Now update the db.rs file with connection functions for each database
@@ -356,7 +356,7 @@ pub fn {}() -> PgConnection {{
 
         // Write the updated db.rs file
         if let Err(e) = fs::write(db_path, new_content) {
-            eprintln!("Error updating db.rs file: {}", e);
+            crate::logger::error(&format!("Error updating db.rs file: {}", e)).unwrap_or_default();
         }
     }
 }
@@ -1203,7 +1203,7 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
                 let _ = crate::output::log(&error_msg);
             } else {
                 // In CLI mode, print to stderr
-                eprintln!("{}", error_msg);
+                crate::logger::error(&error_msg).unwrap_or_default();
             }
             return false;
         }
@@ -1224,7 +1224,7 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
                 let _ = crate::output::log(&error_msg);
             } else {
                 // In CLI mode, print to stderr
-                eprintln!("{}", error_msg);
+                crate::logger::error(&error_msg).unwrap_or_default();
             }
             false
         }
