@@ -98,6 +98,7 @@ pub fn create_new_project(project_name: &str) {
     
     println!("\nNext steps:");
     println!("  {} Change to project directory: {}", style("▶").cyan(), style(format!("cd {}", project_name)).yellow());
+    println!("  {} Initialize the project: {}", style("▶").cyan(), style("blast init").yellow().bold());
     println!("  {} Start the interactive dashboard: {}", style("▶").cyan(), style("blast dashboard").yellow());
     println!("  {} Run the development server: {}", style("▶").cyan(), style("blast serve").yellow());
 }
