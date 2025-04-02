@@ -240,10 +240,93 @@ async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+async fn download_materialize_scss(config: &Config) -> Result<(), Box<dyn Error>> {
+    let project_dir = &config.project_dir;
+    let src_sass_dir = project_dir.join("src/assets/sass");
+    
+    // Create the directory if it doesn't exist
+    fs::create_dir_all(&src_sass_dir).await?;
+    
+    // Keep only dark.scss if it exists (don't overwrite it)
+    let dark_scss_path = src_sass_dir.join("dark.scss");
+    let has_dark_scss = dark_scss_path.exists();
+    
+    // Create a progress bar spinner for the download operation
+    let mut progress = crate::logger::create_progress(None);
+    progress.set_message("Downloading Materialize SCSS files from GitHub...");
+    
+    // URL to the Materialize CSS repo's sass directory
+    const MATERIALIZE_REPO_URL: &str = "https://github.com/materializecss/materialize/archive/refs/heads/main.zip";
+    
+    // Download the zip file to a temporary location
+    let temp_dir = std::env::temp_dir().join("materialize_download");
+    fs::create_dir_all(&temp_dir).await?;
+    let zip_path = temp_dir.join("materialize.zip");
+    
+    // Download the zip file
+    match download_file(MATERIALIZE_REPO_URL, &zip_path).await {
+        Ok(_) => {
+            progress.set_message("Extracting Materialize SCSS files...");
+            
+            // Extract the zip file (need to use sync API)
+            let extract_result = tokio::task::spawn_blocking(move || {
+                let zip_file = std::fs::File::open(&zip_path)?;
+                let mut archive = zip::ZipArchive::new(zip_file)?;
+                
+                // Extract only the sass directory
+                for i in 0..archive.len() {
+                    let mut file = archive.by_index(i)?;
+                    let file_path = file.name();
+                    
+                    // Check if this is a sass file we want to extract
+                    if file_path.contains("materialize-main/sass/") && 
+                       (file_path.ends_with(".scss") || file.name().contains("/")) {
+                        
+                        // Get the path relative to the sass directory
+                        let rel_path = file_path.replace("materialize-main/sass/", "");
+                        
+                        // Skip dark.scss if we have a custom one
+                        if has_dark_scss && rel_path == "dark.scss" {
+                            continue;
+                        }
+                        
+                        let target_path = src_sass_dir.join(&rel_path);
+                        
+                        if file.is_dir() {
+                            std::fs::create_dir_all(&target_path)?;
+                        } else {
+                            // Create parent directory
+                            if let Some(parent) = target_path.parent() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                            
+                            let mut target_file = std::fs::File::create(&target_path)?;
+                            std::io::copy(&mut file, &mut target_file)?;
+                        }
+                    }
+                }
+                
+                // Clean up the temporary directory
+                std::fs::remove_dir_all(temp_dir)?;
+                
+                Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+            }).await??;
+            
+            progress.success("Materialize SCSS files downloaded and extracted successfully.");
+            Ok(())
+        }
+        Err(e) => {
+            progress.error(&format!("Failed to download Materialize SCSS: {}", e));
+            Err(e)
+        }
+    }
+}
+
 pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>> {
     download_fontawesome_async(config).await?;
     download_materialicons_async(config).await?;
     download_materialize_js(config).await?;
+    download_materialize_scss(config).await?;
     download_htmx_js(config).await?;
 
     Ok(())
@@ -617,6 +700,7 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
     download_fontawesome_async(config).await?;
     download_materialicons_async(config).await?;
     download_materialize_js(config).await?;
+    download_materialize_scss(config).await?;
     download_htmx_js(config).await?;
 
     // Process SCSS files - they will be automatically compressed in production mode

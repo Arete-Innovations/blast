@@ -8,9 +8,9 @@ use toml_edit::{value, DocumentMut};
 
 // Template repository URLs (primary and fallbacks)
 const TEMPLATE_REPOS: [&str; 3] = [
-    "https://github.com/Arete-Innovations/catalyst-template.git",
-    "https://gitlab.com/Arete-Innovations/catalyst-template.git", // Fallback 1
-    "https://bitbucket.org/Arete-Innovations/catalyst-template.git", // Fallback 2
+    "https://github.com/Arete-Innovations/catalyst.git",
+    "https://gitlab.com/Arete-Innovations/catalyst.git", // Fallback 1
+    "https://bitbucket.org/Arete-Innovations/catalyst.git", // Fallback 2
 ];
 
 // Maximum time to wait for clone operation in seconds
@@ -115,7 +115,7 @@ fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
         // Create a Command to run git clone with timeout
         let status = Command::new("git")
             .args(["clone", "--depth=1", "--single-branch", 
-                  "--branch", "main", 
+                  "--branch", "master", 
                   "--config", &format!("core.askPass=echo"),
                   "--config", &format!("http.connectTimeout={}", CLONE_TIMEOUT.as_secs()),
                   "--config", &format!("http.lowSpeedLimit=1000"),
