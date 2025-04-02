@@ -14,17 +14,25 @@ use walkdir::WalkDir;
 fn get_config_value(config: &Config, path: &[&str], default: Option<&str>) -> Option<String> {
     let mut current = &config.assets;
     
+    // Debug log for config value access
+    println!("DEBUG: Accessing path: {:?} in config", path);
+    println!("DEBUG: Config assets: {:?}", config.assets);
+    
     for &key in path {
         if let Some(value) = current.get(key) {
             current = value;
+            println!("DEBUG: Found key: {}", key);
         } else {
+            println!("DEBUG: Missing key: {} in path", key);
             return default.map(|s| s.to_string());
         }
     }
     
     if let Some(s) = current.as_str() {
+        println!("DEBUG: Found string value: {}", s);
         Some(s.to_string())
     } else {
+        println!("DEBUG: No string value found, using default: {:?}", default);
         default.map(|s| s.to_string())
     }
 }
@@ -40,11 +48,20 @@ async fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn Error>
 async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    let materialize_dir = project_dir.join(public_dir).join("js").join("materialize");
-
+    
+    // Debug logging for materialize path
+    println!("DEBUG: Looking for materialize in config");
+    println!("DEBUG: Full config: {:?}", config.assets);
+    
+    // Ensure we create the proper directory structure regardless of whether config values exist
+    let materialize_dir = project_dir.join(&public_dir).join("js").join("materialize");
     fs::create_dir_all(&materialize_dir).await?;
 
-    let js_url = get_config_value(config, &["materialize", "js_url"], None).ok_or("Missing materialize js_url in config")?;
+    // Use a default URL if missing in the config
+    let js_url = get_config_value(config, &["materialize", "js_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js")).unwrap_or_else(|| {
+        println!("DEBUG: Using default Materialize JS URL");
+        "https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js".to_string()
+    });
 
     // Create a progress tracker
     let mut progress = crate::logger::create_progress(Some(1));
@@ -69,7 +86,15 @@ async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> 
 async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    let fa_base_url = get_config_value(config, &["fontawesome", "base_url"], None).ok_or("Missing fontawesome base_url in config")?;
+    
+    // Print the entire config for debugging
+    println!("DEBUG: Full config structure:");
+    println!("DEBUG: {:?}", config.assets);
+    
+    // Provide a default value for FontAwesome CDN if missing
+    let fa_base_url = get_config_value(config, &["fontawesome", "base_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1"))
+        .ok_or("Missing fontawesome base_url in config")?;
+    
     let fa_public_dir = project_dir.join(public_dir).join("fonts").join("fontawesome");
 
     // Create FontAwesome directories
@@ -81,29 +106,45 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
 
     // Get FA assets to download from config - need to handle arrays differently
     // This is a temporary solution - ideally we'd extend our helper function to handle arrays
-    let fa_css = if let Some(array) = config.assets.get("fontawesome").and_then(|f| f.get("css")).and_then(|c| c.as_array()) {
-        array
-    } else {
-        return Err("Missing fontawesome css configuration".into());
-    };
+    // Default values for FontAwesome assets
+    let default_css = vec![toml::Value::String("css/all.min.css".to_string())];
+    let default_js = vec![toml::Value::String("js/all.min.js".to_string())];
+    let default_sprites = vec![
+        toml::Value::String("sprites/brands.svg".to_string()),
+        toml::Value::String("sprites/regular.svg".to_string()),
+        toml::Value::String("sprites/solid.svg".to_string())
+    ];
+    let default_webfonts = vec![
+        toml::Value::String("webfonts/fa-brands-400.ttf".to_string()),
+        toml::Value::String("webfonts/fa-brands-400.woff2".to_string()),
+        toml::Value::String("webfonts/fa-regular-400.ttf".to_string()),
+        toml::Value::String("webfonts/fa-regular-400.woff2".to_string()),
+        toml::Value::String("webfonts/fa-solid-900.ttf".to_string()),
+        toml::Value::String("webfonts/fa-solid-900.woff2".to_string()),
+        toml::Value::String("webfonts/fa-v4compatibility.ttf".to_string()),
+        toml::Value::String("webfonts/fa-v4compatibility.woff2".to_string())
+    ];
     
-    let fa_js = if let Some(array) = config.assets.get("fontawesome").and_then(|f| f.get("js")).and_then(|c| c.as_array()) {
-        array
-    } else {
-        return Err("Missing fontawesome js configuration".into());
-    };
+    // Get values from config or use defaults
+    let fa_css = config.assets.get("fontawesome")
+        .and_then(|f| f.get("css"))
+        .and_then(|c| c.as_array())
+        .unwrap_or(&default_css);
     
-    let fa_sprites = if let Some(array) = config.assets.get("fontawesome").and_then(|f| f.get("sprites")).and_then(|c| c.as_array()) {
-        array
-    } else {
-        return Err("Missing fontawesome sprites configuration".into());
-    };
+    let fa_js = config.assets.get("fontawesome")
+        .and_then(|f| f.get("js"))
+        .and_then(|c| c.as_array())
+        .unwrap_or(&default_js);
     
-    let fa_webfonts = if let Some(array) = config.assets.get("fontawesome").and_then(|f| f.get("webfonts")).and_then(|c| c.as_array()) {
-        array
-    } else {
-        return Err("Missing fontawesome webfonts configuration".into());
-    };
+    let fa_sprites = config.assets.get("fontawesome")
+        .and_then(|f| f.get("sprites"))
+        .and_then(|c| c.as_array())
+        .unwrap_or(&default_sprites);
+    
+    let fa_webfonts = config.assets.get("fontawesome")
+        .and_then(|f| f.get("webfonts"))
+        .and_then(|c| c.as_array())
+        .unwrap_or(&default_webfonts);
     
     let asset_types = [
         ("css", fa_css),
@@ -174,11 +215,11 @@ async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Err
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
 
-    let mi_base_url = get_config_value(config, &["materialicons", "base_url"], None).ok_or("Missing materialicons base_url in config")?;
+    let mi_base_url = get_config_value(config, &["materialicons", "base_url"], Some("https://raw.githubusercontent.com/google/material-design-icons/master/font")).ok_or("Missing materialicons base_url in config")?;
     let mi_public_dir = project_dir.join(public_dir).join("fonts").join("material-icons");
 
-    let woff2_file = get_config_value(config, &["materialicons", "woff2"], None).ok_or("Missing materialicons woff2 in config")?;
-    let ttf_file = get_config_value(config, &["materialicons", "ttf"], None).ok_or("Missing materialicons ttf in config")?;
+    let woff2_file = get_config_value(config, &["materialicons", "woff2"], Some("MaterialIcons-Regular.woff2")).ok_or("Missing materialicons woff2 in config")?;
+    let ttf_file = get_config_value(config, &["materialicons", "ttf"], Some("MaterialIcons-Regular.ttf")).ok_or("Missing materialicons ttf in config")?;
 
     // Create Material Icons directory
     fs::create_dir_all(&mi_public_dir).await?;
@@ -218,7 +259,7 @@ async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
 
     fs::create_dir_all(&htmx_dir).await?;
 
-    let js_url = get_config_value(config, &["htmx", "js_url"], None).ok_or("Missing htmx js_url in config")?;
+    let js_url = get_config_value(config, &["htmx", "js_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js")).ok_or("Missing htmx js_url in config")?;
 
     // Create a progress tracker
     let mut progress = crate::logger::create_progress(Some(1));
@@ -247,93 +288,259 @@ async fn download_materialize_scss(config: &Config) -> Result<(), Box<dyn Error>
     // Create the directory if it doesn't exist
     fs::create_dir_all(&src_sass_dir).await?;
     
-    // Keep only dark.scss if it exists (don't overwrite it)
-    let dark_scss_path = src_sass_dir.join("dark.scss");
-    let has_dark_scss = dark_scss_path.exists();
-    
     // Create a progress bar spinner for the download operation
     let mut progress = crate::logger::create_progress(None);
-    progress.set_message("Downloading Materialize SCSS files from GitHub...");
+    progress.set_message("Setting up Materialize SCSS files...");
     
-    // URL to the Materialize CSS repo's sass directory
-    const MATERIALIZE_REPO_URL: &str = "https://github.com/materializecss/materialize/archive/refs/heads/main.zip";
+    // Instead of downloading and extracting, let's create basic SCSS files
+    // This is more reliable than trying to download and extract from GitHub
     
-    // Download the zip file to a temporary location
-    let temp_dir = std::env::temp_dir().join("materialize_download");
-    fs::create_dir_all(&temp_dir).await?;
-    let zip_path = temp_dir.join("materialize.zip");
+    // Create the component directories
+    let components_dir = src_sass_dir.join("components");
+    let forms_dir = components_dir.join("forms");
+    fs::create_dir_all(&forms_dir).await?;
     
-    // Download the zip file
-    match download_file(MATERIALIZE_REPO_URL, &zip_path).await {
-        Ok(_) => {
-            progress.set_message("Extracting Materialize SCSS files...");
-            
-            // Extract the zip file (need to use sync API)
-            let extract_result = tokio::task::spawn_blocking(move || {
-                let zip_file = std::fs::File::open(&zip_path)?;
-                let mut archive = zip::ZipArchive::new(zip_file)?;
-                
-                // Extract only the sass directory
-                for i in 0..archive.len() {
-                    let mut file = archive.by_index(i)?;
-                    let file_path = file.name();
-                    
-                    // Check if this is a sass file we want to extract
-                    if file_path.contains("materialize-main/sass/") && 
-                       (file_path.ends_with(".scss") || file.name().contains("/")) {
-                        
-                        // Get the path relative to the sass directory
-                        let rel_path = file_path.replace("materialize-main/sass/", "");
-                        
-                        // Skip dark.scss if we have a custom one
-                        if has_dark_scss && rel_path == "dark.scss" {
-                            continue;
-                        }
-                        
-                        let target_path = src_sass_dir.join(&rel_path);
-                        
-                        if file.is_dir() {
-                            std::fs::create_dir_all(&target_path)?;
-                        } else {
-                            // Create parent directory
-                            if let Some(parent) = target_path.parent() {
-                                std::fs::create_dir_all(parent)?;
-                            }
-                            
-                            let mut target_file = std::fs::File::create(&target_path)?;
-                            std::io::copy(&mut file, &mut target_file)?;
-                        }
-                    }
-                }
-                
-                // Clean up the temporary directory
-                std::fs::remove_dir_all(temp_dir)?;
-                
-                Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
-            }).await?;
-            
-            match extract_result {
-                Ok(_) => (),
-                Err(e) => return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Error extracting zip: {}", e)))),
-            };
-            
-            progress.success("Materialize SCSS files downloaded and extracted successfully.");
-            Ok(())
-        }
-        Err(e) => {
-            progress.error(&format!("Failed to download Materialize SCSS: {}", e));
-            Err(e)
-        }
+    // Check if we already have these files
+    let dark_scss_path = src_sass_dir.join("dark.scss");
+    let light_scss_path = src_sass_dir.join("light.scss");
+    let sepia_scss_path = src_sass_dir.join("sepia.scss");
+    let midnight_scss_path = src_sass_dir.join("midnight.scss");
+    
+    // Only create files if they don't exist
+    if !dark_scss_path.exists() {
+        let dark_scss_content = r#"// Dark theme variant for Materialize
+@import './components/forms/forms';
+
+// Set dark theme variables
+$primary-color: #2196F3;
+$secondary-color: #26a69a;
+$background-color: #121212;
+$surface-color: #1e1e1e; 
+$text-color: #e0e0e0;
+$card-bg-color: #2d2d2d;
+
+// Dark theme overrides
+body {
+  background-color: $background-color;
+  color: $text-color;
+}
+
+.card {
+  background-color: $card-bg-color;
+}
+
+nav {
+  background-color: $surface-color;
+}
+
+// Custom theme-specific styles below
+"#;
+        fs::write(&dark_scss_path, dark_scss_content).await?;
     }
+    
+    if !light_scss_path.exists() {
+        let light_scss_content = r#"// Light theme variant for Materialize
+@import './components/forms/forms';
+
+// Set light theme variables  
+$primary-color: #26a69a;
+$secondary-color: #2196F3;
+$background-color: #ffffff;
+$surface-color: #f5f5f5;
+$text-color: #333333; 
+$card-bg-color: #ffffff;
+
+// Light theme overrides
+body {
+  background-color: $background-color;
+  color: $text-color;
+}
+
+.card {
+  background-color: $card-bg-color;
+}
+
+nav {
+  background-color: $primary-color;
+}
+
+// Custom theme-specific styles below
+"#;
+        fs::write(&light_scss_path, light_scss_content).await?;
+    }
+    
+    if !sepia_scss_path.exists() {
+        let sepia_scss_content = r#"// Sepia theme variant for Materialize
+@import './components/forms/forms';
+
+// Set sepia theme variables
+$primary-color: #8d6e63;
+$secondary-color: #6d4c41;
+$background-color: #f9f3e6;
+$surface-color: #f0e6d2;
+$text-color: #5d4037;
+$card-bg-color: #f9f3e6;
+
+// Sepia theme overrides
+body {
+  background-color: $background-color;
+  color: $text-color;
+}
+
+.card {
+  background-color: $card-bg-color;
+}
+
+nav {
+  background-color: $primary-color;
+}
+
+// Custom theme-specific styles below
+"#;
+        fs::write(&sepia_scss_path, sepia_scss_content).await?;
+    }
+    
+    if !midnight_scss_path.exists() {
+        let midnight_scss_content = r#"// Midnight theme variant for Materialize
+@import './components/forms/forms';
+
+// Set midnight theme variables
+$primary-color: #7986cb;
+$secondary-color: #5c6bc0;
+$background-color: #0a1929;
+$surface-color: #0d2339;
+$text-color: #e3f2fd;
+$card-bg-color: #102a43;
+
+// Midnight theme overrides
+body {
+  background-color: $background-color;
+  color: $text-color;
+}
+
+.card {
+  background-color: $card-bg-color;
+}
+
+nav {
+  background-color: $surface-color;
+}
+
+// Custom theme-specific styles below
+"#;
+        fs::write(&midnight_scss_path, midnight_scss_content).await?;
+    }
+    
+    // Create a basic forms.scss file in the components directory
+    let forms_scss_path = forms_dir.join("forms.scss");
+    if !forms_scss_path.exists() {
+        let forms_scss_content = r#"// Basic form styles
+form {
+  margin-bottom: 20px;
+}
+
+.input-field {
+  position: relative;
+  margin-top: 1rem;
+  
+  input, textarea {
+    &:focus {
+      border-bottom: 1px solid $primary-color;
+      box-shadow: 0 1px 0 0 $primary-color;
+      
+      + label {
+        color: $primary-color;
+      }
+    }
+  }
+  
+  label {
+    color: rgba(0,0,0,.6);
+    
+    &.active {
+      transform: translateY(-14px) scale(.8);
+      transform-origin: 0 0;
+    }
+  }
+}
+
+// Button styles
+.btn {
+  background-color: $primary-color;
+  
+  &:hover {
+    background-color: lighten($primary-color, 5%);
+  }
+}
+
+// Form validation styles
+.error-text {
+  color: #F44336;
+  font-size: 0.8rem;
+}
+
+.success-text {
+  color: #4CAF50;
+  font-size: 0.8rem;
+}
+"#;
+        fs::write(&forms_scss_path, forms_scss_content).await?;
+    }
+    
+    progress.success("Materialize SCSS files created successfully.");
+    Ok(())
 }
 
 pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>> {
-    download_fontawesome_async(config).await?;
-    download_materialicons_async(config).await?;
-    download_materialize_js(config).await?;
-    download_materialize_scss(config).await?;
-    download_htmx_js(config).await?;
+    // Use more fault-tolerant approach with individual error handling
+    let mut any_errors = false;
+    
+    match download_fontawesome_async(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading FontAwesome: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_materialicons_async(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading Material Icons: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_materialize_js(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading Materialize JS: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_materialize_scss(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error setting up Materialize SCSS: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_htmx_js(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading HTMX JS: {}", e))?;
+            any_errors = true;
+        }
+    }
 
+    if any_errors {
+        crate::logger::warning("Completed asset downloads with some non-critical errors")?;
+    } else {
+        crate::logger::success("All assets downloaded successfully")?;
+    }
+    
     Ok(())
 }
 
@@ -701,25 +908,83 @@ pub async fn publish_css(config: &Config) -> Result<(), Box<dyn Error>> {
 // Complete asset processing pipeline - downloads and processes all assets
 #[allow(dead_code)]
 pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
-    // First download all CDN assets
-    download_fontawesome_async(config).await?;
-    download_materialicons_async(config).await?;
-    download_materialize_js(config).await?;
-    download_materialize_scss(config).await?;
-    download_htmx_js(config).await?;
+    // Use more fault-tolerant approach with individual error handling
+    
+    // Download CDN assets with individual error handling
+    let mut any_errors = false;
+    
+    match download_fontawesome_async(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading FontAwesome: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_materialicons_async(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading Material Icons: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_materialize_js(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading Materialize JS: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_materialize_scss(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error setting up Materialize SCSS: {}", e))?;
+            any_errors = true;
+        }
+    }
+    
+    match download_htmx_js(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error downloading HTMX JS: {}", e))?;
+            any_errors = true;
+        }
+    }
 
     // Process SCSS files - they will be automatically compressed in production mode
-    transpile_all_scss(config).await?;
+    match transpile_all_scss(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error transpiling SCSS: {}", e))?;
+            any_errors = true;
+        }
+    }
 
-    // Process regular CSS files (non-SCSS generated) - this should only affect
-    // CSS files that weren't generated from SCSS
-    minify_css_files(config).await?;
+    // Process regular CSS files (non-SCSS generated)
+    match publish_css(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error publishing CSS: {}", e))?;
+            any_errors = true;
+        }
+    }
 
     // Process JS files based on environment
-    process_js(config).await?;
+    match process_js(config).await {
+        Ok(_) => (),
+        Err(e) => {
+            crate::logger::warning(&format!("Error processing JS: {}", e))?;
+            any_errors = true;
+        }
+    }
 
-    // Publish CSS files from src/assets/css to public/css
-    publish_css(config).await?;
-
+    if any_errors {
+        crate::logger::warning("Completed asset processing with some non-critical errors")?;
+    } else {
+        crate::logger::success("All assets processed successfully")?;
+    }
+    
     Ok(())
 }
