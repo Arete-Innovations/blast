@@ -10,31 +10,64 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use walkdir::WalkDir;
 
-// Helper function to safely access TOML values
+// Helper function to safely access TOML values from the Catalyst.toml structure
 fn get_config_value(config: &Config, path: &[&str], default: Option<&str>) -> Option<String> {
-    let mut current = &config.assets;
-    
-    // Debug log for config value access
-    println!("DEBUG: Accessing path: {:?} in config", path);
-    println!("DEBUG: Config assets: {:?}", config.assets);
-    
-    for &key in path {
-        if let Some(value) = current.get(key) {
-            current = value;
-            println!("DEBUG: Found key: {}", key);
-        } else {
-            println!("DEBUG: Missing key: {} in path", key);
+    // First look for assets section
+    let assets_section = match config.assets.get("assets") {
+        Some(section) => section,
+        None => {
+            // If we're looking for public_dir (which is at the top level), check directly
+            if path.len() == 1 && path[0] == "public_dir" {
+                return match config.assets.get("public_dir") {
+                    Some(val) => val.as_str().map(|s| s.to_string()),
+                    None => default.map(|s| s.to_string())
+                };
+            }
+            
+            // No assets section, return default
             return default.map(|s| s.to_string());
+        }
+    };
+    
+    // If we're just looking for a top-level asset section
+    if path.len() == 1 {
+        match assets_section.get(path[0]) {
+            Some(val) => {
+                if let Some(s) = val.as_str() {
+                    return Some(s.to_string());
+                } else {
+                    return default.map(|s| s.to_string());
+                }
+            },
+            None => return default.map(|s| s.to_string())
         }
     }
     
-    if let Some(s) = current.as_str() {
-        println!("DEBUG: Found string value: {}", s);
-        Some(s.to_string())
-    } else {
-        println!("DEBUG: No string value found, using default: {:?}", default);
-        default.map(|s| s.to_string())
+    // Navigate to the requested section
+    let mut current = assets_section;
+    let mut section_name = path[0];
+    
+    // First find the section we need
+    match current.get(section_name) {
+        Some(section) => current = section,
+        None => return default.map(|s| s.to_string())
     }
+    
+    // Now look for the key
+    if path.len() > 1 {
+        let key = path[1];
+        match current.get(key) {
+            Some(val) => {
+                if let Some(s) = val.as_str() {
+                    return Some(s.to_string());
+                }
+            },
+            None => ()
+        }
+    }
+    
+    // If we got here, we didn't find the value
+    default.map(|s| s.to_string())
 }
 
 async fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn Error>> {
@@ -48,11 +81,11 @@ async fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn Error>
 async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    
+
     // Debug logging for materialize path
     println!("DEBUG: Looking for materialize in config");
     println!("DEBUG: Full config: {:?}", config.assets);
-    
+
     // Ensure we create the proper directory structure regardless of whether config values exist
     let materialize_dir = project_dir.join(&public_dir).join("js").join("materialize");
     fs::create_dir_all(&materialize_dir).await?;
@@ -86,15 +119,14 @@ async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> 
 async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    
+
     // Print the entire config for debugging
     println!("DEBUG: Full config structure:");
     println!("DEBUG: {:?}", config.assets);
-    
+
     // Provide a default value for FontAwesome CDN if missing
-    let fa_base_url = get_config_value(config, &["fontawesome", "base_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1"))
-        .ok_or("Missing fontawesome base_url in config")?;
-    
+    let fa_base_url = get_config_value(config, &["fontawesome", "base_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1")).ok_or("Missing fontawesome base_url in config")?;
+
     // Always use standard asset locations regardless of config - this ensures consistent structure
     let fa_public_dir = project_dir.join(&public_dir).join("fonts").join("fontawesome");
 
@@ -113,7 +145,7 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
     let default_sprites = vec![
         toml::Value::String("sprites/brands.svg".to_string()),
         toml::Value::String("sprites/regular.svg".to_string()),
-        toml::Value::String("sprites/solid.svg".to_string())
+        toml::Value::String("sprites/solid.svg".to_string()),
     ];
     let default_webfonts = vec![
         toml::Value::String("webfonts/fa-brands-400.ttf".to_string()),
@@ -123,36 +155,19 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
         toml::Value::String("webfonts/fa-solid-900.ttf".to_string()),
         toml::Value::String("webfonts/fa-solid-900.woff2".to_string()),
         toml::Value::String("webfonts/fa-v4compatibility.ttf".to_string()),
-        toml::Value::String("webfonts/fa-v4compatibility.woff2".to_string())
+        toml::Value::String("webfonts/fa-v4compatibility.woff2".to_string()),
     ];
-    
+
     // Get values from config or use defaults
-    let fa_css = config.assets.get("fontawesome")
-        .and_then(|f| f.get("css"))
-        .and_then(|c| c.as_array())
-        .unwrap_or(&default_css);
-    
-    let fa_js = config.assets.get("fontawesome")
-        .and_then(|f| f.get("js"))
-        .and_then(|c| c.as_array())
-        .unwrap_or(&default_js);
-    
-    let fa_sprites = config.assets.get("fontawesome")
-        .and_then(|f| f.get("sprites"))
-        .and_then(|c| c.as_array())
-        .unwrap_or(&default_sprites);
-    
-    let fa_webfonts = config.assets.get("fontawesome")
-        .and_then(|f| f.get("webfonts"))
-        .and_then(|c| c.as_array())
-        .unwrap_or(&default_webfonts);
-    
-    let asset_types = [
-        ("css", fa_css),
-        ("js", fa_js),
-        ("sprites", fa_sprites),
-        ("webfonts", fa_webfonts),
-    ];
+    let fa_css = config.assets.get("fontawesome").and_then(|f| f.get("css")).and_then(|c| c.as_array()).unwrap_or(&default_css);
+
+    let fa_js = config.assets.get("fontawesome").and_then(|f| f.get("js")).and_then(|c| c.as_array()).unwrap_or(&default_js);
+
+    let fa_sprites = config.assets.get("fontawesome").and_then(|f| f.get("sprites")).and_then(|c| c.as_array()).unwrap_or(&default_sprites);
+
+    let fa_webfonts = config.assets.get("fontawesome").and_then(|f| f.get("webfonts")).and_then(|c| c.as_array()).unwrap_or(&default_webfonts);
+
+    let asset_types = [("css", fa_css), ("js", fa_js), ("sprites", fa_sprites), ("webfonts", fa_webfonts)];
 
     // Calculate total assets
     let total_assets: usize = asset_types.iter().map(|(_, assets)| assets.len()).sum();
@@ -217,7 +232,7 @@ async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Err
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
 
     let mi_base_url = get_config_value(config, &["materialicons", "base_url"], Some("https://raw.githubusercontent.com/google/material-design-icons/master/font")).ok_or("Missing materialicons base_url in config")?;
-    
+
     // Always use standard asset locations regardless of config - this ensures consistent structure
     let mi_public_dir = project_dir.join(&public_dir).join("fonts").join("material-icons");
 
@@ -258,7 +273,7 @@ async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Err
 async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    
+
     // Always use standard asset locations regardless of config
     let htmx_dir = project_dir.join(&public_dir).join("js").join("htmx");
 
@@ -289,28 +304,28 @@ async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
 async fn download_materialize_scss(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let src_sass_dir = project_dir.join("src/assets/sass");
-    
+
     // Create the directory if it doesn't exist
     fs::create_dir_all(&src_sass_dir).await?;
-    
+
     // Create a progress bar spinner for the download operation
     let mut progress = crate::logger::create_progress(None);
     progress.set_message("Setting up Materialize SCSS files...");
-    
+
     // Instead of downloading and extracting, let's create basic SCSS files
     // This is more reliable than trying to download and extract from GitHub
-    
+
     // Create the component directories
     let components_dir = src_sass_dir.join("components");
     let forms_dir = components_dir.join("forms");
     fs::create_dir_all(&forms_dir).await?;
-    
+
     // Check if we already have these files
     let dark_scss_path = src_sass_dir.join("dark.scss");
     let light_scss_path = src_sass_dir.join("light.scss");
     let sepia_scss_path = src_sass_dir.join("sepia.scss");
     let midnight_scss_path = src_sass_dir.join("midnight.scss");
-    
+
     // Only create files if they don't exist
     if !dark_scss_path.exists() {
         let dark_scss_content = r#"// Dark theme variant for Materialize
@@ -342,7 +357,7 @@ nav {
 "#;
         fs::write(&dark_scss_path, dark_scss_content).await?;
     }
-    
+
     if !light_scss_path.exists() {
         let light_scss_content = r#"// Light theme variant for Materialize
 @import './components/forms/forms';
@@ -373,7 +388,7 @@ nav {
 "#;
         fs::write(&light_scss_path, light_scss_content).await?;
     }
-    
+
     if !sepia_scss_path.exists() {
         let sepia_scss_content = r#"// Sepia theme variant for Materialize
 @import './components/forms/forms';
@@ -404,7 +419,7 @@ nav {
 "#;
         fs::write(&sepia_scss_path, sepia_scss_content).await?;
     }
-    
+
     if !midnight_scss_path.exists() {
         let midnight_scss_content = r#"// Midnight theme variant for Materialize
 @import './components/forms/forms';
@@ -435,7 +450,7 @@ nav {
 "#;
         fs::write(&midnight_scss_path, midnight_scss_content).await?;
     }
-    
+
     // Create a basic forms.scss file in the components directory
     let forms_scss_path = forms_dir.join("forms.scss");
     if !forms_scss_path.exists() {
@@ -491,7 +506,7 @@ form {
 "#;
         fs::write(&forms_scss_path, forms_scss_content).await?;
     }
-    
+
     progress.success("Materialize SCSS files created successfully.");
     Ok(())
 }
@@ -499,7 +514,7 @@ form {
 pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>> {
     // Use more fault-tolerant approach with individual error handling
     let mut any_errors = false;
-    
+
     match download_fontawesome_async(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -507,7 +522,7 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
             any_errors = true;
         }
     }
-    
+
     match download_materialicons_async(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -515,7 +530,7 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
             any_errors = true;
         }
     }
-    
+
     match download_materialize_js(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -523,7 +538,7 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
             any_errors = true;
         }
     }
-    
+
     match download_materialize_scss(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -531,7 +546,7 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
             any_errors = true;
         }
     }
-    
+
     match download_htmx_js(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -545,7 +560,7 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
     } else {
         crate::logger::success("All assets downloaded successfully")?;
     }
-    
+
     Ok(())
 }
 
@@ -555,7 +570,7 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
 
     let sass_dir = project_dir.join("src/assets/sass");
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    
+
     // Always use standard asset locations for consistency
     let css_dir = project_dir.join(&public_dir).join("css");
 
@@ -593,7 +608,7 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
             // Only use .min.css files in root CSS directory (not in app subfolder)
             // The SCSS outputs are part of the framework, while app CSS goes in the app subfolder
             let output_file = css_dir.join(format!("{}.min.css", file_stem));
-            
+
             // Make sure CSS directory exists
             fs::create_dir_all(&css_dir).await?;
 
@@ -641,7 +656,7 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
             // Only use .min.css files in root CSS directory (not in app subfolder)
             // The SCSS outputs are part of the framework, while app CSS goes in the app subfolder
             let output_file = css_dir.join(format!("{}.min.css", file_stem));
-            
+
             // Make sure CSS directory exists
             fs::create_dir_all(&css_dir).await?;
 
@@ -707,7 +722,7 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
 
     // Source and destination directories
     let src_js_dir = project_dir.join("src").join("assets").join("js");
-    
+
     // Always use standard asset locations for consistency
     let dest_js_dir = public_path.join("js");
 
@@ -751,7 +766,7 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
             let rel_path = js_file.strip_prefix(&src_js_dir).unwrap();
             // Only use .min.js files for consistency with our CSS strategy
             let min_dest_path = dest_js_dir.join("app").join(rel_path.with_file_name(format!("{}.min.js", rel_path.file_stem().unwrap().to_str().unwrap())));
-            
+
             // Make sure app directory exists
             fs::create_dir_all(&dest_js_dir.join("app")).await?;
 
@@ -798,7 +813,7 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
             let rel_path = js_file.strip_prefix(&src_js_dir).unwrap();
             // Only use .min.js files for consistency with our CSS strategy
             let min_dest_path = dest_js_dir.join("app").join(rel_path.with_file_name(format!("{}.min.js", rel_path.file_stem().unwrap().to_str().unwrap())));
-            
+
             // Make sure app directory exists
             fs::create_dir_all(&dest_js_dir.join("app")).await?;
 
@@ -846,7 +861,7 @@ pub async fn publish_css(config: &Config) -> Result<(), Box<dyn Error>> {
     // Source and destination directories
     let src_css_dir = project_dir.join("src").join("assets").join("css");
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    
+
     // Always use standard asset locations for consistent directory structure
     let public_path = project_dir.join(&public_dir);
     let dest_css_dir = public_path.join("css");
@@ -885,7 +900,7 @@ pub async fn publish_css(config: &Config) -> Result<(), Box<dyn Error>> {
 
         // Only generate .min.css files with consistent location in the app subfolder
         let min_dest_path = dest_css_dir.join("app").join(rel_path.with_file_name(format!("{}.min.css", rel_path.file_stem().unwrap().to_str().unwrap())));
-        
+
         // Make sure app directory exists
         fs::create_dir_all(&dest_css_dir.join("app")).await?;
 
@@ -937,10 +952,10 @@ pub async fn publish_css(config: &Config) -> Result<(), Box<dyn Error>> {
 #[allow(dead_code)]
 pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
     // Use more fault-tolerant approach with individual error handling
-    
+
     // Download CDN assets with individual error handling
     let mut any_errors = false;
-    
+
     match download_fontawesome_async(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -948,7 +963,7 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
             any_errors = true;
         }
     }
-    
+
     match download_materialicons_async(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -956,7 +971,7 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
             any_errors = true;
         }
     }
-    
+
     match download_materialize_js(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -964,7 +979,7 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
             any_errors = true;
         }
     }
-    
+
     match download_materialize_scss(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -972,7 +987,7 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
             any_errors = true;
         }
     }
-    
+
     match download_htmx_js(config).await {
         Ok(_) => (),
         Err(e) => {
@@ -1013,6 +1028,6 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
     } else {
         crate::logger::success("All assets processed successfully")?;
     }
-    
+
     Ok(())
 }
