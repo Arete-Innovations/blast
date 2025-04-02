@@ -176,23 +176,40 @@ pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
 
 // Helper functions for specific log levels
 pub fn debug(message: &str) -> Result<(), Box<dyn Error>> {
-    log(LogLevel::Debug, message)
+    // Only log in verbose mode
+    if is_verbose() {
+        log(LogLevel::Debug, message)?;
+    }
+    Ok(())
 }
 
 pub fn info(message: &str) -> Result<(), Box<dyn Error>> {
-    log(LogLevel::Info, message)
+    // Only log in verbose mode
+    if is_verbose() {
+        log(LogLevel::Info, message)?;
+    }
+    Ok(())
 }
 
 pub fn warning(message: &str) -> Result<(), Box<dyn Error>> {
-    log(LogLevel::Warning, message)
+    // Only log in verbose mode
+    if is_verbose() {
+        log(LogLevel::Warning, message)?;
+    }
+    Ok(())
 }
 
 pub fn error(message: &str) -> Result<(), Box<dyn Error>> {
+    // Always log errors
     log(LogLevel::Error, message)
 }
 
 pub fn success(message: &str) -> Result<(), Box<dyn Error>> {
-    log(LogLevel::Success, message)
+    // Only log in verbose mode
+    if is_verbose() {
+        log(LogLevel::Success, message)?;
+    }
+    Ok(())
 }
 
 // Create a progress bar that works in both CLI and dashboard modes
@@ -240,10 +257,9 @@ impl Progress {
     pub fn set_message(&mut self, msg: &str) -> &mut Self {
         self.last_message = msg.to_string();
 
-        // Only log to console if it's a critical error, warning, or success message
-        // Otherwise only show in verbose mode
-        let should_log = msg.contains("Error") || msg.contains("✓") || msg.contains("✅") ||
-                         msg.contains("⚠") || is_verbose();
+        // In non-verbose mode, suppress almost all messages except critical errors
+        // Display more information only in verbose mode
+        let should_log = (msg.contains("Error") && msg.contains("critical")) || is_verbose();
 
         match get_mode() {
             RuntimeMode::Cli => {
