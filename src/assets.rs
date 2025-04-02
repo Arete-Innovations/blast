@@ -95,7 +95,8 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
     let fa_base_url = get_config_value(config, &["fontawesome", "base_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1"))
         .ok_or("Missing fontawesome base_url in config")?;
     
-    let fa_public_dir = project_dir.join(public_dir).join("fonts").join("fontawesome");
+    // Always use standard asset locations regardless of config - this ensures consistent structure
+    let fa_public_dir = project_dir.join(&public_dir).join("fonts").join("fontawesome");
 
     // Create FontAwesome directories
     fs::create_dir_all(&fa_public_dir).await?;
@@ -216,7 +217,9 @@ async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Err
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
 
     let mi_base_url = get_config_value(config, &["materialicons", "base_url"], Some("https://raw.githubusercontent.com/google/material-design-icons/master/font")).ok_or("Missing materialicons base_url in config")?;
-    let mi_public_dir = project_dir.join(public_dir).join("fonts").join("material-icons");
+    
+    // Always use standard asset locations regardless of config - this ensures consistent structure
+    let mi_public_dir = project_dir.join(&public_dir).join("fonts").join("material-icons");
 
     let woff2_file = get_config_value(config, &["materialicons", "woff2"], Some("MaterialIcons-Regular.woff2")).ok_or("Missing materialicons woff2 in config")?;
     let ttf_file = get_config_value(config, &["materialicons", "ttf"], Some("MaterialIcons-Regular.ttf")).ok_or("Missing materialicons ttf in config")?;
@@ -255,7 +258,9 @@ async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Err
 async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    let htmx_dir = project_dir.join(public_dir).join("js").join("htmx");
+    
+    // Always use standard asset locations regardless of config
+    let htmx_dir = project_dir.join(&public_dir).join("js").join("htmx");
 
     fs::create_dir_all(&htmx_dir).await?;
 
@@ -550,7 +555,9 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
 
     let sass_dir = project_dir.join("src/assets/sass");
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-    let css_dir = project_dir.join(public_dir).join("css");
+    
+    // Always use standard asset locations for consistency
+    let css_dir = project_dir.join(&public_dir).join("css");
 
     // Create the output directory if it doesn't exist
     fs::create_dir_all(&css_dir).await?;
@@ -583,8 +590,12 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
 
         for scss_file in scss_files {
             let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
-            // Only use .min.css files
+            // Only use .min.css files in root CSS directory (not in app subfolder)
+            // The SCSS outputs are part of the framework, while app CSS goes in the app subfolder
             let output_file = css_dir.join(format!("{}.min.css", file_stem));
+            
+            // Make sure CSS directory exists
+            fs::create_dir_all(&css_dir).await?;
 
             // Set up options for SCSS compilation
             let mut sass_options = Options::default();
@@ -627,8 +638,12 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
 
         for scss_file in scss_files {
             let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
-            // Only use .min.css files
+            // Only use .min.css files in root CSS directory (not in app subfolder)
+            // The SCSS outputs are part of the framework, while app CSS goes in the app subfolder
             let output_file = css_dir.join(format!("{}.min.css", file_stem));
+            
+            // Make sure CSS directory exists
+            fs::create_dir_all(&css_dir).await?;
 
             // Set up options for SCSS compilation
             let mut sass_options = Options::default();
@@ -692,7 +707,9 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
 
     // Source and destination directories
     let src_js_dir = project_dir.join("src").join("assets").join("js");
-    let dest_js_dir = public_path.join("js").join("app");
+    
+    // Always use standard asset locations for consistency
+    let dest_js_dir = public_path.join("js");
 
     // Create destination directory if it doesn't exist
     fs::create_dir_all(&dest_js_dir).await?;
@@ -733,7 +750,10 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
             // Determine relative path from src_js_dir
             let rel_path = js_file.strip_prefix(&src_js_dir).unwrap();
             // Only use .min.js files for consistency with our CSS strategy
-            let min_dest_path = dest_js_dir.join(rel_path.with_file_name(format!("{}.min.js", rel_path.file_stem().unwrap().to_str().unwrap())));
+            let min_dest_path = dest_js_dir.join("app").join(rel_path.with_file_name(format!("{}.min.js", rel_path.file_stem().unwrap().to_str().unwrap())));
+            
+            // Make sure app directory exists
+            fs::create_dir_all(&dest_js_dir.join("app")).await?;
 
             // Create parent directory if needed
             if let Some(parent) = min_dest_path.parent() {
@@ -777,7 +797,10 @@ pub async fn process_js(config: &Config) -> Result<(), Box<dyn Error>> {
             // Determine relative path from src_js_dir
             let rel_path = js_file.strip_prefix(&src_js_dir).unwrap();
             // Only use .min.js files for consistency with our CSS strategy
-            let min_dest_path = dest_js_dir.join(rel_path.with_file_name(format!("{}.min.js", rel_path.file_stem().unwrap().to_str().unwrap())));
+            let min_dest_path = dest_js_dir.join("app").join(rel_path.with_file_name(format!("{}.min.js", rel_path.file_stem().unwrap().to_str().unwrap())));
+            
+            // Make sure app directory exists
+            fs::create_dir_all(&dest_js_dir.join("app")).await?;
 
             // Create parent directory if needed
             if let Some(parent) = min_dest_path.parent() {
@@ -823,8 +846,10 @@ pub async fn publish_css(config: &Config) -> Result<(), Box<dyn Error>> {
     // Source and destination directories
     let src_css_dir = project_dir.join("src").join("assets").join("css");
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
+    
+    // Always use standard asset locations for consistent directory structure
     let public_path = project_dir.join(&public_dir);
-    let dest_css_dir = public_path.join("css").join("app");
+    let dest_css_dir = public_path.join("css");
 
     // Create destination directory if it doesn't exist
     fs::create_dir_all(&dest_css_dir).await?;
@@ -858,8 +883,11 @@ pub async fn publish_css(config: &Config) -> Result<(), Box<dyn Error>> {
         let src_path = entry.path();
         let rel_path = src_path.strip_prefix(&src_css_dir).unwrap();
 
-        // Only generate .min.css files (changed from original behavior)
-        let min_dest_path = dest_css_dir.join(rel_path.with_file_name(format!("{}.min.css", rel_path.file_stem().unwrap().to_str().unwrap())));
+        // Only generate .min.css files with consistent location in the app subfolder
+        let min_dest_path = dest_css_dir.join("app").join(rel_path.with_file_name(format!("{}.min.css", rel_path.file_stem().unwrap().to_str().unwrap())));
+        
+        // Make sure app directory exists
+        fs::create_dir_all(&dest_css_dir.join("app")).await?;
 
         // Read the file content
         let content = fs::read_to_string(src_path).await?;
