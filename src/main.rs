@@ -1,4 +1,3 @@
-use dotenv::dotenv;
 use std::env;
 use std::process;
 
@@ -14,54 +13,60 @@ mod interactive;
 mod locale;
 mod logger;
 mod models;
-mod output;
-mod progress;
+mod output; // Keep temporarily until we migrate references
+mod progress; // Keep temporarily until we migrate references
 mod project;
 mod structs;
 
 #[tokio::main]
 async fn main() {
-    // Load environment variables from .env file if present
-    dotenv().ok();
-
-    // Create dependency manager
-    let dep_manager = dependencies::DependencyManager::new();
+    // Initialize components
+    let mut dep_manager = dependencies::DependencyManager::new();
 
     // Get command line arguments
     let args: Vec<String> = env::args().collect();
 
-    // Set output mode to stdout by default for CLI operations
-    output::set_output_mode(output::OutputMode::Stdout);
+    // Initialize logger in CLI mode
+    logger::init(logger::RuntimeMode::Cli, None).unwrap_or_default();
 
-    // Set operation context to CLI by default
-    output::set_operation_context("CLI");
-
-    // Handle CLI mode if arguments are provided
+    // Parse CLI arguments
     if args.len() > 1 {
         match commands::parse_cli_args(&args) {
-            Some(commands::Action::NewProject(_)) => {
-                if let Err(e) = commands::execute_action(commands::Action::NewProject(args[2].clone()), None, &dep_manager).await {
-                    eprintln!("Error creating project: {}", e);
-                    process::exit(1);
-                }
-                process::exit(0);
-            }
-            Some(commands::Action::Help) => {
-                commands::show_help();
-                process::exit(0);
-            }
-            Some(action) => {
-                // Load project config for other commands
+            Some(cmd) => {
+                // Load project config if needed
                 match configs::get_project_info() {
                     Ok(mut config) => {
-                        if let Err(e) = commands::execute_action(action, Some(&mut config), &dep_manager).await {
+                        // Execute the command
+                        if let Err(e) = commands::execute(cmd.clone(), &mut config, &mut dep_manager).await {
                             eprintln!("Error executing command: {}", e);
                             process::exit(1);
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to read project info: {}", e);
-                        process::exit(1);
+                        // NewProject and Help don't need a project config
+                        if matches!(cmd, commands::Command::NewProject(_)) || cmd == commands::Command::Help {
+                            // Create a default config for these commands
+                            let mut default_config = configs::Config {
+                                environment: "dev".to_string(),
+                                project_name: match cmd {
+                                    commands::Command::NewProject(ref name) => name.clone(),
+                                    _ => "unknown".to_string(),
+                                },
+                                assets: toml::Value::Table(toml::value::Table::new()),
+                                project_dir: std::env::current_dir().unwrap_or_default(),
+                                show_compiler_warnings: true,
+                                last_modified: std::time::SystemTime::now(),
+                            };
+
+                            if let Err(e) = commands::execute(cmd, &mut default_config, &mut dep_manager).await {
+                                eprintln!("Error executing command: {}", e);
+                                process::exit(1);
+                            }
+                        } else {
+                            eprintln!("Failed to read project info: {}", e);
+                            eprintln!("You must run this command from a project directory or use 'blast new <project_name>' to create a new project.");
+                            process::exit(1);
+                        }
                     }
                 }
                 process::exit(0);
@@ -75,15 +80,19 @@ async fn main() {
 
     // If no arguments provided, launch dashboard by default
     match configs::get_project_info() {
-        Ok(config) => {
-            // Launch dashboard directly
-            if let Err(e) = commands::execute_action(commands::Action::LaunchDashboard, Some(&mut config.clone()), &dep_manager).await {
+        Ok(mut config) => {
+            // Set up logging for interactive mode
+            logger::setup_for_mode(&config, true).unwrap_or_default();
+
+            // Launch dashboard
+            if let Err(e) = commands::execute(commands::Command::LaunchDashboard, &mut config, &mut dep_manager).await {
                 eprintln!("Error launching dashboard: {}", e);
                 process::exit(1);
             }
         }
         Err(e) => {
             eprintln!("Failed to read project info: {}", e);
+            eprintln!("You must run this command from a project directory or use 'blast new <project_name>' to create a new project.");
             process::exit(1);
         }
     }

@@ -23,19 +23,14 @@ pub fn migrate() -> bool {
     }
 
     // Test database connection first
-    match establish_connection() {
-        Ok(_) => {
-            // Connection successful, continue with migration
-        }
-        Err(e) => {
-            progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
-            progress.error("Hint: Make sure PostgreSQL is running and accessible with the credentials in your .env file");
-            return false;
-        }
+    if let Err(e) = establish_connection() {
+        progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
+        progress.error("Hint: Make sure PostgreSQL is running and accessible with the credentials in your .env file");
+        return false;
     }
 
     // Run migration command
-    let output = match Command::new("diesel").arg("migration").arg("run").stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
+    let output = match Command::new("diesel").args(["migration", "run"]).stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
         Ok(output) => output,
         Err(e) => {
             progress.error(&format!("Error executing diesel migration run: {}", e));
@@ -46,173 +41,106 @@ pub fn migrate() -> bool {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // Collect all migrations to display in a single progress message
-    let mut migrations = Vec::new();
-    let mut has_output = false;
-    for line in stdout.lines() {
-        has_output = true;
-        if line.contains("Running migration") {
-            // Extract migration name
-            if let Some(migration_name) = line.split("Running migration").nth(1) {
-                migrations.push(migration_name.trim().to_string());
+    // Extract migrations from stdout
+    let migrations: Vec<String> = stdout
+        .lines()
+        .filter(|line| line.contains("Running migration"))
+        .filter_map(|line| line.split("Running migration").nth(1).map(|name| name.trim().to_string()))
+        .collect();
+
+    let has_output = stdout.lines().next().is_some();
+    let errors: Vec<String> = stderr.lines().map(|line| line.trim().to_string()).collect();
+    let has_errors = !errors.is_empty();
+
+    match (has_output, has_errors, migrations.is_empty()) {
+        (false, false, _) => progress.success("No migrations to run"),
+        (_, false, false) => progress.success(&format!("Ran {} migrations: {}", migrations.len(), migrations.join(", "))),
+        (_, false, true) => progress.success("Migrations completed successfully"),
+        (_, true, _) => {
+            if !errors.is_empty() {
+                progress.error(&format!("Migration errors: {}", errors.join(", ")));
             } else {
-                migrations.push(line.trim().to_string());
+                progress.error("Some migrations failed");
             }
+            return false;
         }
-    }
-
-    let mut has_errors = false;
-    let mut errors = Vec::new();
-    for line in stderr.lines() {
-        has_errors = true;
-        errors.push(line.trim().to_string());
-    }
-
-    if !has_output && !has_errors {
-        progress.success("No migrations to run");
-    } else if !has_errors {
-        if !migrations.is_empty() {
-            // Only show a single message with all migrations
-            progress.success(&format!("Ran {} migrations: {}", migrations.len(), migrations.join(", ")));
-        } else {
-            progress.success("Migrations completed successfully");
-        }
-    } else {
-        if !errors.is_empty() {
-            progress.error(&format!("Migration errors: {}", errors.join(", ")));
-        } else {
-            progress.error("Some migrations failed");
-        }
-        return false;
     }
 
     true
 }
 
-#[allow(dead_code)]
-pub fn rollback_one() -> bool {
-    let progress = ProgressManager::new_spinner();
-    progress.set_message("Rolling back one migration...");
-
-    // Test database connection first
-    match establish_connection() {
-        Ok(_) => {
-            // Connection successful, continue with rollback
-        }
-        Err(e) => {
-            progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
-            progress.error("Hint: Make sure PostgreSQL is running and accessible with the credentials in your .env file");
-            return false;
-        }
-    }
-
-    let output = match Command::new("diesel").arg("migration").arg("revert").stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
-        Ok(output) => output,
-        Err(e) => {
-            progress.error(&format!("Failed to execute rollback command: {}", e));
-            return false;
-        }
-    };
-
+// Helper function to handle diesel command output for rollbacks
+fn handle_diesel_output(output: &std::process::Output) -> bool {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    let mut has_error = false;
-
     // Check if we're in interactive mode
     let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
-
-    for line in stdout.lines() {
-        let formatted_line = format!("\x1b[32m✔\x1b[0m {}", line);
+    let log_fn = |line: &str, success: bool| {
+        let prefix = if success { "\x1b[32m✔\x1b[0m" } else { "\x1b[31m✖\x1b[0m" };
+        let formatted_line = format!("{} {}", prefix, line);
         if is_interactive {
-            // In interactive mode, log to file
             let _ = crate::output::log(&formatted_line);
         } else {
-            // In CLI mode, print to stdout
             println!("{}", formatted_line);
         }
-    }
+    };
 
-    for line in stderr.lines() {
-        has_error = true;
-        let formatted_line = format!("\x1b[31m✖\x1b[0m {}", line);
-        if is_interactive {
-            // In interactive mode, log to file
-            let _ = crate::output::log(&formatted_line);
-        } else {
-            // In CLI mode, print to stdout
-            println!("{}", formatted_line);
-        }
-    }
+    // Process stdout lines
+    stdout.lines().for_each(|line| log_fn(line, true));
+
+    // Process stderr lines and track if we found any errors
+    let has_error = stderr
+        .lines()
+        .map(|line| {
+            log_fn(line, false);
+            true
+        })
+        .next()
+        .is_some();
 
     !has_error
 }
 
-pub fn rollback_all() -> bool {
+// Helper function to run diesel migration commands with common error handling
+fn run_diesel_migration(args: &[&str], progress_msg: &str) -> bool {
     let progress = ProgressManager::new_spinner();
-    progress.set_message("Rolling back all migrations...");
+    progress.set_message(progress_msg);
 
     // Test database connection first
-    match establish_connection() {
-        Ok(_) => {
-            // Connection successful, continue with rollback
-        }
-        Err(e) => {
-            progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
-            progress.error("Hint: Make sure PostgreSQL is running and accessible with the credentials in your .env file");
-            return false;
-        }
+    if let Err(e) = establish_connection() {
+        progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
+        progress.error("Hint: Make sure PostgreSQL is running and accessible with the credentials in your .env file");
+        return false;
     }
 
-    let output = match Command::new("diesel").arg("migration").arg("revert").arg("--all").stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
+    let output = match Command::new("diesel").args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
         Ok(output) => output,
         Err(e) => {
-            progress.error(&format!("Failed to execute rollback command: {}", e));
+            progress.error(&format!("Failed to execute command: {}", e));
             return false;
         }
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    handle_diesel_output(&output)
+}
 
-    let mut has_error = false;
+#[allow(dead_code)]
+pub fn rollback_one() -> bool {
+    run_diesel_migration(&["migration", "revert"], "Rolling back one migration...")
+}
 
-    // Check if we're in interactive mode
-    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
-
-    for line in stdout.lines() {
-        let formatted_line = format!("\x1b[32m✔\x1b[0m {}", line);
-        if is_interactive {
-            // In interactive mode, log to file
-            let _ = crate::output::log(&formatted_line);
-        } else {
-            // In CLI mode, print to stdout
-            println!("{}", formatted_line);
-        }
-    }
-
-    for line in stderr.lines() {
-        has_error = true;
-        let formatted_line = format!("\x1b[31m✖\x1b[0m {}", line);
-        if is_interactive {
-            // In interactive mode, log to file
-            let _ = crate::output::log(&formatted_line);
-        } else {
-            // In CLI mode, print to stdout
-            println!("{}", formatted_line);
-        }
-    }
-
-    !has_error
+pub fn rollback_all() -> bool {
+    run_diesel_migration(&["migration", "revert", "--all"], "Rolling back all migrations...")
 }
 
 // Get a list of available connection names from the .env file
 fn get_connection_names() -> Vec<String> {
     dotenv().ok();
-    
+
     let mut names = Vec::new();
     names.push("default".to_string()); // Default connection is always available
-    
+
     // Look for any DATABASE_URL_* variables
     for (key, _) in env::vars() {
         if key.starts_with("DATABASE_URL_") {
@@ -220,7 +148,7 @@ fn get_connection_names() -> Vec<String> {
             names.push(name);
         }
     }
-    
+
     names
 }
 
@@ -238,9 +166,9 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
     }
 
     // Determine the environment variable to use
-    let env_var = if conn_name == "default" { 
-        "DATABASE_URL".to_string() 
-    } else { 
+    let env_var = if conn_name == "default" {
+        "DATABASE_URL".to_string()
+    } else {
         format!("DATABASE_URL_{}", conn_name.to_uppercase())
     };
 
@@ -261,23 +189,19 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
     };
 
     // Run diesel print-schema command with the appropriate DATABASE_URL
-    let output = match Command::new("diesel")
-        .arg("print-schema")
-        .env("DATABASE_URL", &database_url)
-        .stdout(Stdio::piped())
-        .spawn() {
-            Ok(child) => match child.wait_with_output() {
-                Ok(output) => output,
-                Err(e) => {
-                    progress.error(&format!("Error executing diesel print-schema: {}", e));
-                    return false;
-                }
-            },
+    let output = match Command::new("diesel").arg("print-schema").env("DATABASE_URL", &database_url).stdout(Stdio::piped()).spawn() {
+        Ok(child) => match child.wait_with_output() {
+            Ok(output) => output,
             Err(e) => {
-                progress.error(&format!("Error spawning diesel print-schema: {}", e));
+                progress.error(&format!("Error executing diesel print-schema: {}", e));
                 return false;
             }
-        };
+        },
+        Err(e) => {
+            progress.error(&format!("Error spawning diesel print-schema: {}", e));
+            return false;
+        }
+    };
 
     if !output.status.success() {
         progress.error("diesel print-schema command failed");
@@ -319,7 +243,7 @@ pub fn generate_all_schemas() -> bool {
 
     let mut success = true;
     let mut generated_connections = Vec::new();
-    
+
     for conn_name in connections {
         generated_connections.push(conn_name.clone());
         if !generate_schema_for_connection(&conn_name) {
@@ -342,54 +266,49 @@ pub fn generate_all_schemas() -> bool {
 // Update the mod.rs file to include all schemas
 fn update_schema_mod_file(connections: &[String]) {
     let mod_path = "src/database/mod.rs";
-    
+
     // First, read the existing file if any
     let existing_content = fs::read_to_string(mod_path).unwrap_or_default();
-    
+
     // Extract any non-schema module declarations
-    let mut other_modules = Vec::new();
-    for line in existing_content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("pub mod ") && 
-           !trimmed.starts_with("pub mod schema") && 
-           !trimmed.contains("schema_") {
-            other_modules.push(line.to_string());
-        }
-    }
-    
+    let other_modules: Vec<String> = existing_content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with("pub mod ") && !trimmed.starts_with("pub mod schema") && !trimmed.contains("schema_")
+        })
+        .map(|line| line.to_string())
+        .collect();
+
     // Build new content with schema declarations first
     let mut content = String::new();
-    
-    // Add schema modules without duplication
     let mut added_modules = std::collections::HashSet::new();
-    
+
     // First add default schema
     if connections.contains(&"default".to_string()) {
         content.push_str("pub mod schema;\n");
         added_modules.insert("schema".to_string());
     }
-    
+
     // Then add other schemas
-    for conn_name in connections {
-        if conn_name != "default" {
-            let module_name = format!("schema_{}", conn_name);
-            if !added_modules.contains(&module_name) {
-                content.push_str(&format!("pub mod {};\n", module_name));
-                added_modules.insert(module_name);
-            }
+    connections.iter().filter(|&conn_name| conn_name != "default").for_each(|conn_name| {
+        let module_name = format!("schema_{}", conn_name);
+        if !added_modules.contains(&module_name) {
+            content.push_str(&format!("pub mod {};\n", module_name));
+            added_modules.insert(module_name);
         }
-    }
-    
+    });
+
     // Add other modules after schema declarations
-    for module in other_modules {
+    other_modules.iter().for_each(|module| {
         content.push_str(&format!("{}\n", module));
-    }
-    
+    });
+
     // Write the mod.rs file
     if let Err(e) = fs::write(mod_path, content) {
         eprintln!("Error updating schema mod.rs file: {}", e);
     }
-    
+
     // Now update the db.rs file with connection functions for each database
     update_db_connection_functions(connections);
 }
@@ -397,12 +316,12 @@ fn update_schema_mod_file(connections: &[String]) {
 // Generate simple connection functions in db.rs for each database
 fn update_db_connection_functions(connections: &[String]) {
     let db_path = "src/database/db.rs";
-    
+
     // Try to read the existing db.rs file
     if let Ok(existing_content) = fs::read_to_string(db_path) {
         // Extract the base part (up to the comment about additional functions)
         let base_parts: Vec<&str> = existing_content.split("// Additional connection functions").collect();
-        
+
         let mut new_content = if base_parts.len() > 1 {
             // If we found the marker comment, use everything before it
             base_parts[0].to_string()
@@ -410,28 +329,31 @@ fn update_db_connection_functions(connections: &[String]) {
             // Otherwise use the whole file
             existing_content.clone()
         };
-        
+
         // Add the marker comment
         new_content.push_str("// Additional connection functions will be generated by the blast tool\n");
         new_content.push_str("// based on DATABASE_URL_* entries in the .env file\n");
-        
+
         // Add connection functions for each additional database
         for conn_name in connections {
             if conn_name != "default" {
                 let func_name = format!("establish_connection_{}", conn_name);
                 let env_var = format!("DATABASE_URL_{}", conn_name.to_uppercase());
-                
-                new_content.push_str(&format!(r#"
+
+                new_content.push_str(&format!(
+                    r#"
 pub fn {}() -> PgConnection {{
     dotenv().ok();
     let database_url = env::var("{}").expect("{} must be set");
     PgConnection::establish(&database_url)
         .expect(&format!("Error connecting to {{}}", database_url))
 }}
-"#, func_name, env_var, env_var));
+"#,
+                    func_name, env_var, env_var
+                ));
             }
         }
-        
+
         // Write the updated db.rs file
         if let Err(e) = fs::write(db_path, new_content) {
             eprintln!("Error updating db.rs file: {}", e);
@@ -1108,6 +1030,23 @@ pub fn new_migration() {
     log_message(&format!("Migration files created at:\n- {}\n- {}", up_file, down_file));
 }
 
+fn process_seed_files(connection: &mut PgConnection, seed_files: Vec<String>) -> (bool, Vec<String>, Vec<String>) {
+    let mut all_succeeded = true;
+    let mut successful_seeds = Vec::new();
+    let mut failed_seeds = Vec::new();
+
+    for file in seed_files {
+        if run_seed_file(connection, &file) {
+            successful_seeds.push(file);
+        } else {
+            failed_seeds.push(file);
+            all_succeeded = false;
+        }
+    }
+
+    (all_succeeded, successful_seeds, failed_seeds)
+}
+
 // Function to seed a specific file by name
 pub fn seed_specific_file(file_name: &str) -> bool {
     let progress = ProgressManager::new_spinner();
@@ -1122,21 +1061,21 @@ pub fn seed_specific_file(file_name: &str) -> bool {
             return false;
         }
     };
-    
+
     // Check if file exists
     let seed_path = format!("src/database/seeds/{}", file_name);
     if !Path::new(&seed_path).exists() {
         progress.error(&format!("Seed file {} not found", file_name));
         return false;
     }
-    
+
     let result = run_seed_file(&mut connection, file_name);
     if result {
         progress.success(&format!("Seed file {} executed successfully", file_name));
     } else {
         progress.error(&format!("Failed to execute seed file {}", file_name));
     }
-    
+
     result
 }
 
@@ -1145,8 +1084,7 @@ pub fn seed(selection: Option<usize>) -> bool {
     progress.set_message("Running database seed operations...");
 
     // Try to establish a database connection first
-    let connection_result = establish_connection();
-    let mut connection = match connection_result {
+    let mut connection = match establish_connection() {
         Ok(conn) => conn,
         Err(e) => {
             progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
@@ -1161,75 +1099,39 @@ pub fn seed(selection: Option<usize>) -> bool {
         return false;
     }
 
-    let seed_files_result = fs::read_dir(seed_dir);
-    if let Err(e) = seed_files_result {
-        progress.error(&format!("Error reading seed directory: {}. Skipping seed operation.", e));
-        return false;
-    }
+    // Get and sort seed files
+    let seed_files = match fs::read_dir(seed_dir) {
+        Ok(entries) => {
+            let files: Vec<String> = entries
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().is_file())
+                .filter_map(|entry| entry.path().file_name().map(|name| name.to_string_lossy().into_owned()))
+                .collect();
 
-    let mut seed_files: Vec<String> = seed_files_result
-        .unwrap()
-        .filter_map(|entry| {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_file() {
-                    path.file_name().map(|name| name.to_string_lossy().into_owned())
-                } else {
-                    None
-                }
-            } else {
-                None
+            if files.is_empty() {
+                progress.error("No seed files found. Skipping seed operation.");
+                return false;
             }
-        })
-        .collect();
 
-    if seed_files.is_empty() {
-        progress.error("No seed files found. Skipping seed operation.");
-        return false;
-    }
-
-    seed_files.sort(); // Sort to ensure execution order
-
-    // Collect the items into a Vec<&str>
-    let items: Vec<&str> = std::iter::once("All").chain(seed_files.iter().map(|s| s.as_str())).collect();
-
-    if let Some(_selection) = selection {
-        // Run all seed files in batch mode
-        let seed_progress = ProgressManager::new_spinner();
-        seed_progress.set_message("Running database seed operations...");
-
-        let mut all_succeeded = true;
-        let mut successful_seeds = Vec::new();
-        let mut failed_seeds = Vec::new();
-
-        for file in seed_files.clone() {
-            if run_seed_file(&mut connection, &file) {
-                successful_seeds.push(file);
-            } else {
-                failed_seeds.push(file);
-                all_succeeded = false;
-            }
+            let mut sorted_files = files;
+            sorted_files.sort();
+            sorted_files
         }
-
-        if all_succeeded {
-            if !successful_seeds.is_empty() {
-                seed_progress.success(&format!("Seeded {} files: {}", successful_seeds.len(), successful_seeds.join(", ")));
-            } else {
-                seed_progress.success("No seed files to run");
-            }
-        } else {
-            if !failed_seeds.is_empty() {
-                seed_progress.error(&format!("Failed to seed files: {}", failed_seeds.join(", ")));
-            } else {
-                seed_progress.error("Some seed files failed to execute");
-            }
+        Err(e) => {
+            progress.error(&format!("Error reading seed directory: {}. Skipping seed operation.", e));
             return false;
         }
+    };
 
-        return all_succeeded;
+    // Handle batch mode vs interactive mode
+    if let Some(_) = selection {
+        // Run all seed files in batch mode
+        return run_all_seed_files(&mut connection, seed_files);
     }
 
     // Interactive mode
+    let items: Vec<&str> = std::iter::once("All").chain(seed_files.iter().map(|s| s.as_str())).collect();
+
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Select a seed file to run or choose All")
         .default(0)
@@ -1239,38 +1141,7 @@ pub fn seed(selection: Option<usize>) -> bool {
 
     if selection == 0 {
         // Run all seed files
-        let seed_progress = ProgressManager::new_spinner();
-        seed_progress.set_message("Running all seed files...");
-
-        let mut all_succeeded = true;
-        let mut successful_seeds = Vec::new();
-        let mut failed_seeds = Vec::new();
-
-        for file in seed_files {
-            if run_seed_file(&mut connection, &file) {
-                successful_seeds.push(file);
-            } else {
-                failed_seeds.push(file);
-                all_succeeded = false;
-            }
-        }
-
-        if all_succeeded {
-            if !successful_seeds.is_empty() {
-                seed_progress.success(&format!("Seeded {} files: {}", successful_seeds.len(), successful_seeds.join(", ")));
-            } else {
-                seed_progress.success("No seed files to run");
-            }
-        } else {
-            if !failed_seeds.is_empty() {
-                seed_progress.error(&format!("Failed to seed files: {}", failed_seeds.join(", ")));
-            } else {
-                seed_progress.error("Some seed files failed to execute");
-            }
-            return false;
-        }
-
-        all_succeeded
+        run_all_seed_files(&mut connection, seed_files)
     } else {
         // Run selected seed file
         let file = &seed_files[selection - 1];
@@ -1286,6 +1157,31 @@ pub fn seed(selection: Option<usize>) -> bool {
 
         result
     }
+}
+
+// Helper function to run all seed files
+fn run_all_seed_files(connection: &mut PgConnection, seed_files: Vec<String>) -> bool {
+    let seed_progress = ProgressManager::new_spinner();
+    seed_progress.set_message("Running all seed files...");
+
+    let (all_succeeded, successful_seeds, failed_seeds) = process_seed_files(connection, seed_files);
+
+    if all_succeeded {
+        if !successful_seeds.is_empty() {
+            seed_progress.success(&format!("Seeded {} files: {}", successful_seeds.len(), successful_seeds.join(", ")));
+        } else {
+            seed_progress.success("No seed files to run");
+        }
+    } else {
+        if !failed_seeds.is_empty() {
+            seed_progress.error(&format!("Failed to seed files: {}", failed_seeds.join(", ")));
+        } else {
+            seed_progress.error("Some seed files failed to execute");
+        }
+        return false;
+    }
+
+    all_succeeded
 }
 
 fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
@@ -1338,9 +1234,8 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
 fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    // Check if PostgreSQL is installed or at least the psql command is available
-    let psql_check = Command::new("which").arg("psql").output();
-    let postgres_available = psql_check.is_ok() && psql_check.unwrap().status.success();
+    // Check if PostgreSQL is installed
+    let postgres_available = Command::new("which").arg("psql").output().map(|output| output.status.success()).unwrap_or(false);
 
     // Get database URL from environment
     let database_url = env::var("DATABASE_URL").map_err(|_| {
@@ -1356,12 +1251,10 @@ fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
 
     // Try to establish connection
     PgConnection::establish(&database_url).map_err(|e| {
-        let error_message = format!("Could not connect to database via `{}`: {}", database_url, e);
-
         // Check if service is running
-        let service_check = Command::new("pg_isready").arg("-h").arg("localhost").output();
-        let service_running = service_check.is_ok() && service_check.unwrap().status.success();
+        let service_running = Command::new("pg_isready").args(["-h", "localhost"]).output().map(|output| output.status.success()).unwrap_or(false);
 
+        let error_message = format!("Could not connect to database via `{}`: {}", database_url, e);
         let suggestion = if !service_running {
             format!("{}. PostgreSQL service appears to be down. Try starting it with: sudo service postgresql start", error_message)
         } else {

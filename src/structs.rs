@@ -8,11 +8,11 @@ use std::process::Command;
 
 fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
     let content = fs::read_to_string(schema_path)?;
-    
+
     // IMPORTANT: Use a better regex that captures the actual table name correctly
     // This regex looks for table declarations like: table! { city_boundaries (id) {
     let re = Regex::new(r"table!\s*\{\s*([A-Za-z0-9_]+)\s*\(").unwrap();
-    
+
     let mut tables = Vec::new();
     for cap in re.captures_iter(&content) {
         if let Some(table_name) = cap.get(1) {
@@ -21,11 +21,11 @@ fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
             tables.push(table_name_str);
         }
     }
-    
+
     if tables.is_empty() {
         println!("WARNING: No tables found in schema file at {}", schema_path);
     }
-    
+
     Ok(tables)
 }
 
@@ -91,18 +91,17 @@ fn fix_struct_name(generated_name: &str, schema_tables: &[String]) -> (String, S
     if !candidate.ends_with('s') {
         let candidate_plural = format!("{}s", candidate);
         if schema_tables.contains(&candidate_plural) {
-            // IMPORTANT: Return the pluralized table name for both the PascalCase struct name 
+            // IMPORTANT: Return the pluralized table name for both the PascalCase struct name
             // and the exact table name to ensure consistency in imports and table_name attribute
             return (to_pascal(&candidate_plural), candidate_plural);
         }
     }
-    
+
     // Finally, check all schema tables explicitly to find exact matches
     // This ensures table names like "city_boundaries" are preserved exactly
     for table_name in schema_tables {
         // Convert both to lowercase for case-insensitive comparison
-        if table_name.to_lowercase().contains(&candidate.to_lowercase()) ||
-           candidate.to_lowercase().contains(&table_name.to_lowercase()) {
+        if table_name.to_lowercase().contains(&candidate.to_lowercase()) || candidate.to_lowercase().contains(&table_name.to_lowercase()) {
             return (to_pascal(table_name), table_name.clone());
         }
     }
@@ -163,7 +162,7 @@ fn parse_and_process_structs(content: &str, config: &Config, schema_tables: &[St
                         continue;
                     }
                     let (fixed_name, table_name) = fix_struct_name(generated_name, schema_tables);
-                    
+
                     if write_struct_file(config, &fixed_name, &table_name, &current_struct, output_dir) {
                         processed_tables.push(table_name);
                     }
@@ -258,7 +257,7 @@ fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str,
         eprintln!("Error creating directory {}: {}", output_dir, e);
         return false;
     }
-    
+
     // We always use the EXACT table_name from the schema for the file name
     // This ensures city_boundaries stays city_boundaries, not city_boundary
 
@@ -286,7 +285,7 @@ fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str,
     let auto_fields = check_migration_for_serial_fields(table_name);
 
     // Process the main struct definition
-    let mut new_struct_def = struct_def
+    let new_struct_def = struct_def
         .lines()
         .map(|line| {
             if line.trim().starts_with("pub struct") {
@@ -380,20 +379,22 @@ pub struct New{1} {{
     // First remove any existing schema import that might be incorrect
     let schema_import_pattern = Regex::new(r"use crate::database::schema::[^;]+;").unwrap();
     let mut final_struct_def = schema_import_pattern.replace_all(&new_struct_def, "").to_string();
-    
+
     // Debug logging to help diagnose import issues
     println!("For struct: {}, using table_name: {} for schema import", fixed_struct_name, table_name);
-    
+
     // Now add the correct import using the exact table_name from schema
-    final_struct_def = format!("use crate::database::schema::{};\n{}{}", 
+    final_struct_def = format!(
+        "use crate::database::schema::{};\n{}{}",
         table_name, // This is the exact name from schema.rs
-        additional_imports_str, 
-        final_struct_def);
+        additional_imports_str,
+        final_struct_def
+    );
 
     // IMPORTANT: Always use the exact table_name for the file name
     // Don't singularize or modify the table name for file paths
     let file_name = format!("{}/{}.rs", output_dir, table_name);
-    
+
     println!("Writing struct file: {} for table: {}", file_name, table_name); // Debug log
 
     let struct_write_ok = if let Err(e) = fs::write(&file_name, final_struct_def) {
@@ -410,7 +411,7 @@ pub struct New{1} {{
     } else {
         // Write the insertable struct file - use exact table name
         let insertable_file_name = format!("{}/{}.rs", insertable_dir, table_name);
-        
+
         println!("Writing insertable struct file: {} for table: {}", insertable_file_name, table_name); // Debug log
 
         if let Err(e) = fs::write(&insertable_file_name, insertable_struct) {

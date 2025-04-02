@@ -1,6 +1,8 @@
+use crate::logger;
 use std::fs;
 use std::os::unix::process::ExitStatusExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use toml::Value;
 
 #[derive(Clone)]
@@ -10,31 +12,142 @@ pub struct Config {
     pub assets: Value,
     pub project_dir: PathBuf,
     pub show_compiler_warnings: bool,
+    pub last_modified: SystemTime,
 }
 
-// For interactive mode: loads files from current directory.
+impl Config {
+    // Create a config from path
+    pub fn from_path(config_path: &Path, project_dir: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let config_str = fs::read_to_string(config_path)?;
+        let config_val: Value = config_str.parse()?;
+        let metadata = fs::metadata(config_path)?;
+
+        let cargo_toml_path = project_dir.join("Cargo.toml");
+        let cargo_str = fs::read_to_string(&cargo_toml_path)?;
+        let cargo: Value = cargo_str.parse()?;
+        let project_name = cargo.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("Unknown").to_string();
+
+        // Get environment from TOML or default to dev
+        let environment = config_val.get("settings").and_then(|s| s.get("environment")).and_then(|e| e.as_str()).unwrap_or("dev").to_string();
+
+        // Get show_compiler_warnings from TOML or default to true
+        let show_compiler_warnings = config_val.get("settings").and_then(|s| s.get("show_compiler_warnings")).and_then(|v| v.as_bool()).unwrap_or(true);
+
+        Ok(Config {
+            environment,
+            project_name,
+            assets: config_val,
+            project_dir: project_dir.to_path_buf(),
+            show_compiler_warnings,
+            last_modified: metadata.modified()?,
+        })
+    }
+
+    // Check if config file has been modified and reload if necessary
+    pub fn reload_if_modified(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
+        let config_path = self.project_dir.join("Catalyst.toml");
+        let metadata = fs::metadata(&config_path)?;
+
+        if let Ok(modified) = metadata.modified() {
+            if modified > self.last_modified {
+                // File has been modified, reload
+                logger::debug("Catalyst.toml modified, reloading configuration")?;
+
+                let new_config = Self::from_path(&config_path, &self.project_dir)?;
+
+                // Update this config with new values
+                self.environment = new_config.environment;
+                self.project_name = new_config.project_name;
+                self.assets = new_config.assets;
+                self.show_compiler_warnings = new_config.show_compiler_warnings;
+                self.last_modified = new_config.last_modified;
+
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    // Helper method to update a setting in the TOML file
+    fn update_setting<T: Into<toml::Value>>(&mut self, key: &str, value: T) -> Result<(), Box<dyn std::error::Error>> {
+        // Update the config file
+        let config_path = self.project_dir.join("Catalyst.toml");
+        let toml_content = fs::read_to_string(&config_path)?;
+
+        // Parse the TOML content
+        let mut parsed_toml: toml::Value = toml_content.parse()?;
+
+        // Make sure the settings table exists
+        if !parsed_toml.as_table().unwrap().contains_key("settings") {
+            parsed_toml.as_table_mut().unwrap().insert("settings".to_string(), toml::Value::Table(toml::value::Table::new()));
+        }
+
+        // Update the setting
+        parsed_toml.as_table_mut().unwrap().get_mut("settings").unwrap().as_table_mut().unwrap().insert(key.to_string(), value.into());
+
+        // Format the TOML content and write it back
+        let formatted_toml = toml::to_string_pretty(&parsed_toml)?;
+        fs::write(&config_path, formatted_toml)?;
+
+        // Update last_modified and assets
+        if let Ok(metadata) = fs::metadata(&config_path) {
+            if let Ok(modified) = metadata.modified() {
+                self.last_modified = modified;
+                self.assets = parsed_toml;
+            }
+        }
+
+        Ok(())
+    }
+
+    // Toggle between dev and prod environment
+    pub fn toggle_environment(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let old_env = self.environment.clone();
+
+        // Toggle environment
+        self.environment = if self.environment == "dev" { "prod".to_string() } else { "dev".to_string() };
+
+        // Update the setting
+        self.update_setting("environment", self.environment.clone())?;
+
+        logger::success(&format!("Environment toggled from {} to {}", old_env, self.environment))?;
+        Ok(())
+    }
+
+    // Toggle compiler warnings
+    #[allow(dead_code)]
+    pub fn toggle_compiler_warnings(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let old_state = self.show_compiler_warnings;
+        let old_state_str = if old_state { "enabled" } else { "disabled" };
+
+        // Toggle show_compiler_warnings
+        self.show_compiler_warnings = !self.show_compiler_warnings;
+        let new_state_str = if self.show_compiler_warnings { "enabled" } else { "disabled" };
+
+        // Update the setting
+        self.update_setting("show_compiler_warnings", self.show_compiler_warnings)?;
+
+        logger::success(&format!("Compiler warnings changed from {} to {}", old_state_str, new_state_str))?;
+        Ok(())
+    }
+}
+
+// Load project configuration from the current directory
 pub fn get_project_info() -> Result<Config, Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
-    let config_path = format!("{}/Catalyst.toml", cwd.display());
-    get_project_info_with_paths(&config_path, &cwd)
+    let config_path = cwd.join("Catalyst.toml");
+    Config::from_path(&config_path, &cwd)
 }
 
-// Reload configuration from Catalyst.toml for a specific Config instance
-pub fn reload_config(config: &mut Config) -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = config.project_dir.join("Catalyst.toml");
-    let refreshed_config = get_project_info_with_paths(&config_path.to_string_lossy(), &config.project_dir)?;
-    
-    // Update existing config with fresh values
-    config.environment = refreshed_config.environment;
-    config.project_name = refreshed_config.project_name;
-    config.assets = refreshed_config.assets;
-    config.show_compiler_warnings = refreshed_config.show_compiler_warnings;
-    
-    Ok(())
+// Load project configuration from a specific path
+#[allow(dead_code)]
+pub fn get_project_info_with_paths(config_path: &str, project_dir: &Path) -> Result<Config, Box<dyn std::error::Error>> {
+    Config::from_path(Path::new(config_path), project_dir)
 }
 
-// Toggle the environment between dev and prod
-// Launch Catalyst.toml configuration manager
+// Interactive configuration editor
+#[allow(dead_code)]
 pub fn launch_manager(config: &mut Config) {
     use console::style;
     use dialoguer::{theme::ColorfulTheme, FuzzySelect};
@@ -65,21 +178,9 @@ pub fn launch_manager(config: &mut Config) {
         // [MAJOR] Git settings
         display_options.push(style("[GIT] Configuration").bold().to_string());
 
-        // Git settings
-        let config_path = config.project_dir.join("Catalyst.toml");
-        let toml_content = match fs::read_to_string(&config_path) {
-            Ok(content) => content,
-            Err(_) => String::new(),
-        };
-
-        let toml_value: toml::Value = match toml_content.parse() {
-            Ok(value) => value,
-            Err(_) => toml::Value::Table(toml::value::Table::new()),
-        };
-
         // Git settings status
-        let git_status = if toml_value.get("git").is_some() {
-            let username = toml_value.get("git").and_then(|g| g.get("username")).and_then(|u| u.as_str()).unwrap_or("");
+        let git_status = if config.assets.get("git").is_some() {
+            let username = config.assets.get("git").and_then(|g| g.get("username")).and_then(|u| u.as_str()).unwrap_or("");
 
             if !username.is_empty() {
                 style("configured").green()
@@ -112,27 +213,11 @@ pub fn launch_manager(config: &mut Config) {
             s if s.contains("[OTHER] Actions") => continue,     // This is a heading
             s if s.contains("Environment:") => {
                 // Toggle environment with a single press
-                let old_env = config.environment.clone();
-                match toggle_environment(config) {
-                    Ok(_) => {
-                        println!("✅ Environment changed from {} to {}", old_env, config.environment);
-                    }
-                    Err(e) => {
-                        println!("❌ Error toggling environment: {}", e);
-                    }
-                }
+                let _ = config.toggle_environment();
             }
             s if s.contains("Compiler Warnings:") => {
                 // Toggle compiler warnings with a single press
-                match toggle_compiler_warnings(config) {
-                    Ok(_) => {
-                        let status = if config.show_compiler_warnings { "enabled" } else { "disabled" };
-                        println!("✅ Compiler warnings are now {}", status);
-                    }
-                    Err(e) => {
-                        println!("❌ Error toggling compiler warnings: {}", e);
-                    }
-                }
+                let _ = config.toggle_compiler_warnings();
             }
             s if s.contains("Project Name:") => edit_project_name(config),
             s if s.contains("Git Configuration:") => edit_git_config(config),
@@ -154,6 +239,7 @@ pub fn launch_manager(config: &mut Config) {
 }
 
 // Edit Git configuration settings in Catalyst.toml
+#[allow(dead_code)]
 fn edit_git_config(config: &mut Config) {
     use console::style;
     use dialoguer::{theme::ColorfulTheme, FuzzySelect, Input};
@@ -188,7 +274,7 @@ fn edit_git_config(config: &mut Config) {
     if !toml_value.as_table().unwrap().contains_key("git") {
         println!("{}", style("[GIT] Section not found in Catalyst.toml").yellow());
 
-        // Auto create the section instead of asking
+        // Auto create the section
         let mut git_table = toml::value::Table::new();
 
         // Add default values
@@ -204,9 +290,7 @@ fn edit_git_config(config: &mut Config) {
 
     // Get current values for display
     let mut current_remote = toml_value.get("git").and_then(|g| g.get("remote_url")).and_then(|u| u.as_str()).unwrap_or("").to_string();
-
     let mut current_username = toml_value.get("git").and_then(|g| g.get("username")).and_then(|u| u.as_str()).unwrap_or("").to_string();
-
     let mut current_email = toml_value.get("git").and_then(|g| g.get("email")).and_then(|u| u.as_str()).unwrap_or("").to_string();
 
     // Create option menu for Git settings
@@ -351,6 +435,14 @@ fn edit_git_config(config: &mut Config) {
                     Err(e) => println!("❌ Error saving Catalyst.toml: {}", e),
                 }
 
+                // Update config's assets and last_modified
+                if let Ok(metadata) = fs::metadata(&config_path) {
+                    if let Ok(modified) = metadata.modified() {
+                        config.last_modified = modified;
+                        config.assets = toml_value;
+                    }
+                }
+
                 return;
             }
             _ => continue,
@@ -359,6 +451,7 @@ fn edit_git_config(config: &mut Config) {
 }
 
 // Edit project name in Catalyst.toml and Cargo.toml
+#[allow(dead_code)]
 fn edit_project_name(config: &mut Config) {
     use console::style;
     use dialoguer::{Confirm, Input};
@@ -471,6 +564,14 @@ fn edit_project_name(config: &mut Config) {
                     // Update config in memory
                     let old_name = config.project_name.clone();
                     config.project_name = new_name;
+                    config.assets = catalyst_toml;
+
+                    // Update last modified
+                    if let Ok(metadata) = fs::metadata(&catalyst_path) {
+                        if let Ok(modified) = metadata.modified() {
+                            config.last_modified = modified;
+                        }
+                    }
 
                     println!("{} Project name changed from {} to {}", style("✅").green(), style(old_name).dim(), style(&config.project_name).cyan().bold());
                     println!("{} All configuration files updated successfully", style("✅").green());
@@ -488,6 +589,7 @@ fn edit_project_name(config: &mut Config) {
 }
 
 // View current Catalyst.toml configuration with colored syntax highlighting
+#[allow(dead_code)]
 fn view_current_config(config: &Config) {
     use console::{style, Term};
 
@@ -557,12 +659,9 @@ fn view_current_config(config: &Config) {
     }
 }
 
-// These format_toml and format_toml_value functions have been removed
-// as they were unused. Instead, we use toml::to_string_pretty() for
-// proper TOML formatting throughout the codebase.
-
 // Add or edit a custom setting in Catalyst.toml
-fn edit_custom_setting(config: &Config) {
+#[allow(dead_code)]
+fn edit_custom_setting(config: &mut Config) {
     use dialoguer::{Input, Select};
 
     println!("⚙️ Custom Setting Editor");
@@ -696,123 +795,17 @@ fn edit_custom_setting(config: &Config) {
     match fs::write(&config_path, formatted_toml) {
         Ok(_) => {
             println!("✅ Added/updated key '{}' in section '{}' successfully", key_name, section_name);
+
+            // Update config's assets and last_modified
+            if let Ok(metadata) = fs::metadata(&config_path) {
+                if let Ok(modified) = metadata.modified() {
+                    config.last_modified = modified;
+                    config.assets = toml_value;
+                }
+            }
         }
         Err(e) => {
             println!("❌ Error saving Catalyst.toml: {}", e);
         }
     }
-}
-
-pub fn toggle_environment(config: &mut Config) -> Result<(), Box<dyn std::error::Error>> {
-    use console::style;
-
-    // Toggle between dev and prod
-    let old_env = config.environment.clone();
-    config.environment = if config.environment == "dev" { "prod".to_string() } else { "dev".to_string() };
-
-    // Update the config file using proper TOML parsing
-    let config_path = config.project_dir.join("Catalyst.toml");
-    let toml_content = fs::read_to_string(&config_path)?;
-
-    // Parse the TOML content
-    let mut parsed_toml: toml::Value = toml_content.parse()?;
-
-    // Make sure the settings table exists
-    if !parsed_toml.as_table().unwrap().contains_key("settings") {
-        parsed_toml.as_table_mut().unwrap().insert("settings".to_string(), toml::Value::Table(toml::value::Table::new()));
-    }
-
-    // Update the environment setting
-    parsed_toml
-        .as_table_mut()
-        .unwrap()
-        .get_mut("settings")
-        .unwrap()
-        .as_table_mut()
-        .unwrap()
-        .insert("environment".to_string(), toml::Value::String(config.environment.clone()));
-
-    // Format the TOML content and write it back
-    let formatted_toml = toml::to_string_pretty(&parsed_toml)?;
-    fs::write(config_path, formatted_toml)?;
-
-    // Print information about the change with colored output
-    let old_env_style = if old_env == "dev" { style(old_env).green() } else { style(old_env).red() };
-    let new_env_style = if config.environment == "dev" {
-        style(&config.environment).green()
-    } else {
-        style(&config.environment).red()
-    };
-
-    println!("Environment changed from {} to {}", old_env_style, new_env_style);
-
-    Ok(())
-}
-
-// Toggle compiler warnings setting
-pub fn toggle_compiler_warnings(config: &mut Config) -> Result<(), Box<dyn std::error::Error>> {
-    use console::style;
-
-    // Toggle show_compiler_warnings
-    let old_state = config.show_compiler_warnings;
-    config.show_compiler_warnings = !config.show_compiler_warnings;
-
-    // Update the config file
-    let config_path = config.project_dir.join("Catalyst.toml");
-    let toml_content = fs::read_to_string(&config_path)?;
-
-    // Parse the TOML content
-    let mut parsed_toml: toml::Value = toml_content.parse()?;
-
-    // Make sure the settings table exists
-    if !parsed_toml.as_table().unwrap().contains_key("settings") {
-        parsed_toml.as_table_mut().unwrap().insert("settings".to_string(), toml::Value::Table(toml::value::Table::new()));
-    }
-
-    // Update the show_compiler_warnings setting
-    parsed_toml
-        .as_table_mut()
-        .unwrap()
-        .get_mut("settings")
-        .unwrap()
-        .as_table_mut()
-        .unwrap()
-        .insert("show_compiler_warnings".to_string(), toml::Value::Boolean(config.show_compiler_warnings));
-
-    // Format the TOML content and write it back
-    let formatted_toml = toml::to_string_pretty(&parsed_toml)?;
-    fs::write(config_path, formatted_toml)?;
-
-    // Print information about the change with colored output
-    let old_state_str = if old_state { "enabled" } else { "disabled" };
-    let new_state_str = if config.show_compiler_warnings { "enabled" } else { "disabled" };
-
-    let old_state_style = if old_state { style(old_state_str).green() } else { style(old_state_str).yellow() };
-    let new_state_style = if config.show_compiler_warnings { style(new_state_str).green() } else { style(new_state_str).yellow() };
-
-    println!("Compiler warnings changed from {} to {}", old_state_style, new_state_style);
-
-    Ok(())
-}
-
-// For new projects: accepts an explicit project directory.
-pub fn get_project_info_with_paths<P: AsRef<std::path::Path>>(config_path: &str, project_dir: P) -> Result<Config, Box<dyn std::error::Error>> {
-    let config_str = fs::read_to_string(config_path)?;
-    let config_val: Value = config_str.parse().expect("Invalid TOML");
-
-    let cargo_toml_path = format!("{}/Cargo.toml", project_dir.as_ref().display());
-    let cargo_str = fs::read_to_string(&cargo_toml_path)?;
-    let cargo: Value = cargo_str.parse().expect("Invalid TOML");
-    let project_name = cargo["package"]["name"].as_str().unwrap_or("Unknown").to_string();
-
-    // Get show_compiler_warnings setting, default to true if not specified
-    let show_compiler_warnings = config_val.get("settings").and_then(|s| s.get("show_compiler_warnings")).and_then(|v| v.as_bool()).unwrap_or(true);
-
-    Ok(Config {
-        environment: config_val["settings"]["environment"].as_str().unwrap_or("dev").to_string(),
-        project_name,
-        assets: config_val,
-        project_dir: project_dir.as_ref().to_path_buf(),
-        show_compiler_warnings,
-    })
 }
