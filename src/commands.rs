@@ -210,7 +210,7 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
             progress.set_message("Initializing project completely...");
 
             // 1. Ensure dependencies are installed
-            dep_manager.ensure_installed(&["diesel", "sass"], true)?;
+            dep_manager.ensure_installed(&["diesel"], true)?;
 
             // 2. Database operations
             progress.set_message("Setting up database...");
