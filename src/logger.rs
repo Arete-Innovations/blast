@@ -240,9 +240,15 @@ impl Progress {
     pub fn set_message(&mut self, msg: &str) -> &mut Self {
         self.last_message = msg.to_string();
 
+        // Only log to console if it's a critical error, warning, or success message
+        // Otherwise only show in verbose mode
+        let should_log = msg.contains("Error") || msg.contains("✓") || msg.contains("✅") ||
+                         msg.contains("⚠") || is_verbose();
+
         match get_mode() {
             RuntimeMode::Cli => {
-                if !is_quiet() {
+                if !is_quiet() && should_log {
+                    // Update progress bar only - don't double log to file
                     self.bar.set_message(msg.to_string());
                 }
             }
