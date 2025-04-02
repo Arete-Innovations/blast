@@ -136,7 +136,10 @@ pub fn show_help() {
     println!("Blast - Suckless Web Framework CLI");
     println!();
     println!("USAGE:");
-    println!("  blast [COMMAND]");
+    println!("  blast [OPTIONS] [COMMAND]");
+    println!();
+    println!("OPTIONS:");
+    println!("  -v, --verbose       Enable verbose output (show INFO and DEBUG messages)");
     println!();
     println!("APP COMMANDS:");
     println!("  refresh              Refresh the application (rollback, migrate, seed, gen schema & structs)");
@@ -162,7 +165,7 @@ pub fn show_help() {
     println!("  css                  Minify CSS files");
     println!("  publish-css          Copy CSS files from src/assets/css to public/css with optional minification");
     println!("  js                   Process JS files");
-    println!("  cdn                  Download CDN assets");
+    println!("  cdn                  Download assets (git clone for Materialize, CDN for others)");
     println!();
     println!("CARGO COMMANDS:");
     println!("  cargo add [search]    Add a dependency - search crates.io if term provided");
@@ -201,73 +204,98 @@ pub async fn execute(cmd: Command, config: &mut Config, dep_manager: &mut Depend
         Command::NewProject(name) => {
             logger::info(&format!("Creating new project: {}", name))?;
             crate::project::create_new_project(&name);
+            logger::success(&format!("Project '{}' created successfully!", name))?;
+            logger::info(&format!("Next steps:"))?;
+            logger::info(&format!("  cd {}", name))?;
+            logger::info(&format!("  blast init"))?;
             Ok(())
         }
 
         Command::InitProject => {
             // Comprehensive initialization of the project
-            let mut progress = logger::create_progress(None);
-            progress.set_message("Initializing project completely...");
+            logger::info("Initializing project completely...")?;
 
             // 1. Ensure dependencies are installed
+            logger::info("Checking required dependencies...")?;
             dep_manager.ensure_installed(&["diesel"], true)?;
 
             // 2. Database operations
-            progress.set_message("Setting up database...");
+            logger::info("Setting up database...")?;
 
             // Run migrations
+            logger::info("  • Running migrations")?;
             let migrations_ok = crate::database::migrate();
             if !migrations_ok {
-                progress.warning("Some migration issues occurred")?;
+                logger::warning("Some migration issues occurred - check database configuration")?;
             }
 
             // Run seeds
+            logger::info("  • Seeding database")?;
             let seed_ok = crate::database::seed(Some(0));
             if !seed_ok {
-                progress.warning("Some seeding issues occurred")?;
+                logger::warning("Some seeding issues occurred - this may be normal for new projects")?;
             }
 
             // Generate schema
+            logger::info("  • Generating schema")?;
             let schema_ok = crate::database::generate_schema();
             if !schema_ok {
-                progress.warning("Some schema generation issues occurred")?;
+                logger::warning("Some schema generation issues occurred")?;
             }
 
             // 3. Code generation
-            progress.set_message("Generating code files...");
+            logger::info("Generating code files...")?;
 
             // Generate structs
+            logger::info("  • Generating structs")?;
             let structs_ok = crate::structs::generate(config);
             if !structs_ok {
-                progress.warning("Some struct generation issues occurred")?;
+                logger::warning("Some struct generation issues occurred - this may be normal for empty schemas")?;
             }
 
             // Generate models
+            logger::info("  • Generating models")?;
             let models_ok = crate::models::generate(config);
             if !models_ok {
-                progress.warning("Some model generation issues occurred")?;
+                logger::warning("Some model generation issues occurred - this may be normal for empty schemas")?;
             }
 
             // 4. Download assets
-            progress.set_message("Downloading and processing assets...");
+            logger::info("Setting up assets...")?;
 
-            // Download CDN assets
-            crate::assets::download_assets_async(config).await?;
+            // Download assets (including Materialize SCSS from git)
+            logger::info("  • Downloading assets")?;
+            match crate::assets::download_assets_async(config).await {
+                Ok(_) => logger::success("    ✓ Assets downloaded successfully")?,
+                Err(e) => logger::warning(&format!("    ⚠ Some asset downloads failed: {}", e))?
+            }
 
             // Process SCSS files
-            crate::assets::transpile_all_scss(config).await?;
+            logger::info("  • Processing SCSS files")?;
+            match crate::assets::transpile_all_scss(config).await {
+                Ok(_) => logger::success("    ✓ SCSS files processed successfully")?,
+                Err(e) => logger::warning(&format!("    ⚠ SCSS processing error: {}", e))?
+            }
 
             // Process CSS files
-            crate::assets::publish_css(config).await?;
+            logger::info("  • Publishing CSS files")?;
+            match crate::assets::publish_css(config).await {
+                Ok(_) => logger::success("    ✓ CSS files published successfully")?,
+                Err(e) => logger::warning(&format!("    ⚠ CSS publishing error: {}", e))?
+            }
 
             // Process JS files
-            crate::assets::process_js(config).await?;
+            logger::info("  • Processing JS files")?;
+            match crate::assets::process_js(config).await {
+                Ok(_) => logger::success("    ✓ JS files processed successfully")?,
+                Err(e) => logger::warning(&format!("    ⚠ JS processing error: {}", e))?
+            }
 
             // 5. Final steps
-            progress.success("Project initialization complete! Your project is ready to run.");
+            logger::success("✅ Project initialization complete! Your project is ready to run.")?;
             logger::info("Next steps:")?;
-            logger::info("1. Run 'blast run' to start the development server")?;
-            logger::info("2. Run 'blast dashboard' to launch the interactive dashboard")?;
+            logger::info("  1. Run 'blast run' to start the development server")?;
+            logger::info("  2. Run 'blast dashboard' to launch the interactive dashboard")?;
 
             Ok(())
         }

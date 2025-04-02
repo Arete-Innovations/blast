@@ -32,6 +32,7 @@ lazy_static! {
     static ref RUNTIME_MODE: Arc<Mutex<RuntimeMode>> = Arc::new(Mutex::new(RuntimeMode::Cli));
     static ref LOG_FILE_PATH: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
     static ref QUIET_MODE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref VERBOSE_MODE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
 }
 
 // Standard log files that should exist in each project
@@ -78,10 +79,23 @@ pub fn set_quiet_mode(quiet: bool) {
     *quiet_mode = quiet;
 }
 
+// Set verbose mode (show detailed logging)
+pub fn set_verbose_mode(verbose: bool) {
+    let mut verbose_mode = VERBOSE_MODE.lock().unwrap();
+    *verbose_mode = verbose;
+}
+
 // Get current quiet mode
 fn is_quiet() -> bool {
     let quiet_mode = QUIET_MODE.lock().unwrap();
     *quiet_mode
+}
+
+// Get current verbose mode
+fn is_verbose() -> bool {
+    // Check for both VERBOSE_MODE flag and BLAST_VERBOSE environment variable
+    let verbose_mode = VERBOSE_MODE.lock().unwrap();
+    *verbose_mode || env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1"
 }
 
 // Get current runtime mode
@@ -117,36 +131,44 @@ pub fn log(level: LogLevel, message: &str) -> Result<(), Box<dyn Error>> {
         message
     );
 
-    // Format message for stdout (with colors)
-    let stdout_message = format!(
-        "{} {} {}",
-        style(format!("[{}]", timestamp)).dim(),
-        match level {
-            LogLevel::Debug => style("[DEBUG]").dim(),
-            LogLevel::Info => style("[INFO]").cyan(),
-            LogLevel::Warning => style("[WARNING]").yellow(),
-            LogLevel::Error => style("[ERROR]").red(),
-            LogLevel::Success => style("[SUCCESS]").green(),
-        },
-        message
-    );
+    // Check if we should show this message based on verbosity settings
+    // Always show errors, warnings, and successes regardless of verbosity
+    let should_show_stdout = match level {
+        LogLevel::Debug => is_verbose(),
+        LogLevel::Info => is_verbose(),
+        LogLevel::Warning => true,
+        LogLevel::Error => true,
+        LogLevel::Success => true,
+    };
 
-    match get_mode() {
-        RuntimeMode::Cli => {
-            // Only print to stdout if not in quiet mode
-            if !is_quiet() {
-                println!("{}", stdout_message);
-            }
-        }
-        RuntimeMode::Dashboard => {
-            // Write to log file only
-            let log_path_guard = LOG_FILE_PATH.lock().unwrap();
-            if let Some(log_path) = &*log_path_guard {
-                let mut file = OpenOptions::new().create(true).write(true).append(true).open(log_path)?;
+    // Format message for stdout (with colors) if we should show it
+    let stdout_message = if should_show_stdout {
+        format!(
+            "{} {} {}",
+            style(format!("[{}]", timestamp)).dim(),
+            match level {
+                LogLevel::Debug => style("[DEBUG]").dim(),
+                LogLevel::Info => style("[INFO]").cyan(),
+                LogLevel::Warning => style("[WARNING]").yellow(),
+                LogLevel::Error => style("[ERROR]").red(),
+                LogLevel::Success => style("[SUCCESS]").green(),
+            },
+            message
+        )
+    } else {
+        String::new() // Empty string if we shouldn't show it
+    };
 
-                writeln!(file, "{}", log_message)?;
-            }
-        }
+    // Always write to log file
+    let log_path_guard = LOG_FILE_PATH.lock().unwrap();
+    if let Some(log_path) = &*log_path_guard {
+        let mut file = OpenOptions::new().create(true).write(true).append(true).open(log_path)?;
+        writeln!(file, "{}", log_message)?;
+    }
+
+    // Only print to stdout if in CLI mode and not quiet and we should show this level
+    if get_mode() == RuntimeMode::Cli && !is_quiet() && should_show_stdout && !stdout_message.is_empty() {
+        println!("{}", stdout_message);
     }
 
     Ok(())
@@ -478,6 +500,12 @@ pub fn setup_for_mode(config: &Config, interactive: bool) -> Result<(), Box<dyn 
     if interactive {
         env::set_var("BLAST_INTERACTIVE", "1");
     }
+
+    // Check if verbose mode is enabled via environment variable
+    let verbose = env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
+    
+    // Set verbose mode if enabled via environment
+    set_verbose_mode(verbose);
 
     // Determine log file path and mode
     let mode = if interactive {

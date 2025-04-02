@@ -86,8 +86,12 @@ dir = "src/assets/locale"
 default_language = "en"
 
 [assets.materialize]
-js_url = "https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"
+# The Materialize framework version to use (cloned from GitHub)
+version = "1.0.0"
+# Where to put the compiled JS file
 public_dir = "js/materialize"
+# Repository URL for git clone
+repo_url = "https://github.com/Dogfalo/materialize.git"
 
 [assets.htmx]
 js_url = "https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js"

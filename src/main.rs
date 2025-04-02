@@ -25,13 +25,23 @@ async fn main() {
 
     // Get command line arguments
     let args: Vec<String> = env::args().collect();
-
+    
+    // Check for verbose flag
+    let verbose_mode = args.iter().any(|arg| arg == "-v" || arg == "--verbose");
+    let filtered_args: Vec<String> = args.iter()
+        .filter(|arg| *arg != "-v" && *arg != "--verbose")
+        .cloned()
+        .collect();
+    
     // Initialize logger in CLI mode
     logger::init(logger::RuntimeMode::Cli, None).unwrap_or_default();
+    
+    // Set verbose mode if flag is present
+    logger::set_verbose_mode(verbose_mode);
 
-    // Parse CLI arguments
-    if args.len() > 1 {
-        match commands::parse_cli_args(&args) {
+    // Parse CLI arguments (using filtered args without verbose flags)
+    if filtered_args.len() > 1 {
+        match commands::parse_cli_args(&filtered_args) {
             Some(cmd) => {
                 // Load project config if needed
                 match configs::get_project_info() {
