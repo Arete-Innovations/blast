@@ -31,8 +31,6 @@ layout {
         }
     }
 
-
-
     tab name="📜Logs" {
         pane split_direction="horizontal" {
             pane name="Error Logs" command="bash" {
@@ -50,52 +48,11 @@ layout {
         }
     }
 
-    tab name=" Database" {
+    tab name=" Database" {
         pane name="Database" command="bash" {
             args "-c" "db_url=$(grep 'DATABASE_URL=' .env | cut -d '=' -f2); db_url=\"${db_url}?\"; lazysql \"${db_url}sslmode=disable\""
         }
     }
 
-    tab name="  Locale" {
-        pane split_direction="vertical" {
-            pane name="Language Manager" command="bash" size="65%" {
-                args "-c" "blast locale-manager"
-                    focus true
-            }
-            pane split_direction="horizontal" size="35%" {
-                pane name="Language Files" command="bash" {
-                    args "-c" "find src/assets/locale -type f -name \"*.json\" | xargs ls -la"
-                }
-            }
-        }
-    }
-
-    tab name=" Git" {
-        pane split_direction="vertical" {
-            pane name="Git Manager" command="bash" size="65%" {
-                args "-c" "blast git"
-                    focus true
-            }
-            pane split_direction="horizontal" size="35%" {
-                pane name="Git Status" command="bash" {
-                    args "-c" "git status; echo ''; git log --oneline -n 5"
-                }
-
-            }
-        }
-    }
-
-    tab name="🔧Catalyst" {
-        pane split_direction="vertical" {
-            pane name="Catalyst Manager" command="bash" size="65%" {
-                args "-c" "blast catalyst"
-                    focus true
-            }
-            pane split_direction="horizontal" size="35%" {
-                pane name="Catalyst.toml" command="bash" {
-                    args "-c" "bat Catalyst.toml"
-                }
-            }
-        }
-    }
+    
 }

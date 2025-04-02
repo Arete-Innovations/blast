@@ -1,7 +1,6 @@
 use crate::configs::Config;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -35,14 +34,14 @@ pub fn check_zellij_installed() -> bool {
 }
 
 // Create or verify log files and directories
-fn setup_logs(project_dir: &Path) -> Result<LogPaths, Box<dyn Error>> {
+fn setup_logs(project_dir: &Path) -> Result<LogPaths, String> {
     // Create logs directory in storage
     let logs_dir = project_dir.join("storage").join("logs");
-    fs::create_dir_all(&logs_dir)?;
+    fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
 
     // Create dashboard state directory
     let blast_dir = project_dir.join("storage").join("blast");
-    fs::create_dir_all(&blast_dir)?;
+    fs::create_dir_all(&blast_dir).map_err(|e| e.to_string())?;
 
     // Define log file paths
     let info_log = logs_dir.join("info.log");
@@ -54,9 +53,9 @@ fn setup_logs(project_dir: &Path) -> Result<LogPaths, Box<dyn Error>> {
     // Create empty log files if they don't exist
     for log_file in [&info_log, &error_log, &debug_log, &warning_log, &server_log].iter() {
         if !log_file.exists() {
-            let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(log_file)?;
+            let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(log_file).map_err(|e| e.to_string())?;
 
-            writeln!(file, "--- Log initialized: {} ---", log_file.file_name().unwrap_or_default().to_string_lossy())?;
+            writeln!(file, "--- Log initialized: {} ---", log_file.file_name().unwrap_or_default().to_string_lossy()).map_err(|e| e.to_string())?;
         }
     }
 
@@ -70,7 +69,7 @@ fn setup_logs(project_dir: &Path) -> Result<LogPaths, Box<dyn Error>> {
 }
 
 // Create Zellij layout file in the blast folder
-fn prepare_layout(project_dir: &Path) -> Result<String, Box<dyn Error>> {
+fn prepare_layout(project_dir: &Path) -> Result<String, String> {
     // Store in the blast directory
     let blast_dir = project_dir.join("storage").join("blast");
     let layout_path = blast_dir.join("dashboard.kdl");
@@ -79,13 +78,13 @@ fn prepare_layout(project_dir: &Path) -> Result<String, Box<dyn Error>> {
     let layout_content = include_str!("layouts/blast_dashboard.kdl").to_string();
 
     // Write the layout file
-    fs::write(&layout_path, layout_content)?;
+    fs::write(&layout_path, layout_content).map_err(|e| e.to_string())?;
 
     Ok(layout_path.to_string_lossy().to_string())
 }
 
 // Main function to launch the interactive dashboard
-pub fn launch_dashboard(config: &Config) -> Result<(), Box<dyn Error>> {
+pub fn launch_dashboard(config: &Config) -> Result<(), String> {
     use crate::output::{self, OutputMode};
 
     // Check if zellij is installed
@@ -103,17 +102,17 @@ pub fn launch_dashboard(config: &Config) -> Result<(), Box<dyn Error>> {
     let blast_log_path = project_dir.join("storage/blast/blast.log");
 
     // Initialize the blast log file with a header
-    let mut log_file = OpenOptions::new().create(true).write(true).append(true).open(&blast_log_path)?;
+    let mut log_file = OpenOptions::new().create(true).write(true).append(true).open(&blast_log_path).map_err(|e| e.to_string())?;
 
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-    writeln!(log_file, "\n\n--- Blast Dashboard Started: {} ---", now)?;
-    writeln!(log_file, "Project: {}", config.project_name)?;
-    writeln!(log_file, "Environment: {}", config.environment)?;
-    writeln!(log_file, "-------------------------------------------")?;
+    writeln!(log_file, "\n\n--- Blast Dashboard Started: {} ---", now).map_err(|e| e.to_string())?;
+    writeln!(log_file, "Project: {}", config.project_name).map_err(|e| e.to_string())?;
+    writeln!(log_file, "Environment: {}", config.environment).map_err(|e| e.to_string())?;
+    writeln!(log_file, "-------------------------------------------").map_err(|e| e.to_string())?;
 
     // Set output mode to log file for all operations
     output::set_output_mode(OutputMode::LogFile);
-    output::set_log_file_path(&blast_log_path)?;
+    output::set_log_file_path(&blast_log_path).map_err(|e| e.to_string())?;
 
     // Important: Set interactive mode and quiet mode for dashboard
     std::env::set_var("BLAST_INTERACTIVE", "1");
@@ -158,7 +157,7 @@ pub fn launch_dashboard(config: &Config) -> Result<(), Box<dyn Error>> {
 }
 
 // Start a server process and redirect output to standard log files
-pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, Box<dyn Error>> {
+pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, String> {
     // Ensure we're using the latest configuration
     let mut config_clone = config.clone();
     if let Err(e) = config_clone.reload_if_modified() {
@@ -169,23 +168,23 @@ pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, Box<dyn Error>
     let config = &config_clone;
 
     // Kill any existing server process
-    stop_server()?;
+    stop_server().map_err(|e| e.to_string())?;
 
     // Create logs directory if it doesn't exist
     let logs_dir = config.project_dir.join("storage").join("logs");
-    fs::create_dir_all(&logs_dir)?;
+    fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
 
     // Create storage directory for PIDs
     let blast_dir = config.project_dir.join("storage").join("blast");
-    fs::create_dir_all(&blast_dir)?;
+    fs::create_dir_all(&blast_dir).map_err(|e| e.to_string())?;
 
     // Get log paths
     let server_log_path = logs_dir.join("server.log");
     let error_log_path = logs_dir.join("error.log");
 
     // Open log files (make sure they exist)
-    let _ = OpenOptions::new().create(true).append(true).open(&server_log_path)?;
-    let _ = OpenOptions::new().create(true).append(true).open(&error_log_path)?;
+    let _ = OpenOptions::new().create(true).append(true).open(&server_log_path).map_err(|e| e.to_string())?;
+    let _ = OpenOptions::new().create(true).append(true).open(&error_log_path).map_err(|e| e.to_string())?;
 
     // Start the server process using script to preserve colors
     // but still properly detach it and prevent interactive menu from affecting it
@@ -220,9 +219,9 @@ pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, Box<dyn Error>
     cmd.args(["-c", &run_command]);
 
     // Capture the PID from the output of the command
-    let output = cmd.output()?;
+    let output = cmd.output().map_err(|e| e.to_string())?;
     let pid_str = String::from_utf8_lossy(&output.stdout);
-    let pid = pid_str.trim().parse::<u32>().map_err(|_| "Failed to parse PID")?;
+    let pid = pid_str.trim().parse::<u32>().map_err(|_| "Failed to parse PID".to_string())?;
 
     // Store the PID
     let mut processes = SERVER_PROCESSES.lock().unwrap();
@@ -230,19 +229,19 @@ pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, Box<dyn Error>
 
     // Also store the PID in a file for the interactive menu to access
     let pid_file_path = blast_dir.join("server.pid");
-    fs::write(&pid_file_path, pid.to_string())?;
+    fs::write(&pid_file_path, pid.to_string()).map_err(|e| e.to_string())?;
 
     // Log to the server log
     let timestamp = chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]");
-    let mut server_log = OpenOptions::new().create(true).append(true).open(&server_log_path)?;
+    let mut server_log = OpenOptions::new().create(true).append(true).open(&server_log_path).map_err(|e| e.to_string())?;
 
-    writeln!(server_log, "{} Server started with PID: {}", timestamp, pid)?;
+    writeln!(server_log, "{} Server started with PID: {}", timestamp, pid).map_err(|e| e.to_string())?;
 
     Ok(pid)
 }
 
 // Stop a running server process
-pub fn stop_server() -> Result<(), Box<dyn Error>> {
+pub fn stop_server() -> Result<(), String> {
     let mut processes = SERVER_PROCESSES.lock().unwrap();
     let mut stopped = false;
 
@@ -255,7 +254,7 @@ pub fn stop_server() -> Result<(), Box<dyn Error>> {
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Force kill if still running
-        let ps_output = Command::new("ps").arg("-p").arg(pid.to_string()).output()?;
+        let ps_output = Command::new("ps").arg("-p").arg(pid.to_string()).output().map_err(|e| e.to_string())?;
 
         if ps_output.status.success() {
             let _ = Command::new("kill").arg("-9").arg(pid.to_string()).status();

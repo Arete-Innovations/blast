@@ -17,13 +17,12 @@ fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
     for cap in re.captures_iter(&content) {
         if let Some(table_name) = cap.get(1) {
             let table_name_str = table_name.as_str().to_string();
-            println!("Found table in schema: {}", &table_name_str);
             tables.push(table_name_str);
         }
     }
 
     if tables.is_empty() {
-        println!("WARNING: No tables found in schema file at {}", schema_path);
+        crate::logger::warning(&format!("No tables found in schema file at {}", schema_path)).unwrap_or_default();
     }
 
     Ok(tables)
@@ -254,7 +253,7 @@ fn check_migration_for_serial_fields(table_name: &str) -> Vec<String> {
 fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str, struct_def: &str, output_dir: &str) -> bool {
     // Create the output directory if it doesn't exist
     if let Err(e) = fs::create_dir_all(output_dir) {
-        eprintln!("Error creating directory {}: {}", output_dir, e);
+        crate::logger::error(&format!("Error creating directory {}: {}", output_dir, e)).unwrap_or_default();
         return false;
     }
 
@@ -264,7 +263,7 @@ fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str,
     // Create insertable directory for New* structs
     let insertable_dir = format!("{}/insertable", output_dir);
     if let Err(_e) = fs::create_dir_all(&insertable_dir) {
-        eprintln!("Error creating insertable directory");
+        crate::logger::error("Error creating insertable directory").unwrap_or_default();
         return false;
     }
 
@@ -381,7 +380,7 @@ pub struct New{1} {{
     let mut final_struct_def = schema_import_pattern.replace_all(&new_struct_def, "").to_string();
 
     // Debug logging to help diagnose import issues
-    println!("For struct: {}, using table_name: {} for schema import", fixed_struct_name, table_name);
+    crate::logger::debug(&format!("For struct: {}, using table_name: {} for schema import", fixed_struct_name, table_name)).unwrap_or_default();
 
     // Now add the correct import using the exact table_name from schema
     final_struct_def = format!(
@@ -395,10 +394,10 @@ pub struct New{1} {{
     // Don't singularize or modify the table name for file paths
     let file_name = format!("{}/{}.rs", output_dir, table_name);
 
-    println!("Writing struct file: {} for table: {}", file_name, table_name); // Debug log
+    crate::logger::debug(&format!("Writing struct file: {} for table: {}", file_name, table_name)).unwrap_or_default(); // Debug log
 
     let struct_write_ok = if let Err(e) = fs::write(&file_name, final_struct_def) {
-        eprintln!("Error writing struct file {}: {}", file_name, e);
+        crate::logger::error(&format!("Error writing struct file {}: {}", file_name, e)).unwrap_or_default();
         false
     } else {
         true
@@ -412,10 +411,10 @@ pub struct New{1} {{
         // Write the insertable struct file - use exact table name
         let insertable_file_name = format!("{}/{}.rs", insertable_dir, table_name);
 
-        println!("Writing insertable struct file: {} for table: {}", insertable_file_name, table_name); // Debug log
+        crate::logger::debug(&format!("Writing insertable struct file: {} for table: {}", insertable_file_name, table_name)).unwrap_or_default(); // Debug log
 
         if let Err(e) = fs::write(&insertable_file_name, insertable_struct) {
-            eprintln!("Error writing insertable struct file {}: {}", insertable_file_name, e);
+            crate::logger::error(&format!("Error writing insertable struct file {}: {}", insertable_file_name, e)).unwrap_or_default();
             false
         } else {
             // Update the insertable mod.rs file to include the new file
@@ -429,7 +428,7 @@ pub struct New{1} {{
                 mod_content.push_str(&format!("\n{}", pub_use));
 
                 if let Err(e) = fs::write(&insertable_mod_path, mod_content) {
-                    eprintln!("Error updating insertable mod.rs: {}", e);
+                    crate::logger::error(&format!("Error updating insertable mod.rs: {}", e)).unwrap_or_default();
                     false
                 } else {
                     true
@@ -468,7 +467,7 @@ fn update_mod_file(config: &Config, struct_table_names: &[String]) -> bool {
 
     if updated {
         if let Err(e) = fs::write(&mod_file_path, mod_file_content) {
-            eprintln!("Error writing mod.rs file: {}", e);
+            crate::logger::error(&format!("Error writing mod.rs file: {}", e)).unwrap_or_default();
             return false;
         }
     }
