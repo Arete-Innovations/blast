@@ -588,44 +588,57 @@ nav {
 pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>> {
     // Use more fault-tolerant approach with individual error handling
     let mut any_errors = false;
-
-    match download_fontawesome_async(config).await {
-        Ok(_) => (),
-        Err(e) => {
-            crate::logger::warning(&format!("Error downloading FontAwesome: {}", e))?;
-            any_errors = true;
+    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
+    
+    // Create one main progress bar for all asset downloads
+    let mut progress = crate::logger::create_progress(None);
+    progress.set_message("Downloading assets...");
+    
+    // Only show detailed messages in verbose mode
+    let log_error = |e: &Box<dyn Error>| -> Result<(), Box<dyn Error>> {
+        if is_verbose {
+            crate::logger::warning(&format!("Download error: {}", e))?;
         }
+        Ok(())
+    };
+
+    let fa_result = download_fontawesome_async(config).await;
+    if fa_result.is_ok() {
+        progress.set_message("FontAwesome assets ready");
+    } else if let Err(e) = fa_result {
+        log_error(&e)?;
+        any_errors = true;
     }
 
-    match download_materialicons_async(config).await {
-        Ok(_) => (),
-        Err(e) => {
-            crate::logger::warning(&format!("Error downloading Material Icons: {}", e))?;
-            any_errors = true;
-        }
+    let mi_result = download_materialicons_async(config).await;
+    if mi_result.is_ok() {
+        progress.set_message("Material Icons ready");
+    } else if let Err(e) = mi_result {
+        log_error(&e)?;
+        any_errors = true;
     }
 
     // Materialize JS and SCSS are now handled by a single function
-    match download_materialize_scss(config).await {
-        Ok(_) => (),
-        Err(e) => {
-            crate::logger::warning(&format!("Error setting up Materialize assets: {}", e))?;
-            any_errors = true;
-        }
+    let mat_result = download_materialize_scss(config).await;
+    if mat_result.is_ok() {
+        progress.set_message("Materialize assets ready");
+    } else if let Err(e) = mat_result {
+        log_error(&e)?;
+        any_errors = true;
     }
 
-    match download_htmx_js(config).await {
-        Ok(_) => (),
-        Err(e) => {
-            crate::logger::warning(&format!("Error downloading HTMX JS: {}", e))?;
-            any_errors = true;
-        }
+    let htmx_result = download_htmx_js(config).await;
+    if htmx_result.is_ok() {
+        progress.set_message("HTMX ready");
+    } else if let Err(e) = htmx_result {
+        log_error(&e)?;
+        any_errors = true;
     }
 
     if any_errors {
-        crate::logger::warning("Completed asset downloads with some non-critical errors")?;
+        progress.set_message("Asset download completed (with some non-critical errors)");
     } else {
-        crate::logger::success("All assets downloaded successfully")?;
+        progress.set_message("✅ All assets ready");
     }
 
     Ok(())
@@ -634,6 +647,7 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
 pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     let project_dir = &config.project_dir;
     let is_production = config.environment == "prod" || config.environment == "production";
+    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
 
     let sass_dir = project_dir.join("src/assets/sass");
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
@@ -654,113 +668,71 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
         }
     }
 
-    // Check if we're in interactive mode
-    let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
+    // We don't need to check interactive mode anymore since we use a single progress approach
 
     if scss_files.is_empty() {
-        if is_interactive {
-            let _ = crate::output::log("No SCSS files found!");
-        } else {
+        if is_verbose {
             println!("No SCSS files found!");
         }
         return Ok(());
     }
 
-    if is_interactive {
-        // In interactive mode, log directly without progress bar
-        let _ = crate::output::log(&format!("Processing {} SCSS files...", scss_files.len()));
+    // Create single progress bar for SCSS processing
+    let mut progress = crate::logger::create_progress(Some(scss_files.len() as u64));
+    progress.set_message(&format!("Processing {} SCSS files", scss_files.len()));
 
-        for scss_file in scss_files {
-            let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
-            // Only use .min.css files in root CSS directory (not in app subfolder)
-            // The SCSS outputs are part of the framework, while app CSS goes in the app subfolder
-            let output_file = css_dir.join(format!("{}.min.css", file_stem));
+    // Counter for error tracking
+    let mut error_count = 0;
 
-            // Make sure CSS directory exists
-            fs::create_dir_all(&css_dir).await?;
+    for scss_file in scss_files {
+        let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
+        // Only use .min.css files in root CSS directory (not in app subfolder)
+        // The SCSS outputs are part of the framework, while app CSS goes in the app subfolder
+        let output_file = css_dir.join(format!("{}.min.css", file_stem));
 
-            // Set up options for SCSS compilation
-            let mut sass_options = Options::default();
+        // Make sure CSS directory exists
+        fs::create_dir_all(&css_dir).await?;
 
-            // In production mode, use OutputStyle::Compressed
-            if is_production {
-                sass_options.output_style = OutputStyle::Compressed;
-                let _ = crate::output::log(&format!("Transpiling {} with compression", file_stem));
-            } else {
-                sass_options.output_style = OutputStyle::Expanded;
-                let _ = crate::output::log(&format!("Transpiling {} for development", file_stem));
-            }
+        // Set up options for SCSS compilation
+        let mut sass_options = Options::default();
 
-            // Compile SCSS to CSS with appropriate output style
-            match compile_file(scss_file.to_str().unwrap(), sass_options) {
-                Ok(css_content) => {
-                    // Write the CSS file (always as .min.css)
-                    fs::write(&output_file, &css_content).await?;
-                }
-                Err(e) => {
-                    let _ = crate::output::log(&format!("Error compiling {}: {}", scss_file.to_string_lossy(), e));
-                }
-            }
-        }
-
-        // Show success message based on environment
+        // In production mode, use OutputStyle::Compressed
         if is_production {
-            let _ = crate::output::log("SCSS transpilation complete (production mode with native compression).");
-        } else {
-            let _ = crate::output::log("SCSS transpilation complete (development mode - expanded format).");
-        }
-    } else {
-        // In CLI mode, use progress bar
-        let pb = ProgressBar::new(scss_files.len() as u64);
-        let pb_style = ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("#>-");
-        pb.set_style(pb_style);
-
-        for scss_file in scss_files {
-            let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
-            // Only use .min.css files in root CSS directory (not in app subfolder)
-            // The SCSS outputs are part of the framework, while app CSS goes in the app subfolder
-            let output_file = css_dir.join(format!("{}.min.css", file_stem));
-
-            // Make sure CSS directory exists
-            fs::create_dir_all(&css_dir).await?;
-
-            // Set up options for SCSS compilation
-            let mut sass_options = Options::default();
-
-            // In production mode, use OutputStyle::Compressed
-            if is_production {
-                sass_options.output_style = OutputStyle::Compressed;
-                pb.set_message(format!("Transpiling {} with compression", file_stem));
-            } else {
-                sass_options.output_style = OutputStyle::Expanded;
-                pb.set_message(format!("Transpiling {} for development", file_stem));
+            sass_options.output_style = OutputStyle::Compressed;
+            if is_verbose {
+                progress.set_message(&format!("Transpiling {} with compression", file_stem));
             }
+        } else {
+            sass_options.output_style = OutputStyle::Expanded;
+            if is_verbose {
+                progress.set_message(&format!("Transpiling {} for development", file_stem));
+            }
+        }
 
-            // Compile SCSS to CSS with appropriate output style
-            match compile_file(scss_file.to_str().unwrap(), sass_options) {
-                Ok(css_content) => {
-                    // Write the CSS file (always as .min.css)
-                    fs::write(&output_file, &css_content).await?;
-                }
-                Err(e) => {
-                    pb.println(format!("Error compiling {}: {}", scss_file.to_string_lossy(), e));
+        // Compile SCSS to CSS with appropriate output style
+        match compile_file(scss_file.to_str().unwrap(), sass_options) {
+            Ok(css_content) => {
+                // Write the CSS file (always as .min.css)
+                fs::write(&output_file, &css_content).await?;
+            }
+            Err(e) => {
+                error_count += 1;
+                if is_verbose {
+                    progress.set_message(&format!("Error compiling {}: {}", scss_file.to_string_lossy(), e));
                 }
             }
-
-            pb.inc(1);
         }
 
-        // Show success message based on environment
-        if is_production {
-            pb.finish_with_message(" SCSS transpilation complete (production mode with native compression).");
-        } else {
-            pb.finish_with_message(" SCSS transpilation complete (development mode - expanded format).");
-        }
+        progress.inc(1);
     }
 
+    // Show simple completion message
+    if error_count > 0 && is_verbose {
+        progress.set_message(&format!("SCSS processing completed with {} errors", error_count));
+    } else {
+        progress.set_message("SCSS processing completed");
+    }
+    
     Ok(())
 }
 

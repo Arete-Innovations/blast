@@ -113,16 +113,32 @@ fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
     for repo_url in TEMPLATE_REPOS.iter() {
         println!("Attempting to clone template from: {}", repo_url);
         
-        // Create a Command to run git clone with timeout
-        let status = Command::new("git")
-            .args(["clone", "--depth=1", "--single-branch", 
-                  "--branch", "master", 
-                  "--config", &format!("core.askPass=echo"),
-                  "--config", &format!("http.connectTimeout={}", CLONE_TIMEOUT.as_secs()),
-                  "--config", &format!("http.lowSpeedLimit=1000"),
-                  "--config", &format!("http.lowSpeedTime={}", CLONE_TIMEOUT.as_secs()),
-                  repo_url, &dest.to_string_lossy()])
-            .status();
+        // Determine whether to hide output based on environment
+        let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
+        
+        // Prepare the command
+        let mut cmd = Command::new("git");
+        cmd.args(["clone", "--depth=1", "--single-branch", 
+              "--branch", "master", 
+              "--config", &format!("core.askPass=echo"),
+              "--config", &format!("http.connectTimeout={}", CLONE_TIMEOUT.as_secs()),
+              "--config", &format!("http.lowSpeedLimit=1000"),
+              "--config", &format!("http.lowSpeedTime={}", CLONE_TIMEOUT.as_secs()),
+              repo_url, &dest.to_string_lossy()]);
+        
+        // Hide output unless in verbose mode
+        if !is_verbose {
+            if cfg!(target_os = "windows") {
+                cmd.stdin(std::process::Stdio::null())
+                   .stdout(std::process::Stdio::null())
+                   .stderr(std::process::Stdio::null());
+            } else {
+                cmd.arg("--quiet"); // Git's quiet flag
+            }
+        }
+        
+        // Run the command
+        let status = cmd.status();
             
         match status {
             Ok(exit_status) if exit_status.success() => {
