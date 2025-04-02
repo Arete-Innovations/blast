@@ -1,9 +1,0 @@
-{% include "partials/header" %}
-{% include "partials/navbar" %}
-
-
-<main>
-</main>
-
-{% include "partials/footer" %}
-
