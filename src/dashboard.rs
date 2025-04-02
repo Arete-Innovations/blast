@@ -161,13 +161,13 @@ pub fn launch_dashboard(config: &Config) -> Result<(), Box<dyn Error>> {
 pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, Box<dyn Error>> {
     // Ensure we're using the latest configuration
     let mut config_clone = config.clone();
-    if let Err(e) = crate::configs::reload_config(&mut config_clone) {
+    if let Err(e) = config_clone.reload_if_modified() {
         // Log the error but continue with the existing config
         println!("Warning: Failed to reload configuration: {}", e);
     }
     // Use the refreshed config
     let config = &config_clone;
-    
+
     // Kill any existing server process
     stop_server()?;
 

@@ -7,11 +7,11 @@ use std::path::Path;
 
 fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
     let content = fs::read_to_string(schema_path)?;
-    
+
     // IMPORTANT: Use a better regex that captures the actual table name correctly
     // This regex looks for table declarations like: table! { city_boundaries (id) {
     let re = Regex::new(r"table!\s*\{\s*([A-Za-z0-9_]+)\s*\(").unwrap();
-    
+
     let mut tables = Vec::new();
     for cap in re.captures_iter(&content) {
         if let Some(table_name) = cap.get(1) {
@@ -20,11 +20,11 @@ fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
             tables.push(table_name_str);
         }
     }
-    
+
     if tables.is_empty() {
         println!("WARNING: No tables found in schema file for models at {}", schema_path);
     }
-    
+
     Ok(tables)
 }
 
@@ -64,7 +64,7 @@ fn write_model_file(config: &Config, table_name: &str, struct_name: &str) -> boo
 
     // Always use the exact table_name from schema for the file_path
     let file_path = format!("{}/{}.rs", output_dir, table_name);
-    
+
     // For dsl alias, we can still use a singular form for readability
     let singular_name = singular(table_name);
 
