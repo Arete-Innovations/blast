@@ -310,7 +310,12 @@ async fn download_materialize_scss(config: &Config) -> Result<(), Box<dyn Error>
                 std::fs::remove_dir_all(temp_dir)?;
                 
                 Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
-            }).await??;
+            }).await?;
+            
+            match extract_result {
+                Ok(_) => (),
+                Err(e) => return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Error extracting zip: {}", e)))),
+            };
             
             progress.success("Materialize SCSS files downloaded and extracted successfully.");
             Ok(())
