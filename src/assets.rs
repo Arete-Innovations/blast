@@ -105,8 +105,6 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
 
-    // Config structure is now parsed by the get_config_value function
-
     // Provide a default value for FontAwesome CDN if missing
     let fa_base_url = get_config_value(config, &["fontawesome", "base_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1")).ok_or("Missing fontawesome base_url in config")?;
 
@@ -120,8 +118,6 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
     fs::create_dir_all(&fa_public_dir.join("sprites")).await?;
     fs::create_dir_all(&fa_public_dir.join("webfonts")).await?;
 
-    // Get FA assets to download from config - need to handle arrays differently
-    // This is a temporary solution - ideally we'd extend our helper function to handle arrays
     // Default values for FontAwesome assets
     let default_css = vec![toml::Value::String("css/all.min.css".to_string())];
     let default_js = vec![toml::Value::String("js/all.min.js".to_string())];
@@ -143,21 +139,18 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
 
     // Get values from config or use defaults
     let fa_css = config.assets.get("fontawesome").and_then(|f| f.get("css")).and_then(|c| c.as_array()).unwrap_or(&default_css);
-
     let fa_js = config.assets.get("fontawesome").and_then(|f| f.get("js")).and_then(|c| c.as_array()).unwrap_or(&default_js);
-
     let fa_sprites = config.assets.get("fontawesome").and_then(|f| f.get("sprites")).and_then(|c| c.as_array()).unwrap_or(&default_sprites);
-
     let fa_webfonts = config.assets.get("fontawesome").and_then(|f| f.get("webfonts")).and_then(|c| c.as_array()).unwrap_or(&default_webfonts);
 
-    let asset_types = [("css", fa_css), ("js", fa_js), ("sprites", fa_sprites), ("webfonts", fa_webfonts)];
+    let asset_types = [("CSS", fa_css), ("JS", fa_js), ("Sprites", fa_sprites), ("Webfonts", fa_webfonts)];
 
     // Calculate total assets
     let total_assets: usize = asset_types.iter().map(|(_, assets)| assets.len()).sum();
 
-    // Create a progress tracker
+    // Create a progress tracker for the overall FontAwesome download
     let mut progress = crate::logger::create_progress(Some(total_assets as u64));
-    progress.set_message(&format!("Downloading {} FontAwesome assets...", total_assets));
+    progress.set_message(&format!("FontAwesome: 0/{} files", total_assets));
 
     // Create async download tasks
     let mut tasks = FuturesUnordered::new();
@@ -180,33 +173,32 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
 
     // Process all downloads
     let mut completed = 0;
-    let mut has_errors = false;
+    // We don't need to track has_errors anymore since we handle errors directly
 
     while let Some(result) = tasks.next().await {
         match result {
-            Ok(Ok((asset_type, asset_path))) => {
+            Ok(Ok((asset_type, _))) => {
                 completed += 1;
-                let msg = format!("Downloaded {} ({}) ({}/{})", asset_path, asset_type, completed, total_assets);
-                progress.set_message(&msg);
+                // Update progress with count only - no need for busy-looking UI
+                progress.set_message(&format!("FontAwesome: {}/{} files ({})", 
+                    completed, total_assets, asset_type));
                 progress.inc(1);
             }
             Ok(Err(e)) => {
-                has_errors = true;
-                crate::logger::warning(&format!("Download error: {}", e))?;
+                // Display errors through the progress system
+                progress.warning(&e)?;
+                completed += 1;
+                progress.inc(1);
             }
             Err(e) => {
-                has_errors = true;
-                crate::logger::warning(&format!("Task error: {}", e))?;
+                progress.warning(&format!("Task error: {}", e))?;
+                completed += 1;
+                progress.inc(1);
             }
         }
     }
 
-    if has_errors {
-        progress.set_message("FontAwesome download completed with some errors");
-    } else {
-        progress.set_message("FontAwesome downloaded successfully");
-    }
-
+    // No need for a final message - the parent function will provide it
     Ok(())
 }
 
@@ -417,10 +409,7 @@ async fn download_materialize_scss(config: &Config) -> Result<(), Box<dyn Error>
             let warning_msg = "CDN download failed. Checking if we can build from source...";
             progress.set_message(warning_msg);
             
-            // Check if package.json and Gruntfile.js exist in the repo
-            let package_json = materialize_dir.join("package.json");
-            let gruntfile = materialize_dir.join("Gruntfile.js");
-            
+            // We don't need to check for specific files anymore as we'll just provide instructions
             progress.set_message("Attempting to build Materialize from source...");
             // This would require npm and grunt to be installed, so it's a last resort
             // For now, just inform the user about the situation
@@ -588,57 +577,69 @@ nav {
 pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>> {
     // Use more fault-tolerant approach with individual error handling
     let mut any_errors = false;
-    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
     
-    // Create one main progress bar for all asset downloads
-    let mut progress = crate::logger::create_progress(None);
-    progress.set_message("Downloading assets...");
+    // Create main progress bar that shows overall process
+    let mut main_progress = crate::logger::create_progress(Some(4)); // 4 asset types to download
+    main_progress.set_message("Downloading assets...");
     
-    // Only show detailed messages in verbose mode
+    // Function to handle errors consistently
     let log_error = |e: &Box<dyn Error>| -> Result<(), Box<dyn Error>> {
-        if is_verbose {
-            crate::logger::warning(&format!("Download error: {}", e))?;
-        }
+        crate::logger::warning(&format!("Download error: {}", e))?;
         Ok(())
     };
 
+    // 1. FontAwesome
+    main_progress.set_message("Downloading FontAwesome assets...");
     let fa_result = download_fontawesome_async(config).await;
     if fa_result.is_ok() {
-        progress.set_message("FontAwesome assets ready");
+        main_progress.inc(1);
+        main_progress.set_message("Downloading Material Icons...");
     } else if let Err(e) = fa_result {
         log_error(&e)?;
         any_errors = true;
+        main_progress.inc(1);
+        main_progress.set_message("Downloading Material Icons...");
     }
 
+    // 2. Material Icons
     let mi_result = download_materialicons_async(config).await;
     if mi_result.is_ok() {
-        progress.set_message("Material Icons ready");
+        main_progress.inc(1);
+        main_progress.set_message("Downloading Materialize assets...");
     } else if let Err(e) = mi_result {
         log_error(&e)?;
         any_errors = true;
+        main_progress.inc(1);
+        main_progress.set_message("Downloading Materialize assets...");
     }
 
-    // Materialize JS and SCSS are now handled by a single function
+    // 3. Materialize (JS and SCSS are now handled by a single function)
     let mat_result = download_materialize_scss(config).await;
     if mat_result.is_ok() {
-        progress.set_message("Materialize assets ready");
+        main_progress.inc(1);
+        main_progress.set_message("Downloading HTMX...");
     } else if let Err(e) = mat_result {
         log_error(&e)?;
         any_errors = true;
+        main_progress.inc(1);
+        main_progress.set_message("Downloading HTMX...");
     }
 
+    // 4. HTMX
     let htmx_result = download_htmx_js(config).await;
     if htmx_result.is_ok() {
-        progress.set_message("HTMX ready");
+        main_progress.inc(1);
     } else if let Err(e) = htmx_result {
         log_error(&e)?;
         any_errors = true;
+        main_progress.inc(1);
     }
 
+    // Finish with appropriate message
     if any_errors {
-        progress.set_message("Asset download completed (with some non-critical errors)");
+        main_progress.success("Asset download completed (with some non-critical errors)");
     } else {
-        progress.set_message("✅ All assets ready");
+        main_progress.success("All assets downloaded successfully");
     }
 
     Ok(())
@@ -647,7 +648,6 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
 pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     let project_dir = &config.project_dir;
     let is_production = config.environment == "prod" || config.environment == "production";
-    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
 
     let sass_dir = project_dir.join("src/assets/sass");
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
@@ -668,21 +668,19 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
         }
     }
 
-    // We don't need to check interactive mode anymore since we use a single progress approach
-
     if scss_files.is_empty() {
-        if is_verbose {
-            println!("No SCSS files found!");
-        }
+        crate::logger::info("No SCSS files found!")?;
         return Ok(());
     }
 
-    // Create single progress bar for SCSS processing
+    // Create progress bar with known total count for better visualization
     let mut progress = crate::logger::create_progress(Some(scss_files.len() as u64));
     progress.set_message(&format!("Processing {} SCSS files", scss_files.len()));
 
     // Counter for error tracking
     let mut error_count = 0;
+    let mut success_count = 0;
+    let total_files = scss_files.len(); // Store length before we move scss_files
 
     for scss_file in scss_files {
         let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
@@ -699,14 +697,12 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
         // In production mode, use OutputStyle::Compressed
         if is_production {
             sass_options.output_style = OutputStyle::Compressed;
-            if is_verbose {
-                progress.set_message(&format!("Transpiling {} with compression", file_stem));
-            }
+            progress.set_message(&format!("Transpiling {} with compression ({}/{})", 
+                file_stem, success_count + error_count + 1, total_files));
         } else {
             sass_options.output_style = OutputStyle::Expanded;
-            if is_verbose {
-                progress.set_message(&format!("Transpiling {} for development", file_stem));
-            }
+            progress.set_message(&format!("Transpiling {} for development ({}/{})", 
+                file_stem, success_count + error_count + 1, total_files));
         }
 
         // Compile SCSS to CSS with appropriate output style
@@ -714,23 +710,28 @@ pub async fn transpile_all_scss(config: &Config) -> Result<(), Box<dyn std::erro
             Ok(css_content) => {
                 // Write the CSS file (always as .min.css)
                 fs::write(&output_file, &css_content).await?;
+                success_count += 1;
             }
             Err(e) => {
                 error_count += 1;
-                if is_verbose {
-                    progress.set_message(&format!("Error compiling {}: {}", scss_file.to_string_lossy(), e));
-                }
+                // Always show compilation errors regardless of verbosity
+                progress.warning(&format!("Error compiling {}: {}", file_stem, e))?;
             }
         }
 
         progress.inc(1);
     }
 
-    // Show simple completion message
-    if error_count > 0 && is_verbose {
-        progress.set_message(&format!("SCSS processing completed with {} errors", error_count));
+    // Show completion message
+    if error_count > 0 {
+        if error_count == total_files {
+            progress.error(&format!("SCSS processing failed - all {} files had errors", error_count));
+        } else {
+            progress.success(&format!("SCSS processing completed: {} succeeded, {} failed", 
+                success_count, error_count));
+        }
     } else {
-        progress.set_message("SCSS processing completed");
+        progress.success(&format!("All {} SCSS files processed successfully", total_files));
     }
     
     Ok(())
