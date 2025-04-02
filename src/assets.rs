@@ -45,7 +45,7 @@ fn get_config_value(config: &Config, path: &[&str], default: Option<&str>) -> Op
     
     // Navigate to the requested section
     let mut current = assets_section;
-    let mut section_name = path[0];
+    let section_name = path[0];
     
     // First find the section we need
     match current.get(section_name) {
@@ -79,50 +79,33 @@ async fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn Error>
 }
 
 async fn download_materialize_js(config: &Config) -> Result<(), Box<dyn Error>> {
-    let project_dir = &config.project_dir;
-    let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
-
-    // Debug logging for materialize path
-    println!("DEBUG: Looking for materialize in config");
-    println!("DEBUG: Full config: {:?}", config.assets);
-
-    // Ensure we create the proper directory structure regardless of whether config values exist
-    let materialize_dir = project_dir.join(&public_dir).join("js").join("materialize");
-    fs::create_dir_all(&materialize_dir).await?;
-
-    // Use a default URL if missing in the config
-    let js_url = get_config_value(config, &["materialize", "js_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js")).unwrap_or_else(|| {
-        println!("DEBUG: Using default Materialize JS URL");
-        "https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js".to_string()
-    });
-
-    // Create a progress tracker
+    // This function is now a compatibility wrapper around download_materialize_scss,
+    // which handles both JS and SCSS setup from the git repository
+    
+    // We'll create a stub progress tracker for compatibility
     let mut progress = crate::logger::create_progress(Some(1));
-    progress.set_message("Downloading Materialize JS");
-
-    // Download the JS file
-    let js_path = materialize_dir.join("materialize.min.js");
-    match download_file(&js_url, &js_path).await {
+    progress.set_message("Setting up Materialize assets (see detailed progress below)");
+    
+    // Call the main function that now handles both JS and SCSS
+    match download_materialize_scss(config).await {
         Ok(_) => {
-            progress.success("Materialize JS downloaded successfully.");
             progress.inc(1);
-        }
+            progress.set_message("Materialize assets setup completed successfully");
+            Ok(())
+        },
         Err(e) => {
-            progress.error(&format!("Failed to download Materialize JS: {}", e));
-            return Err(e);
+            let error_msg = format!("Materialize setup failed: {}", e);
+            progress.set_message(&error_msg);
+            Err(e)
         }
     }
-
-    Ok(())
 }
 
 async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
 
-    // Print the entire config for debugging
-    println!("DEBUG: Full config structure:");
-    println!("DEBUG: {:?}", config.assets);
+    // Config structure is now parsed by the get_config_value function
 
     // Provide a default value for FontAwesome CDN if missing
     let fa_base_url = get_config_value(config, &["fontawesome", "base_url"], Some("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1")).ok_or("Missing fontawesome base_url in config")?;
@@ -221,7 +204,7 @@ async fn download_fontawesome_async(config: &Config) -> Result<(), Box<dyn Error
     if has_errors {
         progress.set_message("FontAwesome download completed with some errors");
     } else {
-        progress.success("FontAwesome downloaded successfully");
+        progress.set_message("FontAwesome downloaded successfully");
     }
 
     Ok(())
@@ -260,13 +243,14 @@ async fn download_materialicons_async(config: &Config) -> Result<(), Box<dyn Err
                 progress.inc(1);
             }
             Err(e) => {
-                progress.error(&format!("Failed to download {}: {}", file_name, e));
+                let error_msg = format!("Failed to download {}: {}", file_name, e);
+                progress.set_message(&error_msg);
                 return Err(e);
             }
         }
     }
 
-    progress.success("Material Icons downloaded successfully.");
+    progress.set_message("Material Icons downloaded successfully.");
     Ok(())
 }
 
@@ -289,11 +273,12 @@ async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
     let js_path = htmx_dir.join("htmx.min.js");
     match download_file(&js_url, &js_path).await {
         Ok(_) => {
-            progress.success("HTMX JS downloaded successfully.");
+            progress.set_message("HTMX JS downloaded successfully.");
             progress.inc(1);
         }
         Err(e) => {
-            progress.error(&format!("Failed to download HTMX JS: {}", e));
+            let error_msg = format!("Failed to download HTMX JS: {}", e);
+            progress.set_message(&error_msg);
             return Err(e);
         }
     }
@@ -304,157 +289,180 @@ async fn download_htmx_js(config: &Config) -> Result<(), Box<dyn Error>> {
 async fn download_materialize_scss(config: &Config) -> Result<(), Box<dyn Error>> {
     let project_dir = &config.project_dir;
     let src_sass_dir = project_dir.join("src/assets/sass");
+    let materialize_dir = project_dir.join("src/assets/materialize");
 
-    // Create the directory if it doesn't exist
+    // Create the directories if they don't exist
     fs::create_dir_all(&src_sass_dir).await?;
-
-    // Create a progress bar spinner for the download operation
+    
+    // Create a progress bar spinner for the operation
     let mut progress = crate::logger::create_progress(None);
-    progress.set_message("Setting up Materialize SCSS files...");
+    progress.set_message("Setting up Materialize assets...");
 
-    // Instead of downloading and extracting, let's create basic SCSS files
-    // This is more reliable than trying to download and extract from GitHub
+    // Get repository URL and version from config or use defaults
+    let repo_url = get_config_value(config, &["materialize", "repo_url"], Some("https://github.com/Dogfalo/materialize.git"))
+        .unwrap_or_else(|| "https://github.com/Dogfalo/materialize.git".to_string());
+    
+    let version = get_config_value(config, &["materialize", "version"], Some("1.0.0"))
+        .unwrap_or_else(|| "1.0.0".to_string());
+    
+    // Check if we should force a fresh clone (for debugging or version changes)
+    let force_fresh = std::env::var("BLAST_FORCE_FRESH_MATERIALIZE").unwrap_or_else(|_| String::from("0")) == "1";
+    
+    // Check if materialize repo already exists
+    let repo_exists = materialize_dir.exists();
+    
+    if repo_exists && force_fresh {
+        // Clean up existing repo if forced
+        progress.set_message("Forcing fresh clone of Materialize repository...");
+        match fs::remove_dir_all(&materialize_dir).await {
+            Ok(_) => {
+                progress.set_message("Removed existing Materialize directory");
+            },
+            Err(e) => {
+                let warning_msg = format!("Failed to remove existing Materialize directory: {}", e);
+                progress.set_message(&warning_msg);
+                // Continue anyway, the clone might still succeed
+            }
+        }
+    }
+    
+    // Clone or check the repository
+    if !repo_exists || force_fresh {
+        // Clone Materialize repository if it doesn't exist or we're forcing a fresh clone
+        progress.set_message(&format!("Cloning Materialize v{} repository...", version));
+        
+        // Make sure parent directory exists
+        if let Some(parent) = materialize_dir.parent() {
+            fs::create_dir_all(parent).await?;
+        }
+        
+        // Use tokio's process to run git clone without specifying a branch
+        // The Materialize repo hasn't been updated in years, so just clone the default branch
+        let clone_output = tokio::process::Command::new("git")
+            .args(&["clone", "--depth=1", &repo_url])
+            .arg(&materialize_dir)
+            .output()
+            .await;
+            
+        match clone_output {
+            Ok(output) => {
+                if !output.status.success() {
+                    let error = String::from_utf8_lossy(&output.stderr);
+                    let error_msg = format!("Failed to clone Materialize repository: {}", error);
+                    progress.set_message(&error_msg);
+                    
+                    // No need to check for specific branch errors since we're not specifying a branch
+                    
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Git clone failed: {}", error)
+                    )));
+                }
+                let success_msg = "Materialize repository cloned successfully";
+                progress.set_message(&success_msg);
+            },
+            Err(e) => {
+                let error_msg = format!("Failed to execute git clone: {}", e);
+                progress.set_message(&error_msg);
+                
+                // Check if git is installed
+                let git_check = tokio::process::Command::new("git")
+                    .arg("--version")
+                    .output()
+                    .await;
+                    
+                if git_check.is_err() {
+                    progress.set_message("Git may not be installed or is not in PATH. Please install git and try again.");
+                }
+                
+                return Err(Box::new(e));
+            }
+        }
+    } else {
+        progress.set_message("Using existing Materialize repository");
+    }
 
-    // Create the component directories
-    let components_dir = src_sass_dir.join("components");
-    let forms_dir = components_dir.join("forms");
-    fs::create_dir_all(&forms_dir).await?;
+    // Copy the compiled JS file to public directory
+    let public_dir = get_config_value(config, &["public_dir"], Some("public")).unwrap_or_else(|| "public".to_string());
+    let js_dest_dir = project_dir.join(&public_dir).join("js").join("materialize");
+    
+    // Create js directory if it doesn't exist
+    fs::create_dir_all(&js_dest_dir).await?;
+    
+    // Copy the minified JS file from the cloned repository
+    let materialize_js_src = materialize_dir.join("dist/js/materialize.min.js");
+    let materialize_js_dest = js_dest_dir.join("materialize.min.js");
+    
+    if materialize_js_src.exists() {
+        progress.set_message("Copying Materialize JS file...");
+        if let Err(e) = fs::copy(&materialize_js_src, &materialize_js_dest).await {
+            let warning_msg = format!("Failed to copy Materialize JS file: {}", e);
+            progress.set_message(&warning_msg);
+            // Fall back to CDN download
+            let js_url = format!("https://cdnjs.cloudflare.com/ajax/libs/materialize/{}/js/materialize.min.js", version);
+            progress.set_message("Falling back to CDN download for Materialize JS...");
+            download_file(&js_url, &materialize_js_dest).await?;
+        } else {
+            progress.set_message("Materialize JS file copied successfully");
+        }
+    } else {
+        progress.set_message("Materialize JS file not found in cloned repository");
+        // Fall back to CDN download if file doesn't exist
+        let js_url = format!("https://cdnjs.cloudflare.com/ajax/libs/materialize/{}/js/materialize.min.js", version);
+        progress.set_message("Downloading Materialize JS from CDN...");
+        if let Ok(_) = download_file(&js_url, &materialize_js_dest).await {
+            progress.set_message("Materialize JS file downloaded from CDN successfully");
+        } else {
+            // If CDN download also fails, attempt to compile from source
+            let warning_msg = "CDN download failed. Checking if we can build from source...";
+            progress.set_message(warning_msg);
+            
+            // Check if package.json and Gruntfile.js exist in the repo
+            let package_json = materialize_dir.join("package.json");
+            let gruntfile = materialize_dir.join("Gruntfile.js");
+            
+            progress.set_message("Attempting to build Materialize from source...");
+            // This would require npm and grunt to be installed, so it's a last resort
+            // For now, just inform the user about the situation
+            progress.set_message("Building from source requires npm and grunt. Please install dependencies manually:");
+            progress.set_message("1. cd src/assets/materialize");
+            progress.set_message("2. npm install");
+            progress.set_message("3. npx grunt");
+            
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other, 
+                "Failed to obtain Materialize JS - both repository and CDN attempts failed"
+            )));
+        }
+    }
 
-    // Check if we already have these files
+    // Create a single dark.scss file that imports from the Materialize SCSS
+    // Delete the other theme files if they exist
     let dark_scss_path = src_sass_dir.join("dark.scss");
     let light_scss_path = src_sass_dir.join("light.scss");
     let sepia_scss_path = src_sass_dir.join("sepia.scss");
     let midnight_scss_path = src_sass_dir.join("midnight.scss");
-
-    // Only create files if they don't exist
-    if !dark_scss_path.exists() {
-        let dark_scss_content = r#"// Dark theme variant for Materialize
-@import './components/forms/forms';
-
-// Set dark theme variables
-$primary-color: #2196F3;
-$secondary-color: #26a69a;
-$background-color: #121212;
-$surface-color: #1e1e1e; 
-$text-color: #e0e0e0;
-$card-bg-color: #2d2d2d;
-
-// Dark theme overrides
-body {
-  background-color: $background-color;
-  color: $text-color;
-}
-
-.card {
-  background-color: $card-bg-color;
-}
-
-nav {
-  background-color: $surface-color;
-}
-
-// Custom theme-specific styles below
-"#;
-        fs::write(&dark_scss_path, dark_scss_content).await?;
+    
+    // Remove other theme files if they exist
+    if light_scss_path.exists() {
+        fs::remove_file(light_scss_path).await?;
+    }
+    if sepia_scss_path.exists() {
+        fs::remove_file(sepia_scss_path).await?;
+    }
+    if midnight_scss_path.exists() {
+        fs::remove_file(midnight_scss_path).await?;
     }
 
-    if !light_scss_path.exists() {
-        let light_scss_content = r#"// Light theme variant for Materialize
-@import './components/forms/forms';
+    // Create components directory structure
+    let components_dir = src_sass_dir.join("components");
+    let forms_dir = components_dir.join("forms");
+    fs::create_dir_all(&forms_dir).await?;
 
-// Set light theme variables  
-$primary-color: #26a69a;
-$secondary-color: #2196F3;
-$background-color: #ffffff;
-$surface-color: #f5f5f5;
-$text-color: #333333; 
-$card-bg-color: #ffffff;
-
-// Light theme overrides
-body {
-  background-color: $background-color;
-  color: $text-color;
-}
-
-.card {
-  background-color: $card-bg-color;
-}
-
-nav {
-  background-color: $primary-color;
-}
-
-// Custom theme-specific styles below
-"#;
-        fs::write(&light_scss_path, light_scss_content).await?;
-    }
-
-    if !sepia_scss_path.exists() {
-        let sepia_scss_content = r#"// Sepia theme variant for Materialize
-@import './components/forms/forms';
-
-// Set sepia theme variables
-$primary-color: #8d6e63;
-$secondary-color: #6d4c41;
-$background-color: #f9f3e6;
-$surface-color: #f0e6d2;
-$text-color: #5d4037;
-$card-bg-color: #f9f3e6;
-
-// Sepia theme overrides
-body {
-  background-color: $background-color;
-  color: $text-color;
-}
-
-.card {
-  background-color: $card-bg-color;
-}
-
-nav {
-  background-color: $primary-color;
-}
-
-// Custom theme-specific styles below
-"#;
-        fs::write(&sepia_scss_path, sepia_scss_content).await?;
-    }
-
-    if !midnight_scss_path.exists() {
-        let midnight_scss_content = r#"// Midnight theme variant for Materialize
-@import './components/forms/forms';
-
-// Set midnight theme variables
-$primary-color: #7986cb;
-$secondary-color: #5c6bc0;
-$background-color: #0a1929;
-$surface-color: #0d2339;
-$text-color: #e3f2fd;
-$card-bg-color: #102a43;
-
-// Midnight theme overrides
-body {
-  background-color: $background-color;
-  color: $text-color;
-}
-
-.card {
-  background-color: $card-bg-color;
-}
-
-nav {
-  background-color: $surface-color;
-}
-
-// Custom theme-specific styles below
-"#;
-        fs::write(&midnight_scss_path, midnight_scss_content).await?;
-    }
-
-    // Create a basic forms.scss file in the components directory
+    // Create the forms.scss file
     let forms_scss_path = forms_dir.join("forms.scss");
     if !forms_scss_path.exists() {
-        let forms_scss_content = r#"// Basic form styles
+        let forms_scss_content = r#"// Basic form styles - imports will be handled by dark.scss
 form {
   margin-bottom: 20px;
 }
@@ -507,7 +515,73 @@ form {
         fs::write(&forms_scss_path, forms_scss_content).await?;
     }
 
-    progress.success("Materialize SCSS files created successfully.");
+    // Create or update the dark.scss file to use the Materialize SCSS
+    let dark_scss_content = r#"// Dark theme variant that imports from Materialize source
+// Set variables first to avoid undefined variable errors
+$primary-color: #2196F3;
+$secondary-color: #26a69a;
+$background-color: #121212;
+$surface-color: #1e1e1e; 
+$text-color: #e0e0e0;
+$card-bg-color: #2d2d2d;
+
+// Import Materialize SCSS from the cloned repository
+@import '../materialize/sass/components/color-variables';
+@import '../materialize/sass/components/color-classes';
+
+// Import our own components
+@import './components/forms/forms';
+
+// Import necessary Materialize components
+@import '../materialize/sass/components/variables';
+@import '../materialize/sass/components/global';
+@import '../materialize/sass/components/badges';
+@import '../materialize/sass/components/icons-material-design';
+@import '../materialize/sass/components/grid';
+@import '../materialize/sass/components/navbar';
+@import '../materialize/sass/components/typography';
+@import '../materialize/sass/components/transitions';
+@import '../materialize/sass/components/cards';
+@import '../materialize/sass/components/toast';
+@import '../materialize/sass/components/tabs';
+@import '../materialize/sass/components/tooltip';
+@import '../materialize/sass/components/buttons';
+@import '../materialize/sass/components/dropdown';
+@import '../materialize/sass/components/waves';
+@import '../materialize/sass/components/modal';
+@import '../materialize/sass/components/collapsible';
+@import '../materialize/sass/components/chips';
+@import '../materialize/sass/components/materialbox';
+@import '../materialize/sass/components/forms/forms';
+@import '../materialize/sass/components/table_of_contents';
+@import '../materialize/sass/components/sidenav';
+@import '../materialize/sass/components/preloader';
+@import '../materialize/sass/components/slider';
+@import '../materialize/sass/components/carousel';
+@import '../materialize/sass/components/tapTarget';
+@import '../materialize/sass/components/pulse';
+@import '../materialize/sass/components/datepicker';
+@import '../materialize/sass/components/timepicker';
+
+// Dark theme overrides
+body {
+  background-color: $background-color;
+  color: $text-color;
+}
+
+.card {
+  background-color: $card-bg-color;
+}
+
+nav {
+  background-color: $surface-color;
+}
+
+// Custom theme-specific styles below
+"#;
+    fs::write(&dark_scss_path, dark_scss_content).await?;
+
+    progress.set_message("Materialize setup completed successfully");
     Ok(())
 }
 
@@ -531,18 +605,11 @@ pub async fn download_assets_async(config: &Config) -> Result<(), Box<dyn Error>
         }
     }
 
-    match download_materialize_js(config).await {
-        Ok(_) => (),
-        Err(e) => {
-            crate::logger::warning(&format!("Error downloading Materialize JS: {}", e))?;
-            any_errors = true;
-        }
-    }
-
+    // Materialize JS and SCSS are now handled by a single function
     match download_materialize_scss(config).await {
         Ok(_) => (),
         Err(e) => {
-            crate::logger::warning(&format!("Error setting up Materialize SCSS: {}", e))?;
+            crate::logger::warning(&format!("Error setting up Materialize assets: {}", e))?;
             any_errors = true;
         }
     }
@@ -972,18 +1039,11 @@ pub async fn process_all_assets(config: &Config) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    match download_materialize_js(config).await {
-        Ok(_) => (),
-        Err(e) => {
-            crate::logger::warning(&format!("Error downloading Materialize JS: {}", e))?;
-            any_errors = true;
-        }
-    }
-
+    // Materialize JS and SCSS are now handled by a single function
     match download_materialize_scss(config).await {
         Ok(_) => (),
         Err(e) => {
-            crate::logger::warning(&format!("Error setting up Materialize SCSS: {}", e))?;
+            crate::logger::warning(&format!("Error setting up Materialize assets: {}", e))?;
             any_errors = true;
         }
     }

@@ -45,12 +45,13 @@ Blast embraces the [suckless philosophy](https://suckless.org/philosophy/) with 
 - 🧪 Struct generation (NewStruct insertable types)
 
 ### 🌐 Frontend Assets
-- 📦 CDN asset management and downloading
+- 📦 Asset management with git source repositories and CDN fallbacks
 - 🌍 Locale/internationalization system
 - 🎭 SCSS transpiling with automatic minification
 - 📱 Responsive design helpers
 - 📊 Consistent asset organization in css/js/fonts folders
 - 🧩 Simplified importing with .min.css/.min.js convention
+- 🎨 Customizable theming with direct access to Materialize SCSS source
 
 ### 🧰 Development Tools
 - 🏃‍♂️ Development server with hot reloading
@@ -146,7 +147,7 @@ blast css
 # Process JS files
 blast js
 
-# Download CDN assets
+# Download assets (now supports git repository cloning for Materialize)
 blast cdn
 
 # Manage locale/i18n
@@ -215,6 +216,27 @@ Blast includes cargo dependency management:
 - Interactively remove packages
 - Manage workspace members
 - Auto-update after adding dependencies
+
+## 🎨 Asset Management
+
+Blast provides a comprehensive asset management system:
+
+### 📚 Materialize CSS/JS
+- 🧵 Clones Materialize source repository from GitHub
+- 🛠️ Uses source SCSS files for advanced theming
+- 📐 Single customizable dark theme as reference
+- 🔄 Falls back to CDN if git clone fails
+- ⚙️ Configurable version and repository URL
+
+### 🎭 Other Assets
+- 📦 FontAwesome icons (CDN download)
+- 📱 Material Icons (GitHub download)
+- 🌐 HTMX for dynamic content (CDN download)
+
+### 🔧 Environment Variables
+- `BLAST_FORCE_FRESH_MATERIALIZE=1` - Force fresh clone of Materialize repository
+
+For detailed documentation on the asset system, see the [asset management guide](docs/asset-management.md).
 
 ## 🤝 Contributing
 
