@@ -26,3 +26,5 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
+
+template_example/
