@@ -218,14 +218,42 @@ fn download_materialize_scss(config: &Config) -> Result<(), String> {
                     return Err(format!("Git clone failed: {}", error));
                 }
                 
-                // Successfully cloned, now keep only the sass folder and delete everything else
-                progress.set_message("Keeping only sass folder and removing all other files...");
+                // Successfully cloned, now extract the compiled JS file if it exists and keep only the sass folder
+                progress.set_message("Extracting JS file and keeping sass folder...");
                 
                 // First make sure the sass directory exists
                 let sass_dir = materialize_dir.join("sass");
                 if !sass_dir.exists() {
                     return Err("Could not find sass directory in the cloned repository".to_string());
                 }
+                
+                // Check if the dist directory with compiled JS exists
+                // Use the exact path: dist/js/materialize.min.js
+                let js_file_path = materialize_dir.join("dist").join("js").join("materialize.min.js");
+                let public_dir = get_public_dir(config);
+                let js_dest_dir = project_dir.join(&public_dir).join("js").join("materialize");
+                let materialize_js_dest = js_dest_dir.join("materialize.min.js");
+                
+                // Create js directory if it doesn't exist
+                std::fs::create_dir_all(&js_dest_dir).map_err(|e| e.to_string())?;
+                
+                // Copy JS file from dist directory if it exists
+                let js_from_dist = if js_file_path.exists() {
+                    progress.set_message("Found Materialize JS in dist folder, copying...");
+                    match std::fs::copy(&js_file_path, &materialize_js_dest) {
+                        Ok(_) => {
+                            progress.set_message("Materialize JS copied from dist folder successfully");
+                            true
+                        },
+                        Err(e) => {
+                            progress.set_message(&format!("Failed to copy Materialize JS from dist: {}", e));
+                            false
+                        }
+                    }
+                } else {
+                    progress.set_message("Materialize JS not found in dist folder");
+                    false
+                };
                 
                 // Get all entries in the materialize directory
                 for entry in std::fs::read_dir(&materialize_dir).map_err(|e| e.to_string())? {
@@ -249,6 +277,11 @@ fn download_materialize_scss(config: &Config) -> Result<(), String> {
                 }
                 
                 progress.set_message("Materialize repository cloned and cleaned - kept only sass directory");
+                
+                // Return whether we successfully copied the JS file from dist
+                if js_from_dist {
+                    return Ok(());
+                }
             },
             Err(e) => {
                 let error_msg = format!("Failed to execute git clone: {}", e);
@@ -270,27 +303,33 @@ fn download_materialize_scss(config: &Config) -> Result<(), String> {
         progress.set_message("Using existing Materialize repository");
     }
 
-    // Since we've deleted all files except sass, directly use CDN for JS
+    // If we already copied the JS file from the distribution folder, skip this part
+    // Otherwise, fall back to using CDN for JS
     let public_dir = get_public_dir(config);
     let js_dest_dir = project_dir.join(&public_dir).join("js").join("materialize");
-    
-    // Create js directory if it doesn't exist
-    std::fs::create_dir_all(&js_dest_dir).map_err(|e| e.to_string())?;
-    
-    // Always get the JS file from CDN since we're only keeping the sass directory
     let materialize_js_dest = js_dest_dir.join("materialize.min.js");
-    let js_url = config.assets["assets"]["materialize"]["js_url"].as_str()
-        .ok_or_else(|| "Missing materialize js_url in config")?;
+    
+    // Check if the JS file already exists (from the local copy operation)
+    if !materialize_js_dest.exists() {
+        // Create js directory if it doesn't exist
+        std::fs::create_dir_all(&js_dest_dir).map_err(|e| e.to_string())?;
         
-    progress.set_message("Downloading Materialize JS from CDN...");
-    match download_file(&js_url, &materialize_js_dest) {
-        Ok(_) => {
-            progress.set_message("Materialize JS file downloaded from CDN successfully");
-        },
-        Err(e) => {
-            progress.set_message(&format!("Failed to download Materialize JS: {}", e));
-            return Err(format!("Failed to download Materialize JS: {}", e));
+        // Fallback to CDN for the JS file
+        let js_url = config.assets["assets"]["materialize"]["js_url"].as_str()
+            .ok_or_else(|| "Missing materialize js_url in config")?;
+            
+        progress.set_message("JS file not found locally, downloading Materialize JS from CDN...");
+        match download_file(&js_url, &materialize_js_dest) {
+            Ok(_) => {
+                progress.set_message("Materialize JS file downloaded from CDN successfully");
+            },
+            Err(e) => {
+                progress.set_message(&format!("Failed to download Materialize JS: {}", e));
+                return Err(format!("Failed to download Materialize JS: {}", e));
+            }
         }
+    } else {
+        progress.set_message("Using Materialize JS file copied from local repository");
     }
 
     // Don't create SCSS files - they're already in the template
