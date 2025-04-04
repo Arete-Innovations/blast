@@ -9,6 +9,10 @@ use crate::logger;
 // Function to run migrations from a spark plugin
 fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     use std::process::{Command, Stdio};
+    use dotenv::dotenv;
+    
+    // Load environment variables from .env file to ensure they're available to migrations
+    dotenv().ok();
     
     logger::info(&format!("Running migrations from path: {}", migration_path.display()))?;
     
@@ -22,8 +26,10 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     progress.set_message(&format!("Running migrations from: {}", migration_path.display()));
     
     // Run diesel migration with the custom path
+    // Pass all environment variables from the current process
     let output = Command::new("diesel")
         .args(["migration", "run", "--migration-dir", &migration_path.to_string_lossy()])
+        .envs(std::env::vars()) // Pass all environment variables
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -201,32 +207,7 @@ pub fn add_spark(repo_url: &str, _config: &Config) -> Result<(), String> {
     // Step 6: Update the mod.rs file to include the new spark
     update_sparks_mod_rs(&sparks_dir, &repo_name)?;
     
-    // Step 7: Run migrations if any are specified in the manifest
-    if !validation_result.migrations.is_empty() {
-        progress.set_message(&format!("Running migrations for spark: {}", validation_result.name));
-        
-        for migration in &validation_result.migrations {
-            // Construct the full path to the migration directory
-            let migration_path = target_dir.join(&migration.path);
-            
-            if !migration_path.exists() {
-                progress.warning(&format!("Migration path not found: {}", migration_path.display()))?;
-                continue;
-            }
-            
-            progress.set_message(&format!("Running migration: {}", migration.name));
-            match run_spark_migration(&migration_path) {
-                Ok(_) => {
-                    progress.success(&format!("Migration '{}' completed successfully", migration.name));
-                }
-                Err(e) => {
-                    progress.warning(&format!("Migration '{}' failed: {}", migration.name, e))?;
-                }
-            }
-        }
-    }
-    
-    // Step 8: Update the project's Cargo.toml with any required dependencies
+    // Step 7: Update the project's Cargo.toml with any required dependencies
     if !validation_result.dependencies.is_empty() {
         progress.set_message("Updating Cargo.toml with dependencies...");
         
@@ -252,17 +233,49 @@ pub fn add_spark(repo_url: &str, _config: &Config) -> Result<(), String> {
     }
     
     // Step 8: Check for required environment variables and update .env if needed
-    if !validation_result.required_env.is_empty() {
-        // Finish the progress bar before opening the editor
-        progress.success(&format!("Successfully added spark plugin: {}", validation_result.name));
-        
-        // Now handle the environment variables without the progress bar
-        update_env_variables(&repo_name, &validation_result.required_env)?;
-        
-        // Don't run the success message below since we already displayed it
-        return Ok(());
+    let env_updated = if !validation_result.required_env.is_empty() {
+        // Add env variables
+        progress.set_message(&format!("Setting up environment variables for: {}", validation_result.name));
+        update_env_variables(&repo_name, &validation_result.required_env)?
+    } else {
+        false
+    };
+    
+    // Give a moment for the new env vars to be available
+    if env_updated {
+        // Load the updated environment variables
+        dotenv::dotenv().ok();
+        // Brief pause to allow environment to update
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
     
+    // Step 9: Run migrations if any are specified in the manifest
+    // We do this after env variables are set so migrations can use them
+    if !validation_result.migrations.is_empty() {
+        progress.set_message(&format!("Running migrations for spark: {}", validation_result.name));
+        
+        for migration in &validation_result.migrations {
+            // Construct the full path to the migration directory
+            let migration_path = target_dir.join(&migration.path);
+            
+            if !migration_path.exists() {
+                progress.warning(&format!("Migration path not found: {}", migration_path.display()))?;
+                continue;
+            }
+            
+            progress.set_message(&format!("Running migration: {}", migration.name));
+            match run_spark_migration(&migration_path) {
+                Ok(_) => {
+                    progress.success(&format!("Migration '{}' completed successfully", migration.name));
+                }
+                Err(e) => {
+                    progress.warning(&format!("Migration '{}' failed: {}", migration.name, e))?;
+                }
+            }
+        }
+    }
+    
+    // Success message
     progress.success(&format!("Successfully added spark plugin: {}", validation_result.name));
     
     // Report spark information
@@ -788,7 +801,7 @@ fn update_cargo_toml(dependencies: &[Dependency]) -> Result<(), String> {
 }
 
 // Helper function to check for and update required environment variables
-fn update_env_variables(spark_name: &str, required_env: &[String]) -> Result<(), String> {
+fn update_env_variables(spark_name: &str, required_env: &[String]) -> Result<bool, String> {
     // Find the .env file
     let env_path = Path::new(".env");
     if !env_path.exists() {
@@ -969,13 +982,13 @@ fn update_env_variables(spark_name: &str, required_env: &[String]) -> Result<(),
             println!("Please manually edit the .env file at: {}", env_path.display());
             println!("Replace the REPLACE_THIS_WITH_YOUR_VALUE placeholders with actual values.");
         } else {
-            println!("\n✅ All environment variables have been set. Spark installation complete!");
+            println!("\n✅ All environment variables have been set.");
         }
     } else {
-        println!("\n✅ All required environment variables are already set. Spark installation complete!");
+        println!("\n✅ All required environment variables are already set.");
     }
     
-    Ok(())
+    Ok(true)
 }
 
 // Helper function to try opening a file with common editors
