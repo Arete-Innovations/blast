@@ -6,6 +6,54 @@ use std::process::Command;
 use crate::configs::Config;
 use crate::logger;
 
+// Function to run migrations from a spark plugin
+fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    
+    logger::info(&format!("Running migrations from path: {}", migration_path.display()))?;
+    
+    // Check if migrations directory exists
+    if !migration_path.exists() || !migration_path.is_dir() {
+        return Err(format!("Migration path does not exist: {}", migration_path.display()));
+    }
+    
+    // Create a progress tracker
+    let mut progress = logger::create_progress(None);
+    progress.set_message(&format!("Running migrations from: {}", migration_path.display()));
+    
+    // Run diesel migration with the custom path
+    let output = Command::new("diesel")
+        .args(["migration", "run", "--migration-dir", &migration_path.to_string_lossy()])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to execute diesel migration: {}", e))?;
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    if !output.status.success() {
+        return Err(format!("Migration failed: {}", stderr));
+    }
+    
+    // Extract migrations from stdout
+    let migrations: Vec<String> = stdout
+        .lines()
+        .filter(|line| line.contains("Running migration"))
+        .filter_map(|line| line.split("Running migration").nth(1).map(|name| name.trim().to_string()))
+        .collect();
+    
+    if !migrations.is_empty() {
+        progress.success(&format!("Ran {} migrations: {}", migrations.len(), migrations.join(", ")));
+    } else if stdout.lines().next().is_some() {
+        progress.success("Migrations completed successfully (no details available)");
+    } else {
+        progress.success("No migrations to run");
+    }
+    
+    Ok(())
+}
+
 // Function to update or add sparks in Catalyst.toml file
 pub fn update_sparks_toml(spark_name: &str, repo_url: &str) -> Result<bool, String> {
     // Update the Catalyst.toml file to add the spark
@@ -153,7 +201,32 @@ pub fn add_spark(repo_url: &str, _config: &Config) -> Result<(), String> {
     // Step 6: Update the mod.rs file to include the new spark
     update_sparks_mod_rs(&sparks_dir, &repo_name)?;
     
-    // Step 7: Update the project's Cargo.toml with any required dependencies
+    // Step 7: Run migrations if any are specified in the manifest
+    if !validation_result.migrations.is_empty() {
+        progress.set_message(&format!("Running migrations for spark: {}", validation_result.name));
+        
+        for migration in &validation_result.migrations {
+            // Construct the full path to the migration directory
+            let migration_path = target_dir.join(&migration.path);
+            
+            if !migration_path.exists() {
+                progress.warning(&format!("Migration path not found: {}", migration_path.display()))?;
+                continue;
+            }
+            
+            progress.set_message(&format!("Running migration: {}", migration.name));
+            match run_spark_migration(&migration_path) {
+                Ok(_) => {
+                    progress.success(&format!("Migration '{}' completed successfully", migration.name));
+                }
+                Err(e) => {
+                    progress.warning(&format!("Migration '{}' failed: {}", migration.name, e))?;
+                }
+            }
+        }
+    }
+    
+    // Step 8: Update the project's Cargo.toml with any required dependencies
     if !validation_result.dependencies.is_empty() {
         progress.set_message("Updating Cargo.toml with dependencies...");
         
@@ -217,6 +290,13 @@ pub fn add_spark(repo_url: &str, _config: &Config) -> Result<(), String> {
     Ok(())
 }
 
+// Helper struct for migration information
+#[derive(Debug)]
+struct MigrationInfo {
+    name: String,
+    path: String,
+}
+
 // Helper struct to hold manifest validation results
 #[derive(Debug)]
 struct ManifestInfo {
@@ -227,6 +307,7 @@ struct ManifestInfo {
     license: String,
     required_env: Vec<String>,
     dependencies: Vec<Dependency>,
+    migrations: Vec<MigrationInfo>,
 }
 
 #[derive(Debug)]
@@ -389,6 +470,31 @@ fn validate_manifest(manifest_path: &Path) -> Result<ManifestInfo, String> {
         }
     }
     
+    // Parse migrations
+    let mut migrations = Vec::new();
+    if let Some(migrations_section) = parsed.get("migrations") {
+        if let Some(migrations_array) = migrations_section.as_array() {
+            for migration in migrations_array {
+                if let Some(migration_table) = migration.as_table() {
+                    let migration_name = migration_table.get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unnamed")
+                        .to_string();
+                    
+                    let migration_path = migration_table.get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("migrations")
+                        .to_string();
+                    
+                    migrations.push(MigrationInfo {
+                        name: migration_name,
+                        path: migration_path,
+                    });
+                }
+            }
+        }
+    }
+    
     // All mandatory fields are present, return successful validation
     Ok(ManifestInfo {
         name,
@@ -398,6 +504,7 @@ fn validate_manifest(manifest_path: &Path) -> Result<ManifestInfo, String> {
         license,
         required_env,
         dependencies,
+        migrations,
     })
 }
 
