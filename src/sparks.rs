@@ -744,9 +744,17 @@ pub fn add_spark(repo_url: &str, _config: &Config) -> Result<(), String> {
 
     // Step 8: Check for required environment variables and update .env if needed
     let env_updated = if !validation_result.required_env.is_empty() {
-        // Add env variables
-        progress.set_message(&format!("Setting up environment variables for: {}", validation_result.name));
-        update_env_variables(&repo_name, &validation_result.required_env)?
+        // Add env variables - finish current progress to disable spinner during editor
+        progress.success(&format!("Setting up environment variables for: {}", validation_result.name));
+        
+        // This will run without a spinner
+        let env_result = update_env_variables(&repo_name, &validation_result.required_env)?;
+        
+        // Create a new progress for continuing after the editor
+        progress = logger::create_progress(None);
+        progress.set_message(&format!("Continuing with spark plugin setup: {}", validation_result.name));
+        
+        env_result
     } else {
         false
     };
@@ -1459,19 +1467,21 @@ fn update_env_variables(spark_name: &str, required_env: &[String]) -> Result<boo
 
         // Clear the screen and notify about editor
         println!("\n\nOpening .env file in your editor so you can set the values...");
-
+        
         // Try to open with EDITOR env var
         let editor_result = if let Ok(editor) = std::env::var("EDITOR") {
             println!("Using editor: {}", editor);
+            
+            // Sleep to make sure the editor has our full attention
             std::thread::sleep(std::time::Duration::from_secs(1));
-
+            
             match Command::new(&editor).arg(env_path).status() {
                 Ok(status) if status.success() => {
-                    println!("\nFile has been successfully edited.");
+                    logger::info("File has been successfully edited")?;
                     true
                 }
                 _ => {
-                    println!("\nCould not open editor from EDITOR environment variable.");
+                    logger::warning("Could not open editor from EDITOR environment variable")?;
                     false
                 }
             }
@@ -1500,14 +1510,14 @@ fn update_env_variables(spark_name: &str, required_env: &[String]) -> Result<boo
         }
 
         if placeholders_found {
-            println!("\n⚠️  Warning: Some environment variables for {} still have placeholder values!", spark_name);
-            println!("Please manually edit the .env file at: {}", env_path.display());
-            println!("Replace the REPLACE_THIS_WITH_YOUR_VALUE placeholders with actual values.");
+            logger::warning(&format!("Some environment variables for {} still have placeholder values!", spark_name))?;
+            logger::warning(&format!("Please manually edit the .env file at: {}", env_path.display()))?;
+            logger::warning("Replace the REPLACE_THIS_WITH_YOUR_VALUE placeholders with actual values")?;
         } else {
-            println!("\n✅ All environment variables have been set.");
+            logger::success("All environment variables have been set")?;
         }
     } else {
-        println!("\n✅ All required environment variables are already set.");
+        logger::success("All required environment variables are already set")?;
     }
 
     Ok(true)
@@ -1518,43 +1528,68 @@ fn open_with_common_editors(file_path: &Path) -> Result<(), String> {
     // Clear terminal and display message
     println!("\n\nOpening editor for .env file. Please edit the environment variables...\n");
     println!("When you're done, save and close the editor to continue.\n");
-
+    
     // Give the user time to read the message
     std::thread::sleep(std::time::Duration::from_secs(1));
-
+    
+    let mut editor_found = false;
+    
     #[cfg(target_os = "windows")]
     {
         // On Windows, try notepad
-        if let Ok(status) = Command::new("notepad").arg(file_path).status() {
-            if status.success() {
-                println!("\nFile has been edited in notepad.");
-                return Ok(());
+        if Command::new("which").arg("notepad").output().map(|o| o.status.success()).unwrap_or(false) {
+            logger::info("Opening .env file with notepad...")?;
+            
+            // Open the editor and wait for it to complete
+            if let Ok(status) = Command::new("notepad")
+                .arg(file_path)
+                .status() 
+            {
+                if status.success() {
+                    editor_found = true;
+                    logger::info("File has been edited with notepad")?;
+                }
             }
         }
     }
-
+    
     #[cfg(not(target_os = "windows"))]
     {
         // On Unix-like systems, try various common editors
         let editors = ["nano", "vim", "vi", "gedit", "code", "emacs", "sublime", "pico"];
-
+        
         for editor in editors {
             // Try to check if the editor is installed
             if Command::new("which").arg(editor).output().map(|o| o.status.success()).unwrap_or(false) {
                 // Editor exists, try to use it
-                if let Ok(status) = Command::new(editor).arg(file_path).status() {
+                logger::info(&format!("Opening .env file with {}...", editor))?;
+                
+                // Small pause before starting the editor
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                
+                if let Ok(status) = Command::new(editor)
+                    .arg(file_path)
+                    .status() 
+                {
                     if status.success() {
-                        println!("\nFile has been edited with {}.", editor);
-                        return Ok(());
+                        editor_found = true;
+                        logger::info(&format!("File has been edited with {}", editor))?;
+                        break;
                     }
                 }
             }
         }
     }
-
-    // If we got here, we couldn't open any editor
-    println!("\n⚠️  Could not find a suitable editor to open the .env file");
-    println!("Please manually edit the file at: {}", file_path.display());
+    
+    // If we got here and didn't find an editor, log the error
+    if !editor_found {
+        logger::warning(&format!("Could not find a suitable editor to open {}", file_path.display()))?;
+        logger::warning("Please edit the file manually to set environment variables")?;
+    }
+    
+    // Give the user a moment to see the messages
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    
     Ok(())
 }
 
