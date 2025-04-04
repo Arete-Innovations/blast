@@ -44,6 +44,9 @@ pub enum Command {
 
     // Log commands
     LogTruncate(Option<String>),
+    
+    // Spark plugin commands
+    AddSpark(String),
 
     // App commands
     RefreshApp,
@@ -89,6 +92,11 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("publish-css") => Some(Command::PublishCss),
         Some("js") => Some(Command::ProcessJs),
         Some("cdn") => Some(Command::DownloadCdn),
+
+        // Spark plugin commands
+        Some("spark") if args.get(2).map(|s| s.as_str()) == Some("add") && args.len() >= 4 => {
+            Some(Command::AddSpark(args[3].clone()))
+        },
 
         // Help
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
@@ -144,6 +152,16 @@ pub fn show_help() {
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
     println!();
+    println!("SPARK PLUGINS:");
+    println!("  spark add <repo_url>  Add a spark plugin from a git repository");
+    println!("                       Dependencies listed in manifest.toml are automatically added to Cargo.toml");
+    println!("                       Required environment variables are added to .env with SPARKNAME_ prefix");
+    println!("                       Automatically opens an editor to replace placeholder values with actual configuration");
+    println!("                       Updates Catalyst.toml with [sparks] section");
+    println!("                       Sparks can also be defined in Catalyst.toml and will be installed during 'blast init'");
+    println!("                       Format: [sparks]");
+    println!("                               plznohac = \"https://github.com/catalyst-framework/plznohac\"");
+    println!();
     println!("OTHER COMMANDS:");
     println!("  new <project_name>   Create a new project");
     println!("  init                 Initialize project completely (migrations, seeds, assets, etc.)");
@@ -164,6 +182,11 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
     }
 
     match cmd {
+        Command::AddSpark(repo_url) => {
+            logger::info(&format!("Adding spark plugin from: {}", repo_url))?;
+            crate::sparks::add_spark(&repo_url, config)
+        },
+        
         Command::NewProject(name) => {
             logger::info(&format!("Creating new project: {}", name))?;
             crate::project::create_new_project(&name);
@@ -179,16 +202,16 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             println!("Initializing project...");
 
             // Create a progress tracker for the overall process with known steps
-            let total_steps = 6; // Dependencies, DB, Schema, Code Gen, Assets, SCSS/CSS/JS
+            let total_steps = 7; // Dependencies, DB, Schema, Code Gen, Assets, SCSS/CSS/JS, Sparks
             let mut main_progress = logger::create_progress(Some(total_steps));
-            main_progress.set_message("Project initialization (1/6): Setting up dependencies");
+            main_progress.set_message("Project initialization (1/7): Setting up dependencies");
 
             // 1. Ensure dependencies are installed
             dep_manager.ensure_installed(&["diesel"], true)?;
             main_progress.inc(1);
 
             // 2. Database operations
-            main_progress.set_message("Project initialization (2/6): Setting up database");
+            main_progress.set_message("Project initialization (2/7): Setting up database");
             
             // Run migrations
             let migrations_ok = crate::database::migrate();
@@ -205,7 +228,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             main_progress.inc(1);
 
             // 3. Generate schema
-            main_progress.set_message("Project initialization (3/6): Generating database schema");
+            main_progress.set_message("Project initialization (3/7): Generating database schema");
             let schema_ok = crate::database::generate_schema();
             if !schema_ok {
                 main_progress.warning("Some schema generation issues occurred")?;
@@ -213,7 +236,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             main_progress.inc(1);
 
             // 4. Code generation
-            main_progress.set_message("Project initialization (4/6): Generating code files");
+            main_progress.set_message("Project initialization (4/7): Generating code files");
 
             // Generate structs and models - don't increment progress yet, part of code gen
             let structs_ok = crate::structs::generate(config);
@@ -228,7 +251,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             main_progress.inc(1);
 
             // 5. Download assets 
-            main_progress.set_message("Project initialization (5/6): Downloading assets");
+            main_progress.set_message("Project initialization (5/7): Downloading assets");
             let assets_result = crate::assets::download_assets(config);
             if let Err(e) = &assets_result {
                 main_progress.warning(&format!("Some asset downloads failed: {}", e))?;
@@ -236,7 +259,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             main_progress.inc(1);
 
             // 6. Process assets (SCSS, CSS, JS)
-            main_progress.set_message("Project initialization (6/6): Processing asset files");
+            main_progress.set_message("Project initialization (6/7): Processing asset files");
             
             // Process SCSS files - these are part of final step, don't increment yet
             let scss_result = crate::assets::transpile_all_scss(config);
@@ -256,7 +279,13 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 main_progress.warning(&format!("JS processing error: {}", e))?;
             }
             
-            // Final step completion
+            main_progress.inc(1);
+            
+            // 7. Check for and install sparks from Catalyst.toml
+            main_progress.set_message("Project initialization (7/7): Installing spark plugins");
+            if let Err(e) = crate::sparks::install_sparks_from_config(config) {
+                main_progress.warning(&format!("Some issues with spark installation: {}", e))?;
+            }
             main_progress.inc(1);
             
             // Finish with success message - clear the progress bar first

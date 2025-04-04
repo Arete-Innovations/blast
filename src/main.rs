@@ -14,6 +14,7 @@ mod models;
 mod output; // Keep temporarily until we migrate references
 mod progress; // Keep temporarily until we migrate references
 mod project;
+mod sparks;
 mod structs;
 
 fn main() {
