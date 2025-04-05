@@ -648,7 +648,7 @@ pub fn update_sparks_toml(spark_name: &str, repo_url: &str) -> Result<bool, Stri
 }
 
 // Main function to add a spark plugin
-pub fn add_spark(repo_url: &str, _config: &Config) -> Result<(), String> {
+pub fn add_spark(repo_url: &str, config: &Config) -> Result<(), String> {
     let mut progress = logger::create_progress(None);
     progress.set_message(&format!("Adding spark plugin from: {}", repo_url));
 
@@ -724,6 +724,9 @@ pub fn add_spark(repo_url: &str, _config: &Config) -> Result<(), String> {
 
     // Step 6: Update the mod.rs file to include the new spark
     update_sparks_mod_rs(&sparks_dir, &repo_name)?;
+    
+    // Step 6b: Update the registry.rs file if it exists
+    update_spark_registry(&config.project_dir, &repo_name)?;
 
     // Step 7: Update the project's Cargo.toml with any required dependencies
     if !validation_result.dependencies.is_empty() {
@@ -1662,5 +1665,54 @@ fn update_sparks_mod_rs(sparks_dir: &PathBuf, spark_name: &str) -> Result<(), St
         fs::write(&mod_rs_path, content).map_err(|e| format!("Failed to update mod.rs file: {}", e))?;
     }
 
+    Ok(())
+}
+
+// Helper function to update the registry.rs file to add a new match arm for the spark
+pub fn update_spark_registry(project_dir: &Path, spark_name: &str) -> Result<(), String> {
+    let registry_path = project_dir.join("src").join("services").join("sparks").join("registry.rs");
+    
+    // Check if registry.rs exists
+    if !registry_path.exists() {
+        logger::info("Spark registry.rs not found. This will be created automatically when the project is initialized.")?;
+        return Ok(());
+    }
+    
+    logger::info(&format!("Updating spark registry for: {}", spark_name))?;
+    
+    // Read the current content
+    let content = fs::read_to_string(&registry_path).map_err(|e| format!("Failed to read registry.rs file: {}", e))?;
+    
+    // Check if the spark is already registered
+    if content.contains(&format!("\"{spark_name}\" =>")) {
+        logger::info(&format!("Spark '{}' is already registered in registry.rs", spark_name))?;
+        return Ok(());
+    }
+    
+    // Find the match block in the register_by_name function
+    if let Some(match_start_pos) = content.find("match name {") {
+        // Find the first default case after the match name statement
+        if let Some(default_pos) = content[match_start_pos..].find("_ => {") {
+            let absolute_default_pos = match_start_pos + default_pos;
+            
+            // Extract the part from match to default case
+            let match_content = &content[match_start_pos..absolute_default_pos];
+            
+            // Create the new match arm
+            let new_match_arm = format!("\n        \"{spark_name}\" => {{\n            register_spark(name, {spark_name}::create_spark);\n            true\n        }},");
+            
+            // Construct the new content by inserting the match arm just before the default case
+            let mut updated_content = content.clone();
+            updated_content.insert_str(absolute_default_pos, &new_match_arm);
+            
+            // Write the updated content
+            fs::write(&registry_path, updated_content).map_err(|e| format!("Failed to update registry.rs file: {}", e))?;
+            
+            logger::success(&format!("Updated registry.rs to include spark: {}", spark_name))?;
+            return Ok(());
+        }
+    }
+    
+    logger::warning(&format!("Could not find register_by_name function in registry.rs. Manual update required."))?;
     Ok(())
 }
