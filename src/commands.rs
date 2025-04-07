@@ -34,6 +34,7 @@ pub enum Command {
     // Server commands
     RunDevServer,
     RunProdServer,
+    StopServer,    // New command to stop the server
 
     // Dashboard and interactive CLI commands
     LaunchDashboard,
@@ -66,6 +67,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("refresh") => Some(Command::RefreshApp),
         Some("run") | Some("serve") => Some(Command::RunDevServer),
         Some("run-prod") | Some("serve-prod") => Some(Command::RunProdServer),
+        Some("stop") => Some(Command::StopServer),
         Some("dashboard") => Some(Command::LaunchDashboard),
         Some("cli") => Some(Command::RunInteractiveCLI),
         Some("toggle-env") | Some("env") => Some(Command::ToggleEnvironment),
@@ -128,6 +130,7 @@ pub fn show_help() {
     println!("  refresh              Refresh the application (rollback, migrate, seed, gen schema & structs)");
     println!("  run                  Run the development server");
     println!("  run-prod             Run the production server");
+    println!("  stop                 Stop the running server");
     println!("  dashboard            Launch the interactive dashboard");
     println!("  cli                  Launch the interactive CLI");
     println!("  toggle-env           Toggle between development and production environments");
@@ -182,6 +185,16 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
     }
 
     match cmd {
+        Command::StopServer => {
+            logger::info("Stopping running server...")?;
+            if let Err(e) = crate::dashboard::stop_server() {
+                logger::error(&format!("Failed to stop server: {}", e))?;
+                return Err(e);
+            }
+            logger::success("Server stopped successfully")?;
+            Ok(())
+        },
+        
         Command::AddSpark(repo_url) => {
             logger::info(&format!("Adding spark plugin from: {}", repo_url))?;
             crate::sparks::add_spark(&repo_url, config)
@@ -213,14 +226,16 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             // 2. Database operations
             main_progress.set_message("Project initialization (2/7): Setting up database");
             
-            // Run migrations
+            // Run migrations - make sure they're executed fully
+            main_progress.set_message("Running database migrations...");
             let migrations_ok = crate::database::migrate();
             if !migrations_ok {
                 main_progress.warning("Some migration issues occurred - check database configuration")?;
             }
             
-            // Run seeds - don't increment progress yet, this is part of DB setup
-            let seed_ok = crate::database::seed(Some(0));
+            // Run seeds with complete setup
+            main_progress.set_message("Seeding database...");
+            let seed_ok = crate::database::seed(None); // Use None to run complete seed process
             if !seed_ok {
                 main_progress.warning("Some seeding issues occurred - this may be normal for new projects")?;
             }
@@ -235,18 +250,29 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             }
             main_progress.inc(1);
 
-            // 4. Code generation
+            // 4. Code generation - ensure complete generation of all models and structs
             main_progress.set_message("Project initialization (4/7): Generating code files");
 
-            // Generate structs and models - don't increment progress yet, part of code gen
-            let structs_ok = crate::structs::generate(config);
+            // Retry struct generation if needed to ensure complete success
+            main_progress.set_message("Generating structs...");
+            let mut structs_ok = crate::structs::generate(config);
             if !structs_ok {
-                main_progress.warning("Some struct generation issues occurred - may be normal for empty schemas")?;
+                // Retry struct generation once more after schema is confirmed generated
+                structs_ok = crate::structs::generate(config);
+                if !structs_ok {
+                    main_progress.warning("Struct generation issues persisted - may be normal for empty schemas")?;
+                }
             }
 
-            let models_ok = crate::models::generate(config);
+            // Retry model generation if needed to ensure complete success
+            main_progress.set_message("Generating models...");
+            let mut models_ok = crate::models::generate(config);
             if !models_ok {
-                main_progress.warning("Some model generation issues occurred - may be normal for empty schemas")?;
+                // Retry model generation once more with confirmed structs
+                models_ok = crate::models::generate(config);
+                if !models_ok {
+                    main_progress.warning("Model generation issues persisted - may be normal for empty schemas")?;
+                }
             }
             main_progress.inc(1);
 
@@ -287,6 +313,16 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 main_progress.warning(&format!("Some issues with spark installation: {}", e))?;
             }
             main_progress.inc(1);
+            
+            // Final verification check for schema/models/structs to ensure everything is ready
+            main_progress.set_message("Verifying database and code generation...");
+            let final_schema_check = crate::database::generate_schema();
+            let final_structs_check = crate::structs::generate(config);
+            let final_models_check = crate::models::generate(config);
+            
+            if !final_schema_check || !final_structs_check || !final_models_check {
+                main_progress.warning("Some final verification checks failed. The project may require manual refresh later.")?;
+            }
             
             // Finish with success message - clear the progress bar first
             main_progress.success("Project initialization complete!");

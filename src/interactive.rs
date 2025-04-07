@@ -24,6 +24,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         // APP commands first (most important)
         "[APP] Refresh",
         "[APP] Run Server",
+        "[APP] Stop Server",
         "[APP] Launch Dashboard",
         "[APP] Toggle Dev/Prod",
         // Code generation group
@@ -84,6 +85,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
                     Command::RunDevServer
                 }
             }
+            "[APP] Stop Server" => Command::StopServer,
             "[APP] Launch Dashboard" => Command::LaunchDashboard,
             "[APP] Toggle Dev/Prod" => Command::ToggleEnvironment,
 
