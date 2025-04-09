@@ -196,6 +196,29 @@ Blast provides tools to manage your application logs efficiently:
   - Application logs in `storage/logs/` directory
   - Dashboard log in `storage/blast/blast.log`
 
+## ⏱️ Cronjob Management
+
+Blast provides a complete system for managing scheduled tasks:
+
+- **Interactive TUI**: Full-featured terminal interface for managing cronjobs with dialoguer/indicatif
+- **Dashboard Integration**: Dedicated cronjobs tab showing status, last run, and next run times
+- **Command-line Management**: Add, toggle, and remove jobs with simple commands
+- **Status Monitoring**: Track job execution and failures with dedicated logs
+- **Commands**:
+  - `blast cronjobs`: Launch the interactive TUI cronjob manager
+  - `blast cronjobs list`: Display all scheduled jobs and their status
+  - `blast cronjobs add <name> <interval>`: Add a new cronjob with name and interval in seconds
+  - `blast cronjobs toggle <id>`: Toggle a job's active/paused status
+  - `blast cronjobs remove <id>`: Remove a scheduled job
+
+The interactive TUI lets you:
+- View colorized job status and details
+- Add new jobs with interactive prompts
+- Toggle job active/paused status
+- Remove jobs with confirmation dialog
+- Navigate with fuzzy search selection
+- See real-time progress with spinners
+
 ## 🔄 Git Integration
 
 Blast provides Git configuration directly from the CLI:

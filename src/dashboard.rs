@@ -68,17 +68,19 @@ fn setup_logs(project_dir: &Path) -> Result<LogPaths, String> {
     })
 }
 
-// Create Zellij layout file in the blast folder
+// Get the Zellij layout file path, ensuring it exists
 fn prepare_layout(project_dir: &Path) -> Result<String, String> {
-    // Store in the blast directory
+    // The layout file should be in the blast directory
     let blast_dir = project_dir.join("storage").join("blast");
     let layout_path = blast_dir.join("dashboard.kdl");
 
-    // Get the base layout content (already set up with correct paths)
-    let layout_content = include_str!("layouts/blast_dashboard.kdl").to_string();
-
-    // Write the layout file
-    fs::write(&layout_path, layout_content).map_err(|e| e.to_string())?;
+    // Check if the layout file exists - it should be provided by the template
+    if !layout_path.exists() {
+        return Err(format!(
+            "Zellij layout file not found at: {}\n\nThe dashboard.kdl file should be present in your project's storage/blast directory. This file should have been included in your project template. Please check your installation or create this file manually.",
+            layout_path.display()
+        ));
+    }
 
     Ok(layout_path.to_string_lossy().to_string())
 }

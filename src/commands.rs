@@ -34,7 +34,7 @@ pub enum Command {
     // Server commands
     RunDevServer,
     RunProdServer,
-    StopServer,    // New command to stop the server
+    StopServer, // New command to stop the server
 
     // Dashboard and interactive CLI commands
     LaunchDashboard,
@@ -45,9 +45,16 @@ pub enum Command {
 
     // Log commands
     LogTruncate(Option<String>),
-    
+
     // Spark plugin commands
     AddSpark(String),
+
+    // Cronjob commands
+    CronjobsList,
+    CronjobsAdd(String, i32),
+    CronjobsRemove(i32),
+    CronjobsToggle(i32),
+    CronjobsInteractive, // Interactive TUI for cronjob management
 
     // App commands
     RefreshApp,
@@ -71,6 +78,37 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("dashboard") => Some(Command::LaunchDashboard),
         Some("cli") => Some(Command::RunInteractiveCLI),
         Some("toggle-env") | Some("env") => Some(Command::ToggleEnvironment),
+
+        // Cronjob commands
+        Some("cronjobs") => {
+            match args.get(2).map(|s| s.as_str()) {
+                Some("list") => Some(Command::CronjobsList),
+                Some("add") if args.len() >= 5 => {
+                    if let Ok(interval) = args[4].parse::<i32>() {
+                        Some(Command::CronjobsAdd(args[3].clone(), interval))
+                    } else {
+                        None
+                    }
+                }
+                Some("remove") if args.len() >= 4 => {
+                    if let Ok(job_id) = args[3].parse::<i32>() {
+                        Some(Command::CronjobsRemove(job_id))
+                    } else {
+                        None
+                    }
+                }
+                Some("toggle") if args.len() >= 4 => {
+                    if let Ok(job_id) = args[3].parse::<i32>() {
+                        Some(Command::CronjobsToggle(job_id))
+                    } else {
+                        None
+                    }
+                }
+                Some("interactive") | Some("tui") => Some(Command::CronjobsInteractive),
+                None => Some(Command::CronjobsInteractive), // Default to interactive mode if just "cronjobs" is provided
+                _ => None,
+            }
+        }
 
         // DB commands
         Some("migration") => Some(Command::NewMigration),
@@ -96,9 +134,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("cdn") => Some(Command::DownloadCdn),
 
         // Spark plugin commands
-        Some("spark") if args.get(2).map(|s| s.as_str()) == Some("add") && args.len() >= 4 => {
-            Some(Command::AddSpark(args[3].clone()))
-        },
+        Some("spark") if args.get(2).map(|s| s.as_str()) == Some("add") && args.len() >= 4 => Some(Command::AddSpark(args[3].clone())),
 
         // Help
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
@@ -134,6 +170,14 @@ pub fn show_help() {
     println!("  dashboard            Launch the interactive dashboard");
     println!("  cli                  Launch the interactive CLI");
     println!("  toggle-env           Toggle between development and production environments");
+    println!();
+    println!("CRONJOB COMMANDS:");
+    println!("  cronjobs             Launch interactive TUI for cronjob management");
+    println!("  cronjobs interactive Launch interactive TUI for cronjob management");
+    println!("  cronjobs list        List all scheduled jobs and their status");
+    println!("  cronjobs add <name> <interval>  Add a new cronjob with name and interval in seconds");
+    println!("  cronjobs remove <id> Remove a scheduled job by ID");
+    println!("  cronjobs toggle <id> Toggle a job's active status");
     println!();
     println!("DATABASE COMMANDS:");
     println!("  migration            Create a new migration");
@@ -185,6 +229,20 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
     }
 
     match cmd {
+        // Cronjob commands
+        Command::CronjobsList => crate::cronjobs::list_cronjobs(config),
+
+        Command::CronjobsAdd(name, interval) => crate::cronjobs::add_cronjob(config, &name, interval),
+
+        Command::CronjobsRemove(id) => crate::cronjobs::remove_cronjob(config, id),
+
+        Command::CronjobsToggle(id) => crate::cronjobs::toggle_cronjob(config, id),
+
+        Command::CronjobsInteractive => {
+            logger::info("Launching interactive cronjob manager...")?;
+            crate::cronjobs_tui::run_cronjobs_tui(config)
+        }
+
         Command::StopServer => {
             logger::info("Stopping running server...")?;
             if let Err(e) = crate::dashboard::stop_server() {
@@ -193,57 +251,70 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             }
             logger::success("Server stopped successfully")?;
             Ok(())
-        },
-        
+        }
+
         Command::AddSpark(repo_url) => {
             logger::info(&format!("Adding spark plugin from: {}", repo_url))?;
             crate::sparks::add_spark(&repo_url, config)
-        },
-        
+        }
+
         Command::NewProject(name) => {
-            logger::info(&format!("Creating new project: {}", name))?;
+            // Create the project using styled output - the function handles all output
             crate::project::create_new_project(&name);
-            logger::success(&format!("Project '{}' created successfully!", name))?;
-            logger::info(&format!("Next steps:"))?;
-            logger::info(&format!("  cd {}", name))?;
-            logger::info(&format!("  blast init"))?;
+
+            // No need for repetitive success message since create_new_project already prints it
+            // Next steps are also already displayed in create_new_project
             Ok(())
         }
 
         Command::InitProject => {
+            use console::style;
+
+            // Check for verbose mode to adjust displayed information
+            let is_verbose = logger::is_verbose();
+
             // Always show an initial message to indicate we're starting
-            println!("Initializing project...");
+            println!("{} Initializing project...", style("🚀").cyan());
 
             // Create a progress tracker for the overall process with known steps
             let total_steps = 7; // Dependencies, DB, Schema, Code Gen, Assets, SCSS/CSS/JS, Sparks
             let mut main_progress = logger::create_progress(Some(total_steps));
-            main_progress.set_message("Project initialization (1/7): Setting up dependencies");
 
-            // 1. Ensure dependencies are installed
+            // 1. Ensure dependencies are installed - less verbose messaging
+            if is_verbose {
+                main_progress.set_message("Project initialization (1/7): Setting up dependencies");
+            }
             dep_manager.ensure_installed(&["diesel"], true)?;
             main_progress.inc(1);
 
-            // 2. Database operations
-            main_progress.set_message("Project initialization (2/7): Setting up database");
-            
+            // 2. Database operations - standardize primary step messages
+            if is_verbose {
+                main_progress.set_message("Project initialization (2/7): Setting up database");
+            }
+
             // Run migrations - make sure they're executed fully
             main_progress.set_message("Running database migrations...");
             let migrations_ok = crate::database::migrate();
             if !migrations_ok {
                 main_progress.warning("Some migration issues occurred - check database configuration")?;
             }
-            
+
             // Run seeds with complete setup
             main_progress.set_message("Seeding database...");
             let seed_ok = crate::database::seed(None); // Use None to run complete seed process
             if !seed_ok {
                 main_progress.warning("Some seeding issues occurred - this may be normal for new projects")?;
             }
-            
+
             main_progress.inc(1);
 
             // 3. Generate schema
-            main_progress.set_message("Project initialization (3/7): Generating database schema");
+            if is_verbose {
+                main_progress.set_message("Project initialization (3/7): Generating database schema");
+            } else {
+                main_progress.set_message("Generating database schema...");
+            }
+
             let schema_ok = crate::database::generate_schema();
             if !schema_ok {
                 main_progress.warning("Some schema generation issues occurred")?;
@@ -251,7 +322,9 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             main_progress.inc(1);
 
             // 4. Code generation - ensure complete generation of all models and structs
-            main_progress.set_message("Project initialization (4/7): Generating code files");
+            if is_verbose {
+                main_progress.set_message("Project initialization (4/7): Generating code files");
+            }
 
             // Retry struct generation if needed to ensure complete success
             main_progress.set_message("Generating structs...");
@@ -276,8 +349,13 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             }
             main_progress.inc(1);
 
-            // 5. Download assets 
-            main_progress.set_message("Project initialization (5/7): Downloading assets");
+            // 5. Download assets
+            if is_verbose {
+                main_progress.set_message("Project initialization (5/7): Downloading assets");
+            } else {
+                main_progress.set_message("Downloading assets...");
+            }
+
             let assets_result = crate::assets::download_assets(config);
             if let Err(e) = &assets_result {
                 main_progress.warning(&format!("Some asset downloads failed: {}", e))?;
@@ -285,8 +363,12 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             main_progress.inc(1);
 
             // 6. Process assets (SCSS, CSS, JS)
-            main_progress.set_message("Project initialization (6/7): Processing asset files");
-            
+            if is_verbose {
+                main_progress.set_message("Project initialization (6/7): Processing asset files");
+            } else {
+                main_progress.set_message("Processing asset files...");
+            }
+
             // Process SCSS files - these are part of final step, don't increment yet
             let scss_result = crate::assets::transpile_all_scss(config);
             if let Err(e) = &scss_result {
@@ -304,34 +386,42 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             if let Err(e) = &js_result {
                 main_progress.warning(&format!("JS processing error: {}", e))?;
             }
-            
+
             main_progress.inc(1);
-            
+
             // 7. Check for and install sparks from Catalyst.toml
-            main_progress.set_message("Project initialization (7/7): Installing spark plugins");
+            if is_verbose {
+                main_progress.set_message("Project initialization (7/7): Installing spark plugins");
+            } else {
+                main_progress.set_message("Installing spark plugins...");
+            }
+
             if let Err(e) = crate::sparks::install_sparks_from_config(config) {
                 main_progress.warning(&format!("Some issues with spark installation: {}", e))?;
             }
             main_progress.inc(1);
-            
+
             // Final verification check for schema/models/structs to ensure everything is ready
-            main_progress.set_message("Verifying database and code generation...");
-            let final_schema_check = crate::database::generate_schema();
-            let final_structs_check = crate::structs::generate(config);
-            let final_models_check = crate::models::generate(config);
-            
-            if !final_schema_check || !final_structs_check || !final_models_check {
-                main_progress.warning("Some final verification checks failed. The project may require manual refresh later.")?;
+            if is_verbose {
+                main_progress.set_message("Verifying database and code generation...");
+                let final_schema_check = crate::database::generate_schema();
+                let final_structs_check = crate::structs::generate(config);
+                let final_models_check = crate::models::generate(config);
+
+                if !final_schema_check || !final_structs_check || !final_models_check {
+                    main_progress.warning("Some final verification checks failed. The project may require manual refresh later.")?;
+                }
             }
-            
+
             // Finish with success message - clear the progress bar first
             main_progress.success("Project initialization complete!");
-            
-            // Show next steps for the user
-            println!("Your project is ready to run! 🚀");
+
+            // Show next steps for the user with consistent styling
+            println!("{} Your project is ready to run! {}", style("🎉").green(), style("🚀").green());
+
             println!("\nNext steps:");
-            println!("  1. Run 'blast run' to start the development server");
-            println!("  2. Run 'blast dashboard' to launch the interactive dashboard");
+            println!("  {} Run 'blast run' to start the development server", style("1.").cyan());
+            println!("  {} Run 'blast dashboard' to launch the interactive dashboard", style("2.").cyan());
 
             Ok(())
         }
@@ -401,7 +491,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         // Locale commands removed
-
         Command::RefreshApp => {
             // App refresh involves multiple steps
             let mut progress = logger::create_progress(None);
@@ -454,7 +543,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 Ok(_) => {
                     // Success already logged by the function
                     Ok(())
-                },
+                }
                 Err(e) => {
                     // Error handling - the function will already log specific errors
                     logger::error(&format!("Failed to download CDN assets: {}", e))?;
@@ -481,7 +570,10 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 // Check if binary exists
                 let binary_path = format!("target/release/{}", &config.project_name);
                 if std::path::Path::new(&binary_path).exists() {
-                    std::process::Command::new("script").args(["-q", "-c", &binary_path, "storage/logs/server.log"]).spawn().map_err(|e| e.to_string())?;
+                    std::process::Command::new("script")
+                        .args(["-q", "-c", &binary_path, "storage/logs/server.log"])
+                        .spawn()
+                        .map_err(|e| e.to_string())?;
                     logger::success(&format!("Production server started using compiled binary: {}", binary_path))?;
                 } else {
                     let cmd = format!("cargo run --release --bin {}", &config.project_name);

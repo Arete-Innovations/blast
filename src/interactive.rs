@@ -19,13 +19,12 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
     print!("\x1B[2J\x1B[1;1H");
     std::io::stdout().flush().map_err(|e| e.to_string())?;
 
-    // Define the menu items
+    // Define the menu items - place server commands at the top as requested
     let commands = vec![
-        // APP commands first (most important)
-        "[APP] Refresh",
+        // APP commands first (most important) - Run and Stop Server moved to the top
         "[APP] Run Server",
         "[APP] Stop Server",
-        "[APP] Launch Dashboard",
+        "[APP] Refresh",
         "[APP] Toggle Dev/Prod",
         // Code generation group
         "[CODEGEN] Schema",
@@ -42,6 +41,12 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[Assets] Publish CSS",
         "[Assets] Publish JS",
         "[Assets] Download CDN",
+        // Cronjob management
+        "[Cronjobs] Interactive Manager",
+        "[Cronjobs] List Jobs",
+        "[Cronjobs] Add Job",
+        "[Cronjobs] Toggle Job",
+        "[Cronjobs] Remove Job",
         // Log management
         "[LOG] Truncate Logs",
         // Exit is always last
@@ -86,7 +91,6 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
                 }
             }
             "[APP] Stop Server" => Command::StopServer,
-            "[APP] Launch Dashboard" => Command::LaunchDashboard,
             "[APP] Toggle Dev/Prod" => Command::ToggleEnvironment,
 
             "[CODEGEN] Schema" => Command::GenerateSchema,
@@ -103,6 +107,58 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             "[Assets] Publish CSS" => Command::PublishCss,
             "[Assets] Publish JS" => Command::ProcessJs,
             "[Assets] Download CDN" => Command::DownloadCdn,
+            
+            "[Cronjobs] Interactive Manager" => Command::CronjobsInteractive,
+            "[Cronjobs] List Jobs" => Command::CronjobsList,
+            "[Cronjobs] Add Job" => {
+                print!("\x1B[2J\x1B[1;1H"); // Clear screen
+                
+                // Get job name
+                println!("Enter job name:");
+                let mut name = String::new();
+                std::io::stdin().read_line(&mut name).unwrap_or_default();
+                let name = name.trim().to_string();
+                
+                // Get interval
+                println!("Enter interval in seconds:");
+                let mut interval_str = String::new();
+                std::io::stdin().read_line(&mut interval_str).unwrap_or_default();
+                let interval = interval_str.trim().parse::<i32>().unwrap_or(60);
+                
+                Command::CronjobsAdd(name, interval)
+            },
+            "[Cronjobs] Toggle Job" => {
+                print!("\x1B[2J\x1B[1;1H"); // Clear screen
+                
+                // List jobs first
+                if let Err(e) = crate::cronjobs::list_cronjobs(&config) {
+                    logger::warning(&format!("Failed to list jobs: {}", e))?;
+                }
+                
+                // Get job ID
+                println!("\nEnter job ID to toggle:");
+                let mut id_str = String::new();
+                std::io::stdin().read_line(&mut id_str).unwrap_or_default();
+                let id = id_str.trim().parse::<i32>().unwrap_or(0);
+                
+                Command::CronjobsToggle(id)
+            },
+            "[Cronjobs] Remove Job" => {
+                print!("\x1B[2J\x1B[1;1H"); // Clear screen
+                
+                // List jobs first
+                if let Err(e) = crate::cronjobs::list_cronjobs(&config) {
+                    logger::warning(&format!("Failed to list jobs: {}", e))?;
+                }
+                
+                // Get job ID
+                println!("\nEnter job ID to remove:");
+                let mut id_str = String::new();
+                std::io::stdin().read_line(&mut id_str).unwrap_or_default();
+                let id = id_str.trim().parse::<i32>().unwrap_or(0);
+                
+                Command::CronjobsRemove(id)
+            },
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
 
