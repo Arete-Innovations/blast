@@ -110,11 +110,14 @@ fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
     let mut clone_successful = false;
     let mut last_error = String::new();
     
+    // Determine whether to show verbose output based on environment
+    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
+    
     for repo_url in TEMPLATE_REPOS.iter() {
-        println!("Attempting to clone template from: {}", repo_url);
-        
-        // Determine whether to hide output based on environment
-        let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
+        // Only show the attempting to clone message in verbose mode
+        if is_verbose {
+            println!("Attempting to clone template from: {}", repo_url);
+        }
         
         // Prepare the command
         let mut cmd = Command::new("git");
@@ -143,7 +146,11 @@ fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
         match status {
             Ok(exit_status) if exit_status.success() => {
                 clone_successful = true;
-                println!("Successfully cloned template repository.");
+                
+                // Only show success message in verbose mode
+                if is_verbose {
+                    println!("Successfully cloned template repository.");
+                }
                 
                 // Remove the .git directory from the cloned repo
                 let git_dir = dest.join(".git");
@@ -191,12 +198,16 @@ fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
         writeln!(file, "--- Log initialized: {} at {} ---", log_file, now)?;
     }
 
-    // Ensure the refresh_server_info.sh script is executable
+    // Ensure the storage/blast directory exists
     let blast_dir = dest.join("storage").join("blast");
     if !blast_dir.exists() {
         fs::create_dir_all(&blast_dir)?;
     }
     
+    // Note: We don't create dashboard.kdl here anymore - it should be part of the template
+    // The dashboard.kdl file should be present in the cloned template repository
+    
+    // Ensure the refresh_server_info.sh script is executable
     let script_path = blast_dir.join("refresh_server_info.sh");
     if script_path.exists() {
         #[cfg(unix)]
@@ -268,8 +279,18 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
     
     // Create a template .env file if it doesn't exist
     if !env_exists {
-        let env_template = "DATABASE_URL=postgres://postgres:postgres@localhost/postgres\n";
-        fs::write(&env_path, env_template)?;
+        // Check if .env.example exists in the project
+        let env_example_path = project_path.join(".env.example");
+        
+        if env_example_path.exists() {
+            // Copy from .env.example
+            let env_example = fs::read_to_string(&env_example_path)?;
+            fs::write(&env_path, env_example)?;
+        } else {
+            // Fallback to standard template
+            let env_template = "DATABASE_URL=postgres://postgres:postgres@localhost/postgres\n";
+            fs::write(&env_path, env_template)?;
+        }
     }
     
     // Add JWT secret to .env file
@@ -289,11 +310,36 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
 
 fn prompt_for_env_edit() -> bool {
     use dialoguer::{theme::ColorfulTheme, Confirm};
-
-    println!("\nThe default database connection is set to:");
-    println!("  DATABASE_URL=postgres://postgres:postgres@localhost/postgres");
-    println!("\nThis connection uses the public schema by default.");
-    println!("For multiple projects, you may want to use different databases or schemas.");
+    use console::style;
+    
+    // Determine whether to show verbose output based on environment
+    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
+    
+    // Only show database connection details in verbose mode
+    if is_verbose {
+        // Read the actual DATABASE_URL from .env if it exists, otherwise use a placeholder
+        let env_path = std::path::Path::new(".env");
+        let db_url = if env_path.exists() {
+            match std::fs::read_to_string(env_path) {
+                Ok(content) => {
+                    content.lines()
+                        .find(|line| line.starts_with("DATABASE_URL="))
+                        .map(|line| line.trim_start_matches("DATABASE_URL="))
+                        .unwrap_or("postgres://postgres:postgres@localhost/postgres")
+                        .to_string()
+                },
+                Err(_) => "postgres://postgres:postgres@localhost/postgres".to_string()
+            }
+        } else {
+            "postgres://postgres:postgres@localhost/postgres".to_string()
+        };
+        
+        println!("\n{} The default database connection is set to:", style("ℹ️").cyan());
+        println!("  DATABASE_URL={}", db_url);
+        println!();
+        println!("This connection uses the public schema by default.");
+        println!("For multiple projects, you may want to use different databases or schemas.");
+    }
 
     Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt("Would you like to edit the .env file now to customize the database connection?")
@@ -304,20 +350,38 @@ fn prompt_for_env_edit() -> bool {
 
 fn edit_env_file(env_path: &Path) -> std::io::Result<()> {
     use dialoguer::Editor;
+    use console::style;
+    
+    // Determine whether to show verbose output based on environment
+    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
 
     let current_content = fs::read_to_string(env_path)?;
 
-    println!("\nYou can add multiple database connections as follows:");
-    println!("DATABASE_URL=postgres://postgres:postgres@localhost/postgres");
-    println!("DATABASE_URL_USERS=postgres://postgres:postgres@localhost/users");
-    println!("DATABASE_URL_LOGS=postgres://postgres:postgres@localhost/logs");
-    println!("\nThe first connection will be used as the default.");
+    // This shows only in verbose mode as it's helpful but not essential information
+    if is_verbose {
+        println!("\nYou can add multiple database connections as follows:");
+        println!("DATABASE_URL=postgres://postgres:postgres@localhost/postgres");
+        println!("DATABASE_URL_USERS=postgres://postgres:postgres@localhost/users");
+        println!("DATABASE_URL_LOGS=postgres://postgres:postgres@localhost/logs");
+        println!("\nThe first connection will be used as the default.");
+    }
+
+    // Show what's happening - use standard "editor opening" message
+    println!("\n{} Opening .env file in your editor so you can set the values...", 
+        style("📝").cyan());
+        
+    // Get editor from environment
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nano".to_string());
+    println!("{} Using editor: {}", style("ℹ️").cyan(), editor);
 
     if let Some(edited_content) = Editor::new().edit(&current_content).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("Editor error: {}", e)))? {
         fs::write(env_path, edited_content)?;
-        println!("✓ .env file updated successfully.");
+        
+        // Use success icon for success message
+        println!("{} All environment variables have been set", style("✅").green());
     } else {
-        println!("✓ No changes made to .env file.");
+        // No changes made - still confirm
+        println!("{} No changes made to .env file", style("ℹ️").cyan());
     }
 
     Ok(())
@@ -325,22 +389,31 @@ fn edit_env_file(env_path: &Path) -> std::io::Result<()> {
 
 // Function to initialize a git repository in the project directory
 fn initialize_git_repository(project_path: &Path) -> std::io::Result<()> {
+    use console::style;
+    
     // Get the current directory to return to it later
     let current_dir = std::env::current_dir()?;
 
     // Change to the project directory
     std::env::set_current_dir(project_path)?;
+    
+    // Determine whether to show verbose output based on environment
+    let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
 
-    // Initialize git repository
-    println!("Initializing git repository...");
+    // Initialize git repository - use logger style for main message
+    println!("{} Initializing git repository...", style("🔄").cyan());
+    
     match Command::new("git").arg("init").output() {
         Ok(output) => {
             if !output.status.success() {
-                println!("Warning: Failed to initialize git repository: {}", String::from_utf8_lossy(&output.stderr));
+                println!("{} Failed to initialize git repository: {}", 
+                    style("❌").red().bold(), 
+                    String::from_utf8_lossy(&output.stderr));
             }
         }
         Err(e) => {
-            println!("Warning: Failed to initialize git repository: {}", e);
+            println!("{} Failed to initialize git repository: {}", 
+                style("❌").red().bold(), e);
             // Continue with project creation, even if git init fails
         }
     }
@@ -371,8 +444,13 @@ Cargo.lock
 
     // Write .gitignore in current directory since we've already changed to project directory
     match fs::write(".gitignore", gitignore_contents) {
-        Ok(_) => println!("Created .gitignore file"),
-        Err(e) => println!("Warning: Failed to create .gitignore file: {}", e),
+        Ok(_) => {
+            if is_verbose {
+                println!("Created .gitignore file");
+            }
+        },
+        Err(e) => println!("{} Failed to create .gitignore file: {}", 
+            style("❌").red().bold(), e),
     }
 
     // Return to the original directory

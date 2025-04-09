@@ -84,7 +84,7 @@ fn is_quiet() -> bool {
     *quiet_mode
 }
 
-fn is_verbose() -> bool {
+pub fn is_verbose() -> bool {
     let verbose_mode = VERBOSE_MODE.lock().unwrap();
     *verbose_mode || env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1"
 }

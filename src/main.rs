@@ -4,6 +4,8 @@ use std::process;
 mod assets;
 mod commands;
 mod configs;
+mod cronjobs;
+mod cronjobs_tui; // Interactive TUI for cronjob management
 mod dashboard;
 mod database;
 mod dependencies;
@@ -44,6 +46,13 @@ fn main() {
                 // Load project config if needed
                 match configs::get_project_info() {
                     Ok(mut config) => {
+                        // Setup proper logging for one-shot commands
+                        // Use CLI mode (not interactive dashboard mode)
+                        if let Err(e) = logger::setup_for_mode(&config, false) {
+                            eprintln!("Warning: Failed to set up logging: {}", e);
+                            // Continue anyway as this shouldn't be fatal
+                        }
+                        
                         // Execute the command
                         if let Err(e) = commands::execute(cmd.clone(), &mut config, &mut dep_manager) {
                             eprintln!("Error executing command: {}", e);
@@ -66,6 +75,8 @@ fn main() {
                                 last_modified: std::time::SystemTime::now(),
                             };
 
+                            // For NewProject and Help, we can just use the default logger init
+                            // No need to setup_for_mode as these don't write to project-specific logs
                             if let Err(e) = commands::execute(cmd, &mut default_config, &mut dep_manager) {
                                 eprintln!("Error executing command: {}", e);
                                 process::exit(1);
