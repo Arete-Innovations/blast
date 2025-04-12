@@ -187,10 +187,21 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     // Create a map of environment variables with DATABASE_URL set properly
     let mut env_vars: HashMap<String, String> = std::env::vars().collect();
     
+    // IMPORTANT: This override of DATABASE_URL should ONLY affect operations in this function
+    // and not impact the main schema generation or other database operations
+    
     // Check for spark-specific database URL
     if let Ok(url) = std::env::var(&spark_db_var) {
         logger::info(&format!("Using spark-specific database URL from {}", spark_db_var))?;
-        env_vars.insert("DATABASE_URL".to_string(), url);
+        logger::info("NOTE: This only affects THIS spark migration and not the main schema generation")?;
+        
+        // We don't need to store the original URL anymore since we use explicit parameters
+        
+        // Temporarily override DATABASE_URL just for this operation
+        env_vars.insert("DATABASE_URL".to_string(), url.clone());
+        
+        // Also keep a direct reference we can use with --database-url
+        env_vars.insert("_SPARK_DIRECT_DB_URL".to_string(), url);
     } else {
         logger::info("No spark-specific DATABASE_URL found, using default")?;
         // Keep the default DATABASE_URL from the environment
@@ -231,9 +242,22 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
         }
     }
     
+    // Get database URL for setup
+    let setup_db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
+        direct_url.clone()
+    } else if let Some(url) = env_vars.get("DATABASE_URL") {
+        url.clone()
+    } else {
+        return Err("No database URL available for setup".to_string());
+    };
+    
+    // Always use the explicit --database-url parameter
     let setup_output = Command::new("diesel")
-        .args(["setup", "--migration-dir", &migration_path.to_string_lossy()])
-        .envs(&env_vars)
+        .args([
+            "setup", 
+            "--migration-dir", &migration_path.to_string_lossy(),
+            "--database-url", &setup_db_url
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
@@ -289,9 +313,23 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
         }
     }
     
+    // Get the direct database URL to use - prefer the explicit spark URL if available
+    let db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
+        direct_url.clone()
+    } else if let Some(url) = env_vars.get("DATABASE_URL") {
+        url.clone()
+    } else {
+        return Err("No database URL available for running migrations".to_string());
+    };
+    
+    // Always use --database-url to ensure we're targeting the correct database
     let output = Command::new("diesel")
-        .args(["migration", "run", "--migration-dir", &migration_path.to_string_lossy()])
-        .envs(&env_vars)
+        .args([
+            "migration", 
+            "run", 
+            "--migration-dir", &migration_path.to_string_lossy(),
+            "--database-url", &db_url
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -341,9 +379,23 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
         // Try with redo to force re-run
         logger::warning("No migrations run initially - attempting migration redo")?;
         
+        // Get database URL for redo
+        let redo_db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
+            direct_url.clone()
+        } else if let Some(url) = env_vars.get("DATABASE_URL") {
+            url.clone()
+        } else {
+            return Err("No database URL available for migration redo".to_string());
+        };
+        
+        // Always use the explicit --database-url parameter
         let redo_output = Command::new("diesel")
-            .args(["migration", "redo", "--migration-dir", &migration_path.to_string_lossy()])
-            .envs(&env_vars)
+            .args([
+                "migration", 
+                "redo", 
+                "--migration-dir", &migration_path.to_string_lossy(),
+                "--database-url", &redo_db_url
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output();
@@ -380,11 +432,13 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
             }
         };
         
-        // Get the database URL from environment variables
-        let db_url = if let Some(url) = env_vars.get("DATABASE_URL") {
+        // Get the database URL for direct SQL execution - use the spark-specific URL
+        let db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
+            direct_url.clone()
+        } else if let Some(url) = env_vars.get("DATABASE_URL") {
             url.clone()
         } else {
-            logger::warning("DATABASE_URL not set in environment")?;
+            logger::warning("No database URL available for direct SQL execution")?;
             return Ok(());
         };
         
@@ -486,13 +540,32 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     if is_verbose() {
         logger::info("Checking database schema to verify if tables exist...")?;
         
-        // Run diesel print-schema to see what tables exist
-        let schema_output = Command::new("diesel")
-            .arg("print-schema")
-            .envs(&env_vars)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
+        // Get database URL for schema check - use the spark-specific URL
+        let db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
+            direct_url.clone()
+        } else if let Some(url) = env_vars.get("DATABASE_URL") {
+            url.clone()
+        } else {
+            match env::var("DATABASE_URL") {
+                Ok(url) => url,
+                Err(_) => {
+                    logger::warning("DATABASE_URL not found for schema check")?;
+                    String::new()
+                }
+            }
+        };
+        
+        // Always use the explicit database URL parameter
+        let schema_output = if !db_url.is_empty() {
+            Command::new("diesel")
+                .args(["print-schema", "--database-url", &db_url])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output()
+        } else {
+            logger::warning("No database URL available for schema check")?;
+            return Ok(());
+        };
             
         match schema_output {
             Ok(output) => {
@@ -529,7 +602,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                             .filter_map(|line| {
                                 // Extract table name from "CREATE TABLE [IF NOT EXISTS] table_name"
                                 let lower_line = line.to_lowercase();
-                                let mut table_parts = if lower_line.contains("if not exists") {
+                                let table_parts = if lower_line.contains("if not exists") {
                                     lower_line.split("if not exists").nth(1)
                                 } else {
                                     lower_line.split("table").nth(1)
@@ -1695,10 +1768,7 @@ pub fn update_spark_registry(project_dir: &Path, spark_name: &str) -> Result<(),
         if let Some(default_pos) = content[match_start_pos..].find("_ => {") {
             let absolute_default_pos = match_start_pos + default_pos;
             
-            // Extract the part from match to default case
-            let match_content = &content[match_start_pos..absolute_default_pos];
-            
-            // Create the new match arm
+            // Create the new match arm - we don't need to use the match content
             let new_match_arm = format!("\n        \"{spark_name}\" => {{\n            register_spark(name, {spark_name}::create_spark);\n            true\n        }},");
             
             // Construct the new content by inserting the match arm just before the default case
