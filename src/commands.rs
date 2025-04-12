@@ -308,14 +308,16 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
             main_progress.inc(1);
 
-            // 3. Generate schema
+            // 3. Generate schema - use the explicit force function to avoid any environment issues
             if is_verbose {
                 main_progress.set_message("Project initialization (3/7): Generating database schema");
             } else {
                 main_progress.set_message("Generating database schema...");
             }
 
-            let schema_ok = crate::database::generate_schema();
+            // Use force_regenerate_main_schema to ensure we're using the main DATABASE_URL 
+            // even at this early stage
+            let schema_ok = crate::database::force_regenerate_main_schema();
             if !schema_ok {
                 main_progress.warning("Some schema generation issues occurred")?;
             }
@@ -401,16 +403,26 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             }
             main_progress.inc(1);
 
-            // Final verification check for schema/models/structs to ensure everything is ready
-            if is_verbose {
-                main_progress.set_message("Verifying database and code generation...");
-                let final_schema_check = crate::database::generate_schema();
-                let final_structs_check = crate::structs::generate(config);
-                let final_models_check = crate::models::generate(config);
-
-                if !final_schema_check || !final_structs_check || !final_models_check {
-                    main_progress.warning("Some final verification checks failed. The project may require manual refresh later.")?;
-                }
+            // CRITICAL: Force regenerate schema from main DATABASE_URL to override any spark changes
+            main_progress.set_message("Ensuring schema is generated for main database...");
+            
+            // Always force regenerate the schema as the last step to ensure it's correct
+            let schema_fixed = crate::database::force_regenerate_main_schema();
+            if !schema_fixed {
+                main_progress.warning("Failed to force-regenerate schema from main database. The schema may be incorrect.")?;
+            } else {
+                main_progress.success("Schema has been correctly regenerated from main DATABASE_URL");
+            }
+            
+            // Re-run struct and model generation to ensure they match the fixed schema
+            main_progress.set_message("Regenerating structs and models from fixed schema...");
+            let structs_regenerated = crate::structs::generate(config);
+            let models_regenerated = crate::models::generate(config);
+            
+            if !structs_regenerated || !models_regenerated {
+                main_progress.warning("Failed to regenerate some structs or models. You may need to run 'blast gen structs' and 'blast gen models' manually.")?;
+            } else {
+                main_progress.success("Structs and models have been regenerated successfully");
             }
 
             // Finish with success message - clear the progress bar first

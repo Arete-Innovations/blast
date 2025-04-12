@@ -1,4 +1,5 @@
 use crate::progress::ProgressManager;
+use crate::logger;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
@@ -165,21 +166,78 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
         }
     }
 
-    // Determine the environment variable to use
-    let env_var = if conn_name == "default" {
-        "DATABASE_URL".to_string()
-    } else {
-        format!("DATABASE_URL_{}", conn_name.to_uppercase())
-    };
-
-    // Get the database URL
-    let database_url = match env::var(&env_var) {
-        Ok(url) => url,
-        Err(_) => {
-            progress.error(&format!("{} not found in environment", env_var));
+    // CRITICAL FIX: For schema generation, always read directly from .env file
+    // to bypass any environment variable override issues
+    
+    // Load .env file directly
+    let env_content = match fs::read_to_string(".env") {
+        Ok(content) => content,
+        Err(e) => {
+            progress.error(&format!("Could not read .env file: {}. Make sure it exists in the project root.", e));
             return false;
         }
     };
+    
+    // Determine which variable to look for in .env
+    let env_var_prefix = if conn_name == "default" {
+        "DATABASE_URL="
+    } else {
+        &format!("DATABASE_URL_{}=", conn_name.to_uppercase())
+    };
+    
+    // Parse .env file manually
+    let mut database_url = None;
+    for line in env_content.lines() {
+        if line.starts_with(env_var_prefix) {
+            database_url = Some(line[env_var_prefix.len()..].trim().trim_matches('"'));
+            break;
+        }
+    }
+    
+    // For safety, let's log all database-related env vars from the .env file (with credentials masked)
+    progress.set_message("Checking database URLs in .env file...");
+    logger::info("Database connection variables in .env file:").unwrap_or_default();
+    for line in env_content.lines() {
+        if line.contains("DATABASE_URL") {
+            let parts: Vec<&str> = line.splitn(2, "=").collect();
+            if parts.len() == 2 {
+                let var_name = parts[0].trim();
+                let var_value = parts[1].trim();
+                
+                let masked_value = if var_value.contains("://") {
+                    let url_parts: Vec<&str> = var_value.splitn(2, "://").collect();
+                    format!("{}://<masked>", url_parts[0])
+                } else {
+                    "<masked>".to_string()
+                };
+                
+                logger::info(&format!("  {} = {}", var_name, masked_value)).unwrap_or_default();
+            }
+        }
+    }
+    
+    // Ensure we found the database URL
+    let database_url = match database_url {
+        Some(url) => url.to_string(),
+        None => {
+            progress.error(&format!("{} not found in .env file - schema generation requires this variable", env_var_prefix.trim_end_matches("=")));
+            return false;
+        }
+    };
+    
+    // Log which URL we're using (hide actual credentials)
+    let masked_url = if database_url.contains("://") {
+        let parts: Vec<&str> = database_url.splitn(2, "://").collect();
+        if parts.len() == 2 {
+            format!("{}://<masked>", parts[0])
+        } else {
+            "<masked>".to_string()
+        }
+    } else {
+        "<masked>".to_string()
+    };
+    
+    logger::info(&format!("Using database URL: {} for schema generation", masked_url)).unwrap_or_default();
 
     // Determine the output file path
     let schema_file = if conn_name == "default" {
@@ -189,7 +247,16 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
     };
 
     // Run diesel print-schema command with the appropriate DATABASE_URL
-    let output = match Command::new("diesel").arg("print-schema").env("DATABASE_URL", &database_url).stdout(Stdio::piped()).spawn() {
+    // We explicitly use --database-url flag to ensure we're using the correct database
+    // and COMPLETELY ignore environment variables
+    progress.set_message(&format!("Running diesel print-schema with --database-url = {}", masked_url));
+    
+    logger::info(&format!("Executing: diesel print-schema --database-url {}", masked_url)).unwrap_or_default();
+    let output = match Command::new("diesel")
+        .args(["print-schema", "--database-url", &database_url])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn() {
         Ok(child) => match child.wait_with_output() {
             Ok(output) => output,
             Err(e) => {
@@ -361,6 +428,7 @@ pub fn {}() -> PgConnection {{
     }
 }
 
+// The primary schema generation function that reads .env directly and bypasses environment variables
 pub fn generate_schema() -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating database schema...");
@@ -373,10 +441,80 @@ pub fn generate_schema() -> bool {
         }
     }
 
-    // Test database connection first
-    match establish_connection() {
+    // CRITICAL FIX: Bypass environment variables completely by reading .env directly
+    // This is the most reliable way to ensure we're using the main DATABASE_URL
+    
+    // Load .env file directly
+    let env_content = match fs::read_to_string(".env") {
+        Ok(content) => content,
+        Err(e) => {
+            progress.error(&format!("Could not read .env file: {}. Make sure it exists in the project root.", e));
+            return false;
+        }
+    };
+    
+    // Extract the main DATABASE_URL directly from .env
+    let mut database_url = None;
+    for line in env_content.lines() {
+        // Look for the exact DATABASE_URL= pattern, not any _DATABASE_URL variants
+        if line.starts_with("DATABASE_URL=") && !line.contains("_DATABASE_URL") {
+            let url = line["DATABASE_URL=".len()..].trim().trim_matches('"');
+            database_url = Some(url);
+            break;
+        }
+    }
+    
+    // Check if we found the DATABASE_URL
+    logger::info("Checking DATABASE_URL in .env file...").unwrap_or_default();
+    if database_url.is_none() {
+        progress.error("DATABASE_URL not found in .env file. It is required for schema generation.");
+        progress.error("Please make sure your .env file contains DATABASE_URL=postgres://...");
+        return false;
+    }
+    
+    // Log all database URLs for debugging
+    progress.set_message("Found DATABASE_URL in .env file");
+    logger::info("Database URLs in .env file:").unwrap_or_default();
+    for line in env_content.lines() {
+        if line.contains("DATABASE_URL") {
+            // Mask the actual URL
+            let parts: Vec<&str> = line.splitn(2, "=").collect();
+            if parts.len() == 2 {
+                let var_name = parts[0].trim();
+                let var_value = parts[1].trim();
+                
+                let masked_value = if var_value.contains("://") {
+                    let url_parts: Vec<&str> = var_value.splitn(2, "://").collect();
+                    format!("{}://<masked>", url_parts[0])
+                } else {
+                    "<masked>".to_string()
+                };
+                
+                logger::info(&format!("  {} = {}", var_name, masked_value)).unwrap_or_default();
+                
+                // Flag the one we're using
+                if var_name == "DATABASE_URL" {
+                    logger::info(&format!("  ✓ Using {} for schema generation", var_name)).unwrap_or_default();
+                }
+            }
+        }
+    }
+    
+    // Use the URL we found
+    let database_url = database_url.unwrap();
+    
+    // Test the connection first to make sure it's valid
+    let masked_url = if database_url.contains("://") {
+        let parts: Vec<&str> = database_url.splitn(2, "://").collect();
+        format!("{}://<masked>", parts[0])
+    } else {
+        "<masked>".to_string()
+    };
+    
+    logger::info(&format!("Connecting to database: {}", masked_url)).unwrap_or_default();
+    match PgConnection::establish(&database_url) {
         Ok(_) => {
-            // Connection successful, continue with schema generation
+            logger::info("Connection successful, continuing with schema generation").unwrap_or_default();
         }
         Err(e) => {
             progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
@@ -385,33 +523,40 @@ pub fn generate_schema() -> bool {
         }
     }
 
-    // Check if we should generate multiple schemas
-    let connections = get_connection_names();
-    if connections.len() > 1 {
-        // Ask user if they want to generate schema for all connections
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(&format!("Found {} database connections. Generate schema for:", connections.len()))
-            .items(&["Default database only", "All database connections"])
-            .default(0)
-            .interact();
+    // For blast init command, we ONLY want the default schema from the main DATABASE_URL
+    // We ignore any other database connections for safety and consistency
+    
+    // If the user explicitly runs 'blast schema' directly, we can offer options
+    if env::var("BLAST_SCHEMA_INTERACTIVE").is_ok() {
+        // Check if we should generate multiple schemas
+        let connections = get_connection_names();
+        if connections.len() > 1 {
+            // Ask user if they want to generate schema for all connections
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt(&format!("Found {} database connections. Generate schema for:", connections.len()))
+                .items(&["Default database only", "All database connections"])
+                .default(0)
+                .interact();
 
-        match selection {
-            Ok(0) => {
-                // Generate just the default schema
-                return generate_schema_for_connection("default");
-            }
-            Ok(1) => {
-                // Generate schema for all connections
-                return generate_all_schemas();
-            }
-            _ => {
-                progress.error("Schema generation cancelled");
-                return false;
+            match selection {
+                Ok(0) => {
+                    // Generate just the default schema
+                    return generate_schema_for_connection("default");
+                }
+                Ok(1) => {
+                    // Generate schema for all connections
+                    return generate_all_schemas();
+                }
+                _ => {
+                    progress.error("Schema generation cancelled");
+                    return false;
+                }
             }
         }
     }
 
-    // If there's only one connection, just generate for default
+    // Always generate just the default schema from main DATABASE_URL for init command
+    logger::info("Generating schema for default database connection only").unwrap_or_default();
     generate_schema_for_connection("default")
 }
 
@@ -1232,29 +1377,64 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
 }
 
 fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
-    dotenv().ok();
-
+    // CRITICAL FIX: Reload .env file directly instead of relying on previously loaded environment
+    // This ensures we get the original DATABASE_URL, not any overridden values
+    
+    // Force load the .env file directly
+    let env_content = match fs::read_to_string(".env") {
+        Ok(content) => content,
+        Err(e) => {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound, 
+                format!("Could not read .env file: {}. Make sure it exists in the project root.", e)
+            )));
+        }
+    };
+    
+    // Parse the .env file manually to extract DATABASE_URL without any override influence
+    let mut database_url = None;
+    for line in env_content.lines() {
+        if line.starts_with("DATABASE_URL=") && !line.contains("_DATABASE_URL") {
+            database_url = Some(line.strip_prefix("DATABASE_URL=").unwrap_or("").trim_matches('"'));
+            break;
+        }
+    }
+    
     // Check if PostgreSQL is installed
     let postgres_available = Command::new("which").arg("psql").output().map(|output| output.status.success()).unwrap_or(false);
 
-    // Get database URL from environment
-    let database_url = env::var("DATABASE_URL").map_err(|_| {
+    // Use the DATABASE_URL we found directly in .env
+    let database_url = database_url.ok_or_else(|| {
         let suggestion = if postgres_available {
-            "DATABASE_URL environment variable not set. Make sure you have a .env file with DATABASE_URL=postgres://username:password@localhost/dbname"
+            "DATABASE_URL environment variable not found in .env file. Make sure you have a .env file with DATABASE_URL=postgres://username:password@localhost/dbname"
         } else {
-            "DATABASE_URL environment variable not set and PostgreSQL might not be installed. \
+            "DATABASE_URL environment variable not found in .env file and PostgreSQL might not be installed. \
             Please install PostgreSQL and create a .env file with DATABASE_URL=postgres://username:password@localhost/dbname"
         };
 
         Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, suggestion)) as Box<dyn std::error::Error>
     })?;
 
-    // Try to establish connection
-    PgConnection::establish(&database_url).map_err(|e| {
+    // Log which URL we're connecting to (masked)
+    let masked_url = if database_url.contains("://") {
+        let parts: Vec<&str> = database_url.splitn(2, "://").collect();
+        if parts.len() == 2 {
+            format!("{}://<masked>", parts[0])
+        } else {
+            "<masked>".to_string()
+        }
+    } else {
+        "<masked>".to_string()
+    };
+    
+    logger::info(&format!("Connecting to database: {}", masked_url)).unwrap_or_default();
+
+    // Try to establish connection with the URL read directly from .env
+    PgConnection::establish(database_url).map_err(|e| {
         // Check if service is running
         let service_running = Command::new("pg_isready").args(["-h", "localhost"]).output().map(|output| output.status.success()).unwrap_or(false);
 
-        let error_message = format!("Could not connect to database via `{}`: {}", database_url, e);
+        let error_message = format!("Could not connect to database via `{}`: {}", masked_url, e);
         let suggestion = if !service_running {
             format!("{}. PostgreSQL service appears to be down. Try starting it with: sudo service postgresql start", error_message)
         } else {
@@ -1263,4 +1443,83 @@ fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
 
         Box::new(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, suggestion)) as Box<dyn std::error::Error>
     })
+}
+
+// Create a new function that forces schema regeneration from the main DATABASE_URL
+pub fn force_regenerate_main_schema() -> bool {
+    logger::info("FORCING schema regeneration from main DATABASE_URL only").unwrap_or_default();
+    
+    // Load the .env file directly to bypass environment variables
+    let env_content = match fs::read_to_string(".env") {
+        Ok(content) => content,
+        Err(e) => {
+            logger::error(&format!("Could not read .env file: {}.", e)).unwrap_or_default();
+            return false;
+        }
+    };
+    
+    // Find the main DATABASE_URL line
+    let mut database_url = None;
+    for line in env_content.lines() {
+        // Must be DATABASE_URL exactly, not a _DATABASE_URL variant
+        if line.starts_with("DATABASE_URL=") && !line.contains("_DATABASE_URL") {
+            let url = line["DATABASE_URL=".len()..].trim().trim_matches('"');
+            database_url = Some(url);
+            break;
+        }
+    }
+    
+    if database_url.is_none() {
+        logger::error("Main DATABASE_URL not found in .env file").unwrap_or_default();
+        return false;
+    }
+    
+    let database_url = database_url.unwrap();
+    let masked_url = if database_url.contains("://") {
+        let parts: Vec<&str> = database_url.splitn(2, "://").collect();
+        format!("{}://<masked>", parts[0])
+    } else {
+        "<masked>".to_string()
+    };
+    
+    logger::info(&format!("Force using DATABASE_URL: {}", masked_url)).unwrap_or_default();
+    
+    // Output file path for the schema
+    let schema_file = "src/database/schema.rs";
+    
+    // Run diesel directly with the URL from .env
+    logger::info("Running diesel print-schema with forced DATABASE_URL").unwrap_or_default();
+    
+    let output = Command::new("diesel")
+        .args(["print-schema", "--database-url", database_url])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+        
+    match output {
+        Ok(output) => {
+            if output.status.success() {
+                let schema_str = String::from_utf8_lossy(&output.stdout);
+                match fs::write(schema_file, schema_str.as_bytes()) {
+                    Ok(_) => {
+                        let table_count = schema_str.matches("table!").count();
+                        logger::success(&format!("Forced schema regeneration successful with {} tables", table_count)).unwrap_or_default();
+                        true
+                    },
+                    Err(e) => {
+                        logger::error(&format!("Failed to write schema file: {}", e)).unwrap_or_default();
+                        false
+                    }
+                }
+            } else {
+                let error = String::from_utf8_lossy(&output.stderr);
+                logger::error(&format!("Diesel print-schema failed: {}", error)).unwrap_or_default();
+                false
+            }
+        },
+        Err(e) => {
+            logger::error(&format!("Failed to execute diesel command: {}", e)).unwrap_or_default();
+            false
+        }
+    }
 }
