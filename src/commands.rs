@@ -55,6 +55,7 @@ pub enum Command {
     CronjobsRemove(i32),
     CronjobsToggle(i32),
     CronjobsInteractive, // Interactive TUI for cronjob management
+    CronjobsLiveTable, // Live auto-refreshing table view
 
     // App commands
     RefreshApp,
@@ -105,6 +106,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
                     }
                 }
                 Some("interactive") | Some("tui") => Some(Command::CronjobsInteractive),
+                Some("table") | Some("live") => Some(Command::CronjobsLiveTable),
                 None => Some(Command::CronjobsInteractive), // Default to interactive mode if just "cronjobs" is provided
                 _ => None,
             }
@@ -174,6 +176,8 @@ pub fn show_help() {
     println!("CRONJOB COMMANDS:");
     println!("  cronjobs             Launch interactive TUI for cronjob management");
     println!("  cronjobs interactive Launch interactive TUI for cronjob management");
+    println!("  cronjobs table       Display live auto-refreshing table of cronjobs");
+    println!("  cronjobs live        Display live auto-refreshing table of cronjobs");
     println!("  cronjobs list        List all scheduled jobs and their status");
     println!("  cronjobs add <name> <interval>  Add a new cronjob with name and interval in seconds");
     println!("  cronjobs remove <id> Remove a scheduled job by ID");
@@ -241,6 +245,11 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::CronjobsInteractive => {
             logger::info("Launching interactive cronjob manager...")?;
             crate::cronjobs_tui::run_cronjobs_tui(config)
+        }
+        
+        Command::CronjobsLiveTable => {
+            logger::info("Launching live cronjobs table view...")?;
+            crate::cronjobs_tui::display_cronjobs_table(config)
         }
 
         Command::StopServer => {
