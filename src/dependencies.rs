@@ -18,8 +18,8 @@ impl DependencyManager {
 
         // Register known dependencies with their installation commands
         deps.insert("zellij".to_string(), "cargo install zellij".to_string());
+        deps.insert("diesel_cli_ext".to_string(), "cargo install diesel_cli_ext".to_string());
         deps.insert("diesel".to_string(), "cargo install diesel_cli --no-default-features --features postgres".to_string());
-        deps.insert("diesel_ext".to_string(), "cargo install diesel_ext".to_string());
 
         DependencyManager {
             dependencies: deps,
@@ -65,7 +65,11 @@ impl DependencyManager {
         // In prompt mode, ask user before installing
         if prompt {
             let deps_list = missing.join(", ");
-            let confirm = Confirm::new().with_prompt(format!("Missing dependencies: {}. Install now?", deps_list)).default(true).interact().map_err(|e| e.to_string())?;
+            let confirm = Confirm::new()
+                .with_prompt(format!("Missing dependencies: {}. Install now?", deps_list))
+                .default(true)
+                .interact()
+                .map_err(|e| e.to_string())?;
 
             if !confirm {
                 return Err(format!("Required dependencies not installed: {}", deps_list));
