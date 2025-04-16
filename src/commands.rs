@@ -9,7 +9,7 @@ type BlastResult = Result<(), String>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     // Project commands
-    NewProject(String),
+    NewProject(String, bool), // String = project name, bool = use dev branch
     InitProject, // New command to initialize a project
 
     // Database commands
@@ -68,7 +68,11 @@ pub enum Command {
 pub fn parse_cli_args(args: &[String]) -> Option<Command> {
     match args.get(1).map(|s| s.as_str()) {
         // Project creation
-        Some("new") if args.len() >= 3 => Some(Command::NewProject(args[2].clone())),
+        Some("new") if args.len() >= 3 => {
+            // Check if the --dev flag is present
+            let use_dev_branch = args.iter().any(|arg| arg == "--dev");
+            Some(Command::NewProject(args[2].clone(), use_dev_branch))
+        },
         Some("init") => Some(Command::InitProject),
 
         // App commands
@@ -215,6 +219,7 @@ pub fn show_help() {
     println!();
     println!("OTHER COMMANDS:");
     println!("  new <project_name>   Create a new project");
+    println!("    --dev              Use the dev branch of the template repository");
     println!("  init                 Initialize project completely (migrations, seeds, assets, etc.)");
     println!("  help                 Show this help message");
     println!();
@@ -225,7 +230,7 @@ pub fn show_help() {
 // Execute a command with config and dependency manager
 pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult {
     // Only try to reload config for commands that require an existing project
-    if cmd != Command::Help && !matches!(cmd, Command::NewProject(_)) {
+    if cmd != Command::Help && !matches!(cmd, Command::NewProject(..)) {
         // Reload config if it's been modified
         if let Err(e) = config.reload_if_modified() {
             logger::warning(&format!("Failed to reload config: {}", e))?;
@@ -267,9 +272,9 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             crate::sparks::add_spark(&repo_url, config)
         }
 
-        Command::NewProject(name) => {
+        Command::NewProject(name, use_dev_branch) => {
             // Create the project using styled output - the function handles all output
-            crate::project::create_new_project(&name);
+            crate::project::create_new_project(&name, use_dev_branch);
 
             // No need for repetitive success message since create_new_project already prints it
             // Next steps are also already displayed in create_new_project

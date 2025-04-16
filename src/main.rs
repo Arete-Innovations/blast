@@ -61,12 +61,12 @@ fn main() {
                     }
                     Err(e) => {
                         // NewProject and Help don't need a project config
-                        if matches!(cmd, commands::Command::NewProject(_)) || cmd == commands::Command::Help {
+                        if matches!(cmd, commands::Command::NewProject(..)) || cmd == commands::Command::Help {
                             // Create a default config for these commands
                             let mut default_config = configs::Config {
                                 environment: "dev".to_string(),
                                 project_name: match cmd {
-                                    commands::Command::NewProject(ref name) => name.clone(),
+                                    commands::Command::NewProject(ref name, _) => name.clone(),
                                     _ => "unknown".to_string(),
                                 },
                                 assets: toml::Value::Table(toml::value::Table::new()),
