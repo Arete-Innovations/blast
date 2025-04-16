@@ -33,10 +33,19 @@ fn generate_jwt_secret() -> String {
         .collect()
 }
 
-pub fn create_new_project(project_name: &str) {
+pub fn create_new_project(project_name: &str, use_dev_branch: bool) {
     use console::style;
     
-    println!("{} project: {}", style("Creating new").green().bold(), style(project_name).cyan());
+    if use_dev_branch {
+        println!("{} project: {} using {} branch", 
+            style("Creating new").green().bold(), 
+            style(project_name).cyan(),
+            style("dev").yellow());
+    } else {
+        println!("{} project: {}", 
+            style("Creating new").green().bold(), 
+            style(project_name).cyan());
+    }
     let project_path = Path::new(project_name);
     
     if project_path.exists() {
@@ -59,7 +68,7 @@ pub fn create_new_project(project_name: &str) {
     
     // Create project structure in the temporary directory
     println!("{} Fetching project template...", style("📥").cyan());
-    if let Err(e) = create_and_dump_template(temp_path) {
+    if let Err(e) = create_and_dump_template(temp_path, use_dev_branch) {
         eprintln!("{} Failed to create project structure: {}", style("Error:").red().bold(), e);
         
         // Clean up the temporary directory on failure
@@ -103,7 +112,7 @@ pub fn create_new_project(project_name: &str) {
     println!("  {} Run the development server: {}", style("▶").cyan(), style("blast serve").yellow());
 }
 
-fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
+fn create_and_dump_template(dest: &Path, use_dev_branch: bool) -> std::io::Result<()> {
     fs::create_dir_all(dest)?;
     
     // Try cloning from each repository in order until successful
@@ -112,6 +121,9 @@ fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
     
     // Determine whether to show verbose output based on environment
     let is_verbose = std::env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1";
+    
+    // Get the branch to use
+    let branch = if use_dev_branch { "dev" } else { "master" };
     
     for repo_url in TEMPLATE_REPOS.iter() {
         // Only show the attempting to clone message in verbose mode
@@ -122,7 +134,7 @@ fn create_and_dump_template(dest: &Path) -> std::io::Result<()> {
         // Prepare the command
         let mut cmd = Command::new("git");
         cmd.args(["clone", "--depth=1", "--single-branch", 
-              "--branch", "master", 
+              "--branch", branch, 
               "--config", &format!("core.askPass=echo"),
               "--config", &format!("http.connectTimeout={}", CLONE_TIMEOUT.as_secs()),
               "--config", &format!("http.lowSpeedLimit=1000"),
