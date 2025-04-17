@@ -1354,26 +1354,114 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
         }
     };
 
-    // Execute seed SQL
-    match diesel::sql_query(sql).execute(connection) {
-        Ok(_) => {
-            // Success without output
-            true
+    // Split the SQL by semicolons to handle multiple statements
+    // The regex handles semicolons inside quotes and comments properly
+    let mut success = true;
+    let statements = split_sql_into_statements(&sql);
+    
+    for (i, statement) in statements.iter().enumerate() {
+        let trimmed = statement.trim();
+        if trimmed.is_empty() {
+            continue;
         }
-        Err(e) => {
-            // Error without output
-            let error_msg = format!("Error: Failed to execute seed file {}: {}", file_name, e);
-
-            if is_interactive {
-                // In interactive mode, log to file
-                let _ = crate::output::log(&error_msg);
-            } else {
-                // In CLI mode, print to stderr
-                crate::logger::error(&error_msg).unwrap_or_default();
+        
+        // Execute each statement separately
+        match diesel::sql_query(trimmed).execute(connection) {
+            Ok(_) => {
+                // Statement executed successfully
+                if is_interactive {
+                    // In interactive mode, optionally log each statement success
+                    let _ = crate::output::log(&format!("Statement {} executed successfully", i + 1));
+                }
             }
-            false
+            Err(e) => {
+                success = false;
+                let error_msg = format!("Error: Failed to execute statement {} in seed file {}: {}", i + 1, file_name, e);
+
+                if is_interactive {
+                    // In interactive mode, log to file
+                    let _ = crate::output::log(&error_msg);
+                } else {
+                    // In CLI mode, print to stderr
+                    crate::logger::error(&error_msg).unwrap_or_default();
+                }
+                break; // Stop on first error
+            }
         }
     }
+    
+    success
+}
+
+// Helper function to split SQL file into separate statements
+// This handles semicolons inside quotes and comments
+fn split_sql_into_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current_statement = String::new();
+    let mut in_string = false;
+    let mut in_comment = false;
+    let mut chars = sql.chars().peekable();
+    
+    while let Some(c) = chars.next() {
+        match c {
+            // Handle string literals
+            '\'' => {
+                if !in_comment {
+                    // Toggle in_string state, but only if we're not escaping
+                    if chars.peek() != Some(&'\'') {
+                        in_string = !in_string;
+                    }
+                }
+                current_statement.push(c);
+            },
+            
+            // Handle comments
+            '-' => {
+                current_statement.push(c);
+                if !in_string && chars.peek() == Some(&'-') {
+                    // Start of a single-line comment
+                    in_comment = true;
+                    // Add the second dash
+                    if let Some(n) = chars.next() {
+                        current_statement.push(n);
+                    }
+                }
+            },
+            
+            // Handle end of line (terminates single-line comments)
+            '\n' => {
+                current_statement.push(c);
+                if in_comment {
+                    in_comment = false;
+                }
+            },
+            
+            // Handle statement termination
+            ';' => {
+                if !in_string && !in_comment {
+                    // End of statement
+                    current_statement.push(c);
+                    statements.push(current_statement);
+                    current_statement = String::new();
+                } else {
+                    // Semicolon inside a string or comment
+                    current_statement.push(c);
+                }
+            },
+            
+            // Handle all other characters
+            _ => {
+                current_statement.push(c);
+            }
+        }
+    }
+    
+    // Add the last statement if it's not empty (might not end with a semicolon)
+    if !current_statement.trim().is_empty() {
+        statements.push(current_statement);
+    }
+    
+    statements
 }
 
 fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
