@@ -10,24 +10,23 @@ use crate::logger;
 fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     use dotenv::dotenv;
     use std::collections::HashMap;
-    use std::process::{Command, Stdio};
     use std::env;
     use std::fs;
     use std::path::Path;
+    use std::process::{Command, Stdio};
 
     // Load environment variables from .env file to ensure they're available to migrations
     dotenv().ok();
-    
+
     // Check if verbose mode is enabled using the logger's built-in mechanism
     // This handles both the -v flag and the BLAST_VERBOSE environment variable
     // Declare it as a function that wraps the logger's verbosity check
     let is_verbose = || {
         // Access the verbosity state from the logger
         // This effectively uses the same check that logger::info uses internally
-        env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1" || 
-            env::var("BLAST_INTERACTIVE").is_ok()
+        env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1" || env::var("BLAST_INTERACTIVE").is_ok()
     };
-    
+
     if is_verbose() {
         logger::info("VERBOSE MODE ENABLED - Showing detailed migration debugging info")?;
     }
@@ -47,21 +46,21 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     // First determine the spark directory by working backwards from migration_path
     let mut spark_dir = None;
     let mut current_path = migration_path.clone();
-    
+
     // Keep going up directories until we find a manifest.toml file or hit root
     while current_path.parent().is_some() {
         current_path = match current_path.parent() {
             Some(parent) => parent.to_path_buf(),
             None => break,
         };
-        
+
         let manifest_path = current_path.join("manifest.toml");
         if manifest_path.exists() {
             spark_dir = Some(current_path);
             break;
         }
     }
-    
+
     // Get the spark name - first try to read from manifest.toml
     let spark_name = if let Some(dir) = spark_dir {
         let manifest_path = dir.join("manifest.toml");
@@ -69,9 +68,8 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
             match fs::read_to_string(&manifest_path) {
                 Ok(content) => {
                     // Simple parsing to extract spark name from manifest.toml
-                    let name_line = content.lines()
-                        .find(|line| line.trim().starts_with("name"));
-                    
+                    let name_line = content.lines().find(|line| line.trim().starts_with("name"));
+
                     if let Some(line) = name_line {
                         // Extract the value from name = "value"
                         let parts: Vec<&str> = line.split('=').collect();
@@ -81,33 +79,21 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                             value.to_uppercase()
                         } else {
                             // If we can't parse it properly, fall back to directory name
-                            dir.file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("unknown")
-                                .to_uppercase()
+                            dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_uppercase()
                         }
                     } else {
                         // If name not found in manifest, use directory name
-                        dir.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("unknown")
-                            .to_uppercase()
+                        dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_uppercase()
                     }
-                },
+                }
                 Err(_) => {
                     // If can't read manifest, fall back to directory name
-                    dir.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .to_uppercase()
+                    dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_uppercase()
                 }
             }
         } else {
             // If no manifest.toml, fall back to directory name
-            dir.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-                .to_uppercase()
+            dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_uppercase()
         }
     } else {
         // If we can't find a manifest.toml, fall back to the old path component method
@@ -120,7 +106,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     };
 
     logger::info(&format!("Looking for database URL for spark: {}", spark_name))?;
-    
+
     // Verbose debugging: List all the path components for easier diagnosis
     if is_verbose() {
         logger::info("Path component analysis:")?;
@@ -129,7 +115,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                 logger::info(&format!("  - Component: {}", comp_str))?;
             }
         }
-        
+
         // List migration directory contents
         if migration_path.exists() && migration_path.is_dir() {
             logger::info(&format!("Contents of migration directory: {}", migration_path.display()))?;
@@ -140,7 +126,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                             let path = entry.path();
                             let file_type = if path.is_dir() { "directory" } else { "file" };
                             logger::info(&format!("  - {} ({})", path.display(), file_type))?;
-                            
+
                             // If it's a directory, also list its contents (for versioned migrations)
                             if path.is_dir() {
                                 match fs::read_dir(&path) {
@@ -150,17 +136,17 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                                                 logger::info(&format!("    - {}", sub_entry.path().display()))?;
                                             }
                                         }
-                                    },
+                                    }
                                     Err(e) => logger::warning(&format!("Failed to read directory {}: {}", path.display(), e))?,
                                 }
                             }
                         }
                     }
-                },
+                }
                 Err(e) => logger::warning(&format!("Failed to read migration directory: {}", e))?,
             }
         }
-        
+
         // List all environment variables
         logger::info("Environment variables:")?;
         for (key, value) in env::vars() {
@@ -183,33 +169,33 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
 
     // First try the spark-specific database URL (SPARKNAME_DATABASE_URL)
     let spark_db_var = format!("{}_DATABASE_URL", spark_name);
-    
+
     // Create a map of environment variables with DATABASE_URL set properly
     let mut env_vars: HashMap<String, String> = std::env::vars().collect();
-    
+
     // IMPORTANT: This override of DATABASE_URL should ONLY affect operations in this function
     // and not impact the main schema generation or other database operations
-    
+
     // Check for spark-specific database URL
     if let Ok(url) = std::env::var(&spark_db_var) {
         logger::info(&format!("Using spark-specific database URL from {}", spark_db_var))?;
         logger::info("NOTE: This only affects THIS spark migration and not the main schema generation")?;
-        
+
         // We don't need to store the original URL anymore since we use explicit parameters
-        
+
         // Temporarily override DATABASE_URL just for this operation
         env_vars.insert("DATABASE_URL".to_string(), url.clone());
-        
+
         // Also keep a direct reference we can use with --database-url
         env_vars.insert("_SPARK_DIRECT_DB_URL".to_string(), url);
     } else {
         logger::info("No spark-specific DATABASE_URL found, using default")?;
         // Keep the default DATABASE_URL from the environment
     }
-    
+
     // Step 1: Run diesel setup to ensure migrations table exists
     logger::info("Running diesel setup to prepare database")?;
-    
+
     // In verbose mode, also examine the diesel.toml file if it exists
     if is_verbose() {
         let diesel_toml_path = Path::new("diesel.toml");
@@ -220,13 +206,13 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                     for line in content.lines() {
                         logger::info(&format!("  {}", line))?;
                     }
-                },
+                }
                 Err(e) => logger::warning(&format!("Failed to read diesel.toml: {}", e))?,
             }
         } else {
             logger::info("diesel.toml file not found in current directory")?;
         }
-        
+
         // Also check if the up.sql file exists and show its content
         let up_sql_path = migration_path.join("up.sql");
         if up_sql_path.exists() {
@@ -234,14 +220,14 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                 Ok(content) => {
                     logger::info(&format!("up.sql content from {}", up_sql_path.display()))?;
                     for (i, line) in content.lines().enumerate() {
-                        logger::info(&format!("  {}. {}", i+1, line))?;
+                        logger::info(&format!("  {}. {}", i + 1, line))?;
                     }
-                },
+                }
                 Err(e) => logger::warning(&format!("Failed to read up.sql: {}", e))?,
             }
         }
     }
-    
+
     // Get database URL for setup
     let setup_db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
         direct_url.clone()
@@ -250,18 +236,14 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     } else {
         return Err("No database URL available for setup".to_string());
     };
-    
+
     // Always use the explicit --database-url parameter
     let setup_output = Command::new("diesel")
-        .args([
-            "setup", 
-            "--migration-dir", &migration_path.to_string_lossy(),
-            "--database-url", &setup_db_url
-        ])
+        .args(["setup", "--migration-dir", &migration_path.to_string_lossy(), "--database-url", &setup_db_url])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
-        
+
     match setup_output {
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -270,18 +252,18 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
             } else {
                 logger::info("Diesel setup completed")?;
             }
-        },
+        }
         Err(e) => logger::warning(&format!("Failed to run diesel setup: {}", e))?,
     }
-    
+
     // Step 2: First try running the migration normally
     logger::info("Running diesel migration")?;
-    
+
     if is_verbose() {
         // In verbose mode, display the exact diesel command and environment
         let cmd_str = format!("diesel migration run --migration-dir {}", migration_path.display());
         logger::info(&format!("Running command: {}", cmd_str))?;
-        
+
         // Check if the DATABASE_URL is set correctly
         if let Some(db_url) = env_vars.get("DATABASE_URL") {
             let masked_url = if db_url.contains("://") {
@@ -298,7 +280,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
         } else {
             logger::warning("DATABASE_URL is not set in environment!")?;
         }
-        
+
         // Check for diesel binary
         match Command::new("which").arg("diesel").output() {
             Ok(output) => {
@@ -308,11 +290,11 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                 } else {
                     logger::warning("Diesel binary not found in PATH!")?;
                 }
-            },
+            }
             Err(e) => logger::warning(&format!("Failed to check for diesel binary: {}", e))?,
         }
     }
-    
+
     // Get the direct database URL to use - prefer the explicit spark URL if available
     let db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
         direct_url.clone()
@@ -321,29 +303,24 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
     } else {
         return Err("No database URL available for running migrations".to_string());
     };
-    
+
     // Always use --database-url to ensure we're targeting the correct database
     let output = Command::new("diesel")
-        .args([
-            "migration", 
-            "run", 
-            "--migration-dir", &migration_path.to_string_lossy(),
-            "--database-url", &db_url
-        ])
+        .args(["migration", "run", "--migration-dir", &migration_path.to_string_lossy(), "--database-url", &db_url])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .map_err(|e| format!("Failed to execute diesel migration: {}", e))?;
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Log the output for debugging
     logger::info(&format!("Diesel migration stdout: {}", stdout))?;
     if !stderr.is_empty() {
         logger::info(&format!("Diesel migration stderr: {}", stderr))?;
     }
-    
+
     if is_verbose() {
         // In verbose mode, add extra diagnostic information
         logger::info(&format!("Diesel command exit status: {}", output.status))?;
@@ -352,33 +329,33 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
             logger::info(&format!("Diesel command exit code: {}", code))?;
         }
     }
-    
+
     if !output.status.success() {
         return Err(format!("Migration failed: {}", stderr));
     }
-    
+
     // Extract migrations from stdout
     let migrations: Vec<String> = stdout
         .lines()
         .filter(|line| line.contains("Running migration"))
         .filter_map(|line| line.split("Running migration").nth(1).map(|name| name.trim().to_string()))
         .collect();
-    
+
     if !migrations.is_empty() {
         progress.success(&format!("Ran {} migrations: {}", migrations.len(), migrations.join(", ")));
         return Ok(());
     }
-    
+
     // Step 3: If no migrations were run but command succeeded, try forcing the migration
     // Check if this is a direct migration with up.sql/down.sql
     let up_sql_path = migration_path.join("up.sql");
     let is_direct_migration = up_sql_path.exists();
-    
+
     if is_direct_migration {
         // This is a direct migration with up.sql/down.sql but diesel didn't run it
         // Try with redo to force re-run
         logger::warning("No migrations run initially - attempting migration redo")?;
-        
+
         // Get database URL for redo
         let redo_db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
             direct_url.clone()
@@ -387,42 +364,37 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
         } else {
             return Err("No database URL available for migration redo".to_string());
         };
-        
+
         // Always use the explicit --database-url parameter
         let redo_output = Command::new("diesel")
-            .args([
-                "migration", 
-                "redo", 
-                "--migration-dir", &migration_path.to_string_lossy(),
-                "--database-url", &redo_db_url
-            ])
+            .args(["migration", "redo", "--migration-dir", &migration_path.to_string_lossy(), "--database-url", &redo_db_url])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output();
-            
+
         match redo_output {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                
+
                 logger::info(&format!("Diesel redo stdout: {}", stdout))?;
                 if !stderr.is_empty() {
                     logger::info(&format!("Diesel redo stderr: {}", stderr))?;
                 }
-                
+
                 if output.status.success() && (stdout.contains("Rolling back") || stdout.contains("Running")) {
                     progress.success("Successfully ran migration via redo");
                     return Ok(());
                 } else {
                     logger::warning("Migration redo didn't run anything either")?;
                 }
-            },
+            }
             Err(e) => logger::warning(&format!("Failed to run migration redo: {}", e))?,
         }
-        
+
         // If redo didn't work, try directly executing the SQL with psql
         logger::warning("Attempting to directly execute migration SQL with psql")?;
-        
+
         // Read the up.sql file
         let up_sql_content = match fs::read_to_string(&up_sql_path) {
             Ok(content) => content,
@@ -431,7 +403,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                 return Ok(());
             }
         };
-        
+
         // Get the database URL for direct SQL execution - use the spark-specific URL
         let db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
             direct_url.clone()
@@ -441,74 +413,53 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
             logger::warning("No database URL available for direct SQL execution")?;
             return Ok(());
         };
-        
+
         // Write SQL to a temporary file
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
         let temp_sql_path = format!("/tmp/direct_migration_{}.sql", timestamp);
-        
+
         if let Err(e) = fs::write(&temp_sql_path, &up_sql_content) {
             logger::warning(&format!("Failed to write temporary SQL file: {}", e))?;
             return Ok(());
         }
-        
+
         // Execute the SQL directly with psql
         logger::info(&format!("Executing SQL with psql from: {}", temp_sql_path))?;
-        
-        let psql_output = Command::new("psql")
-            .arg(&db_url)
-            .arg("-f")
-            .arg(&temp_sql_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output();
-        
+
+        let psql_output = Command::new("psql").arg(&db_url).arg("-f").arg(&temp_sql_path).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+
         // Clean up temp file no matter what
         let _ = fs::remove_file(&temp_sql_path);
-        
+
         match psql_output {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                
+
                 logger::info(&format!("Direct psql stdout: {}", stdout))?;
                 if !stderr.is_empty() {
                     logger::info(&format!("Direct psql stderr: {}", stderr))?;
                 }
-                
+
                 if output.status.success() {
                     // Update diesel_schema_migrations table to make diesel aware of this migration
                     logger::info("Migration SQL executed successfully, updating diesel_schema_migrations table")?;
-                    
+
                     // Get the migration version name (usually the directory name)
-                    let version = migration_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("initial");
-                    
+                    let version = migration_path.file_name().and_then(|n| n.to_str()).unwrap_or("initial");
+
                     // Write SQL to insert the migration record
-                    let migration_record_sql = format!(
-                        "INSERT INTO __diesel_schema_migrations (version, run_on) VALUES ('{}', NOW()) ON CONFLICT DO NOTHING;",
-                        version
-                    );
-                    
+                    let migration_record_sql = format!("INSERT INTO __diesel_schema_migrations (version, run_on) VALUES ('{}', NOW()) ON CONFLICT DO NOTHING;", version);
+
                     let record_sql_path = format!("/tmp/update_migrations_{}.sql", timestamp);
                     if let Err(e) = fs::write(&record_sql_path, &migration_record_sql) {
                         logger::warning(&format!("Failed to write migration record SQL file: {}", e))?;
                     } else {
-                        let update_output = Command::new("psql")
-                            .arg(&db_url)
-                            .arg("-f")
-                            .arg(&record_sql_path)
-                            .stdout(Stdio::piped())
-                            .stderr(Stdio::piped())
-                            .output();
-                        
+                        let update_output = Command::new("psql").arg(&db_url).arg("-f").arg(&record_sql_path).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+
                         // Clean up temp file
                         let _ = fs::remove_file(&record_sql_path);
-                        
+
                         match update_output {
                             Ok(update_out) => {
                                 let update_stderr = String::from_utf8_lossy(&update_out.stderr);
@@ -517,29 +468,29 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                                 } else {
                                     logger::info("Successfully updated diesel_schema_migrations table")?;
                                 }
-                            },
+                            }
                             Err(e) => logger::warning(&format!("Failed to execute migration record update: {}", e))?,
                         }
                     }
-                    
+
                     progress.success("Successfully executed migration SQL directly");
                     return Ok(());
                 } else {
                     logger::warning(&format!("Direct SQL execution failed: {}", stderr))?;
                 }
-            },
+            }
             Err(e) => logger::warning(&format!("Failed to execute direct SQL: {}", e))?,
         }
     }
-    
+
     // We tried everything but nothing ran - assume it's already migrated
     let _ = progress.warning("Diesel did not run any migrations - this likely means they are already applied")?;
     progress.success("No new migrations to run");
-    
+
     // In verbose mode, check the database schema to see if tables were actually created
     if is_verbose() {
         logger::info("Checking database schema to verify if tables exist...")?;
-        
+
         // Get database URL for schema check - use the spark-specific URL
         let db_url = if let Some(direct_url) = env_vars.get("_SPARK_DIRECT_DB_URL") {
             direct_url.clone()
@@ -554,24 +505,20 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                 }
             }
         };
-        
+
         // Always use the explicit database URL parameter
         let schema_output = if !db_url.is_empty() {
-            Command::new("diesel")
-                .args(["print-schema", "--database-url", &db_url])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
+            Command::new("diesel").args(["print-schema", "--database-url", &db_url]).stdout(Stdio::piped()).stderr(Stdio::piped()).output()
         } else {
             logger::warning("No database URL available for schema check")?;
             return Ok(());
         };
-            
+
         match schema_output {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                
+
                 logger::info("Database schema:")?;
                 if stdout.trim().is_empty() {
                     logger::warning("No tables found in database schema!")?;
@@ -580,14 +527,14 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                         logger::info(&format!("  {}", line))?;
                     }
                 }
-                
+
                 if !stderr.is_empty() {
                     logger::warning(&format!("Schema check stderr: {}", stderr))?;
                 }
-            },
+            }
             Err(e) => logger::warning(&format!("Failed to check database schema: {}", e))?,
         }
-        
+
         // Also try to directly query the database to check if the tables exist
         // Use psql to check if the table exists (only works with PostgreSQL)
         if let Some(db_url) = env_vars.get("DATABASE_URL") {
@@ -597,7 +544,8 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                 if up_sql_path.exists() {
                     if let Ok(content) = fs::read_to_string(&up_sql_path) {
                         // Simple regex-like parsing to extract table names from CREATE TABLE statements
-                        let table_names: Vec<String> = content.lines()
+                        let table_names: Vec<String> = content
+                            .lines()
                             .filter(|line| line.to_lowercase().contains("create table") && !line.trim().starts_with("--"))
                             .filter_map(|line| {
                                 // Extract table name from "CREATE TABLE [IF NOT EXISTS] table_name"
@@ -607,7 +555,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                                 } else {
                                     lower_line.split("table").nth(1)
                                 };
-                                
+
                                 if let Some(part) = table_parts {
                                     // Remove everything after first ( or space
                                     let end_idx = part.find('(').or_else(|| part.find(' ')).unwrap_or(part.len());
@@ -617,10 +565,10 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                                 }
                             })
                             .collect();
-                        
+
                         if !table_names.is_empty() {
                             logger::info(&format!("Checking for tables found in up.sql: {}", table_names.join(", ")))?;
-                            
+
                             // Create temporary SQL file to query tables
                             let temp_sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';";
                             let temp_sql_path = Path::new("/tmp/check_tables.sql");
@@ -628,14 +576,8 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                                 logger::warning(&format!("Failed to write temporary SQL file: {}", e))?;
                             } else {
                                 // Run psql to check tables
-                                let psql_output = Command::new("psql")
-                                    .arg(db_url)
-                                    .arg("-f")
-                                    .arg(temp_sql_path)
-                                    .stdout(Stdio::piped())
-                                    .stderr(Stdio::piped())
-                                    .output();
-                                    
+                                let psql_output = Command::new("psql").arg(db_url).arg("-f").arg(temp_sql_path).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+
                                 match psql_output {
                                     Ok(output) => {
                                         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -643,10 +585,10 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
                                         for line in stdout.lines() {
                                             logger::info(&format!("  {}", line))?;
                                         }
-                                    },
+                                    }
                                     Err(e) => logger::warning(&format!("Failed to query database tables: {}", e))?,
                                 }
-                                
+
                                 // Clean up temp file
                                 let _ = fs::remove_file(temp_sql_path);
                             }
@@ -656,7 +598,7 @@ fn run_spark_migration(migration_path: &PathBuf) -> Result<(), String> {
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -797,7 +739,7 @@ pub fn add_spark(repo_url: &str, config: &Config) -> Result<(), String> {
 
     // Step 6: Update the mod.rs file to include the new spark
     update_sparks_mod_rs(&sparks_dir, &repo_name)?;
-    
+
     // Step 6b: Update the registry.rs file if it exists
     update_spark_registry(&config.project_dir, &repo_name)?;
 
@@ -822,14 +764,14 @@ pub fn add_spark(repo_url: &str, config: &Config) -> Result<(), String> {
     let env_updated = if !validation_result.required_env.is_empty() {
         // Add env variables - finish current progress to disable spinner during editor
         progress.success(&format!("Setting up environment variables for: {}", validation_result.name));
-        
+
         // This will run without a spinner
         let env_result = update_env_variables(&repo_name, &validation_result.required_env)?;
-        
+
         // Create a new progress for continuing after the editor
         progress = logger::create_progress(None);
         progress.set_message(&format!("Continuing with spark plugin setup: {}", validation_result.name));
-        
+
         env_result
     } else {
         false
@@ -1543,14 +1485,14 @@ fn update_env_variables(spark_name: &str, required_env: &[String]) -> Result<boo
 
         // Clear the screen and notify about editor
         println!("\n\nOpening .env file in your editor so you can set the values...");
-        
+
         // Try to open with EDITOR env var
         let editor_result = if let Ok(editor) = std::env::var("EDITOR") {
             println!("Using editor: {}", editor);
-            
+
             // Sleep to make sure the editor has our full attention
             std::thread::sleep(std::time::Duration::from_secs(1));
-            
+
             match Command::new(&editor).arg(env_path).status() {
                 Ok(status) if status.success() => {
                     logger::info("File has been successfully edited")?;
@@ -1604,23 +1546,20 @@ fn open_with_common_editors(file_path: &Path) -> Result<(), String> {
     // Clear terminal and display message
     println!("\n\nOpening editor for .env file. Please edit the environment variables...\n");
     println!("When you're done, save and close the editor to continue.\n");
-    
+
     // Give the user time to read the message
     std::thread::sleep(std::time::Duration::from_secs(1));
-    
+
     let mut editor_found = false;
-    
+
     #[cfg(target_os = "windows")]
     {
         // On Windows, try notepad
         if Command::new("which").arg("notepad").output().map(|o| o.status.success()).unwrap_or(false) {
             logger::info("Opening .env file with notepad...")?;
-            
+
             // Open the editor and wait for it to complete
-            if let Ok(status) = Command::new("notepad")
-                .arg(file_path)
-                .status() 
-            {
+            if let Ok(status) = Command::new("notepad").arg(file_path).status() {
                 if status.success() {
                     editor_found = true;
                     logger::info("File has been edited with notepad")?;
@@ -1628,25 +1567,22 @@ fn open_with_common_editors(file_path: &Path) -> Result<(), String> {
             }
         }
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         // On Unix-like systems, try various common editors
-        let editors = ["nano", "vim", "vi", "gedit", "code", "emacs", "sublime", "pico"];
-        
+        let editors = ["nano", "vim", "vi", "gedit", "code", "emacs", "subl", "pico"];
+
         for editor in editors {
             // Try to check if the editor is installed
             if Command::new("which").arg(editor).output().map(|o| o.status.success()).unwrap_or(false) {
                 // Editor exists, try to use it
                 logger::info(&format!("Opening .env file with {}...", editor))?;
-                
+
                 // Small pause before starting the editor
                 std::thread::sleep(std::time::Duration::from_millis(200));
-                
-                if let Ok(status) = Command::new(editor)
-                    .arg(file_path)
-                    .status() 
-                {
+
+                if let Ok(status) = Command::new(editor).arg(file_path).status() {
                     if status.success() {
                         editor_found = true;
                         logger::info(&format!("File has been edited with {}", editor))?;
@@ -1656,16 +1592,16 @@ fn open_with_common_editors(file_path: &Path) -> Result<(), String> {
             }
         }
     }
-    
+
     // If we got here and didn't find an editor, log the error
     if !editor_found {
         logger::warning(&format!("Could not find a suitable editor to open {}", file_path.display()))?;
         logger::warning("Please edit the file manually to set environment variables")?;
     }
-    
+
     // Give the user a moment to see the messages
     std::thread::sleep(std::time::Duration::from_secs(1));
-    
+
     Ok(())
 }
 
@@ -1744,45 +1680,45 @@ fn update_sparks_mod_rs(sparks_dir: &PathBuf, spark_name: &str) -> Result<(), St
 // Helper function to update the registry.rs file to add a new match arm for the spark
 pub fn update_spark_registry(project_dir: &Path, spark_name: &str) -> Result<(), String> {
     let registry_path = project_dir.join("src").join("services").join("sparks").join("registry.rs");
-    
+
     // Check if registry.rs exists
     if !registry_path.exists() {
         logger::info("Spark registry.rs not found. This will be created automatically when the project is initialized.")?;
         return Ok(());
     }
-    
+
     logger::info(&format!("Updating spark registry for: {}", spark_name))?;
-    
+
     // Read the current content
     let content = fs::read_to_string(&registry_path).map_err(|e| format!("Failed to read registry.rs file: {}", e))?;
-    
+
     // Check if the spark is already registered
     if content.contains(&format!("\"{spark_name}\" =>")) {
         logger::info(&format!("Spark '{}' is already registered in registry.rs", spark_name))?;
         return Ok(());
     }
-    
+
     // Find the match block in the register_by_name function
     if let Some(match_start_pos) = content.find("match name {") {
         // Find the first default case after the match name statement
         if let Some(default_pos) = content[match_start_pos..].find("_ => {") {
             let absolute_default_pos = match_start_pos + default_pos;
-            
+
             // Create the new match arm - we don't need to use the match content
             let new_match_arm = format!("\n        \"{spark_name}\" => {{\n            register_spark(name, {spark_name}::create_spark);\n            true\n        }},");
-            
+
             // Construct the new content by inserting the match arm just before the default case
             let mut updated_content = content.clone();
             updated_content.insert_str(absolute_default_pos, &new_match_arm);
-            
+
             // Write the updated content
             fs::write(&registry_path, updated_content).map_err(|e| format!("Failed to update registry.rs file: {}", e))?;
-            
+
             logger::success(&format!("Updated registry.rs to include spark: {}", spark_name))?;
             return Ok(());
         }
     }
-    
+
     logger::warning(&format!("Could not find register_by_name function in registry.rs. Manual update required."))?;
     Ok(())
 }
