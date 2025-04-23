@@ -407,8 +407,7 @@ fn write_model_file(config: &Config, table: &TableInfo, relationships: &[Relatio
     let model_template = format!(
         r#"use crate::database::db::establish_connection;
 use crate::database::schema::{0}::dsl::{{self as {2}_dsl}};
-use crate::structs::{1};
-use crate::structs::insertable::New{1};
+use crate::structs::*;
 use crate::meltdown::*;
 use diesel::prelude::*;
 use diesel::result::Error;
