@@ -226,11 +226,17 @@ fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
 fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String {
     let mut timestamp_methods = String::new();
 
-    let has_created_at = table.columns.iter().any(|c| c.name == "created_at" && (c.column_type == "Int8" || c.column_type == "Timestamp"));
+    let created_at_column = table.columns.iter().find(|c| c.name == "created_at");
+    let updated_at_column = table.columns.iter().find(|c| c.name == "updated_at");
 
-    let has_updated_at = table.columns.iter().any(|c| c.name == "updated_at" && (c.column_type == "Int8" || c.column_type == "Timestamp"));
+    let has_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8" || c.column_type == "Timestamp");
+    let has_updated_at = updated_at_column.map_or(false, |c| c.column_type == "Int8" || c.column_type == "Timestamp");
+    
+    // Only generate timestamp-related methods if the column is Int8 (bigint in SQL, i64 in Rust)
+    let has_int8_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8");
+    let has_int8_updated_at = updated_at_column.map_or(false, |c| c.column_type == "Int8");
 
-    if has_created_at {
+    if has_created_at && has_int8_created_at {
         timestamp_methods.push_str(&format!(
             r#"
     pub async fn created_after(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
@@ -277,7 +283,7 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
         ));
     }
 
-    if has_updated_at {
+    if has_updated_at && has_int8_updated_at {
         timestamp_methods.push_str(&format!(
             r#"
     pub async fn updated_after(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
@@ -308,8 +314,12 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
 }
 
 // Generate methods for relationships
-fn generate_relationship_methods(table_name: &str, singular_name: &str, relationships: &[RelationshipInfo]) -> String {
+fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_name: &str, relationships: &[RelationshipInfo]) -> String {
     let mut relationship_methods = String::new();
+
+    // Check if created_at column exists and is Int8 (bigint)
+    let created_at_column = table.columns.iter().find(|c| c.name == "created_at");
+    let has_int8_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8");
 
     // Find relationships where this table is the source
     for relationship in relationships.iter().filter(|r| r.source_table == table_name) {
@@ -317,6 +327,7 @@ fn generate_relationship_methods(table_name: &str, singular_name: &str, relation
         let _target_struct = to_pascal(target_table);
         let foreign_key = &relationship.source_column;
 
+        // Always generate the basic lookup method
         relationship_methods.push_str(&format!(
             r#"
     pub async fn get_by_{0}({0}: i32) -> Result<Vec<Self>, MeltDown> {{
@@ -327,7 +338,14 @@ fn generate_relationship_methods(table_name: &str, singular_name: &str, relation
             .load::<Self>(&mut conn)
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_{0}").with_context("{0}", {0}.to_string()))
     }}
+"#,
+            foreign_key, singular_name, &table_name
+        ));
 
+        // Only generate timestamp-based methods if created_at is an Int8 (bigint) column
+        if has_int8_created_at {
+            relationship_methods.push_str(&format!(
+                r#"
     pub async fn get_by_{0}_created_before({0}: i32, timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection();
         
@@ -350,8 +368,9 @@ fn generate_relationship_methods(table_name: &str, singular_name: &str, relation
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_{0}_created_after").with_context("{0}", {0}.to_string()).with_context("timestamp", timestamp.to_string()))
     }}
 "#,
-            foreign_key, singular_name, &table_name
-        ));
+                foreign_key, singular_name, &table_name
+            ));
+        }
     }
 
     relationship_methods
@@ -383,7 +402,7 @@ fn write_model_file(config: &Config, table: &TableInfo, relationships: &[Relatio
     // Generate specialized methods
     let bool_methods = generate_bool_methods(table, &singular_name);
     let timestamp_methods = generate_timestamp_methods(table, &singular_name);
-    let relationship_methods = generate_relationship_methods(table_name, &singular_name, relationships);
+    let relationship_methods = generate_relationship_methods(table, table_name, &singular_name, relationships);
 
     let model_template = format!(
         r#"use crate::database::db::establish_connection;
@@ -603,4 +622,3 @@ pub fn generate(config: &Config) -> bool {
         }
     }
 }
-
