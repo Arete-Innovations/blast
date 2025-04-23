@@ -23,6 +23,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
     let commands = vec![
         // APP commands first (most important) - Run and Stop Server moved to the top
         "[APP] Run Server",
+        "[APP] Watch Server",
         "[APP] Stop Server",
         "[APP] Refresh",
         "[APP] Toggle Dev/Prod",
@@ -90,6 +91,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
                     Command::RunDevServer
                 }
             }
+            "[APP] Watch Server" => Command::WatchServer,
             "[APP] Stop Server" => Command::StopServer,
             "[APP] Toggle Dev/Prod" => Command::ToggleEnvironment,
 

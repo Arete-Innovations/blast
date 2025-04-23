@@ -1,6 +1,7 @@
 use crate::configs::Config;
 use crate::dependencies::DependencyManager;
 use crate::logger;
+use std::io::Write;
 
 // Type alias for consistent error handling
 type BlastResult = Result<(), String>;
@@ -35,6 +36,7 @@ pub enum Command {
     RunDevServer,
     RunProdServer,
     StopServer, // New command to stop the server
+    WatchServer, // Watch and auto-restart server on code changes
 
     // Dashboard and interactive CLI commands
     LaunchDashboard,
@@ -80,6 +82,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("run") | Some("serve") => Some(Command::RunDevServer),
         Some("run-prod") | Some("serve-prod") => Some(Command::RunProdServer),
         Some("stop") => Some(Command::StopServer),
+        Some("watch") => Some(Command::WatchServer),
         Some("dashboard") => Some(Command::LaunchDashboard),
         Some("cli") => Some(Command::RunInteractiveCLI),
         Some("toggle-env") | Some("env") => Some(Command::ToggleEnvironment),
@@ -173,6 +176,7 @@ pub fn show_help() {
     println!("  run                  Run the development server");
     println!("  run-prod             Run the production server");
     println!("  stop                 Stop the running server");
+    println!("  watch                Watch for code changes and auto-restart the server");
     println!("  dashboard            Launch the interactive dashboard");
     println!("  cli                  Launch the interactive CLI");
     println!("  toggle-env           Toggle between development and production environments");
@@ -635,6 +639,68 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
+        Command::WatchServer => {
+            // Ensure cargo-watch is installed
+            dep_manager.ensure_installed(&["cargo-watch"], true)?;
+            
+            logger::info(&format!("Starting watch mode for {}", &config.project_name))?;
+            
+            // Kill any existing server process
+            crate::dashboard::stop_server().map_err(|e| e.to_string())?;
+            
+            // Create logs directory if it doesn't exist
+            let logs_dir = config.project_dir.join("storage").join("logs");
+            std::fs::create_dir_all(&logs_dir).map_err(|e| e.to_string())?;
+            
+            // Create storage directory for PIDs
+            let blast_dir = config.project_dir.join("storage").join("blast");
+            std::fs::create_dir_all(&blast_dir).map_err(|e| e.to_string())?;
+            
+            // Get log path
+            let server_log_path = logs_dir.join("server.log");
+            
+            // Open log file (make sure it exists)
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&server_log_path)
+                .map_err(|e| e.to_string())?;
+            
+            // Construct the command with the project name
+            let watch_cmd = format!(
+                "nohup script -q -f -c \"cargo watch -x 'run --bin {}'\" storage/logs/server.log </dev/null >/dev/null 2>&1 & echo $!",
+                &config.project_name
+            );
+            
+            // Execute the command
+            let output = std::process::Command::new("bash")
+                .args(["-c", &watch_cmd])
+                .output()
+                .map_err(|e| format!("Failed to start cargo-watch: {}", e))?;
+            
+            // Capture the PID from the output of the command
+            let pid_str = String::from_utf8_lossy(&output.stdout);
+            let pid = pid_str.trim().parse::<u32>().map_err(|_| "Failed to parse PID".to_string())?;
+            
+            // Store the PID
+            let pid_file_path = blast_dir.join("server.pid");
+            std::fs::write(&pid_file_path, pid.to_string()).map_err(|e| e.to_string())?;
+            
+            // Log to the server log
+            let timestamp = chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]");
+            let mut server_log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&server_log_path)
+                .map_err(|e| e.to_string())?;
+            
+            writeln!(server_log, "{} Watch mode started with PID: {}", timestamp, pid)
+                .map_err(|e| e.to_string())?;
+            
+            logger::success(&format!("Watch mode started with PID: {}. Server will restart automatically when code changes.", pid))?;
+            Ok(())
+        },
+        
         Command::Exit => Ok(()),
     }
 }

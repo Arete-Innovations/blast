@@ -20,6 +20,7 @@ impl DependencyManager {
         deps.insert("zellij".to_string(), "cargo install zellij".to_string());
         deps.insert("diesel_cli_ext".to_string(), "cargo install diesel_cli_ext".to_string());
         deps.insert("diesel".to_string(), "cargo install diesel_cli --no-default-features --features postgres".to_string());
+        deps.insert("cargo-watch".to_string(), "cargo install cargo-watch".to_string());
 
         DependencyManager {
             dependencies: deps,
