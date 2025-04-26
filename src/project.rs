@@ -376,7 +376,7 @@ fn edit_env_file(env_path: &Path) -> std::io::Result<()> {
     println!("\n{} Opening .env file in your editor so you can set the values...", style("📝").cyan());
 
     // Get editor from environment
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nano".to_string());
+    let editor = std::env::var("EDITOR").unwrap_or("nano".to_string());
     println!("{} Using editor: {}", style("ℹ️").cyan(), editor);
 
     if let Some(edited_content) = Editor::new()

@@ -5,29 +5,7 @@
 
 ## 🌟 Overview
 
-Blast is a powerful CLI utility tool for managing [Catalyst](https://github.com/Arete-Innovations/catalyst) web applications. It streamlines development workflow with code generation, asset management, and project automation.
-
-## 🧘 The "Suckless" Philosophy
-
-Blast embraces the [suckless philosophy](https://suckless.org/philosophy/) with these core principles:
-
-### 🔍 Simplicity
-- Code should be simple, minimal, and readable
-- Avoid unnecessary abstractions and dependencies
-- Prefer explicit over implicit behavior
-- Less code means fewer bugs and easier maintenance
-
-### 🛠️ Modularity
-- Small, focused components that do one thing well
-- Compose functionality from minimal building blocks
-- Easy to understand, extend, and replace parts
-- Clear separation between generated and custom code
-
-### 🎯 Pragmatism
-- Practical solutions over theoretical purity
-- Embrace proven technologies instead of trendy frameworks
-- Focus on developer productivity and maintainable code
-- Balance between hand-written and generated code
+Blast is a powerful CLI utility tool for managing [Catalyst](https://github.com/Arete-Innovations/catalyst) web applications. It streamlines development workflow with code generation, asset management, and project automation. The Catalyst framework follows a "suckless" philosophy, emphasizing simplicity, modularity, and performance.
 
 ## 📋 Features
 
@@ -40,9 +18,10 @@ Blast embraces the [suckless philosophy](https://suckless.org/philosophy/) with 
 
 ### 💾 Database Operations
 - 📊 Generate schemas from existing databases
-- 📝 Interactive migration creation
+- 📝 Interactive migration creation and management
 - 🏗️ Model generation with consistent CRUD methods
 - 🧪 Struct generation (NewStruct insertable types)
+- 🗄️ Database seeding with support for specific seed files
 
 ### 🌐 Frontend Assets
 - 📦 Asset management with git source repositories and CDN fallbacks
@@ -53,8 +32,16 @@ Blast embraces the [suckless philosophy](https://suckless.org/philosophy/) with 
 - 🧩 Simplified importing with .min.css/.min.js convention
 - 🎨 Customizable theming with direct access to Materialize SCSS source
 
+### ⏱️ Cronjob Management
+- 📊 Interactive TUI for managing scheduled tasks
+- 🕒 Status tracking with last and next run times
+- 📝 Dedicated logging for cronjob execution
+- 🔄 Toggle jobs active/inactive without removing them
+- 📋 Live table view with auto-refresh
+
 ### 🧰 Development Tools
-- 🏃‍♂️ Development server with hot reloading
+- 🏃‍♂️ Development server with multiple run modes
+- 👀 Watch mode for auto-restarting on code changes
 - 📝 Code generation utilities
 - 🔌 Editor integration
 - 🔄 Git workflow support
@@ -95,6 +82,9 @@ This approach allows for more flexibility and easier template updates without re
 # Create a new project
 blast new my_project
 
+# Use development branch (latest features)
+blast new my_project --dev
+
 # Change to the project directory
 cd my_project
 
@@ -105,8 +95,14 @@ blast init
 ### Running the Dashboard
 
 ```bash
-# Start the interactive dashboard
+# Start the interactive dashboard (default when run without arguments)
+blast
+
+# Explicitly start the dashboard
 blast dashboard
+
+# Run the interactive CLI
+blast cli
 ```
 
 ### Managing Configuration
@@ -144,24 +140,34 @@ blast scss
 # Minify CSS files
 blast css
 
+# Publish CSS to public directory
+blast publish-css
+
 # Process JS files
 blast js
 
-# Download assets (now supports git repository cloning for Materialize)
+# Download assets (git repo cloning for Materialize, CDN for others)
 blast cdn
-
-# Manage locale/i18n
-blast locale-manager
 ```
 
 ### Running Your Application
 
 ```bash
 # Start the development server
+blast run
+# Or
 blast serve
 
 # Start with production settings
-blast serve --production
+blast run-prod
+# Or
+blast serve-prod
+
+# Stop a running server
+blast stop
+
+# Watch mode - auto-restart on code changes
+blast watch
 ```
 
 ### Log Management
@@ -174,92 +180,145 @@ blast log truncate
 blast log truncate server.log
 ```
 
-### Git Integration
+### Cronjob Management
 
 ```bash
-# Launch Git manager
-blast git
+# Launch interactive TUI cronjob manager
+blast cronjobs
 
-# Show repository status
-blast git status
+# List all scheduled jobs
+blast cronjobs list
 
-# Commit changes
-blast git commit
+# Add a new cronjob (name, interval in seconds)
+blast cronjobs add job_name 300
+
+# Toggle a job's active status
+blast cronjobs toggle 1
+
+# Remove a scheduled job
+blast cronjobs remove 1
+
+# Display live auto-refreshing table
+blast cronjobs table
 ```
 
-## 📜 Log Management
+### Spark Plugins
 
-Blast provides tools to manage your application logs efficiently:
+Sparks are modular plugins that can be added to your Catalyst application:
 
-- **Log Truncation**: Easily clear log files to prevent them from growing too large
-- **Log Storage**:
-  - Application logs in `storage/logs/` directory
-  - Dashboard log in `storage/blast/blast.log`
+```bash
+# Add a spark plugin from a git repository
+blast spark add https://github.com/user/repo
+```
 
-## ⏱️ Cronjob Management
+Sparks can also be defined in your Catalyst.toml configuration:
 
-Blast provides a complete system for managing scheduled tasks:
+```toml
+[sparks]
+auth = "https://github.com/catalyst-framework/auth"
+plznohac = "https://github.com/catalyst-framework/plznohac"
+```
 
-- **Interactive TUI**: Full-featured terminal interface for managing cronjobs with dialoguer/indicatif
-- **Dashboard Integration**: Dedicated cronjobs tab showing status, last run, and next run times
-- **Command-line Management**: Add, toggle, and remove jobs with simple commands
-- **Status Monitoring**: Track job execution and failures with dedicated logs
-- **Commands**:
-  - `blast cronjobs`: Launch the interactive TUI cronjob manager
-  - `blast cronjobs list`: Display all scheduled jobs and their status
-  - `blast cronjobs add <name> <interval>`: Add a new cronjob with name and interval in seconds
-  - `blast cronjobs toggle <id>`: Toggle a job's active/paused status
-  - `blast cronjobs remove <id>`: Remove a scheduled job
+## 📁 Project Structure
 
-The interactive TUI lets you:
-- View colorized job status and details
-- Add new jobs with interactive prompts
-- Toggle job active/paused status
-- Remove jobs with confirmation dialog
-- Navigate with fuzzy search selection
-- See real-time progress with spinners
+When you create a new Catalyst project with Blast, it follows a clear separation between generated and custom code:
 
-## 🔄 Git Integration
+```
+my_project/
+├── Cargo.toml              # Rust project dependencies
+├── Catalyst.toml           # Framework configuration
+├── Rocket.toml             # Web server configuration  
+├── diesel.toml             # ORM configuration
+├── public/                 # Public web assets
+│   ├── css/                # Compiled/minified CSS
+│   │   └── app/
+│   ├── fonts/              # Font resources
+│   │   ├── fontawesome/
+│   │   └── material-icons/
+│   └── js/                 # Compiled/minified JS
+│       ├── app/
+│       ├── htmx/
+│       └── materialize/
+├── src/
+│   ├── assets/             # Frontend source assets
+│   │   ├── css/            # CSS source files
+│   │   ├── js/             # JavaScript source files
+│   │   ├── locale/         # Internationalization JSON files
+│   │   ├── materialize/    # Materialize SCSS source
+│   │   │   └── sass/       # SCSS components
+│   │   └── sass/           # SCSS source files
+│   ├── bootstrap.rs        # Application bootstrapping
+│   ├── database/           # Database management
+│   │   ├── db.rs           # Database connection pool
+│   │   ├── migrations/     # Database migrations
+│   │   │   └── ...         # Migration directories with up.sql/down.sql
+│   │   ├── schema.rs       # Generated DB schema
+│   │   └── seeds/          # Database seed files
+│   ├── lib.rs              # Library entry point
+│   ├── main.rs             # Application entry point
+│   ├── middleware/         # Request/response middleware
+│   │   ├── api_logger.rs   # API request logging
+│   │   ├── app_context.rs  # Application context
+│   │   ├── cache.rs        # Response caching
+│   │   ├── catchers.rs     # Error catchers
+│   │   ├── compress.rs     # Response compression
+│   │   ├── guards.rs       # Request guards
+│   │   ├── htmx.rs         # HTMX integration
+│   │   └── jwt.rs          # JWT authentication
+│   ├── models/             # Database models
+│   │   ├── auth/           # Authentication models
+│   │   ├── custom/         # Your custom models (never overwritten)
+│   │   └── generated/      # Generated models (can be overwritten)
+│   ├── routes/             # Route handlers
+│   │   ├── admin.rs        # Admin routes
+│   │   ├── api/            # API routes
+│   │   │   ├── v1.rs       # API version 1
+│   │   │   └── ...         # Other API endpoints
+│   │   ├── home.rs         # Homepage routes
+│   │   └── user.rs         # User routes
+│   ├── services/           # Business logic services
+│   │   ├── builders/       # Query builders
+│   │   ├── context/        # Context services
+│   │   ├── default/        # Default services
+│   │   └── sparks/         # Spark plugins
+│   │       ├── makeuse.rs  # Utility for sparks
+│   │       ├── plznohac/   # Security spark
+│   │       └── vigil/      # Monitoring spark
+│   └── structs/            # Data structures
+│       ├── auth/           # Authentication structs
+│       ├── custom/         # Your custom structs (never overwritten)
+│       └── generated/      # Generated structs (can be overwritten)
+│           └── insertable/ # NewStruct types for insertions
+├── storage/                # Storage directory
+│   ├── blast/              # Blast-specific files
+│   │   ├── blast.log       # Blast tool log
+│   │   └── dashboard.kdl   # Dashboard configuration
+│   └── logs/               # Application logs
+│       ├── debug.log       # Debug level logs
+│       ├── error.log       # Error level logs
+│       ├── info.log        # Info level logs
+│       ├── server.log      # Server output log
+│       └── warning.log     # Warning level logs
+└── templates/              # Tera templates for views
+    ├── admin/              # Admin area templates
+    ├── auth/               # Authentication templates
+    ├── oops/               # Error pages
+    ├── partials/           # Shared template components
+    │   ├── footer.tera
+    │   ├── header.tera
+    │   └── navbar.tera
+    └── user/               # User area templates
+```
 
-Blast provides Git configuration directly from the CLI:
+## 🔄 "Suckless" Philosophy
 
-- Set up remote repository URL
-- Configure Git username and email
-- Apply Git settings to the local repository
-- Initialize new projects with Git automatically
-- Interactive Git operations through dashboard
+The Catalyst framework and Blast CLI follow the "suckless" philosophy:
 
-## 📦 Dependency Management
-
-Blast includes cargo dependency management:
-
-- Search crates.io for packages
-- View download statistics and descriptions
-- Add dependencies with version selection
-- Interactively remove packages
-- Manage workspace members
-- Auto-update after adding dependencies
-
-## 🎨 Asset Management
-
-Blast provides a comprehensive asset management system:
-
-### 📚 Materialize CSS/JS
-- 🧵 Clones Materialize source repository from GitHub
-- 🛠️ Uses source SCSS files for advanced theming
-- 📐 Single customizable dark theme as reference
-- 🔄 Falls back to CDN if git clone fails
-- ⚙️ Configurable version and repository URL
-
-### 🎭 Other Assets
-- 📦 FontAwesome icons (CDN download)
-- 📱 Material Icons (GitHub download)
-- 🌐 HTMX for dynamic content (CDN download)
-
-### 🔧 Environment Variables
-- `BLAST_FORCE_FRESH_MATERIALIZE=1` - Force fresh clone of Materialize repository
-
-For detailed documentation on the asset system, see the [asset management guide](docs/asset-management.md).
+- **Simplicity**: Minimalist code with clear purpose
+- **Modularity**: Small components that do one thing well
+- **Pragmatism**: Practical solutions over theoretical purity
+- **Performance**: Lightweight and efficient implementation
+- **Mental Model**: Consistent patterns throughout the codebase
 
 ## 🤝 Contributing
 
