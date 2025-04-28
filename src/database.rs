@@ -13,15 +13,38 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-pub fn migrate() -> bool {
-    let progress = ProgressManager::new_spinner();
-    progress.set_message("Running database migrations...");
+// Helper function to ensure diesel CLI is installed with PostgreSQL features
+// This function runs silently without progress indicators
+fn ensure_diesel_with_postgres_features() -> bool {
+    // Create a dependency manager instance
+    let mut dep_manager = crate::dependencies::DependencyManager::new();
+    
+    // Check and fix diesel installation if needed - completely silent operation
+    if let Err(e) = dep_manager.ensure_diesel_with_postgres_features() {
+        // Only log at debug level to avoid noise
+        crate::logger::debug(&format!("Diesel PostgreSQL feature check: {}", e)).unwrap_or_default();
+        return false;
+    }
+    
+    true
+}
 
+pub fn migrate() -> bool {
     // Check if migrations directory exists
     if !Path::new("src/database/migrations").exists() {
+        let progress = ProgressManager::new_spinner();
+        progress.set_message("Checking migrations directory...");
         progress.error("No migrations directory found. Skipping migration operation.");
         return false;
     }
+
+    // Ensure diesel CLI is installed with PostgreSQL features first
+    // before displaying the migration progress message
+    ensure_diesel_with_postgres_features();
+    
+    // Only show the migration message after diesel is properly installed
+    let progress = ProgressManager::new_spinner();
+    progress.set_message("Running database migrations...");
 
     // Test database connection first
     if let Err(e) = establish_connection() {
@@ -105,6 +128,10 @@ fn handle_diesel_output(output: &std::process::Output) -> bool {
 
 // Helper function to run diesel migration commands with common error handling
 fn run_diesel_migration(args: &[&str], progress_msg: &str) -> bool {
+    // Ensure diesel CLI is installed with PostgreSQL features first
+    ensure_diesel_with_postgres_features();
+    
+    // Only show the progress message after diesel is properly installed
     let progress = ProgressManager::new_spinner();
     progress.set_message(progress_msg);
 
@@ -155,6 +182,7 @@ fn get_connection_names() -> Vec<String> {
 
 // Generate schema for a specific database connection
 pub fn generate_schema_for_connection(conn_name: &str) -> bool {
+    // Create the progress spinner after any dependency check
     let progress = ProgressManager::new_spinner();
     progress.set_message(&format!("Generating schema for {} connection...", conn_name));
 
@@ -430,6 +458,10 @@ pub fn {}() -> PgConnection {{
 
 // The primary schema generation function that reads .env directly and bypasses environment variables
 pub fn generate_schema() -> bool {
+    // Ensure diesel CLI is installed with PostgreSQL features first
+    ensure_diesel_with_postgres_features();
+    
+    // Only show the progress message after diesel is properly installed
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating database schema...");
 
@@ -608,6 +640,9 @@ fn get_existing_tables() -> Vec<String> {
 }
 
 pub fn new_migration() {
+    // Ensure diesel CLI is installed with PostgreSQL features first, before showing any UI
+    ensure_diesel_with_postgres_features();
+    
     let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
     let log_message = |msg: &str| {
         if is_interactive {

@@ -302,7 +302,8 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             if is_verbose {
                 main_progress.set_message("Project initialization (1/7): Setting up dependencies");
             }
-            dep_manager.ensure_installed(&["diesel"], true)?;
+            // We don't need to explicitly check for diesel anymore, as it will be checked when needed
+            // dep_manager.ensure_installed(&["diesel"], true)?;
             main_progress.inc(1);
 
             // 2. Database operations - standardize primary step messages
@@ -462,13 +463,15 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         Command::NewMigration => {
-            dep_manager.ensure_installed(&["diesel"], true)?;
+            // We no longer need this, as the function will check for diesel with PostgreSQL features
+            // dep_manager.ensure_installed(&["diesel"], true)?;
             crate::database::new_migration();
             Ok(())
         }
 
         Command::Migrate => {
-            dep_manager.ensure_installed(&["diesel"], true)?;
+            // We no longer need this, as the function will check for diesel with PostgreSQL features
+            // dep_manager.ensure_installed(&["diesel"], true)?;
             if !crate::database::migrate() {
                 logger::warning("Some migration issues occurred")?;
             }
@@ -476,7 +479,8 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         Command::Rollback => {
-            dep_manager.ensure_installed(&["diesel"], true)?;
+            // We no longer need this, as the function will check for diesel with PostgreSQL features
+            // dep_manager.ensure_installed(&["diesel"], true)?;
             if !crate::database::rollback_all() {
                 logger::warning("Some rollback issues occurred")?;
             }
@@ -484,7 +488,8 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         Command::Seed(file_name) => {
-            dep_manager.ensure_installed(&["diesel"], true)?;
+            // We no longer need this, as the function will check for diesel with PostgreSQL features
+            // dep_manager.ensure_installed(&["diesel"], true)?;
 
             let success = if let Some(file) = file_name {
                 crate::database::seed_specific_file(&file)
@@ -499,7 +504,8 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         Command::GenerateSchema => {
-            dep_manager.ensure_installed(&["diesel"], true)?;
+            // We no longer need this, as the function will check for diesel with PostgreSQL features
+            // dep_manager.ensure_installed(&["diesel"], true)?;
             if !crate::database::generate_schema() {
                 logger::warning("Some schema generation issues occurred")?;
             }
@@ -526,7 +532,8 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             let mut progress = logger::create_progress(None);
 
             // Database operations
-            dep_manager.ensure_installed(&["diesel"], true)?;
+            // We don't need to explicitly check for diesel anymore
+            // dep_manager.ensure_installed(&["diesel"], true)?;
 
             progress.set_message("Rolling back migrations...");
             let rollback_ok = crate::database::rollback_all();
@@ -616,7 +623,8 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         Command::LaunchDashboard => {
-            dep_manager.ensure_installed(&["zellij", "diesel"], false)?;
+            // Only need to ensure zellij is installed, diesel will be checked when needed
+            dep_manager.ensure_installed(&["zellij"], false)?;
             crate::dashboard::launch_dashboard(config)?;
             Ok(())
         }
