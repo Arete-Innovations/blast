@@ -192,18 +192,18 @@ fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
     }}
 
     pub async fn set_{0}(&mut self, value: bool) -> Result<Self, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         let current_timestamp = Utc::now().timestamp();
+        let item_id = self.id;
         
-        conn.transaction(|conn| {{
-            let updated = diesel::update({1}_dsl::{2}.filter({1}_dsl::id.eq(self.id)))
-                .set(({1}_dsl::{0}.eq(value), {1}_dsl::updated_at.eq(current_timestamp)))
-                .get_result::<Self>(conn)
-                .map_err(|_| Error::RollbackTransaction)?;
-                
-            Ok(updated)
-        }})
-        .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "set_{0}").with_context("id", self.id.to_string()))
+        let updated = diesel::update({1}_dsl::{2}.filter({1}_dsl::id.eq(item_id)))
+            .set(({1}_dsl::{0}.eq(value), {1}_dsl::updated_at.eq(current_timestamp)))
+            .get_result::<Self>(&mut conn)
+            .await
+            .map_err(|e| MeltDown::from(e).with_context("operation", "set_{0}").with_context("id", item_id.to_string()))?;
+        
+        *self = updated.clone();
+        Ok(updated)
     }}
 
     pub async fn set_{0}_true(&mut self) -> Result<Self, MeltDown> {{
@@ -240,42 +240,46 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
         timestamp_methods.push_str(&format!(
             r#"
     pub async fn created_after(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.gt(timestamp))
             .order({0}_dsl::created_at.desc())
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "created_after").with_context("timestamp", timestamp.to_string()))
     }}
 
     pub async fn created_before(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.lt(timestamp))
             .order({0}_dsl::created_at.desc())
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "created_before").with_context("timestamp", timestamp.to_string()))
     }}
 
     pub async fn created_between(start: i64, end: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.ge(start).and({0}_dsl::created_at.le(end)))
             .order({0}_dsl::created_at.desc())
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "created_between").with_context("start", start.to_string()).with_context("end", end.to_string()))
     }}
 
     pub async fn recent(limit: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {0}_dsl::{1}
             .order({0}_dsl::created_at.desc())
             .limit(limit)
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "recent").with_context("limit", limit.to_string()))
     }}
 "#,
@@ -287,22 +291,24 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
         timestamp_methods.push_str(&format!(
             r#"
     pub async fn updated_after(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {0}_dsl::{1}
             .filter({0}_dsl::updated_at.gt(timestamp))
             .order({0}_dsl::updated_at.desc())
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "updated_after").with_context("timestamp", timestamp.to_string()))
     }}
 
     pub async fn recently_updated(limit: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {0}_dsl::{1}
             .order({0}_dsl::updated_at.desc())
             .limit(limit)
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "recently_updated").with_context("limit", limit.to_string()))
     }}
 "#,
@@ -331,11 +337,12 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
         relationship_methods.push_str(&format!(
             r#"
     pub async fn get_by_{0}({0}: i32) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_{0}").with_context("{0}", {0}.to_string()))
     }}
 "#,
@@ -347,24 +354,26 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
             relationship_methods.push_str(&format!(
                 r#"
     pub async fn get_by_{0}_created_before({0}: i32, timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
             .filter({1}_dsl::created_at.lt(timestamp))
             .order({1}_dsl::created_at.desc())
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_{0}_created_before").with_context("{0}", {0}.to_string()).with_context("timestamp", timestamp.to_string()))
     }}
 
     pub async fn get_by_{0}_created_after({0}: i32, timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
             .filter({1}_dsl::created_at.gt(timestamp))
             .order({1}_dsl::created_at.desc())
             .load::<Self>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_{0}_created_after").with_context("{0}", {0}.to_string()).with_context("timestamp", timestamp.to_string()))
     }}
 "#,
@@ -410,82 +419,80 @@ use crate::database::schema::{0}::dsl::{{self as {2}_dsl}};
 use crate::structs::*;
 use crate::meltdown::*;
 use diesel::prelude::*;
-use diesel::result::Error;
-use diesel::Connection;
+use diesel_async::{{AsyncConnection, RunQueryDsl}};
+use diesel_async::scoped_futures::ScopedFutureExt;
 use chrono::Utc;
 
 impl {1} {{
     pub async fn get_all() -> Result<Vec<{1}>, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
 
         {2}_dsl::{0}
             .order({2}_dsl::id.asc())
             .load::<{1}>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_all"))
     }}
 
     pub async fn get_by_id(id: i32) -> Result<{1}, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
 
         {2}_dsl::{0}
             .filter({2}_dsl::id.eq(id))
             .first::<{1}>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_id").with_context("id", id.to_string()))
     }}
 
-
     pub async fn create(new_record: New{1}) -> Result<{1}, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
-        conn.transaction(|conn| {{
-            let result = diesel::insert_into({2}_dsl::{0})
-                .values(&new_record)
-                .get_result::<{1}>(conn)
-                .map_err(|_| Error::RollbackTransaction)?;
-                
-            Ok(result)
-        }})
-        .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "create"))
+        diesel::insert_into({2}_dsl::{0})
+            .values(&new_record)
+            .get_result::<{1}>(&mut conn)
+            .await
+            .map_err(|e| MeltDown::from(e).with_context("operation", "create"))
     }}
 
     pub async fn update_by_id(id: i32, updates: &New{1}) -> Result<{1}, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
-        conn.transaction(|conn| {{
-            let updated = diesel::update({2}_dsl::{0}.filter({2}_dsl::id.eq(id)))
-                .set(updates)
-                .get_result::<{1}>(conn)
-                .map_err(|_| Error::RollbackTransaction)?;
-                
-            Ok(updated)
-        }})
-        .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "update_by_id").with_context("id", id.to_string()))
+        diesel::update({2}_dsl::{0}.filter({2}_dsl::id.eq(id)))
+            .set(updates)
+            .get_result::<{1}>(&mut conn)
+            .await
+            .map_err(|e| MeltDown::from(e).with_context("operation", "update_by_id").with_context("id", id.to_string()))
     }}
 
     pub async fn delete_by_id(id: i32) -> Result<(), MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
 
-        conn.transaction(|conn| {{
-            let _ = {2}_dsl::{0}
-                .filter({2}_dsl::id.eq(id))
-                .first::<{1}>(conn)
-                .map_err(|_| Error::RollbackTransaction)?;
-                
-            diesel::delete({2}_dsl::{0}.filter({2}_dsl::id.eq(id)))
-                .execute(conn)
-                .map_err(|_| Error::RollbackTransaction)?;
-                
-            Ok(())
+        conn.transaction::<_, MeltDown, _>(|conn| {{
+            async move {{
+                let _ = {2}_dsl::{0}
+                    .filter({2}_dsl::id.eq(id))
+                    .first::<{1}>(conn)
+                    .await?;
+                    
+                diesel::delete({2}_dsl::{0}.filter({2}_dsl::id.eq(id)))
+                    .execute(conn)
+                    .await?;
+                    
+                Ok(())
+            }}
+            .scope_boxed()
         }})
-        .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "delete_by_id").with_context("id", id.to_string()))
+        .await
+        .map_err(|e| MeltDown::from(e).with_context("operation", "delete_by_id").with_context("id", id.to_string()))
     }}
 
     pub async fn count() -> Result<i64, MeltDown> {{
-        let mut conn = establish_connection();
+        let mut conn = establish_connection().await;
         
         {2}_dsl::{0}
             .count()
             .get_result::<i64>(&mut conn)
+            .await
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "count"))
     }}{3}{4}{5}
 }}
