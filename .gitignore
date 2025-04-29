@@ -1,6 +1,5 @@
 # Rust build artifacts
 /target
-Cargo.lock
 
 # Project configuration
 
@@ -28,3 +27,4 @@ Thumbs.db
 *.log
 
 template_example/
+result
