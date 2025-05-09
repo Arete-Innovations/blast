@@ -5,6 +5,8 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 use toml_edit::{value, DocumentMut};
+use crate::configs::Config;
+use crate::logger;
 
 // Template repository URLs (primary and fallbacks)
 const TEMPLATE_REPOS: [&str; 3] = [
@@ -397,6 +399,49 @@ fn edit_env_file(env_path: &Path) -> std::io::Result<()> {
 }
 
 // Function to initialize a git repository in the project directory
+// Handle copying environment-specific Rocket.toml configuration
+pub fn update_rocket_config(config: &Config, is_dev: bool) -> Result<(), String> {
+    // Determine the project root directory
+    let project_dir = &config.project_dir;
+
+    // Define paths for the config files
+    let rocket_toml_path = project_dir.join("Rocket.toml");
+    let rocket_toml_dev_path = project_dir.join("Rocket.toml.dev");
+    let rocket_toml_prod_path = project_dir.join("Rocket.toml.prod");
+
+    // Check if the appropriate environment-specific config file exists
+    let source_path = if is_dev {
+        if !rocket_toml_dev_path.exists() {
+            return Err(format!(
+                "Development config file not found: {}",
+                rocket_toml_dev_path.display()
+            ));
+        }
+        rocket_toml_dev_path
+    } else {
+        if !rocket_toml_prod_path.exists() {
+            return Err(format!(
+                "Production config file not found: {}",
+                rocket_toml_prod_path.display()
+            ));
+        }
+        rocket_toml_prod_path
+    };
+
+    // Read the content of the source file
+    let content = fs::read_to_string(&source_path)
+        .map_err(|e| format!("Failed to read {}: {}", source_path.display(), e))?;
+
+    // Write the content to the target file
+    fs::write(&rocket_toml_path, content)
+        .map_err(|e| format!("Failed to write to {}: {}", rocket_toml_path.display(), e))?;
+
+    let env_name = if is_dev { "development" } else { "production" };
+    logger::success(&format!("Updated Rocket.toml with {} configuration", env_name))?;
+
+    Ok(())
+}
+
 fn initialize_git_repository(project_path: &Path) -> std::io::Result<()> {
     use console::style;
 

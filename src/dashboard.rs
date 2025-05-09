@@ -180,6 +180,20 @@ pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, String> {
     let blast_dir = config.project_dir.join("storage").join("blast");
     fs::create_dir_all(&blast_dir).map_err(|e| e.to_string())?;
 
+    // Update Rocket.toml configuration based on environment
+    if let Err(e) = crate::project::update_rocket_config(config, is_dev) {
+        // If the config files don't exist yet, just log a warning and continue
+        println!("Warning: Failed to update Rocket.toml configuration: {}", e);
+        // Log to file
+        let mut warning_log = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(logs_dir.join("warning.log"))
+            .map_err(|e| e.to_string())?;
+        let timestamp = chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]");
+        writeln!(warning_log, "{} {}", timestamp, e).map_err(|e| e.to_string())?;
+    }
+
     // Get log paths
     let server_log_path = logs_dir.join("server.log");
     let error_log_path = logs_dir.join("error.log");
@@ -237,6 +251,9 @@ pub fn start_server(config: &Config, is_dev: bool) -> Result<u32, String> {
     let timestamp = chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]");
     let mut server_log = OpenOptions::new().create(true).append(true).open(&server_log_path).map_err(|e| e.to_string())?;
 
+    // Log info about which Rocket.toml was used
+    let env_name = if is_dev { "development" } else { "production" };
+    writeln!(server_log, "{} Using {} configuration", timestamp, env_name).map_err(|e| e.to_string())?;
     writeln!(server_log, "{} Server started with PID: {}", timestamp, pid).map_err(|e| e.to_string())?;
 
     Ok(pid)
