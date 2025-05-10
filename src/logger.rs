@@ -85,6 +85,7 @@ fn is_quiet() -> bool {
 }
 
 pub fn is_verbose() -> bool {
+    // Return the combined result of static flag and environment variable
     let verbose_mode = VERBOSE_MODE.lock().unwrap();
     *verbose_mode || env::var("BLAST_VERBOSE").unwrap_or_else(|_| String::from("0")) == "1"
 }
