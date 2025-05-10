@@ -25,112 +25,13 @@ fn download_file(url: &str, dest_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn download_fontawesome(config: &Config) -> Result<(), String> {
-    let project_dir = &config.project_dir;
-    let public_dir = get_public_dir(config);
-    
-    // Get FontAwesome config section
-    let fa_section = &config.assets["assets"]["fontawesome"];
-    let fa_base_url = fa_section["base_url"].as_str()
-        .ok_or_else(|| "Missing fontawesome base_url in config")?;
-        
-    // Standard directory structure
-    let fa_public_dir = project_dir.join(public_dir).join("fonts").join("fontawesome");
-
-    // Create FontAwesome directories
-    for subdir in ["css", "js", "sprites", "webfonts"] {
-        std::fs::create_dir_all(fa_public_dir.join(subdir)).map_err(|e| e.to_string())?;
-    }
-
-    // All FontAwesome asset paths are in Catalyst.toml - no defaults needed
-
-    // Extract asset paths directly from config (no defaults needed as they're in Catalyst.toml)
-    let get_string_array = |key: &str| -> Result<Vec<String>, String> {
-        fa_section.get(key)
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-            )
-            .ok_or_else(|| format!("Missing '{}' in fontawesome config", key))
-    };
-
-    // Get asset lists from config
-    let css_files = get_string_array("css")?;
-    let js_files = get_string_array("js")?;
-    let sprite_files = get_string_array("sprites")?;
-    let webfont_files = get_string_array("webfonts")?;
-
-    // Download all assets sequentially 
-    let all_assets: Vec<String> = css_files.into_iter()
-        .chain(js_files.into_iter())
-        .chain(sprite_files.into_iter())
-        .chain(webfont_files.into_iter())
-        .collect();
-        
-    crate::logger::info(&format!("Downloading {} FontAwesome assets", all_assets.len()))?;
-
-    // Simple sequential download
-    for asset_path in all_assets {
-        let url = format!("{}/{}", fa_base_url, asset_path);
-        let dest_path = fa_public_dir.join(&asset_path);
-        
-        // Create parent directory if needed
-        if let Some(parent) = dest_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        
-        match download_file(&url, &dest_path) {
-            Ok(_) => crate::logger::debug(&format!("Downloaded {}", asset_path)).map_err(|e| e.to_string())?,
-            Err(e) => crate::logger::warning(&format!("Failed to download {}: {}", asset_path, e)).map_err(|e| e.to_string())?,
-        }
-    }
-
-    Ok(())
-}
-
-fn download_materialicons(config: &Config) -> Result<(), String> {
-    let project_dir = &config.project_dir;
-    let public_dir = get_public_dir(config);
-    
-    // Get the materialicons section
-    let mi_section = &config.assets["assets"]["materialicons"];
-    
-    // Get base URL and file names
-    let mi_base_url = mi_section["base_url"].as_str()
-        .ok_or_else(|| "Missing materialicons base_url in config")?;
-    let woff2_file = mi_section["woff2"].as_str()
-        .ok_or_else(|| "Missing materialicons woff2 in config")?;
-    let ttf_file = mi_section["ttf"].as_str()
-        .ok_or_else(|| "Missing materialicons ttf in config")?;
-
-    // Create standard directory
-    let mi_public_dir = project_dir.join(public_dir).join("fonts").join("material-icons");
-    std::fs::create_dir_all(&mi_public_dir).map_err(|e| e.to_string())?;
-
-    // Define files to download
-    let files = [
-        (format!("{}/{}", mi_base_url, woff2_file), mi_public_dir.join(woff2_file)),
-        (format!("{}/{}", mi_base_url, ttf_file), mi_public_dir.join(ttf_file)),
-    ];
-
-    crate::logger::info("Downloading Material Icons webfonts...")?;
-
-    // Download all files
-    for (url, dest_path) in &files {
-        download_file(url, dest_path)?;
-    }
-
-    Ok(())
-}
-
 fn download_htmx_js(config: &Config) -> Result<(), String> {
     let project_dir = &config.project_dir;
     let public_dir = get_public_dir(config);
-    
+
     // Get the HTMX config section
     let htmx_section = &config.assets["assets"]["htmx"];
-    
+
     // Create standard directory
     let htmx_dir = project_dir.join(public_dir).join("js").join("htmx");
     std::fs::create_dir_all(&htmx_dir).map_err(|e| e.to_string())?;
@@ -148,221 +49,26 @@ fn download_htmx_js(config: &Config) -> Result<(), String> {
     Ok(())
 }
 
-fn download_materialize_scss(config: &Config) -> Result<(), String> {
-    let project_dir = &config.project_dir;
-    let src_sass_dir = project_dir.join("src/assets/sass");
-    let materialize_dir = project_dir.join("src/assets/materialize");
-
-    // Create the directories if they don't exist
-    std::fs::create_dir_all(&src_sass_dir).map_err(|e| e.to_string())?;
-    
-    // Create a progress bar spinner for the operation
-    let mut progress = crate::logger::create_progress(None);
-    progress.set_message("Setting up Materialize assets...");
-    
-    // Direct access to the materialize section we know exists
-    let mat_section = &config.assets["assets"]["materialize"];
-    
-    // Get repository URL and version directly from the config structure
-    let repo_url = mat_section["repo_url"].as_str()
-        .ok_or_else(|| "Missing materialize repo_url in config")?;
-    
-    let version = mat_section["version"].as_str()
-        .ok_or_else(|| "Missing materialize version in config")?;
-    
-    // Check if we should force a fresh clone (for debugging or version changes)
-    let force_fresh = std::env::var("BLAST_FORCE_FRESH_MATERIALIZE").unwrap_or_else(|_| String::from("0")) == "1";
-    
-    // Check if materialize repo already exists
-    let repo_exists = materialize_dir.exists();
-    
-    if repo_exists && force_fresh {
-        // Clean up existing repo if forced
-        progress.set_message("Forcing fresh clone of Materialize repository...");
-        match std::fs::remove_dir_all(&materialize_dir) {
-            Ok(_) => {
-                progress.set_message("Removed existing Materialize directory");
-            },
-            Err(e) => {
-                let warning_msg = format!("Failed to remove existing Materialize directory: {}", e);
-                progress.set_message(&warning_msg);
-                // Continue anyway, the clone might still succeed
-            }
-        }
-    }
-    
-    // Clone or check the repository
-    if !repo_exists || force_fresh {
-        // Clone Materialize repository if it doesn't exist or we're forcing a fresh clone
-        progress.set_message(&format!("Cloning Materialize v{} repository...", version));
-        
-        // Make sure parent directory exists
-        if let Some(parent) = materialize_dir.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        
-        // Use standard process to run git clone
-        // The Materialize repo hasn't been updated in years, so just clone the default branch
-        let clone_output = std::process::Command::new("git")
-            .args(&["clone", "--depth=1", &repo_url])
-            .arg(&materialize_dir)
-            .output();
-            
-        match clone_output {
-            Ok(output) => {
-                if !output.status.success() {
-                    let error = String::from_utf8_lossy(&output.stderr);
-                    let error_msg = format!("Failed to clone Materialize repository: {}", error);
-                    progress.set_message(&error_msg);
-                    
-                    return Err(format!("Git clone failed: {}", error));
-                }
-                
-                // Successfully cloned, now extract the compiled JS file if it exists and keep only the sass folder
-                progress.set_message("Extracting JS file and keeping sass folder...");
-                
-                // First make sure the sass directory exists
-                let sass_dir = materialize_dir.join("sass");
-                if !sass_dir.exists() {
-                    return Err("Could not find sass directory in the cloned repository".to_string());
-                }
-                
-                // Check if the dist directory with compiled JS exists
-                // Use the exact path: dist/js/materialize.min.js
-                let js_file_path = materialize_dir.join("dist").join("js").join("materialize.min.js");
-                let public_dir = get_public_dir(config);
-                let js_dest_dir = project_dir.join(&public_dir).join("js").join("materialize");
-                let materialize_js_dest = js_dest_dir.join("materialize.min.js");
-                
-                // Create js directory if it doesn't exist
-                std::fs::create_dir_all(&js_dest_dir).map_err(|e| e.to_string())?;
-                
-                // Copy JS file from dist directory if it exists
-                let js_from_dist = if js_file_path.exists() {
-                    progress.set_message("Found Materialize JS in dist folder, copying...");
-                    match std::fs::copy(&js_file_path, &materialize_js_dest) {
-                        Ok(_) => {
-                            progress.set_message("Materialize JS copied from dist folder successfully");
-                            true
-                        },
-                        Err(e) => {
-                            progress.set_message(&format!("Failed to copy Materialize JS from dist: {}", e));
-                            false
-                        }
-                    }
-                } else {
-                    progress.set_message("Materialize JS not found in dist folder");
-                    false
-                };
-                
-                // Get all entries in the materialize directory
-                for entry in std::fs::read_dir(&materialize_dir).map_err(|e| e.to_string())? {
-                    if let Ok(entry) = entry {
-                        let path = entry.path();
-                        
-                        // Skip the sass directory
-                        if path.file_name().map_or(false, |name| name == "sass") {
-                            continue;
-                        }
-                        
-                        // Remove the entry - handle both files and directories
-                        if path.is_dir() {
-                            std::fs::remove_dir_all(&path).map_err(|e| 
-                                format!("Failed to remove directory {}: {}", path.display(), e))?;
-                        } else {
-                            std::fs::remove_file(&path).map_err(|e| 
-                                format!("Failed to remove file {}: {}", path.display(), e))?;
-                        }
-                    }
-                }
-                
-                progress.set_message("Materialize repository cloned and cleaned - kept only sass directory");
-                
-                // Return whether we successfully copied the JS file from dist
-                if js_from_dist {
-                    return Ok(());
-                }
-            },
-            Err(e) => {
-                let error_msg = format!("Failed to execute git clone: {}", e);
-                progress.set_message(&error_msg);
-                
-                // Check if git is installed
-                let git_check = std::process::Command::new("git")
-                    .arg("--version")
-                    .output();
-                    
-                if git_check.is_err() {
-                    progress.set_message("Git may not be installed or is not in PATH. Please install git and try again.");
-                }
-                
-                return Err(e.to_string());
-            }
-        }
-    } else {
-        progress.set_message("Using existing Materialize repository");
-    }
-
-    // If we already copied the JS file from the distribution folder, skip this part
-    // Otherwise, fall back to using CDN for JS
-    let public_dir = get_public_dir(config);
-    let js_dest_dir = project_dir.join(&public_dir).join("js").join("materialize");
-    let materialize_js_dest = js_dest_dir.join("materialize.min.js");
-    
-    // Check if the JS file already exists (from the local copy operation)
-    if !materialize_js_dest.exists() {
-        // Create js directory if it doesn't exist
-        std::fs::create_dir_all(&js_dest_dir).map_err(|e| e.to_string())?;
-        
-        // Fallback to CDN for the JS file
-        let js_url = config.assets["assets"]["materialize"]["js_url"].as_str()
-            .ok_or_else(|| "Missing materialize js_url in config")?;
-            
-        progress.set_message("JS file not found locally, downloading Materialize JS from CDN...");
-        match download_file(&js_url, &materialize_js_dest) {
-            Ok(_) => {
-                progress.set_message("Materialize JS file downloaded from CDN successfully");
-            },
-            Err(e) => {
-                progress.set_message(&format!("Failed to download Materialize JS: {}", e));
-                return Err(format!("Failed to download Materialize JS: {}", e));
-            }
-        }
-    } else {
-        progress.set_message("Using Materialize JS file copied from local repository");
-    }
-
-    // Don't create SCSS files - they're already in the template
-    // Just make sure the directory exists for future operations
-    std::fs::create_dir_all(&src_sass_dir).map_err(|e| e.to_string())?;
-
-    progress.set_message("Materialize setup completed successfully");
-    Ok(())
-}
-
 pub fn download_assets(config: &Config) -> Result<(), String> {
     // Use fresh config to ensure we have the latest settings
     let fresh_config = crate::configs::get_fresh_config(&config.project_dir).map_err(|e| e.to_string())?;
-    
+
     // Verify required config sections exist
     let assets = &fresh_config.assets;
     if !assets.as_table().map_or(false, |t| t.contains_key("assets")) {
         return Err("Missing [assets] section in Catalyst.toml".into());
     }
-    
+
     crate::logger::info("Downloading CDN assets...")?;
-    
-    // Simple linear download of all assets
+
+    // Simple linear download of all assets - now only HTMX
     let asset_downloads = [
-        ("FontAwesome", download_fontawesome(&fresh_config)),
-        ("Material Icons", download_materialicons(&fresh_config)),
-        ("Materialize", download_materialize_scss(&fresh_config)),
         ("HTMX", download_htmx_js(&fresh_config)),
     ];
-    
+
     let mut success_count = 0;
     let total_count = asset_downloads.len();
-    
+
     // Process results
     for (name, result) in asset_downloads.iter() {
         match result {
@@ -375,14 +81,14 @@ pub fn download_assets(config: &Config) -> Result<(), String> {
             }
         }
     }
-    
+
     // Report overall status
     if success_count < total_count {
         crate::logger::warning(&format!("CDN downloads: {}/{} assets completed successfully", success_count, total_count))?;
     } else {
         crate::logger::success("All CDN assets downloaded successfully")?;
     }
-    
+
     Ok(())
 }
 
