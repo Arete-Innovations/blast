@@ -41,7 +41,10 @@ pub fn migrate() -> bool {
     // Ensure diesel CLI is installed with PostgreSQL features first
     // before displaying the migration progress message
     ensure_diesel_with_postgres_features();
-    
+
+    // Get verbose flag
+    let is_verbose = logger::is_verbose();
+
     // Only show the migration message after diesel is properly installed
     let progress = ProgressManager::new_spinner();
     progress.set_message("Running database migrations...");
@@ -76,13 +79,85 @@ pub fn migrate() -> bool {
     let errors: Vec<String> = stderr.lines().map(|line| line.trim().to_string()).collect();
     let has_errors = !errors.is_empty();
 
+    // Only show diagnostics in verbose mode and when there are errors
+    if is_verbose && has_errors {
+        // Use eprintln to ensure the output is visible in all cases
+        eprintln!("\n\x1b[1;33m===== VERBOSE MIGRATION DIAGNOSTICS =====\x1b[0m");
+
+        // Check for common error patterns
+        for error in &errors {
+            eprintln!("\x1b[1;31mERROR:\x1b[0m {}", error);
+
+            if error.contains("Invalid migration directory") {
+                // Provide detailed information about migration directory structure
+                eprintln!("\x1b[1;33m⚠️  Migration directory structure issue detected.\x1b[0m");
+                eprintln!("ℹ️  Migration directories must follow the pattern:");
+                eprintln!("  - <timestamp>_<name_of_migration>");
+                eprintln!("  - Example: 20250101000001_create_users");
+                eprintln!("  - Each directory must contain up.sql and optionally down.sql");
+
+                // Check migration directories
+                if let Ok(entries) = std::fs::read_dir("src/database/migrations") {
+                    eprintln!("\nℹ️  Current migration directories:");
+                    for entry in entries.filter_map(Result::ok).filter(|e| e.path().is_dir()) {
+                        let name = entry.file_name();
+                        let name_str = name.to_string_lossy();
+                        
+                        // Check if the name follows the pattern
+                        let parts: Vec<&str> = name_str.split('_').collect();
+                        let name_valid = parts.len() >= 2 && parts[0].chars().all(|c| c.is_digit(10));
+                        
+                        // Check if directory has up.sql
+                        let up_sql_path = entry.path().join("up.sql");
+                        let has_up_sql = up_sql_path.exists();
+                        
+                        // Display with color indicators
+                        if name_valid && has_up_sql {
+                            eprintln!("  \x1b[32m✓\x1b[0m {}", name_str);
+                        } else {
+                            eprintln!("  \x1b[31m✗\x1b[0m {} \x1b[1;33m<-- ISSUE\x1b[0m", name_str);
+                            
+                            if !has_up_sql {
+                                eprintln!("    \x1b[31m⚠️ Missing up.sql file\x1b[0m");
+                            }
+                            
+                            if !name_valid {
+                                if parts.len() < 2 {
+                                    eprintln!("    \x1b[31m⚠️ Invalid format: should be <timestamp>_<name>\x1b[0m");
+                                } else if !parts[0].chars().all(|c| c.is_digit(10)) {
+                                    eprintln!("    \x1b[31m⚠️ First part should be a numeric timestamp\x1b[0m");
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if error.contains("No such file or directory") {
+                eprintln!("\x1b[1;33m⚠️  File or directory missing.\x1b[0m");
+                eprintln!("ℹ️  Check that all migration directories contain up.sql files.");
+            } else if error.contains("permission denied") {
+                eprintln!("\x1b[1;33m⚠️  Permission issue detected.\x1b[0m");
+                eprintln!("ℹ️  Make sure you have proper permissions for the migration directories.");
+            }
+        }
+        
+        eprintln!("\x1b[1;33m===== END DIAGNOSTICS =====\x1b[0m\n");
+    }
+
     match (has_output, has_errors, migrations.is_empty()) {
         (false, false, _) => progress.success("No migrations to run"),
         (_, false, false) => progress.success(&format!("Ran {} migrations: {}", migrations.len(), migrations.join(", "))),
         (_, false, true) => progress.success("Migrations completed successfully"),
         (_, true, _) => {
             if !errors.is_empty() {
-                progress.error(&format!("Migration errors: {}", errors.join(", ")));
+                if is_verbose {
+                    // In verbose mode, point to the detailed diagnostics we just showed
+                    progress.error("Migration errors: See detailed diagnostics above");
+                    // Add a reminder about the detailed output we just printed
+                    eprintln!("\x1b[1;33mCheck the VERBOSE MIGRATION DIAGNOSTICS section above for detailed error information.\x1b[0m");
+                } else {
+                    // In non-verbose mode, show brief error and suggest using -v
+                    progress.error(&format!("Migration errors: {}. Use -v for more details.", errors.join(", ")));
+                }
             } else {
                 progress.error("Some migrations failed");
             }

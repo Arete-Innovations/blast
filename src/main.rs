@@ -28,10 +28,16 @@ fn main() {
     
     // Check for verbose flag
     let verbose_mode = args.iter().any(|arg| arg == "-v" || arg == "--verbose");
+
     let filtered_args: Vec<String> = args.iter()
         .filter(|arg| *arg != "-v" && *arg != "--verbose")
         .cloned()
         .collect();
+
+    // Set environment variable too (belt and suspenders approach)
+    if verbose_mode {
+        std::env::set_var("BLAST_VERBOSE", "1");
+    }
     
     // Initialize logger in CLI mode
     logger::init(logger::RuntimeMode::Cli, None).unwrap_or_default();
