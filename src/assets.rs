@@ -97,11 +97,11 @@ pub fn transpile_all_scss(config: &Config) -> Result<(), String> {
     let is_production = config.environment == "prod" || config.environment == "production";
     let sass_dir = project_dir.join("src/assets/sass");
     let public_dir = get_public_dir(config);
-    let css_dir = project_dir.join(&public_dir).join("css");
+    let css_app_dir = project_dir.join(&public_dir).join("css").join("app");
 
     // Create directories
-    std::fs::create_dir_all(&css_dir).map_err(|e| e.to_string())?;
-    
+    std::fs::create_dir_all(&css_app_dir).map_err(|e| e.to_string())?;
+
     // Check if sass directory exists and create it if needed
     if !sass_dir.exists() {
         std::fs::create_dir_all(&sass_dir).map_err(|e| e.to_string())?;
@@ -136,10 +136,11 @@ pub fn transpile_all_scss(config: &Config) -> Result<(), String> {
     // Process each file
     for scss_file in &scss_files {
         let file_stem = scss_file.file_stem().unwrap().to_str().unwrap();
-        let output_file = css_dir.join(format!("{}.min.css", file_stem));
-        
+        // Put all SCSS files in the app directory with .min.css extension
+        let output_file = css_app_dir.join(format!("{}.min.css", file_stem));
+
         crate::logger::debug(&format!("Transpiling {} to {}", scss_file.display(), output_file.display()))?;
-        
+
         // Setup SCSS compilation options (create new options for each file)
         let mut sass_options = Options::default();
         if is_production {
@@ -147,7 +148,7 @@ pub fn transpile_all_scss(config: &Config) -> Result<(), String> {
         } else {
             sass_options.output_style = OutputStyle::Expanded;
         }
-        
+
         // Compile SCSS to CSS
         match compile_file(scss_file.to_str().unwrap(), sass_options) {
             Ok(css_content) => {
@@ -167,13 +168,13 @@ pub fn transpile_all_scss(config: &Config) -> Result<(), String> {
         if error_count == file_count {
             crate::logger::error(&format!("SCSS processing failed - all {} files had errors", error_count)).map_err(|e| e.to_string())?;
         } else {
-            crate::logger::warning(&format!("SCSS processing completed: {} succeeded, {} failed", 
+            crate::logger::warning(&format!("SCSS processing completed: {} succeeded, {} failed",
                 success_count, error_count)).map_err(|e| e.to_string())?;
         }
     } else {
         crate::logger::success(&format!("All {} SCSS files processed successfully", file_count)).map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
