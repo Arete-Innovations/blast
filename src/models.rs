@@ -11,6 +11,7 @@ use std::path::Path;
 struct ColumnInfo {
     name: String,
     column_type: String,
+    #[allow(dead_code)]
     nullable: bool,
 }
 
@@ -20,6 +21,7 @@ struct RelationshipInfo {
     source_table: String,
     source_column: String,
     target_table: String,
+    #[allow(dead_code)]
     target_column: String,
 }
 
@@ -81,6 +83,7 @@ fn load_schema_table_info(schema_path: &str) -> io::Result<Vec<TableInfo>> {
     Ok(tables)
 }
 
+#[allow(dead_code)]
 fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
     let tables = load_schema_table_info(schema_path)?;
     Ok(tables.into_iter().map(|t| t.name).collect())
@@ -187,12 +190,12 @@ fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
             // Generate is_VALUE getter
             bool_methods.push_str(&format!(
                 r#"
-    pub async fn is_{0}(&self) -> bool {{
+    pub async fn is_{0}(&self, tenant_name: &str) -> bool {{
         self.{0}
     }}
 
-    pub async fn set_{0}(&mut self, value: bool) -> Result<Self, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn set_{0}(&mut self, value: bool, tenant_name: &str) -> Result<Self, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         let current_timestamp = Utc::now().timestamp();
         let item_id = self.id;
         
@@ -206,12 +209,12 @@ fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
         Ok(updated)
     }}
 
-    pub async fn set_{0}_true(&mut self) -> Result<Self, MeltDown> {{
-        self.set_{0}(true).await
+    pub async fn set_{0}_true(&mut self, tenant_name: &str) -> Result<Self, MeltDown> {{
+        self.set_{0}(true, tenant_name).await
     }}
 
-    pub async fn set_{0}_false(&mut self) -> Result<Self, MeltDown> {{
-        self.set_{0}(false).await
+    pub async fn set_{0}_false(&mut self, tenant_name: &str) -> Result<Self, MeltDown> {{
+        self.set_{0}(false, tenant_name).await
     }}
 "#,
                 column_name, singular_name, table.name
@@ -239,8 +242,8 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
     if has_created_at && has_int8_created_at {
         timestamp_methods.push_str(&format!(
             r#"
-    pub async fn created_after(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn created_after(timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.gt(timestamp))
@@ -250,8 +253,8 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "created_after").with_context("timestamp", timestamp.to_string()))
     }}
 
-    pub async fn created_before(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn created_before(timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.lt(timestamp))
@@ -261,8 +264,8 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "created_before").with_context("timestamp", timestamp.to_string()))
     }}
 
-    pub async fn created_between(start: i64, end: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn created_between(start: i64, end: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.ge(start).and({0}_dsl::created_at.le(end)))
@@ -272,8 +275,8 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "created_between").with_context("start", start.to_string()).with_context("end", end.to_string()))
     }}
 
-    pub async fn recent(limit: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn recent(limit: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {0}_dsl::{1}
             .order({0}_dsl::created_at.desc())
@@ -290,8 +293,8 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
     if has_updated_at && has_int8_updated_at {
         timestamp_methods.push_str(&format!(
             r#"
-    pub async fn updated_after(timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn updated_after(timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {0}_dsl::{1}
             .filter({0}_dsl::updated_at.gt(timestamp))
@@ -301,8 +304,8 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "updated_after").with_context("timestamp", timestamp.to_string()))
     }}
 
-    pub async fn recently_updated(limit: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn recently_updated(limit: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {0}_dsl::{1}
             .order({0}_dsl::updated_at.desc())
@@ -336,8 +339,8 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
         // Always generate the basic lookup method
         relationship_methods.push_str(&format!(
             r#"
-    pub async fn get_by_{0}({0}: i32) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn get_by_{0}({0}: i32, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
@@ -353,8 +356,8 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
         if has_int8_created_at {
             relationship_methods.push_str(&format!(
                 r#"
-    pub async fn get_by_{0}_created_before({0}: i32, timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn get_by_{0}_created_before({0}: i32, timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
@@ -365,8 +368,8 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_{0}_created_before").with_context("{0}", {0}.to_string()).with_context("timestamp", timestamp.to_string()))
     }}
 
-    pub async fn get_by_{0}_created_after({0}: i32, timestamp: i64) -> Result<Vec<Self>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn get_by_{0}_created_after({0}: i32, timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
@@ -414,7 +417,7 @@ fn write_model_file(config: &Config, table: &TableInfo, relationships: &[Relatio
     let relationship_methods = generate_relationship_methods(table, table_name, &singular_name, relationships);
 
     let model_template = format!(
-        r#"use crate::database::db::establish_connection;
+        r#"use crate::database::db::{{establish_connection, establish_connection_with_tenant}};
 use crate::database::schema::{0}::dsl::{{self as {2}_dsl}};
 use crate::structs::*;
 use crate::meltdown::*;
@@ -424,8 +427,8 @@ use diesel_async::scoped_futures::ScopedFutureExt;
 use chrono::Utc;
 
 impl {1} {{
-    pub async fn get_all() -> Result<Vec<{1}>, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn get_all(tenant_name: &str) -> Result<Vec<{1}>, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
 
         {2}_dsl::{0}
             .order({2}_dsl::id.asc())
@@ -434,8 +437,8 @@ impl {1} {{
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_all"))
     }}
 
-    pub async fn get_by_id(id: i32) -> Result<{1}, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn get_by_id(id: i32, tenant_name: &str) -> Result<{1}, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
 
         {2}_dsl::{0}
             .filter({2}_dsl::id.eq(id))
@@ -444,8 +447,8 @@ impl {1} {{
             .map_err(|e: diesel::result::Error| MeltDown::from(e).with_context("operation", "get_by_id").with_context("id", id.to_string()))
     }}
 
-    pub async fn create(new_record: New{1}) -> Result<{1}, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn create(new_record: New{1}, tenant_name: &str) -> Result<{1}, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         diesel::insert_into({2}_dsl::{0})
             .values(&new_record)
@@ -454,8 +457,8 @@ impl {1} {{
             .map_err(|e| MeltDown::from(e).with_context("operation", "create"))
     }}
 
-    pub async fn update_by_id(id: i32, updates: &New{1}) -> Result<{1}, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn update_by_id(id: i32, updates: &New{1}, tenant_name: &str) -> Result<{1}, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         diesel::update({2}_dsl::{0}.filter({2}_dsl::id.eq(id)))
             .set(updates)
@@ -464,8 +467,8 @@ impl {1} {{
             .map_err(|e| MeltDown::from(e).with_context("operation", "update_by_id").with_context("id", id.to_string()))
     }}
 
-    pub async fn delete_by_id(id: i32) -> Result<(), MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn delete_by_id(id: i32, tenant_name: &str) -> Result<(), MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
 
         conn.transaction::<_, MeltDown, _>(|conn| {{
             async move {{
@@ -486,8 +489,8 @@ impl {1} {{
         .map_err(|e| MeltDown::from(e).with_context("operation", "delete_by_id").with_context("id", id.to_string()))
     }}
 
-    pub async fn count() -> Result<i64, MeltDown> {{
-        let mut conn = establish_connection().await;
+    pub async fn count(tenant_name: &str) -> Result<i64, MeltDown> {{
+        let mut conn = establish_connection_with_tenant(tenant_name).await?;
         
         {2}_dsl::{0}
             .count()

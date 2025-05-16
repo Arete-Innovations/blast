@@ -879,6 +879,7 @@ struct ManifestInfo {
     version: String,
     description: String,
     author: String,
+    #[allow(dead_code)]
     license: String,
     required_env: Vec<String>,
     dependencies: Vec<Dependency>,
