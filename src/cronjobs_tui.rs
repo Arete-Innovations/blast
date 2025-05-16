@@ -1,6 +1,5 @@
 use crate::configs::Config;
 use crate::cronjobs::{add_cronjob, remove_cronjob, toggle_cronjob, CronjobInfo};
-use crate::logger;
 use chrono::{Local, TimeZone, Utc};
 use console::Style;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input};

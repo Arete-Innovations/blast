@@ -133,6 +133,7 @@ fn log_to_execution(config: &Config, message: &str) -> Result<(), String> {
 }
 
 // Log to the cronjob errors log
+#[allow(dead_code)]
 fn log_to_errors(config: &Config, message: &str) -> Result<(), String> {
     let log_path = Path::new(&config.project_dir).join("storage").join("cronjobs").join("errors.log");
 
