@@ -234,7 +234,7 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
 
     let has_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8" || c.column_type == "Timestamp");
     let has_updated_at = updated_at_column.map_or(false, |c| c.column_type == "Int8" || c.column_type == "Timestamp");
-    
+
     // Only generate timestamp-related methods if the column is Int8 (bigint in SQL, i64 in Rust)
     let has_int8_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8");
     let has_int8_updated_at = updated_at_column.map_or(false, |c| c.column_type == "Int8");
@@ -417,7 +417,7 @@ fn write_model_file(config: &Config, table: &TableInfo, relationships: &[Relatio
     let relationship_methods = generate_relationship_methods(table, table_name, &singular_name, relationships);
 
     let model_template = format!(
-        r#"use crate::database::db::{{establish_connection, establish_connection_with_tenant}};
+        r#"use crate::database::db::{{establish_connection_with_tenant}};
 use crate::database::schema::{0}::dsl::{{self as {2}_dsl}};
 use crate::structs::*;
 use crate::meltdown::*;
@@ -631,3 +631,4 @@ pub fn generate(config: &Config) -> bool {
         }
     }
 }
+
