@@ -1607,6 +1607,529 @@ fn open_with_common_editors(file_path: &Path) -> Result<(), String> {
 }
 
 // Function to check for and install sparks in Catalyst.toml
+pub fn sync_sparks_from_config(config: &Config) -> Result<(), String> {
+    use std::path::Path;
+
+    // First, check if Catalyst.toml exists and load it directly
+    let catalyst_toml_path = Path::new("Catalyst.toml");
+    if !catalyst_toml_path.exists() {
+        return Err("Catalyst.toml not found. Make sure you're in a Catalyst project directory.".to_string());
+    }
+
+    // Read and parse Catalyst.toml directly
+    let toml_content = fs::read_to_string(catalyst_toml_path)
+        .map_err(|e| format!("Failed to read Catalyst.toml: {}", e))?;
+    
+    let catalyst_config: toml::Value = toml::from_str(&toml_content)
+        .map_err(|e| format!("Failed to parse Catalyst.toml: {}", e))?;
+
+    // Get the sparks section
+    let sparks_section = match catalyst_config.get("sparks") {
+        Some(sparks) => sparks.as_table().ok_or("Sparks section must be a table")?,
+        None => {
+            logger::info("No sparks section found in Catalyst.toml")?;
+            return Ok(());
+        }
+    };
+
+    logger::info(&format!("Found {} configured spark(s) in Catalyst.toml", sparks_section.len()))?;
+
+    // Check which sparks are already installed
+    let sparks_dir = Path::new("src/services/sparks");
+    let mut missing_sparks = Vec::new();
+    let mut installed_sparks = Vec::new();
+
+    // Only check configured sparks if there are any
+    if !sparks_section.is_empty() {
+        for (spark_name, spark_url) in sparks_section {
+            let spark_dir = sparks_dir.join(spark_name);
+            let manifest_path = spark_dir.join("manifest.toml");
+            
+            if spark_dir.exists() && manifest_path.exists() {
+                // Verify the manifest is valid
+                match validate_manifest(&manifest_path) {
+                    Ok(_) => {
+                        // Check if spark is properly registered in registry.rs and mod.rs
+                        let registry_missing = !check_spark_in_registry(spark_name, &config.project_dir)?;
+                        let mod_missing = !check_spark_in_mod_rs(spark_name, sparks_dir)?;
+                        
+                        if registry_missing || mod_missing {
+                            logger::warning(&format!("Spark '{}' directory exists but is incomplete:", spark_name))?;
+                            if registry_missing {
+                                logger::warning(&format!("  - Missing from registry.rs"))?;
+                            }
+                            if mod_missing {
+                                logger::warning(&format!("  - Missing from mod.rs"))?;
+                            }
+                            
+                            // Repair the spark registration instead of re-downloading
+                            logger::info(&format!("Repairing spark registration for: {}", spark_name))?;
+                            if let Err(e) = repair_spark_registration(spark_name, sparks_dir, &config.project_dir) {
+                                logger::warning(&format!("Failed to repair spark '{}': {}", spark_name, e))?;
+                                // If repair fails, add to missing sparks for full reinstall
+                                if let Some(url) = spark_url.as_str() {
+                                    missing_sparks.push((spark_name.clone(), url.to_string()));
+                                }
+                            } else {
+                                installed_sparks.push(spark_name.clone());
+                                logger::success(&format!("✓ Repaired spark '{}'", spark_name))?;
+                            }
+                        } else {
+                            installed_sparks.push(spark_name.clone());
+                            logger::info(&format!("✓ Spark '{}' is fully installed and valid", spark_name))?;
+                        }
+                    }
+                    Err(e) => {
+                        logger::warning(&format!("Spark '{}' is installed but has invalid manifest: {}", spark_name, e))?;
+                        if let Some(url) = spark_url.as_str() {
+                            missing_sparks.push((spark_name.clone(), url.to_string()));
+                        }
+                    }
+                }
+            } else {
+                if let Some(url) = spark_url.as_str() {
+                    missing_sparks.push((spark_name.clone(), url.to_string()));
+                } else {
+                    logger::warning(&format!("Invalid URL for spark '{}' in Catalyst.toml", spark_name))?;
+                }
+            }
+        }
+    }
+
+    // Check for installed sparks that are not configured and should be removed
+    let mut unconfigured_sparks = Vec::new();
+    
+    if sparks_dir.exists() {
+        if let Ok(entries) = fs::read_dir(sparks_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    
+                    if !path.is_dir() || ["registry", "makeuse"].contains(&path.file_name().unwrap_or_default().to_string_lossy().as_ref()) {
+                        continue;
+                    }
+                    
+                    let spark_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    
+                    // If spark is installed but not configured, mark for removal
+                    if !sparks_section.contains_key(&spark_name) {
+                        unconfigured_sparks.push(spark_name);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Check for orphaned registry entries (sparks in registry.rs but not configured)
+    let mut orphaned_registry_entries = Vec::new();
+    if let Ok(registry_sparks) = get_sparks_from_registry(&config.project_dir) {
+        for registry_spark in registry_sparks {
+            if !sparks_section.contains_key(&registry_spark) {
+                orphaned_registry_entries.push(registry_spark);
+            }
+        }
+    }
+
+    // Remove unconfigured sparks (from directories)
+    if !unconfigured_sparks.is_empty() {
+        logger::info(&format!("Removing {} unconfigured spark(s): {:?}", unconfigured_sparks.len(), unconfigured_sparks))?;
+        
+        for spark_name in unconfigured_sparks {
+            match remove_spark(&spark_name, config) {
+                Ok(_) => {
+                    logger::success(&format!("Removed unconfigured spark: {}", spark_name))?;
+                }
+                Err(e) => {
+                    logger::warning(&format!("Failed to remove spark {}: {}", spark_name, e))?;
+                }
+            }
+        }
+    }
+
+    // Clean up orphaned registry entries
+    if !orphaned_registry_entries.is_empty() {
+        logger::info(&format!("Cleaning up {} orphaned registry entries: {:?}", orphaned_registry_entries.len(), orphaned_registry_entries))?;
+        
+        for spark_name in orphaned_registry_entries {
+            if let Err(e) = remove_from_spark_registry(&config.project_dir, &spark_name) {
+                logger::warning(&format!("Failed to remove '{}' from registry: {}", spark_name, e))?;
+            } else {
+                logger::success(&format!("Removed orphaned registry entry: {}", spark_name))?;
+            }
+        }
+    }
+
+    if missing_sparks.is_empty() {
+        logger::success("All sparks are synchronized")?;
+        return Ok(());
+    }
+
+    logger::info(&format!("Installing {} missing spark(s)", missing_sparks.len()))?;
+
+    // Setup progress bar for installation
+    let total_sparks = missing_sparks.len() as u64;
+    let mut progress = logger::create_progress(Some(total_sparks));
+    progress.set_message("Syncing missing sparks...");
+
+    let mut current = 0;
+    for (spark_name, spark_url) in missing_sparks {
+        current += 1;
+        progress.set_message(&format!("Installing spark ({}/{}): {}", current, total_sparks, spark_name));
+
+        // Attempt to add the spark
+        match add_spark(&spark_url, config) {
+            Ok(_) => {
+                progress.set_message(&format!("Installed spark ({}/{}): {}", current, total_sparks, spark_name));
+                logger::success(&format!("Successfully installed spark: {}", spark_name))?;
+            }
+            Err(e) => {
+                progress.warning(&format!("Failed to install spark {}: {}", spark_name, e))?;
+            }
+        }
+        progress.inc(1);
+    }
+
+    progress.success("Spark synchronization complete!");
+    Ok(())
+}
+
+// Function to remove a spark from the project
+pub fn remove_spark(spark_name: &str, config: &Config) -> Result<(), String> {
+    let sparks_dir = Path::new("src/services/sparks");
+    let spark_dir = sparks_dir.join(spark_name);
+    
+    if !spark_dir.exists() {
+        logger::warning(&format!("Spark '{}' directory not found, checking other locations", spark_name))?;
+    }
+
+    // Safety check: don't remove core spark files
+    if ["makeuse", "registry", "mod"].contains(&spark_name) {
+        return Err(format!("Cannot remove core spark component '{}'", spark_name));
+    }
+
+    logger::info(&format!("Safely removing spark: {}", spark_name))?;
+    
+    // First update the configuration files before removing the directory
+    // This way if file updates fail, we still have the spark intact
+    
+    // Update mod.rs to remove the module declaration (creates backup)
+    if let Err(e) = remove_from_sparks_mod_rs(sparks_dir, spark_name) {
+        logger::warning(&format!("Failed to update mod.rs: {}", e))?;
+    }
+    
+    // Update registry.rs to remove the match arm (creates backup)
+    if let Err(e) = remove_from_spark_registry(&config.project_dir, spark_name) {
+        logger::warning(&format!("Failed to update registry.rs: {}", e))?;
+    }
+    
+    // Remove from Catalyst.toml
+    if let Err(e) = remove_from_sparks_toml(spark_name) {
+        logger::warning(&format!("Failed to update Catalyst.toml: {}", e))?;
+    }
+    
+    // Finally remove the spark directory if it exists
+    if spark_dir.exists() {
+        logger::info(&format!("Removing spark directory: {}", spark_dir.display()))?;
+        fs::remove_dir_all(&spark_dir)
+            .map_err(|e| format!("Failed to remove spark directory: {}", e))?;
+        logger::info(&format!("Removed spark directory: {}", spark_dir.display()))?;
+    }
+    
+    logger::success(&format!("Successfully removed spark: {}", spark_name))?;
+    Ok(())
+}
+
+// Helper function to remove spark from mod.rs
+fn remove_from_sparks_mod_rs(sparks_dir: &Path, spark_name: &str) -> Result<(), String> {
+    let mod_rs_path = sparks_dir.join("mod.rs");
+    
+    if !mod_rs_path.exists() {
+        logger::info("mod.rs doesn't exist, nothing to update")?;
+        return Ok(()); // mod.rs doesn't exist, nothing to remove
+    }
+    
+    let content = fs::read_to_string(&mod_rs_path)
+        .map_err(|e| format!("Failed to read mod.rs: {}", e))?;
+    
+    let module_line = format!("pub mod {};", spark_name);
+    
+    // Check if the module line actually exists
+    if !content.contains(&module_line) {
+        logger::info(&format!("Module '{}' not found in mod.rs, nothing to remove", spark_name))?;
+        return Ok(());
+    }
+    
+    // Create backup before modifying
+    let backup_path = mod_rs_path.with_extension("rs.backup");
+    fs::write(&backup_path, &content)
+        .map_err(|e| format!("Failed to create backup: {}", e))?;
+    logger::info(&format!("Created backup at {}", backup_path.display()))?;
+    
+    let updated_content = content
+        .lines()
+        .filter(|line| line.trim() != module_line.trim())
+        .collect::<Vec<_>>()
+        .join("\n");
+    
+    // Verify the content changed
+    if updated_content == content {
+        logger::info(&format!("No changes needed for '{}' in mod.rs", spark_name))?;
+        // Remove backup since we didn't change anything
+        let _ = fs::remove_file(&backup_path);
+        return Ok(());
+    }
+    
+    // Basic validation: ensure we still have the essential modules
+    if !updated_content.contains("pub mod makeuse") || !updated_content.contains("pub mod registry") {
+        // Remove backup since validation failed
+        let _ = fs::remove_file(&backup_path);
+        return Err("Safety check failed: essential modules (makeuse, registry) would be removed".to_string());
+    }
+    
+    fs::write(&mod_rs_path, updated_content)
+        .map_err(|e| format!("Failed to update mod.rs: {}", e))?;
+    
+    logger::success(&format!("Safely removed '{}' from mod.rs", spark_name))?;
+    logger::info(&format!("Backup saved at {}", backup_path.display()))?;
+    
+    Ok(())
+}
+
+// Helper function to remove spark from registry.rs
+fn remove_from_spark_registry(project_dir: &Path, spark_name: &str) -> Result<(), String> {
+    let registry_path = project_dir.join("src").join("services").join("sparks").join("registry.rs");
+    
+    if !registry_path.exists() {
+        logger::info("registry.rs doesn't exist, nothing to update")?;
+        return Ok(()); // registry.rs doesn't exist, nothing to remove
+    }
+    
+    let content = fs::read_to_string(&registry_path)
+        .map_err(|e| format!("Failed to read registry.rs: {}", e))?;
+    
+    // First check if the spark is actually present in the registry
+    let pattern = format!("\"{spark_name}\" =>");
+    if !content.contains(&pattern) {
+        logger::info(&format!("Spark '{}' not found in registry.rs, nothing to remove", spark_name))?;
+        return Ok(());
+    }
+    
+    // Create backup before modifying
+    let backup_path = registry_path.with_extension("rs.backup");
+    fs::write(&backup_path, &content)
+        .map_err(|e| format!("Failed to create backup: {}", e))?;
+    logger::info(&format!("Created backup at {}", backup_path.display()))?;
+    
+    // Remove the match arm for this spark more safely
+    let lines: Vec<&str> = content.lines().collect();
+    let mut new_lines = Vec::new();
+    let mut in_spark_match_arm = false;
+    let mut brace_count = 0;
+    let mut found_spark = false;
+    
+    for line in lines {
+        let trimmed = line.trim();
+        
+        // Check if we're starting the specific spark's match arm (not the wildcard)
+        if trimmed.starts_with(&pattern) && !trimmed.starts_with("_ =>") {
+            in_spark_match_arm = true;
+            found_spark = true;
+            brace_count = 0;
+            continue; // Skip the match arm line
+        }
+        
+        if in_spark_match_arm {
+            // Count braces to track nesting
+            for ch in line.chars() {
+                match ch {
+                    '{' => brace_count += 1,
+                    '}' => brace_count -= 1,
+                    _ => {}
+                }
+            }
+            
+            // If we've closed all braces and the line ends with }, we're done with this match arm
+            if brace_count <= 0 && (trimmed.ends_with("},") || trimmed == "}," || trimmed == "}") {
+                in_spark_match_arm = false;
+                continue; // Skip the closing brace line
+            }
+            continue; // Skip all lines within the match arm
+        }
+        
+        new_lines.push(line);
+    }
+    
+    if !found_spark {
+        logger::warning(&format!("Spark '{}' pattern found but couldn't parse match arm safely", spark_name))?;
+        // Remove backup since we didn't change anything
+        let _ = fs::remove_file(&backup_path);
+        return Ok(());
+    }
+    
+    let updated_content = new_lines.join("\n");
+    
+    // Verify the content changed and looks valid
+    if updated_content == content {
+        logger::info(&format!("No changes needed for '{}' in registry.rs", spark_name))?;
+        // Remove backup since we didn't change anything
+        let _ = fs::remove_file(&backup_path);
+        return Ok(());
+    }
+    
+    // Basic validation: ensure we still have the register_by_name function
+    if !updated_content.contains("pub fn register_by_name") {
+        return Err("Safety check failed: register_by_name function would be removed".to_string());
+    }
+    
+    // Check if match statement is empty and fix it
+    let final_content = if updated_content.contains("match name {\n        \n    }") || 
+                          updated_content.contains("match name {\n    \n    }") ||
+                          updated_content.contains("match name {\n    }") ||
+                          updated_content.contains("match name {}") {
+        logger::info("Fixing empty match statement in registry.rs")?;
+        // Find and replace various forms of empty match statements
+        let mut fixed = updated_content.clone();
+        
+        // Replace different patterns of empty match statements
+        let patterns = [
+            ("match name {\n        \n    }", "match name {\n        _ => {\n            cata_log!(Warning, format!(\"Cannot register unknown spark '{}'\", name));\n            false\n        }\n    }"),
+            ("match name {\n    \n    }", "match name {\n        _ => {\n            cata_log!(Warning, format!(\"Cannot register unknown spark '{}'\", name));\n            false\n        }\n    }"),
+            ("match name {\n    }", "match name {\n        _ => {\n            cata_log!(Warning, format!(\"Cannot register unknown spark '{}'\", name));\n            false\n        }\n    }"),
+            ("match name {}", "match name {\n        _ => {\n            cata_log!(Warning, format!(\"Cannot register unknown spark '{}'\", name));\n            false\n        }\n    }"),
+        ];
+        
+        for (pattern, replacement) in &patterns {
+            if fixed.contains(pattern) {
+                fixed = fixed.replace(pattern, replacement);
+                break;
+            }
+        }
+        
+        fixed
+    } else {
+        updated_content
+    };
+    
+    // Write the final content
+    fs::write(&registry_path, final_content)
+        .map_err(|e| format!("Failed to update registry.rs: {}", e))?;
+    
+    logger::success(&format!("Safely removed '{}' from registry.rs", spark_name))?;
+    logger::info(&format!("Backup saved at {}", backup_path.display()))?;
+    
+    Ok(())
+}
+
+// Helper function to remove spark from Catalyst.toml
+fn remove_from_sparks_toml(spark_name: &str) -> Result<(), String> {
+    let config_path = Path::new("Catalyst.toml");
+    if !config_path.exists() {
+        return Ok(()); // No Catalyst.toml to update
+    }
+    
+    let toml_content = fs::read_to_string(config_path)
+        .map_err(|e| format!("Failed to read Catalyst.toml: {}", e))?;
+    
+    let mut doc = toml_content.parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse Catalyst.toml: {}", e))?;
+    
+    // Remove the spark from the sparks table if it exists
+    if let Some(sparks_table) = doc.get_mut("sparks").and_then(|s| s.as_table_mut()) {
+        if sparks_table.contains_key(spark_name) {
+            sparks_table.remove(spark_name);
+            
+            let updated_content = doc.to_string();
+            fs::write(config_path, updated_content)
+                .map_err(|e| format!("Failed to write updated Catalyst.toml: {}", e))?;
+            
+            logger::info(&format!("Removed '{}' from Catalyst.toml", spark_name))?;
+        }
+    }
+    
+    Ok(())
+}
+
+// Helper function to check if a spark is registered in registry.rs
+fn check_spark_in_registry(spark_name: &str, project_dir: &Path) -> Result<bool, String> {
+    let registry_path = project_dir.join("src").join("services").join("sparks").join("registry.rs");
+    
+    if !registry_path.exists() {
+        return Ok(false);
+    }
+    
+    let content = fs::read_to_string(&registry_path)
+        .map_err(|e| format!("Failed to read registry.rs: {}", e))?;
+    
+    let pattern = format!("\"{spark_name}\" =>");
+    Ok(content.contains(&pattern))
+}
+
+// Helper function to check if a spark is declared in mod.rs
+fn check_spark_in_mod_rs(spark_name: &str, sparks_dir: &Path) -> Result<bool, String> {
+    let mod_rs_path = sparks_dir.join("mod.rs");
+    
+    if !mod_rs_path.exists() {
+        return Ok(false);
+    }
+    
+    let content = fs::read_to_string(&mod_rs_path)
+        .map_err(|e| format!("Failed to read mod.rs: {}", e))?;
+    
+    let module_line = format!("pub mod {};", spark_name);
+    Ok(content.contains(&module_line))
+}
+
+// Helper function to extract all spark names from registry.rs
+fn get_sparks_from_registry(project_dir: &Path) -> Result<Vec<String>, String> {
+    let registry_path = project_dir.join("src").join("services").join("sparks").join("registry.rs");
+    
+    if !registry_path.exists() {
+        return Ok(Vec::new());
+    }
+    
+    let content = fs::read_to_string(&registry_path)
+        .map_err(|e| format!("Failed to read registry.rs: {}", e))?;
+    
+    let mut spark_names = Vec::new();
+    
+    // Look for patterns like "spark_name" => {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('"') && trimmed.contains("\" =>") {
+            // Extract spark name from "spark_name" => pattern
+            if let Some(end_quote) = trimmed[1..].find('"') {
+                let spark_name = &trimmed[1..end_quote + 1];
+                // Skip the default wildcard case
+                if spark_name != "_" {
+                    spark_names.push(spark_name.to_string());
+                }
+            }
+        }
+    }
+    
+    Ok(spark_names)
+}
+
+// Helper function to repair spark registration without re-downloading
+fn repair_spark_registration(spark_name: &str, sparks_dir: &Path, project_dir: &Path) -> Result<(), String> {
+    logger::info(&format!("Repairing registration for spark: {}", spark_name))?;
+    
+    // Check and repair mod.rs
+    if !check_spark_in_mod_rs(spark_name, sparks_dir)? {
+        logger::info(&format!("Adding '{}' to mod.rs", spark_name))?;
+        update_sparks_mod_rs(&sparks_dir.to_path_buf(), spark_name)?;
+    }
+    
+    // Check and repair registry.rs  
+    if !check_spark_in_registry(spark_name, project_dir)? {
+        logger::info(&format!("Adding '{}' to registry.rs", spark_name))?;
+        update_spark_registry(project_dir, spark_name)?;
+    }
+    
+    logger::success(&format!("Successfully repaired spark registration: {}", spark_name))?;
+    Ok(())
+}
+
 pub fn install_sparks_from_config(config: &Config) -> Result<(), String> {
     // Check if there's a sparks section in the config
     if let Some(sparks) = config.assets.get("sparks") {

@@ -54,6 +54,7 @@ pub enum Command {
 
     // Spark plugin commands
     AddSpark(String),
+    SyncSparks,
 
     // Cronjob commands
     CronjobsList,
@@ -157,6 +158,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
 
         // Spark plugin commands
         Some("spark") if args.get(2).map(|s| s.as_str()) == Some("add") && args.len() >= 4 => Some(Command::AddSpark(args[3].clone())),
+        Some("spark") if args.get(2).map(|s| s.as_str()) == Some("sync") => Some(Command::SyncSparks),
 
         // Help
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
@@ -230,6 +232,7 @@ pub fn show_help() {
     println!();
     println!("SPARK PLUGINS:");
     println!("  spark add <repo_url>  Add a spark plugin from a git repository");
+    println!("  spark sync            Synchronize sparks with Catalyst.toml (install missing, remove unconfigured)");
     println!("                       Dependencies listed in manifest.toml are automatically added to Cargo.toml");
     println!("                       Required environment variables are added to .env with SPARKNAME_ prefix");
     println!("                       Automatically opens an editor to replace placeholder values with actual configuration");
@@ -314,6 +317,10 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::AddSpark(repo_url) => {
             logger::info(&format!("Adding spark plugin from: {}", repo_url))?;
             crate::sparks::add_spark(&repo_url, config)
+        }
+        Command::SyncSparks => {
+            logger::info("Syncing sparks from Catalyst.toml")?;
+            crate::sparks::sync_sparks_from_config(config)
         }
 
         Command::NewProject(name, use_dev_branch) => {
