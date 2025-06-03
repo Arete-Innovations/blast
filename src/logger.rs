@@ -4,6 +4,8 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use lazy_static::lazy_static;
 use std::env;
+use std::thread;
+use std::time::Duration;
 
 // Type alias for consistent error handling
 type BlastResult = Result<(), String>;
@@ -449,4 +451,125 @@ pub fn truncate_specific_log(config: &Config, file_name: Option<String>) -> Blas
     // Not found
     error(&format!("Log file not found: {}", file_name))?;
     Ok(())
+}
+
+pub fn view_logs_enhanced(level: &str, config: &Config) -> BlastResult {
+    let logs_dir = config.project_dir.join("storage").join("logs");
+    let log_file = format!("{}.log", level.to_lowercase());
+    let log_path = logs_dir.join(&log_file);
+    
+    if !log_path.exists() {
+        error(&format!("Log file not found: {}", log_file))?;
+        return Err(format!("Log file not found: {}", log_file));
+    }
+    
+    info(&format!("Following {} logs (Ctrl+C to stop)...", level))?;
+    
+    // Read initial content
+    let mut last_size = 0;
+    if let Ok(metadata) = fs::metadata(&log_path) {
+        last_size = metadata.len();
+        
+        // Display existing content first
+        if let Ok(content) = fs::read_to_string(&log_path) {
+            if !content.trim().is_empty() {
+                println!("{}", style(format!("=== {} LOGS ===", level.to_uppercase())).bold().cyan());
+                println!();
+                
+                for line in content.lines() {
+                    if line.trim().is_empty() || line.starts_with("---") {
+                        continue;
+                    }
+                    format_log_entry(line);
+                }
+            }
+        }
+    }
+    
+    println!("{}", style("--- Following new entries ---").dim());
+    
+    // Follow new entries
+    loop {
+        if let Ok(metadata) = fs::metadata(&log_path) {
+            let current_size = metadata.len();
+            
+            if current_size > last_size {
+                // Read only the new content
+                if let Ok(content) = fs::read_to_string(&log_path) {
+                    let new_content = &content[(last_size as usize)..];
+                    
+                    for line in new_content.lines() {
+                        if line.trim().is_empty() || line.starts_with("---") {
+                            continue;
+                        }
+                        format_log_entry(line);
+                    }
+                }
+                last_size = current_size;
+            }
+        }
+        
+        // Sleep briefly before checking again
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+fn format_log_entry(line: &str) {
+    // Parse the actual log format from the file:
+    // "1748751467-2025-06-01 07:17:47 [WARNING] [auth.rs:129::auth] message → context • timing → trace1 → trace2"
+    
+    // Extract the file location and message parts
+    if let Some(second_bracket_start) = line.find("] [") {
+        if let Some(second_bracket_end) = line[second_bracket_start + 3..].find(']') {
+            let file_location = &line[second_bracket_start + 3..second_bracket_start + 3 + second_bracket_end];
+            let rest = &line[second_bracket_start + 3 + second_bracket_end + 1..].trim();
+            
+            // Split by " → "
+            let parts: Vec<&str> = rest.split(" → ").collect();
+            
+            if parts.len() >= 3 {
+                let message = parts[0];
+                let context_timing = parts[1];
+                let trace_items = &parts[2..];
+                
+                // Format exactly like test.log
+                println!("📍[{}] {}", file_location, message);
+                println!("┗┳╾ {}", style(context_timing).cyan());
+                
+                for (i, trace_item) in trace_items.iter().enumerate() {
+                    let indent = " ".repeat(i + 1);
+                    let connector = if i == trace_items.len() - 1 { "┗━╾" } else { "┗┳╾" };
+                    println!("{}{} {}", indent, style(connector).dim(), style(trace_item).yellow());
+                }
+            } else if parts.len() == 2 {
+                let message = parts[0];
+                let context_timing = parts[1];
+                
+                println!("📍[{}] {}", file_location, message);
+                println!("┗━╾ {}", style(context_timing).cyan());
+            } else {
+                println!("📍[{}] {}", file_location, rest);
+            }
+            
+            println!();
+            return;
+        }
+    }
+    
+    // Fallback
+    println!("{}", line);
+}
+
+fn get_level_icon(level: &str) -> &'static str {
+    match level.to_uppercase().as_str() {
+        "DEBUG" => "🔍",
+        "INFO" => "ℹ️",
+        "WARNING" => "⚠️",
+        "ERROR" => "❌",
+        "SUCCESS" => "✅",
+        "TRACE" => "🔬",
+        "CRONJOB" => "⏰",
+        "CRONJOB_ERROR" => "💥",
+        _ => "📝",
+    }
 }

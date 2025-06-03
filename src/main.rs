@@ -18,6 +18,7 @@ mod progress; // Keep temporarily until we migrate references
 mod project;
 mod sparks;
 mod structs;
+mod tui_viewer;
 
 fn main() {
     // Initialize components

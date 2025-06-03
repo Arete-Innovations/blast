@@ -36,3 +36,8 @@ chrono = "0.4.34"
 libc = "0.2.153"
 url = "2.5.0"
 prettytable = "0.10.0"
+ratatui = "0.28"
+crossterm = "0.28"
+tokio = { version = "1.0", features = ["full"] }
+notify = "6.0"
+fuzzy-matcher = "0.3"
