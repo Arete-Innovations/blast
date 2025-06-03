@@ -51,6 +51,7 @@ pub enum Command {
 
     // Log commands
     LogTruncate(Option<String>),
+    LogView(String), // log level to view
 
     // Spark plugin commands
     AddSpark(String),
@@ -164,11 +165,19 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
 
         // Log management
-        Some("logs") | Some("log") if args.get(2).map(|s| s.as_str()) == Some("truncate") => {
-            if args.len() >= 4 {
-                Some(Command::LogTruncate(Some(args[3].clone())))
-            } else {
-                Some(Command::LogTruncate(None))
+        Some("logs") | Some("log") => {
+            match args.get(2).map(|s| s.as_str()) {
+                Some("truncate") => {
+                    if args.len() >= 4 {
+                        Some(Command::LogTruncate(Some(args[3].clone())))
+                    } else {
+                        Some(Command::LogTruncate(None))
+                    }
+                },
+                Some("view") if args.len() >= 4 => {
+                    Some(Command::LogView(args[3].clone()))
+                },
+                _ => None
             }
         }
 
@@ -229,6 +238,8 @@ pub fn show_help() {
     println!();
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
+    println!("  log view <level>      Interactive TUI log viewer with fuzzy search and real-time tailing");
+    println!("                       Press / to search, ↑↓ to scroll, q to quit");
     println!();
     println!("SPARK PLUGINS:");
     println!("  spark add <repo_url>  Add a spark plugin from a git repository");
@@ -695,6 +706,17 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             logger::info("Managing log files...")?;
             crate::logger::ensure_log_files_exist(config)?;
             crate::logger::truncate_specific_log(config, file_name)
+        }
+
+        Command::LogView(level) => {
+            // Use the new TUI viewer with fuzzy search and real-time tailing
+            if let Err(e) = crate::tui_viewer::run_tui_log_viewer(&level, config) {
+                // Fallback to the old viewer if TUI fails
+                logger::warning(&format!("TUI viewer failed ({}), falling back to simple viewer", e))?;
+                crate::logger::view_logs_enhanced(&level, config)
+            } else {
+                Ok(())
+            }
         }
 
         Command::Help => {
