@@ -1,10 +1,11 @@
-use crate::progress::ProgressManager;
 use crate::logger;
+use crate::progress::ProgressManager;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use dotenv::dotenv;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use postgres::Row;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -18,14 +19,14 @@ use std::process::{Command, Stdio};
 fn ensure_diesel_with_postgres_features() -> bool {
     // Create a dependency manager instance
     let mut dep_manager = crate::dependencies::DependencyManager::new();
-    
+
     // Check and fix diesel installation if needed - completely silent operation
     if let Err(e) = dep_manager.ensure_diesel_with_postgres_features() {
         // Only log at debug level to avoid noise
         crate::logger::debug(&format!("Diesel PostgreSQL feature check: {}", e)).unwrap_or_default();
         return false;
     }
-    
+
     true
 }
 
@@ -102,25 +103,25 @@ pub fn migrate() -> bool {
                     for entry in entries.filter_map(Result::ok).filter(|e| e.path().is_dir()) {
                         let name = entry.file_name();
                         let name_str = name.to_string_lossy();
-                        
+
                         // Check if the name follows the pattern
                         let parts: Vec<&str> = name_str.split('_').collect();
                         let name_valid = parts.len() >= 2 && parts[0].chars().all(|c| c.is_digit(10));
-                        
+
                         // Check if directory has up.sql
                         let up_sql_path = entry.path().join("up.sql");
                         let has_up_sql = up_sql_path.exists();
-                        
+
                         // Display with color indicators
                         if name_valid && has_up_sql {
                             eprintln!("  \x1b[32m✓\x1b[0m {}", name_str);
                         } else {
                             eprintln!("  \x1b[31m✗\x1b[0m {} \x1b[1;33m<-- ISSUE\x1b[0m", name_str);
-                            
+
                             if !has_up_sql {
                                 eprintln!("    \x1b[31m⚠️ Missing up.sql file\x1b[0m");
                             }
-                            
+
                             if !name_valid {
                                 if parts.len() < 2 {
                                     eprintln!("    \x1b[31m⚠️ Invalid format: should be <timestamp>_<name>\x1b[0m");
@@ -139,7 +140,7 @@ pub fn migrate() -> bool {
                 eprintln!("ℹ️  Make sure you have proper permissions for the migration directories.");
             }
         }
-        
+
         eprintln!("\x1b[1;33m===== END DIAGNOSTICS =====\x1b[0m\n");
     }
 
@@ -205,7 +206,7 @@ fn handle_diesel_output(output: &std::process::Output) -> bool {
 fn run_diesel_migration(args: &[&str], progress_msg: &str) -> bool {
     // Ensure diesel CLI is installed with PostgreSQL features first
     ensure_diesel_with_postgres_features();
-    
+
     // Only show the progress message after diesel is properly installed
     let progress = ProgressManager::new_spinner();
     progress.set_message(progress_msg);
@@ -271,7 +272,7 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
 
     // CRITICAL FIX: For schema generation, always read directly from .env file
     // to bypass any environment variable override issues
-    
+
     // Load .env file directly
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
@@ -280,14 +281,10 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
             return false;
         }
     };
-    
+
     // Determine which variable to look for in .env
-    let env_var_prefix = if conn_name == "default" {
-        "DATABASE_URL="
-    } else {
-        &format!("DATABASE_URL_{}=", conn_name.to_uppercase())
-    };
-    
+    let env_var_prefix = if conn_name == "default" { "DATABASE_URL=" } else { &format!("DATABASE_URL_{}=", conn_name.to_uppercase()) };
+
     // Parse .env file manually
     let mut database_url = None;
     for line in env_content.lines() {
@@ -296,7 +293,7 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
             break;
         }
     }
-    
+
     // For safety, let's log all database-related env vars from the .env file (with credentials masked)
     progress.set_message("Checking database URLs in .env file...");
     logger::info("Database connection variables in .env file:").unwrap_or_default();
@@ -306,19 +303,19 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
             if parts.len() == 2 {
                 let var_name = parts[0].trim();
                 let var_value = parts[1].trim();
-                
+
                 let masked_value = if var_value.contains("://") {
                     let url_parts: Vec<&str> = var_value.splitn(2, "://").collect();
                     format!("{}://<masked>", url_parts[0])
                 } else {
                     "<masked>".to_string()
                 };
-                
+
                 logger::info(&format!("  {} = {}", var_name, masked_value)).unwrap_or_default();
             }
         }
     }
-    
+
     // Ensure we found the database URL
     let database_url = match database_url {
         Some(url) => url.to_string(),
@@ -327,7 +324,7 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
             return false;
         }
     };
-    
+
     // Log which URL we're using (hide actual credentials)
     let masked_url = if database_url.contains("://") {
         let parts: Vec<&str> = database_url.splitn(2, "://").collect();
@@ -339,7 +336,7 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
     } else {
         "<masked>".to_string()
     };
-    
+
     logger::info(&format!("Using database URL: {} for schema generation", masked_url)).unwrap_or_default();
 
     // Determine the output file path
@@ -353,13 +350,9 @@ pub fn generate_schema_for_connection(conn_name: &str) -> bool {
     // We explicitly use --database-url flag to ensure we're using the correct database
     // and COMPLETELY ignore environment variables
     progress.set_message(&format!("Running diesel print-schema with --database-url = {}", masked_url));
-    
+
     logger::info(&format!("Executing: diesel print-schema --database-url {}", masked_url)).unwrap_or_default();
-    let output = match Command::new("diesel")
-        .args(["print-schema", "--database-url", &database_url])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn() {
+    let output = match Command::new("diesel").args(["print-schema", "--database-url", &database_url]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
         Ok(child) => match child.wait_with_output() {
             Ok(output) => output,
             Err(e) => {
@@ -535,7 +528,7 @@ pub fn {}() -> PgConnection {{
 pub fn generate_schema() -> bool {
     // Ensure diesel CLI is installed with PostgreSQL features first
     ensure_diesel_with_postgres_features();
-    
+
     // Only show the progress message after diesel is properly installed
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating database schema...");
@@ -550,7 +543,7 @@ pub fn generate_schema() -> bool {
 
     // CRITICAL FIX: Bypass environment variables completely by reading .env directly
     // This is the most reliable way to ensure we're using the main DATABASE_URL
-    
+
     // Load .env file directly
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
@@ -559,7 +552,7 @@ pub fn generate_schema() -> bool {
             return false;
         }
     };
-    
+
     // Extract the main DATABASE_URL directly from .env
     let mut database_url = None;
     for line in env_content.lines() {
@@ -570,7 +563,7 @@ pub fn generate_schema() -> bool {
             break;
         }
     }
-    
+
     // Check if we found the DATABASE_URL
     logger::info("Checking DATABASE_URL in .env file...").unwrap_or_default();
     if database_url.is_none() {
@@ -578,7 +571,7 @@ pub fn generate_schema() -> bool {
         progress.error("Please make sure your .env file contains DATABASE_URL=postgres://...");
         return false;
     }
-    
+
     // Log all database URLs for debugging
     progress.set_message("Found DATABASE_URL in .env file");
     logger::info("Database URLs in .env file:").unwrap_or_default();
@@ -589,16 +582,16 @@ pub fn generate_schema() -> bool {
             if parts.len() == 2 {
                 let var_name = parts[0].trim();
                 let var_value = parts[1].trim();
-                
+
                 let masked_value = if var_value.contains("://") {
                     let url_parts: Vec<&str> = var_value.splitn(2, "://").collect();
                     format!("{}://<masked>", url_parts[0])
                 } else {
                     "<masked>".to_string()
                 };
-                
+
                 logger::info(&format!("  {} = {}", var_name, masked_value)).unwrap_or_default();
-                
+
                 // Flag the one we're using
                 if var_name == "DATABASE_URL" {
                     logger::info(&format!("  ✓ Using {} for schema generation", var_name)).unwrap_or_default();
@@ -606,10 +599,10 @@ pub fn generate_schema() -> bool {
             }
         }
     }
-    
+
     // Use the URL we found
     let database_url = database_url.unwrap();
-    
+
     // Test the connection first to make sure it's valid
     let masked_url = if database_url.contains("://") {
         let parts: Vec<&str> = database_url.splitn(2, "://").collect();
@@ -617,7 +610,7 @@ pub fn generate_schema() -> bool {
     } else {
         "<masked>".to_string()
     };
-    
+
     logger::info(&format!("Connecting to database: {}", masked_url)).unwrap_or_default();
     match PgConnection::establish(&database_url) {
         Ok(_) => {
@@ -632,7 +625,7 @@ pub fn generate_schema() -> bool {
 
     // For blast init command, we ONLY want the default schema from the main DATABASE_URL
     // We ignore any other database connections for safety and consistency
-    
+
     // If the user explicitly runs 'blast schema' directly, we can offer options
     if env::var("BLAST_SCHEMA_INTERACTIVE").is_ok() {
         // Check if we should generate multiple schemas
@@ -717,7 +710,7 @@ fn get_existing_tables() -> Vec<String> {
 pub fn new_migration() {
     // Ensure diesel CLI is installed with PostgreSQL features first, before showing any UI
     ensure_diesel_with_postgres_features();
-    
+
     let is_interactive = std::env::var("BLAST_INTERACTIVE").unwrap_or_else(|_| String::from("0")) == "1";
     let log_message = |msg: &str| {
         if is_interactive {
@@ -1468,13 +1461,13 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
     // The regex handles semicolons inside quotes and comments properly
     let mut success = true;
     let statements = split_sql_into_statements(&sql);
-    
+
     for (i, statement) in statements.iter().enumerate() {
         let trimmed = statement.trim();
         if trimmed.is_empty() {
             continue;
         }
-        
+
         // Execute each statement separately
         match diesel::sql_query(trimmed).execute(connection) {
             Ok(_) => {
@@ -1499,7 +1492,7 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
             }
         }
     }
-    
+
     success
 }
 
@@ -1511,7 +1504,7 @@ fn split_sql_into_statements(sql: &str) -> Vec<String> {
     let mut in_string = false;
     let mut in_comment = false;
     let mut chars = sql.chars().peekable();
-    
+
     while let Some(c) = chars.next() {
         match c {
             // Handle string literals
@@ -1523,8 +1516,8 @@ fn split_sql_into_statements(sql: &str) -> Vec<String> {
                     }
                 }
                 current_statement.push(c);
-            },
-            
+            }
+
             // Handle comments
             '-' => {
                 current_statement.push(c);
@@ -1536,16 +1529,16 @@ fn split_sql_into_statements(sql: &str) -> Vec<String> {
                         current_statement.push(n);
                     }
                 }
-            },
-            
+            }
+
             // Handle end of line (terminates single-line comments)
             '\n' => {
                 current_statement.push(c);
                 if in_comment {
                     in_comment = false;
                 }
-            },
-            
+            }
+
             // Handle statement termination
             ';' => {
                 if !in_string && !in_comment {
@@ -1557,38 +1550,38 @@ fn split_sql_into_statements(sql: &str) -> Vec<String> {
                     // Semicolon inside a string or comment
                     current_statement.push(c);
                 }
-            },
-            
+            }
+
             // Handle all other characters
             _ => {
                 current_statement.push(c);
             }
         }
     }
-    
+
     // Add the last statement if it's not empty (might not end with a semicolon)
     if !current_statement.trim().is_empty() {
         statements.push(current_statement);
     }
-    
+
     statements
 }
 
 fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
     // CRITICAL FIX: Reload .env file directly instead of relying on previously loaded environment
     // This ensures we get the original DATABASE_URL, not any overridden values
-    
+
     // Force load the .env file directly
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
         Err(e) => {
             return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound, 
-                format!("Could not read .env file: {}. Make sure it exists in the project root.", e)
+                std::io::ErrorKind::NotFound,
+                format!("Could not read .env file: {}. Make sure it exists in the project root.", e),
             )));
         }
     };
-    
+
     // Parse the .env file manually to extract DATABASE_URL without any override influence
     let mut database_url = None;
     for line in env_content.lines() {
@@ -1597,7 +1590,7 @@ fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
             break;
         }
     }
-    
+
     // Check if PostgreSQL is installed
     let postgres_available = Command::new("which").arg("psql").output().map(|output| output.status.success()).unwrap_or(false);
 
@@ -1624,11 +1617,26 @@ fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
     } else {
         "<masked>".to_string()
     };
-    
+
     logger::info(&format!("Connecting to database: {}", masked_url)).unwrap_or_default();
 
+    // Implement circuit breaker with 10 second timeout
+    let start_time = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(10);
+
     // Try to establish connection with the URL read directly from .env
-    PgConnection::establish(database_url).map_err(|e| {
+    let connection_result = PgConnection::establish(database_url);
+
+    // Check if we've exceeded the timeout
+    if start_time.elapsed() > timeout {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            format!("Database connection attempt timed out after {} seconds", timeout.as_secs()),
+        )));
+    }
+
+    // Map any connection errors
+    connection_result.map_err(|e| {
         // Check if service is running
         let service_running = Command::new("pg_isready").args(["-h", "localhost"]).output().map(|output| output.status.success()).unwrap_or(false);
 
@@ -1646,7 +1654,7 @@ fn establish_connection() -> Result<PgConnection, Box<dyn std::error::Error>> {
 // Create a new function that forces schema regeneration from the main DATABASE_URL
 pub fn force_regenerate_main_schema() -> bool {
     logger::info("FORCING schema regeneration from main DATABASE_URL only").unwrap_or_default();
-    
+
     // Load the .env file directly to bypass environment variables
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
@@ -1655,7 +1663,7 @@ pub fn force_regenerate_main_schema() -> bool {
             return false;
         }
     };
-    
+
     // Find the main DATABASE_URL line
     let mut database_url = None;
     for line in env_content.lines() {
@@ -1666,12 +1674,12 @@ pub fn force_regenerate_main_schema() -> bool {
             break;
         }
     }
-    
+
     if database_url.is_none() {
         logger::error("Main DATABASE_URL not found in .env file").unwrap_or_default();
         return false;
     }
-    
+
     let database_url = database_url.unwrap();
     let masked_url = if database_url.contains("://") {
         let parts: Vec<&str> = database_url.splitn(2, "://").collect();
@@ -1679,21 +1687,17 @@ pub fn force_regenerate_main_schema() -> bool {
     } else {
         "<masked>".to_string()
     };
-    
+
     logger::info(&format!("Force using DATABASE_URL: {}", masked_url)).unwrap_or_default();
-    
+
     // Output file path for the schema
     let schema_file = "src/database/schema.rs";
-    
+
     // Run diesel directly with the URL from .env
     logger::info("Running diesel print-schema with forced DATABASE_URL").unwrap_or_default();
-    
-    let output = Command::new("diesel")
-        .args(["print-schema", "--database-url", database_url])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
-        
+
+    let output = Command::new("diesel").args(["print-schema", "--database-url", database_url]).stdout(Stdio::piped()).stderr(Stdio::piped()).output();
+
     match output {
         Ok(output) => {
             if output.status.success() {
@@ -1703,7 +1707,7 @@ pub fn force_regenerate_main_schema() -> bool {
                         let table_count = schema_str.matches("table!").count();
                         logger::success(&format!("Forced schema regeneration successful with {} tables", table_count)).unwrap_or_default();
                         true
-                    },
+                    }
                     Err(e) => {
                         logger::error(&format!("Failed to write schema file: {}", e)).unwrap_or_default();
                         false
@@ -1714,7 +1718,7 @@ pub fn force_regenerate_main_schema() -> bool {
                 logger::error(&format!("Diesel print-schema failed: {}", error)).unwrap_or_default();
                 false
             }
-        },
+        }
         Err(e) => {
             logger::error(&format!("Failed to execute diesel command: {}", e)).unwrap_or_default();
             false
@@ -1722,10 +1726,17 @@ pub fn force_regenerate_main_schema() -> bool {
     }
 }
 
+#[test]
+fn test_initialize_vessel_database() {
+    initialize_vessel_database();
+}
+
+use postgres::{Client, NoTls};
+
 // Function to initialize the vessel database
 pub fn initialize_vessel_database() -> bool {
     logger::info("Initializing Vessel database...").unwrap_or_default();
-    
+
     // Load the .env file directly to get the VESSEL_DATABASE_URL
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
@@ -1734,7 +1745,7 @@ pub fn initialize_vessel_database() -> bool {
             return false;
         }
     };
-    
+
     // Find the VESSEL_DATABASE_URL line
     let mut vessel_database_url = None;
     for line in env_content.lines() {
@@ -1744,91 +1755,73 @@ pub fn initialize_vessel_database() -> bool {
             break;
         }
     }
-    
+
     // If VESSEL_DATABASE_URL is not found, use default value
-    let vessel_database_url = vessel_database_url.unwrap_or("postgres://postgres:postgres@localhost/vessel");
-    
+    let vessel_database_url = vessel_database_url.unwrap_or(crate::DEFAULT_VESSEL_DATABASE_URL);
+    let mut client = Client::connect(crate::DEFAULT_DATABASE_URL, NoTls).expect("Failed to connect to database");
     // Parse the database URL to extract database name
     let db_name = if vessel_database_url.contains('/') {
         vessel_database_url.split('/').last().unwrap_or("vessel")
     } else {
         "vessel"
     };
-    
+
     let masked_url = if vessel_database_url.contains("://") {
         let parts: Vec<&str> = vessel_database_url.splitn(2, "://").collect();
         format!("{}://<masked>", parts[0])
     } else {
         "<masked>".to_string()
     };
-    
+
     logger::info(&format!("Using Vessel database URL: {}", masked_url)).unwrap_or_default();
-    
+
     let progress = ProgressManager::new_spinner();
     progress.set_message(&format!("Creating Vessel database '{}' if it doesn't exist...", db_name));
-    
+
     // Create the database if it doesn't exist
-    let create_db_output = Command::new("psql")
-        .args(["-U", "postgres", "-c", &format!("SELECT 1 FROM pg_database WHERE datname = '{}'", db_name)])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
-    
-    match create_db_output {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // Check if the database exists (psql returns a row with "1" if found)
-            if !stdout.contains("1 row") {
-                progress.set_message(&format!("Database '{}' does not exist, creating...", db_name));
-                
-                // Create the database
-                let create_output = Command::new("createdb")
-                    .args(["-U", "postgres", db_name])
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .output();
-                
-                match create_output {
-                    Ok(create_output) => {
-                        if create_output.status.success() {
-                            progress.success(&format!("Created Vessel database '{}'", db_name));
-                        } else {
-                            let error = String::from_utf8_lossy(&create_output.stderr);
-                            progress.error(&format!("Failed to create Vessel database: {}", error));
-                            return false;
-                        }
-                    },
-                    Err(e) => {
-                        progress.error(&format!("Failed to execute createdb command: {}", e));
-                        return false;
-                    }
-                }
-            } else {
-                progress.success(&format!("Vessel database '{}' already exists", db_name));
-            }
-        },
-        Err(e) => {
-            progress.error(&format!("Failed to check if Vessel database exists: {}", e));
+    let exists: i32 = client
+        .query_one(format!("SELECT 1 FROM pg_database WHERE datname = '{}'", db_name).as_str(), &[])
+        .expect("Failed to check if database exists")
+        .get(0);
+
+    match exists {
+        1 => {
+            progress.success(&format!("Vessel database '{}' already exists", db_name));
+        }
+        0 => {
+            progress.error(&format!("Vessel database '{}' does not exist, creating...", db_name));
+            client.execute(format!("CREATE DATABASE {}", db_name).as_str(), &[]).expect("Failed to create database");
+            progress.success(&format!("Created Vessel database '{}'", db_name));
             return false;
         }
+        _ => unreachable!(),
     }
-    
+
     // Run migrations using the Vessel diesel.toml
     progress.set_message("Running Vessel migrations...");
-    
+
     // Check if the vessel migrations directory exists
     if !Path::new("src/vessel/database/migrations").exists() {
         progress.error("Vessel migrations directory not found. Skipping migration operation.");
         return false;
     }
-    
+
     // Run the migrations inside the vessel folder using the Vessel diesel.toml
     let migrate_output = Command::new("diesel")
-        .args(["migration", "run", "--database-url", vessel_database_url, "--config-file", "src/vessel/diesel.toml", "--migration-dir", "src/vessel/database/migrations"])
+        .args([
+            "migration",
+            "run",
+            "--database-url",
+            vessel_database_url,
+            "--config-file",
+            "src/vessel/diesel.toml",
+            "--migration-dir",
+            "src/vessel/database/migrations",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
-    
+
     match migrate_output {
         Ok(output) => {
             if output.status.success() {
@@ -1839,7 +1832,7 @@ pub fn initialize_vessel_database() -> bool {
                     .filter(|line| line.contains("Running migration"))
                     .filter_map(|line| line.split("Running migration").nth(1).map(|name| name.trim().to_string()))
                     .collect();
-                
+
                 if migrations.is_empty() {
                     progress.success("No Vessel migrations to run");
                 } else {
@@ -1850,34 +1843,34 @@ pub fn initialize_vessel_database() -> bool {
                 progress.error(&format!("Failed to run Vessel migrations: {}", error));
                 return false;
             }
-        },
+        }
         Err(e) => {
             progress.error(&format!("Failed to execute Vessel migration command: {}", e));
             return false;
         }
     }
-    
+
     // Generate schema for Vessel database
     progress.set_message("Generating Vessel schema...");
-    
+
     // Create the vessel/database/schema.rs file
     let schema_output = Command::new("diesel")
         .args(["print-schema", "--database-url", vessel_database_url, "--config-file", "src/vessel/diesel.toml"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
-    
+
     match schema_output {
         Ok(output) => {
             if output.status.success() {
                 let schema_str = String::from_utf8_lossy(&output.stdout);
                 let schema_file = "src/vessel/database/schema.rs";
-                
+
                 match fs::write(schema_file, schema_str.as_bytes()) {
                     Ok(_) => {
                         let table_count = schema_str.matches("table!").count();
                         progress.success(&format!("Generated Vessel schema with {} tables", table_count));
-                    },
+                    }
                     Err(e) => {
                         progress.error(&format!("Failed to write Vessel schema file: {}", e));
                         return false;
@@ -1888,20 +1881,20 @@ pub fn initialize_vessel_database() -> bool {
                 progress.error(&format!("Failed to generate Vessel schema: {}", error));
                 return false;
             }
-        },
+        }
         Err(e) => {
             progress.error(&format!("Failed to execute diesel print-schema command for Vessel: {}", e));
             return false;
         }
     }
-    
+
     true
 }
 
 // Function to run migrations for the vessel database
 pub fn migrate_vessel_database() -> bool {
     logger::info("Running Vessel database migrations...").unwrap_or_default();
-    
+
     // Load the .env file directly to get the VESSEL_DATABASE_URL
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
@@ -1910,7 +1903,7 @@ pub fn migrate_vessel_database() -> bool {
             return false;
         }
     };
-    
+
     // Find the VESSEL_DATABASE_URL line
     let mut vessel_database_url = None;
     for line in env_content.lines() {
@@ -1920,26 +1913,35 @@ pub fn migrate_vessel_database() -> bool {
             break;
         }
     }
-    
+
     // If VESSEL_DATABASE_URL is not found, use default value
-    let vessel_database_url = vessel_database_url.unwrap_or("postgres://postgres:postgres@localhost/vessel");
-    
+    let vessel_database_url = vessel_database_url.unwrap_or(crate::DEFAULT_VESSEL_DATABASE_URL);
+
     let progress = ProgressManager::new_spinner();
     progress.set_message("Running Vessel migrations...");
-    
+
     // Check if the vessel migrations directory exists
     if !Path::new("src/vessel/database/migrations").exists() {
         progress.error("Vessel migrations directory not found. Skipping migration operation.");
         return false;
     }
-    
+
     // Run the migrations inside the vessel folder using the Vessel diesel.toml
     let migrate_output = Command::new("diesel")
-        .args(["migration", "run", "--database-url", vessel_database_url, "--config-file", "src/vessel/diesel.toml", "--migration-dir", "src/vessel/database/migrations"])
+        .args([
+            "migration",
+            "run",
+            "--database-url",
+            vessel_database_url,
+            "--config-file",
+            "src/vessel/diesel.toml",
+            "--migration-dir",
+            "src/vessel/database/migrations",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
-    
+
     match migrate_output {
         Ok(output) => {
             if output.status.success() {
@@ -1950,23 +1952,23 @@ pub fn migrate_vessel_database() -> bool {
                     .filter(|line| line.contains("Running migration"))
                     .filter_map(|line| line.split("Running migration").nth(1).map(|name| name.trim().to_string()))
                     .collect();
-                
+
                 if migrations.is_empty() {
                     progress.success("No Vessel migrations to run");
                 } else {
                     progress.success(&format!("Ran {} Vessel migrations: {}", migrations.len(), migrations.join(", ")));
                 }
-                
+
                 // Update schema after migrations
                 generate_vessel_schema(vessel_database_url);
-                
+
                 true
             } else {
                 let error = String::from_utf8_lossy(&output.stderr);
                 progress.error(&format!("Failed to run Vessel migrations: {}", error));
                 false
             }
-        },
+        }
         Err(e) => {
             progress.error(&format!("Failed to execute Vessel migration command: {}", e));
             false
@@ -1977,7 +1979,7 @@ pub fn migrate_vessel_database() -> bool {
 // Function to refresh (rollback and migrate) the vessel database
 pub fn refresh_vessel_database() -> bool {
     logger::info("Refreshing Vessel database...").unwrap_or_default();
-    
+
     // Load the .env file directly to get the VESSEL_DATABASE_URL
     let env_content = match fs::read_to_string(".env") {
         Ok(content) => content,
@@ -1986,7 +1988,7 @@ pub fn refresh_vessel_database() -> bool {
             return false;
         }
     };
-    
+
     // Find the VESSEL_DATABASE_URL line
     let mut vessel_database_url = None;
     for line in env_content.lines() {
@@ -1996,26 +1998,36 @@ pub fn refresh_vessel_database() -> bool {
             break;
         }
     }
-    
+
     // If VESSEL_DATABASE_URL is not found, use default value
-    let vessel_database_url = vessel_database_url.unwrap_or("postgres://postgres:postgres@localhost/vessel");
-    
+    let vessel_database_url = vessel_database_url.unwrap_or(crate::DEFAULT_VESSEL_DATABASE_URL);
+
     let progress = ProgressManager::new_spinner();
     progress.set_message("Rolling back Vessel migrations...");
-    
+
     // Check if the vessel migrations directory exists
     if !Path::new("src/vessel/database/migrations").exists() {
         progress.error("Vessel migrations directory not found. Skipping refresh operation.");
         return false;
     }
-    
+
     // Rollback all migrations first
     let rollback_output = Command::new("diesel")
-        .args(["migration", "revert", "--all", "--database-url", vessel_database_url, "--config-file", "src/vessel/diesel.toml", "--migration-dir", "src/vessel/database/migrations"])
+        .args([
+            "migration",
+            "revert",
+            "--all",
+            "--database-url",
+            vessel_database_url,
+            "--config-file",
+            "src/vessel/diesel.toml",
+            "--migration-dir",
+            "src/vessel/database/migrations",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
-    
+
     match rollback_output {
         Ok(output) => {
             if output.status.success() {
@@ -2025,22 +2037,31 @@ pub fn refresh_vessel_database() -> bool {
                 progress.error(&format!("Failed to rollback Vessel migrations: {}", error));
                 return false;
             }
-        },
+        }
         Err(e) => {
             progress.error(&format!("Failed to execute Vessel rollback command: {}", e));
             return false;
         }
     }
-    
+
     // Now run the migrations again
     progress.set_message("Running Vessel migrations...");
-    
+
     let migrate_output = Command::new("diesel")
-        .args(["migration", "run", "--database-url", vessel_database_url, "--config-file", "src/vessel/diesel.toml", "--migration-dir", "src/vessel/database/migrations"])
+        .args([
+            "migration",
+            "run",
+            "--database-url",
+            vessel_database_url,
+            "--config-file",
+            "src/vessel/diesel.toml",
+            "--migration-dir",
+            "src/vessel/database/migrations",
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
-    
+
     match migrate_output {
         Ok(output) => {
             if output.status.success() {
@@ -2051,23 +2072,23 @@ pub fn refresh_vessel_database() -> bool {
                     .filter(|line| line.contains("Running migration"))
                     .filter_map(|line| line.split("Running migration").nth(1).map(|name| name.trim().to_string()))
                     .collect();
-                
+
                 if migrations.is_empty() {
                     progress.success("No Vessel migrations to run");
                 } else {
                     progress.success(&format!("Ran {} Vessel migrations: {}", migrations.len(), migrations.join(", ")));
                 }
-                
+
                 // Update schema after migrations
                 generate_vessel_schema(vessel_database_url);
-                
+
                 true
             } else {
                 let error = String::from_utf8_lossy(&output.stderr);
                 progress.error(&format!("Failed to run Vessel migrations: {}", error));
                 false
             }
-        },
+        }
         Err(e) => {
             progress.error(&format!("Failed to execute Vessel migration command: {}", e));
             false
@@ -2079,26 +2100,26 @@ pub fn refresh_vessel_database() -> bool {
 fn generate_vessel_schema(vessel_database_url: &str) -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating Vessel schema...");
-    
+
     // Create the vessel/database/schema.rs file
     let schema_output = Command::new("diesel")
         .args(["print-schema", "--database-url", vessel_database_url, "--config-file", "src/vessel/diesel.toml"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output();
-    
+
     match schema_output {
         Ok(output) => {
             if output.status.success() {
                 let schema_str = String::from_utf8_lossy(&output.stdout);
                 let schema_file = "src/vessel/database/schema.rs";
-                
+
                 match fs::write(schema_file, schema_str.as_bytes()) {
                     Ok(_) => {
                         let table_count = schema_str.matches("table!").count();
                         progress.success(&format!("Generated Vessel schema with {} tables", table_count));
                         true
-                    },
+                    }
                     Err(e) => {
                         progress.error(&format!("Failed to write Vessel schema file: {}", e));
                         false
@@ -2109,7 +2130,7 @@ fn generate_vessel_schema(vessel_database_url: &str) -> bool {
                 progress.error(&format!("Failed to generate Vessel schema: {}", error));
                 false
             }
-        },
+        }
         Err(e) => {
             progress.error(&format!("Failed to execute diesel print-schema command for Vessel: {}", e));
             false

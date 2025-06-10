@@ -60,6 +60,18 @@ cd blast
 
 Make sure `~/.local/bin` is in your PATH.
 
+### Postgres
+
+Make sure you have postgres running for local development
+
+__With docker__:
+```sh
+docker run --name catalyst \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  -d postgres
+```
+
 ### Template Repository
 
 Blast uses remote Git repositories for templates instead of embedding them in the binary. When you create a new project, Blast will:
