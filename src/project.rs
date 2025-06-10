@@ -1,3 +1,6 @@
+use crate::configs::Config;
+use crate::logger;
+use crate::DEFAULT_DATABASE_URL;
 use chrono;
 use std::fs;
 use std::io::Write;
@@ -5,8 +8,6 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 use toml_edit::{value, DocumentMut};
-use crate::configs::Config;
-use crate::logger;
 
 // Template repository URLs (primary and fallbacks)
 const TEMPLATE_REPOS: [&str; 3] = [
@@ -297,7 +298,7 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
             fs::write(&env_path, env_example)?;
         } else {
             // Fallback to standard template
-            let env_template = "DATABASE_URL=postgres://postgres:postgres@localhost/postgres\n";
+            let env_template = format!("DATABASE_URL={}\n", DEFAULT_DATABASE_URL);
             fs::write(&env_path, env_template)?;
         }
     }
@@ -305,11 +306,6 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
     // Add JWT secret to .env file
     let mut env_file = fs::OpenOptions::new().append(true).open(&env_path)?;
     writeln!(env_file, "JWT_SECRET={}", generate_jwt_secret())?;
-
-    // Prompt user to edit .env file
-    if prompt_for_env_edit() {
-        edit_env_file(&env_path)?;
-    }
 
     // Initialize git repository
     initialize_git_repository(project_path)?;
@@ -334,12 +330,12 @@ fn prompt_for_env_edit() -> bool {
                     .lines()
                     .find(|line| line.starts_with("DATABASE_URL="))
                     .map(|line| line.trim_start_matches("DATABASE_URL="))
-                    .unwrap_or("postgres://postgres:postgres@localhost/postgres")
+                    .unwrap_or(crate::DEFAULT_DATABASE_URL)
                     .to_string(),
-                Err(_) => "postgres://postgres:postgres@localhost/postgres".to_string(),
+                Err(_) => crate::DEFAULT_DATABASE_URL.to_string(),
             }
         } else {
-            "postgres://postgres:postgres@localhost/postgres".to_string()
+            crate::DEFAULT_DATABASE_URL.to_string()
         };
 
         println!("\n{} The default database connection is set to:", style("ℹ️").cyan());
@@ -368,9 +364,9 @@ fn edit_env_file(env_path: &Path) -> std::io::Result<()> {
     // This shows only in verbose mode as it's helpful but not essential information
     if is_verbose {
         println!("\nYou can add multiple database connections as follows:");
-        println!("DATABASE_URL=postgres://postgres:postgres@localhost/postgres");
-        println!("DATABASE_URL_USERS=postgres://postgres:postgres@localhost/users");
-        println!("DATABASE_URL_LOGS=postgres://postgres:postgres@localhost/logs");
+        println!("DATABASE_URL={}", crate::DEFAULT_DATABASE_URL);
+        println!("DATABASE_URL_USERS={}/users", crate::DEFAULT_DATABASE_URL);
+        println!("DATABASE_URL_LOGS={}/logs", crate::DEFAULT_DATABASE_URL);
         println!("\nThe first connection will be used as the default.");
     }
 
@@ -412,29 +408,21 @@ pub fn update_rocket_config(config: &Config, is_dev: bool) -> Result<(), String>
     // Check if the appropriate environment-specific config file exists
     let source_path = if is_dev {
         if !rocket_toml_dev_path.exists() {
-            return Err(format!(
-                "Development config file not found: {}",
-                rocket_toml_dev_path.display()
-            ));
+            return Err(format!("Development config file not found: {}", rocket_toml_dev_path.display()));
         }
         rocket_toml_dev_path
     } else {
         if !rocket_toml_prod_path.exists() {
-            return Err(format!(
-                "Production config file not found: {}",
-                rocket_toml_prod_path.display()
-            ));
+            return Err(format!("Production config file not found: {}", rocket_toml_prod_path.display()));
         }
         rocket_toml_prod_path
     };
 
     // Read the content of the source file
-    let content = fs::read_to_string(&source_path)
-        .map_err(|e| format!("Failed to read {}: {}", source_path.display(), e))?;
+    let content = fs::read_to_string(&source_path).map_err(|e| format!("Failed to read {}: {}", source_path.display(), e))?;
 
     // Write the content to the target file
-    fs::write(&rocket_toml_path, content)
-        .map_err(|e| format!("Failed to write to {}: {}", rocket_toml_path.display(), e))?;
+    fs::write(&rocket_toml_path, content).map_err(|e| format!("Failed to write to {}: {}", rocket_toml_path.display(), e))?;
 
     let env_name = if is_dev { "development" } else { "production" };
     logger::success(&format!("Updated Rocket.toml with {} configuration", env_name))?;

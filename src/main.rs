@@ -20,29 +20,30 @@ mod sparks;
 mod structs;
 mod tui_viewer;
 
+pub const DEFAULT_DATABASE_URL: &str = "postgres://postgres:postgres@localhost:5432/postgres";
+pub const DEFAULT_VESSEL_DATABASE_NAME: &str = "vessel";
+pub const DEFAULT_VESSEL_DATABASE_URL: &str = "postgres://postgres:postgres@localhost:5432/vessel";
+
 fn main() {
     // Initialize components
     let mut dep_manager = dependencies::DependencyManager::new();
 
     // Get command line arguments
     let args: Vec<String> = env::args().collect();
-    
+
     // Check for verbose flag
     let verbose_mode = args.iter().any(|arg| arg == "-v" || arg == "--verbose");
 
-    let filtered_args: Vec<String> = args.iter()
-        .filter(|arg| *arg != "-v" && *arg != "--verbose")
-        .cloned()
-        .collect();
+    let filtered_args: Vec<String> = args.iter().filter(|arg| *arg != "-v" && *arg != "--verbose").cloned().collect();
 
     // Set environment variable too (belt and suspenders approach)
     if verbose_mode {
         std::env::set_var("BLAST_VERBOSE", "1");
     }
-    
+
     // Initialize logger in CLI mode
     logger::init(logger::RuntimeMode::Cli, None).unwrap_or_default();
-    
+
     // Set verbose mode if flag is present
     logger::set_verbose_mode(verbose_mode);
 
@@ -59,7 +60,7 @@ fn main() {
                             eprintln!("Warning: Failed to set up logging: {}", e);
                             // Continue anyway as this shouldn't be fatal
                         }
-                        
+
                         // Execute the command
                         if let Err(e) = commands::execute(cmd.clone(), &mut config, &mut dep_manager) {
                             eprintln!("Error executing command: {}", e);
