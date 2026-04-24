@@ -15,6 +15,7 @@ mod models;
 mod output;
 mod progress;
 mod project;
+mod schema_parser;
 mod structs;
 mod tui_viewer;
 

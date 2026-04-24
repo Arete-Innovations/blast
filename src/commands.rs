@@ -365,6 +365,47 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             if !crate::database::generate_schema() {
                 logger::warning("Some schema generation issues occurred")?;
             }
+            let schema_path = config.project_dir.join("src/database/schema.rs");
+            match crate::schema_parser::parse_schema(&schema_path) {
+                Ok(tables) => {
+                    let col_count: usize = tables.iter().map(|t| t.columns.len()).sum();
+                    let nullable_count: usize = tables
+                        .iter()
+                        .flat_map(|t| t.columns.iter())
+                        .filter(|c| c.nullable)
+                        .count();
+                    logger::info(&format!(
+                        "schema: {} tables, {} columns ({} nullable) — pk fields: {}",
+                        tables.len(),
+                        col_count,
+                        nullable_count,
+                        tables
+                            .iter()
+                            .map(|t| format!("{}({})", t.name, t.primary_key.join(",")))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ))?;
+                    for t in &tables {
+                        logger::debug(&format!(
+                            "  {} cols: {}",
+                            t.name,
+                            t.columns
+                                .iter()
+                                .map(|c| format!(
+                                    "{}:{}{}",
+                                    c.name,
+                                    c.diesel_type,
+                                    if c.nullable { "?" } else { "" }
+                                ))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        ))?;
+                    }
+                }
+                Err(e) => {
+                    logger::warning(&format!("schema parse warning: {}", e))?;
+                }
+            }
             Ok(())
         }
 
