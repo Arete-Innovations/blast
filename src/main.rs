@@ -1,7 +1,6 @@
 use std::env;
 use std::process;
 
-mod assets;
 mod commands;
 mod configs;
 mod cronjobs;
