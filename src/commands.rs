@@ -565,12 +565,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             let blast_dir = config.project_dir.join("storage").join("blast");
             std::fs::create_dir_all(&blast_dir).map_err(|e| e.to_string())?;
 
-            // Update Rocket.toml configuration - use dev mode for watch
-            if let Err(e) = crate::project::update_rocket_config(config, true) {
-                // If the config files don't exist yet, just log a warning and continue
-                logger::warning(&format!("Failed to update Rocket.toml configuration: {}", e))?;
-            }
-
             // Get log path
             let server_log_path = logs_dir.join("server.log");
 

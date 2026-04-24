@@ -5,8 +5,6 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 use toml_edit::{value, DocumentMut};
-use crate::configs::Config;
-use crate::logger;
 
 // Template repository URLs (primary and fallbacks)
 const TEMPLATE_REPOS: [&str; 3] = [
@@ -17,23 +15,6 @@ const TEMPLATE_REPOS: [&str; 3] = [
 
 // Maximum time to wait for clone operation in seconds
 const CLONE_TIMEOUT: Duration = Duration::from_secs(30);
-
-fn generate_jwt_secret() -> String {
-    use rand::Rng;
-
-    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
-                              abcdefghijklmnopqrstuvwxyz\
-                              0123456789";
-    const SECRET_LEN: usize = 32;
-    let mut rng = rand::rng();
-
-    (0..SECRET_LEN)
-        .map(|_| {
-            let idx = rng.random_range(0..CHARSET.len());
-            CHARSET[idx] as char
-        })
-        .collect()
-}
 
 pub fn create_new_project(project_name: &str, use_dev_branch: bool) {
     use console::style;
@@ -265,29 +246,10 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
     // Write the updated Cargo.toml
     fs::write(cargo_toml_path, doc.to_string())?;
 
-    // Update Catalyst.toml if it exists
-    let catalyst_toml_path = project_path.join("Catalyst.toml");
-    if catalyst_toml_path.exists() {
-        let content = fs::read_to_string(&catalyst_toml_path)?;
-        let mut doc = content.parse::<DocumentMut>().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("TOML parse error: {}", e)))?;
-
-        // Update project name if settings section exists
-        if doc.contains_key("settings") {
-            doc["settings"]["project_name"] = value(project_name);
-        }
-
-        // Write the updated Catalyst.toml
-        fs::write(catalyst_toml_path, doc.to_string())?;
-    }
-
-    // Create or update .env file with JWT secret
+    // Create .env file if missing
     let env_path = project_path.join(".env");
 
-    // Check if .env already exists
-    let env_exists = env_path.exists();
-
-    // Create a template .env file if it doesn't exist
-    if !env_exists {
+    if !env_path.exists() {
         // Check if .env.example exists in the project
         let env_example_path = project_path.join(".env.example");
 
@@ -301,10 +263,6 @@ fn update_project(project_path: &Path, project_name: &str) -> std::io::Result<()
             fs::write(&env_path, env_template)?;
         }
     }
-
-    // Add JWT secret to .env file
-    let mut env_file = fs::OpenOptions::new().append(true).open(&env_path)?;
-    writeln!(env_file, "JWT_SECRET={}", generate_jwt_secret())?;
 
     // Prompt user to edit .env file
     if prompt_for_env_edit() {
@@ -394,50 +352,6 @@ fn edit_env_file(env_path: &Path) -> std::io::Result<()> {
         // No changes made - still confirm
         println!("{} No changes made to .env file", style("ℹ️").cyan());
     }
-
-    Ok(())
-}
-
-// Function to initialize a git repository in the project directory
-// Handle copying environment-specific Rocket.toml configuration
-pub fn update_rocket_config(config: &Config, is_dev: bool) -> Result<(), String> {
-    // Determine the project root directory
-    let project_dir = &config.project_dir;
-
-    // Define paths for the config files
-    let rocket_toml_path = project_dir.join("Rocket.toml");
-    let rocket_toml_dev_path = project_dir.join("Rocket.toml.dev");
-    let rocket_toml_prod_path = project_dir.join("Rocket.toml.prod");
-
-    // Check if the appropriate environment-specific config file exists
-    let source_path = if is_dev {
-        if !rocket_toml_dev_path.exists() {
-            return Err(format!(
-                "Development config file not found: {}",
-                rocket_toml_dev_path.display()
-            ));
-        }
-        rocket_toml_dev_path
-    } else {
-        if !rocket_toml_prod_path.exists() {
-            return Err(format!(
-                "Production config file not found: {}",
-                rocket_toml_prod_path.display()
-            ));
-        }
-        rocket_toml_prod_path
-    };
-
-    // Read the content of the source file
-    let content = fs::read_to_string(&source_path)
-        .map_err(|e| format!("Failed to read {}: {}", source_path.display(), e))?;
-
-    // Write the content to the target file
-    fs::write(&rocket_toml_path, content)
-        .map_err(|e| format!("Failed to write to {}: {}", rocket_toml_path.display(), e))?;
-
-    let env_name = if is_dev { "development" } else { "production" };
-    logger::success(&format!("Updated Rocket.toml with {} configuration", env_name))?;
 
     Ok(())
 }
