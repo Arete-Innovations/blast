@@ -20,10 +20,6 @@ pub enum Command {
     Seed(Option<String>),
     GenerateSchema,
 
-    // Vessel-specific database commands
-    VesselMigrate,
-    VesselRefresh,
-
     // Code generation commands
     GenerateStructs,
     GenerateModels,
@@ -92,15 +88,6 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("dashboard") => Some(Command::LaunchDashboard),
         Some("cli") => Some(Command::RunInteractiveCLI),
         Some("toggle-env") | Some("env") => Some(Command::ToggleEnvironment),
-
-        // Vessel commands
-        Some("vessel") => {
-            match args.get(2).map(|s| s.as_str()) {
-                Some("migrate") => Some(Command::VesselMigrate),
-                Some("refresh") => Some(Command::VesselRefresh),
-                _ => None,
-            }
-        },
 
         // Cronjob commands
         Some("cronjobs") => {
@@ -205,10 +192,6 @@ pub fn show_help() {
     println!("  cli                  Launch the interactive CLI");
     println!("  toggle-env           Toggle between development and production environments");
     println!();
-    println!("VESSEL COMMANDS:");
-    println!("  vessel migrate       Run Vessel database migrations");
-    println!("  vessel refresh       Rollback and re-run all Vessel migrations");
-    println!();  
     println!("CRONJOB COMMANDS:");
     println!("  cronjobs             Launch interactive TUI for cronjob management");
     println!("  cronjobs interactive Launch interactive TUI for cronjob management");
@@ -273,29 +256,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
     }
 
     match cmd {
-        // Vessel commands
-        Command::VesselMigrate => {
-            logger::info("Running Vessel database migrations...")?;
-            if crate::database::migrate_vessel_database() {
-                logger::success("Vessel migrations completed successfully")?;
-                Ok(())
-            } else {
-                logger::error("Failed to run Vessel migrations")?;
-                Err("Vessel migration failed".to_string())
-            }
-        }
-        
-        Command::VesselRefresh => {
-            logger::info("Refreshing Vessel database (rollback and re-run migrations)...")?;
-            if crate::database::refresh_vessel_database() {
-                logger::success("Vessel database refresh completed successfully")?;
-                Ok(())
-            } else {
-                logger::error("Failed to refresh Vessel database")?;
-                Err("Vessel database refresh failed".to_string())
-            }
-        }
-        
         // Cronjob commands
         Command::CronjobsList => crate::cronjobs::list_cronjobs(config),
 
@@ -502,14 +462,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 main_progress.success("Structs and models have been regenerated successfully");
             }
             
-            // Initialize Vessel database
-            main_progress.set_message("Initializing Vessel database...");
-            if crate::database::initialize_vessel_database() {
-                main_progress.success("Vessel database initialized successfully");
-            } else {
-                main_progress.warning("Failed to initialize Vessel database. You may need to run 'blast vessel migrate' manually.")?;
-            }
-
             // Finish with success message - clear the progress bar first
             main_progress.success("Project initialization complete!");
 

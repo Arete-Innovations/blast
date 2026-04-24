@@ -36,9 +36,6 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[DB] Migrate",
         "[DB] Rollback",
         "[DB] Seed",
-        // Vessel commands
-        "[Vessel] Migrate",
-        "[Vessel] Refresh",
         // Assets management
         "[Assets] Transpile SCSS",
         "[Assets] Minify CSS",
@@ -106,9 +103,6 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             "[DB] Migrate" => Command::Migrate,
             "[DB] Rollback" => Command::Rollback,
             "[DB] Seed" => Command::Seed(None),
-            
-            "[Vessel] Migrate" => Command::VesselMigrate,
-            "[Vessel] Refresh" => Command::VesselRefresh,
 
             "[Assets] Transpile SCSS" => Command::TranspileScss,
             "[Assets] Minify CSS" => Command::MinifyCss,
