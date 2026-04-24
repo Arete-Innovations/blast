@@ -49,10 +49,6 @@ pub enum Command {
     LogTruncate(Option<String>),
     LogView(String), // log level to view
 
-    // Spark plugin commands
-    AddSpark(String),
-    SyncSparks,
-
     // Cronjob commands
     CronjobsList,
     CronjobsAdd(String, i32),
@@ -144,10 +140,6 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("js") => Some(Command::ProcessJs),
         Some("cdn") => Some(Command::DownloadCdn),
 
-        // Spark plugin commands
-        Some("spark") if args.get(2).map(|s| s.as_str()) == Some("add") && args.len() >= 4 => Some(Command::AddSpark(args[3].clone())),
-        Some("spark") if args.get(2).map(|s| s.as_str()) == Some("sync") => Some(Command::SyncSparks),
-
         // Help
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
 
@@ -224,17 +216,6 @@ pub fn show_help() {
     println!("  log view <level>      Interactive TUI log viewer with fuzzy search and real-time tailing");
     println!("                       Press / to search, ↑↓ to scroll, q to quit");
     println!();
-    println!("SPARK PLUGINS:");
-    println!("  spark add <repo_url>  Add a spark plugin from a git repository");
-    println!("  spark sync            Synchronize sparks with Catalyst.toml (install missing, remove unconfigured)");
-    println!("                       Dependencies listed in manifest.toml are automatically added to Cargo.toml");
-    println!("                       Required environment variables are added to .env with SPARKNAME_ prefix");
-    println!("                       Automatically opens an editor to replace placeholder values with actual configuration");
-    println!("                       Updates Catalyst.toml with [sparks] section");
-    println!("                       Sparks can also be defined in Catalyst.toml and will be installed during 'blast init'");
-    println!("                       Format: [sparks]");
-    println!("                               plznohac = \"https://github.com/catalyst-framework/plznohac\"");
-    println!();
     println!("OTHER COMMANDS:");
     println!("  new <project_name>   Create a new project");
     println!("    --dev              Use the dev branch of the template repository");
@@ -283,15 +264,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             }
             logger::success("Server stopped successfully")?;
             Ok(())
-        }
-
-        Command::AddSpark(repo_url) => {
-            logger::info(&format!("Adding spark plugin from: {}", repo_url))?;
-            crate::sparks::add_spark(&repo_url, config)
-        }
-        Command::SyncSparks => {
-            logger::info("Syncing sparks from Catalyst.toml")?;
-            crate::sparks::sync_sparks_from_config(config)
         }
 
         Command::NewProject(name, use_dev_branch) => {
@@ -428,19 +400,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
             main_progress.inc(1);
 
-            // 7. Check for and install sparks from Catalyst.toml
-            if is_verbose {
-                main_progress.set_message("Project initialization (7/7): Installing spark plugins");
-            } else {
-                main_progress.set_message("Installing spark plugins...");
-            }
-
-            if let Err(e) = crate::sparks::install_sparks_from_config(config) {
-                main_progress.warning(&format!("Some issues with spark installation: {}", e))?;
-            }
-            main_progress.inc(1);
-
-            // CRITICAL: Force regenerate schema from main DATABASE_URL to override any spark changes
+            // CRITICAL: Force regenerate schema from main DATABASE_URL
             main_progress.set_message("Ensuring schema is generated for main database...");
             
             // Always force regenerate the schema as the last step to ensure it's correct
