@@ -38,6 +38,9 @@ pub enum Command {
     CronjobsInteractive,
     CronjobsLiveTable,
 
+    Build,
+    Package,
+
     RefreshApp,
     Help,
     Exit,
@@ -109,6 +112,9 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("structs") => Some(Command::GenerateStructs),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("models") => Some(Command::GenerateModels),
 
+        Some("build") => Some(Command::Build),
+        Some("package") => Some(Command::Package),
+
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
 
         Some("logs") | Some("log") => {
@@ -175,6 +181,10 @@ pub fn show_help() {
     println!("  log truncate [file]   Truncate log files (all or specific file)");
     println!("  log view <level>      Interactive TUI log viewer with fuzzy search and real-time tailing");
     println!("                       Press / to search, ↑↓ to scroll, q to quit");
+    println!();
+    println!("BUILD COMMANDS:");
+    println!("  build                Production build (lint + frontend + cargo release)");
+    println!("  package              Tarball binary + dist + .env.example + systemd unit");
     println!();
     println!("OTHER COMMANDS:");
     println!("  new <project_name>   Create a new project");
@@ -421,6 +431,14 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 logger::warning("Some model generation issues occurred")?;
             }
             Ok(())
+        }
+
+        Command::Build => {
+            crate::build::run_build(config)
+        }
+
+        Command::Package => {
+            crate::build::run_package(config)
         }
 
         Command::RefreshApp => {
