@@ -16,7 +16,6 @@ mod models;
 mod output; // Keep temporarily until we migrate references
 mod progress; // Keep temporarily until we migrate references
 mod project;
-mod sparks;
 mod structs;
 mod tui_viewer;
 
@@ -26,7 +25,7 @@ fn main() {
 
     // Get command line arguments
     let args: Vec<String> = env::args().collect();
-    
+
     // Check for verbose flag
     let verbose_mode = args.iter().any(|arg| arg == "-v" || arg == "--verbose");
 
@@ -39,10 +38,10 @@ fn main() {
     if verbose_mode {
         std::env::set_var("BLAST_VERBOSE", "1");
     }
-    
+
     // Initialize logger in CLI mode
     logger::init(logger::RuntimeMode::Cli, None).unwrap_or_default();
-    
+
     // Set verbose mode if flag is present
     logger::set_verbose_mode(verbose_mode);
 
@@ -59,7 +58,7 @@ fn main() {
                             eprintln!("Warning: Failed to set up logging: {}", e);
                             // Continue anyway as this shouldn't be fatal
                         }
-                        
+
                         // Execute the command
                         if let Err(e) = commands::execute(cmd.clone(), &mut config, &mut dep_manager) {
                             eprintln!("Error executing command: {}", e);
