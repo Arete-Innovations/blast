@@ -28,23 +28,9 @@ fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
     Ok(tables)
 }
 
-fn run_diesel_ext(config: &Config) -> io::Result<String> {
+fn run_diesel_ext(_config: &Config) -> io::Result<String> {
     let mut command = Command::new("diesel_ext");
-
-    if let Some(derives) = config.assets.get("codegen").and_then(|codegen| codegen.get("structs")).and_then(|s| s.get("derives")).and_then(|v| v.as_array()) {
-        let derives_str = derives.iter().filter_map(|d| d.as_str()).collect::<Vec<_>>().join(", ");
-        command.arg("-d").arg(derives_str);
-    }
-
-    if let Some(imports) = config.assets.get("codegen").and_then(|codegen| codegen.get("structs")).and_then(|s| s.get("imports")).and_then(|v| v.as_array()) {
-        for import in imports.iter().filter_map(|imp| imp.as_str()) {
-            command.arg("-I").arg(import);
-        }
-    }
-
-    if let Some(schema_path) = config.assets.get("codegen").and_then(|codegen| codegen.get("schema_file")).and_then(|v| v.as_str()) {
-        command.arg("-s").arg(schema_path);
-    }
+    // TODO(blueprint): wire derives/imports/schema_file from Blueprint IR.
     command.arg("-t");
 
     let output = command.output()?.stdout;
@@ -117,27 +103,10 @@ fn parse_and_process_structs(content: &str, config: &Config, schema_tables: &[St
     let progress = ProgressManager::new_spinner();
     progress.set_message("Processing struct definitions...");
 
-    let output_dir = config.assets.get("codegen").and_then(|codegen| codegen.get("structs_dir")).and_then(|v| v.as_str()).unwrap_or("src/structs");
+    // TODO(blueprint): read structs_dir + ignore list from Blueprint IR.
+    let output_dir = "src/structs";
 
-    // Try the new naming convention first (ignore), then fall back to the old one (ignored_structs)
-    let ignore_list: Vec<String> = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("structs"))
-        .and_then(|s| s.get("ignore"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_else(|| {
-            // Fallback to old naming convention
-            config
-                .assets
-                .get("codegen")
-                .and_then(|codegen| codegen.get("structs"))
-                .and_then(|s| s.get("ignored_structs"))
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-                .unwrap_or_default()
-        });
+    let ignore_list: Vec<String> = Vec::new();
 
     let mut current_struct = String::new();
     let mut inside_struct = false;
@@ -250,7 +219,7 @@ fn check_migration_for_serial_fields(table_name: &str) -> Vec<String> {
     result
 }
 
-fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str, struct_def: &str, output_dir: &str) -> bool {
+fn write_struct_file(_config: &Config, fixed_struct_name: &str, table_name: &str, struct_def: &str, output_dir: &str) -> bool {
     // Create the output directory if it doesn't exist
     if let Err(e) = fs::create_dir_all(output_dir) {
         crate::logger::error(&format!("Error creating directory {}: {}", output_dir, e)).unwrap_or_default();
@@ -267,18 +236,10 @@ fn write_struct_file(config: &Config, fixed_struct_name: &str, table_name: &str,
         return false;
     }
 
-    // Check if this struct should be skipped for insertable generation using nested config
-    let insertable_ignore_list: Vec<String> = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("structs"))
-        .and_then(|s| s.get("insertable"))
-        .and_then(|i| i.get("ignore"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_default();
+    // TODO(blueprint): read insertable ignore list from Blueprint IR.
+    let insertable_ignore_list: Vec<String> = Vec::new();
 
-    let skip_insertable = insertable_ignore_list.iter().any(|ignored| ignored.eq_ignore_ascii_case(table_name));
+    let skip_insertable = insertable_ignore_list.iter().any(|ignored: &String| ignored.eq_ignore_ascii_case(table_name));
 
     // Get the auto-generated fields for this table by examining migration files
     let auto_fields = check_migration_for_serial_fields(table_name);
@@ -346,26 +307,9 @@ pub struct New{1} {{
         table_name, fixed_struct_name, insertable_fields
     );
 
-    // Get global imports
-    let global_imports: Vec<String> = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("structs"))
-        .and_then(|s| s.get("imports"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_default();
-
-    // Check for struct-specific imports
-    let struct_specific_imports: Vec<String> = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("structs"))
-        .and_then(|s| s.get(&format!("{}", fixed_struct_name))) // Look for a section with the struct name
-        .and_then(|s| s.get("imports"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_default();
+    // TODO(blueprint): pull global + per-struct imports from Blueprint IR.
+    let global_imports: Vec<String> = Vec::new();
+    let struct_specific_imports: Vec<String> = Vec::new();
 
     // Combine global and struct-specific imports
     let mut imports = vec!["diesel::Insertable".to_string(), "diesel::AsChangeset".to_string()];
@@ -442,12 +386,13 @@ pub struct New{1} {{
     struct_write_ok && insertable_write_ok
 }
 
-fn update_mod_file(config: &Config, struct_table_names: &[String]) -> bool {
+fn update_mod_file(_config: &Config, struct_table_names: &[String]) -> bool {
     if struct_table_names.is_empty() {
         return true; // Nothing to do, but not an error
     }
 
-    let output_dir = config.assets.get("codegen").and_then(|codegen| codegen.get("structs_dir")).and_then(|v| v.as_str()).unwrap_or("src/structs");
+    // TODO(blueprint): read structs_dir from Blueprint IR.
+    let output_dir = "src/structs";
 
     let mod_file_path = Path::new(output_dir).join("mod.rs");
     let mut mod_file_content = fs::read_to_string(&mod_file_path).unwrap_or_default();
@@ -479,43 +424,13 @@ pub fn generate(config: &Config) -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating database structs...");
 
-    // Get schema file path
-    let schema_path = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("schema_file"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("src/database/schema.rs");
+    // TODO(blueprint): read schema_file + ignore list from Blueprint IR.
+    let schema_path = "src/database/schema.rs";
 
     // Check if schema file exists
     if !Path::new(schema_path).exists() {
         progress.error(&format!("Schema file not found at {}", schema_path));
         return false;
-    }
-
-    // Get ignored structs list from Catalyst.toml - try both naming conventions
-    let ignore_list: Vec<String> = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("structs"))
-        .and_then(|s| s.get("ignore"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_else(|| {
-            // Fallback to old naming convention
-            config
-                .assets
-                .get("codegen")
-                .and_then(|codegen| codegen.get("structs"))
-                .and_then(|s| s.get("ignored_structs"))
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-                .unwrap_or_default()
-        });
-
-    // Print ignored structs for debugging
-    if !ignore_list.is_empty() {
-        progress.set_message(&format!("Ignoring struct generation for: {}", ignore_list.join(", ")));
     }
 
     // Load schema table names
@@ -534,7 +449,8 @@ pub fn generate(config: &Config) -> bool {
     };
 
     // Create output directory
-    let output_dir = config.assets.get("codegen").and_then(|codegen| codegen.get("structs_dir")).and_then(|v| v.as_str()).unwrap_or("src/structs");
+    // TODO(blueprint): read structs_dir from Blueprint IR.
+    let output_dir = "src/structs";
 
     if let Err(e) = fs::create_dir_all(output_dir) {
         progress.error(&format!("Error creating structs directory: {}", e));

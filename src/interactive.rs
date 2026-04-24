@@ -36,12 +36,6 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[DB] Migrate",
         "[DB] Rollback",
         "[DB] Seed",
-        // Assets management
-        "[Assets] Transpile SCSS",
-        "[Assets] Minify CSS",
-        "[Assets] Publish CSS",
-        "[Assets] Publish JS",
-        "[Assets] Download CDN",
         // Cronjob management
         "[Cronjobs] Interactive Manager",
         "[Cronjobs] List Jobs",
@@ -104,12 +98,6 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             "[DB] Rollback" => Command::Rollback,
             "[DB] Seed" => Command::Seed(None),
 
-            "[Assets] Transpile SCSS" => Command::TranspileScss,
-            "[Assets] Minify CSS" => Command::MinifyCss,
-            "[Assets] Publish CSS" => Command::PublishCss,
-            "[Assets] Publish JS" => Command::ProcessJs,
-            "[Assets] Download CDN" => Command::DownloadCdn,
-            
             "[Cronjobs] Interactive Manager" => Command::CronjobsInteractive,
             "[Cronjobs] List Jobs" => Command::CronjobsList,
             "[Cronjobs] Add Job" => {

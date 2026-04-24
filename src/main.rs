@@ -74,7 +74,6 @@ fn main() {
                                     commands::Command::NewProject(ref name, _) => name.clone(),
                                     _ => "unknown".to_string(),
                                 },
-                                assets: toml::Value::Table(toml::value::Table::new()),
                                 project_dir: std::env::current_dir().unwrap_or_default(),
                                 show_compiler_warnings: true,
                                 last_modified: std::time::SystemTime::now(),

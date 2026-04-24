@@ -24,14 +24,6 @@ pub enum Command {
     GenerateStructs,
     GenerateModels,
 
-    // Asset commands
-    // Locale commands removed
-    TranspileScss,
-    MinifyCss,
-    PublishCss,
-    ProcessJs,
-    DownloadCdn,
-
     // Server commands
     RunDevServer,
     RunProdServer,
@@ -130,15 +122,9 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         }
         Some("schema") => Some(Command::GenerateSchema),
 
-        // Asset/code generation
+        // Code generation
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("structs") => Some(Command::GenerateStructs),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("models") => Some(Command::GenerateModels),
-        // Locale commands removed
-        Some("scss") => Some(Command::TranspileScss),
-        Some("css") => Some(Command::MinifyCss),
-        Some("publish-css") => Some(Command::PublishCss),
-        Some("js") => Some(Command::ProcessJs),
-        Some("cdn") => Some(Command::DownloadCdn),
 
         // Help
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
@@ -201,15 +187,9 @@ pub fn show_help() {
     println!("  seed [file]          Run database seeds (all or specific file)");
     println!("  schema               Generate database schema");
     println!();
-    println!("ASSET MANAGEMENT:");
+    println!("CODE GENERATION:");
     println!("  gen structs          Generate structs from schema");
     println!("  gen models           Generate model implementations");
-    // Locale commands removed from help
-    println!("  scss                 Transpile SCSS files");
-    println!("  css                  Minify CSS files");
-    println!("  publish-css          Copy CSS files from src/assets/css to public/css with optional minification");
-    println!("  js                   Process JS files");
-    println!("  cdn                  Download assets (git clone for Materialize, CDN for others)");
     println!();
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
@@ -285,12 +265,12 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             println!("{} Initializing project...", style("🚀").cyan());
 
             // Create a progress tracker for the overall process with known steps
-            let total_steps = 7; // Dependencies, DB, Schema, Code Gen, Assets, SCSS/CSS/JS, Sparks
+            let total_steps = 4; // Dependencies, DB, Schema, Code Gen
             let mut main_progress = logger::create_progress(Some(total_steps));
 
             // 1. Ensure dependencies are installed - less verbose messaging
             if is_verbose {
-                main_progress.set_message("Project initialization (1/7): Setting up dependencies");
+                main_progress.set_message("Project initialization (1/4): Setting up dependencies");
             }
             // We don't need to explicitly check for diesel anymore, as it will be checked when needed
             // dep_manager.ensure_installed(&["diesel"], true)?;
@@ -298,7 +278,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
             // 2. Database operations - standardize primary step messages
             if is_verbose {
-                main_progress.set_message("Project initialization (2/7): Setting up database");
+                main_progress.set_message("Project initialization (2/4): Setting up database");
             }
 
             // Run migrations - make sure they're executed fully
@@ -319,7 +299,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
             // 3. Generate schema - use the explicit force function to avoid any environment issues
             if is_verbose {
-                main_progress.set_message("Project initialization (3/7): Generating database schema");
+                main_progress.set_message("Project initialization (3/4): Generating database schema");
             } else {
                 main_progress.set_message("Generating database schema...");
             }
@@ -334,7 +314,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
             // 4. Code generation - ensure complete generation of all models and structs
             if is_verbose {
-                main_progress.set_message("Project initialization (4/7): Generating code files");
+                main_progress.set_message("Project initialization (4/4): Generating code files");
             }
 
             // Retry struct generation if needed to ensure complete success
@@ -358,46 +338,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                     main_progress.warning("Model generation issues persisted - may be normal for empty schemas")?;
                 }
             }
-            main_progress.inc(1);
-
-            // 5. Download assets
-            if is_verbose {
-                main_progress.set_message("Project initialization (5/7): Downloading assets");
-            } else {
-                main_progress.set_message("Downloading assets...");
-            }
-
-            let assets_result = crate::assets::download_assets(config);
-            if let Err(e) = &assets_result {
-                main_progress.warning(&format!("Some asset downloads failed: {}", e))?;
-            }
-            main_progress.inc(1);
-
-            // 6. Process assets (SCSS, CSS, JS)
-            if is_verbose {
-                main_progress.set_message("Project initialization (6/7): Processing asset files");
-            } else {
-                main_progress.set_message("Processing asset files...");
-            }
-
-            // Process SCSS files - these are part of final step, don't increment yet
-            let scss_result = crate::assets::transpile_all_scss(config);
-            if let Err(e) = &scss_result {
-                main_progress.warning(&format!("SCSS processing error: {}", e))?;
-            }
-
-            // Process CSS files
-            let css_result = crate::assets::publish_css(config);
-            if let Err(e) = &css_result {
-                main_progress.warning(&format!("CSS publishing error: {}", e))?;
-            }
-
-            // Process JS files
-            let js_result = crate::assets::process_js(config);
-            if let Err(e) = &js_result {
-                main_progress.warning(&format!("JS processing error: {}", e))?;
-            }
-
             main_progress.inc(1);
 
             // CRITICAL: Force regenerate schema from main DATABASE_URL
@@ -504,7 +444,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        // Locale commands removed
         Command::RefreshApp => {
             // App refresh involves multiple steps
             let mut progress = logger::create_progress(None);
@@ -538,33 +477,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             }
 
             Ok(())
-        }
-
-        Command::TranspileScss => {
-            // Use the built-in Rust sass-rs crate, no external dependency needed
-            crate::assets::transpile_all_scss(config)
-        }
-
-        Command::MinifyCss => crate::assets::minify_css_files(config),
-
-        Command::PublishCss => crate::assets::publish_css(config),
-
-        Command::ProcessJs => crate::assets::process_js(config),
-
-        Command::DownloadCdn => {
-            // The download_assets_async function now handles environment mode setting internally
-            // to ensure consistent behavior between CLI and dashboard modes
-            match crate::assets::download_assets(config) {
-                Ok(_) => {
-                    // Success already logged by the function
-                    Ok(())
-                }
-                Err(e) => {
-                    // Error handling - the function will already log specific errors
-                    logger::error(&format!("Failed to download CDN assets: {}", e))?;
-                    Err(e)
-                }
-            }
         }
 
         Command::RunDevServer => {

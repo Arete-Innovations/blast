@@ -388,13 +388,9 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
     relationship_methods
 }
 
-fn write_model_file(config: &Config, table: &TableInfo, relationships: &[RelationshipInfo]) -> bool {
-    let output_dir = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("models_dir"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("src/models/generated");
+fn write_model_file(_config: &Config, table: &TableInfo, relationships: &[RelationshipInfo]) -> bool {
+    // TODO(blueprint): read models_dir from Blueprint IR.
+    let output_dir = "src/models/generated";
 
     // Create the output directory if it doesn't exist
     if let Err(e) = fs::create_dir_all(output_dir) {
@@ -511,17 +507,13 @@ impl {1} {{
     }
 }
 
-fn update_mod_file(config: &Config, processed_tables: &[String]) -> bool {
+fn update_mod_file(_config: &Config, processed_tables: &[String]) -> bool {
     if processed_tables.is_empty() {
         return true; // Nothing to do, but not an error
     }
 
-    let output_dir = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("models_dir"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("src/models/generated");
+    // TODO(blueprint): read models_dir from Blueprint IR.
+    let output_dir = "src/models/generated";
 
     let mod_file_path = Path::new(output_dir).join("mod.rs");
     let mut mod_file_content = fs::read_to_string(&mod_file_path).unwrap_or_default();
@@ -553,13 +545,8 @@ pub fn generate(config: &Config) -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating enhanced model implementations...");
 
-    // Get schema file path
-    let schema_path = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("schema_file"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("src/database/schema.rs");
+    // TODO(blueprint): read schema_file + ignore list from Blueprint IR.
+    let schema_path = "src/database/schema.rs";
 
     // Check if schema file exists
     if !Path::new(schema_path).exists() {
@@ -567,16 +554,7 @@ pub fn generate(config: &Config) -> bool {
         return false;
     }
 
-    // Get the ignored models list from Catalyst.toml
-    // First check the proper ignore path in [codegen.models]
-    let ignore_list: Vec<String> = config
-        .assets
-        .get("codegen")
-        .and_then(|codegen| codegen.get("models"))
-        .and_then(|s| s.get("ignore"))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-        .unwrap_or_default();
+    let ignore_list: Vec<String> = Vec::new();
 
     // Load detailed schema information
     let tables = match load_schema_table_info(schema_path) {
