@@ -1,4 +1,5 @@
 use crate::configs::Config;
+use crate::error::{BlastError, BlastResult};
 use crate::logger;
 use chrono::{Local, TimeZone, Utc};
 use diesel::prelude::*;
@@ -7,10 +8,9 @@ use diesel::sql_types::*;
 use diesel::{PgConnection, RunQueryDsl};
 use dotenv::dotenv;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::Path;
 
-// Structure to hold cronjob information for database queries
 #[derive(Debug, QueryableByName)]
 pub struct CronjobInfo {
     #[diesel(sql_type = Integer)]
@@ -25,21 +25,18 @@ pub struct CronjobInfo {
     pub last_run: Option<i64>,
 }
 
-// Boolean result type for database queries
 #[derive(Debug, QueryableByName)]
 pub struct BoolResult {
     #[diesel(sql_type = Bool)]
     pub exists: bool,
 }
 
-// String result type for database queries
 #[derive(Debug, QueryableByName)]
 pub struct StringResult {
     #[diesel(sql_type = Text)]
     pub result: String,
 }
 
-// Data for display in the CLI
 pub struct CronjobDisplay {
     pub id: i32,
     pub name: String,
@@ -49,12 +46,10 @@ pub struct CronjobDisplay {
     pub next_run: String,
 }
 
-// Ensure cronjob directories exist
-fn ensure_cronjob_dirs(config: &Config) -> io::Result<()> {
+fn ensure_cronjob_dirs(config: &Config) -> BlastResult<()> {
     let cronjob_dir = Path::new(&config.project_dir).join("storage").join("cronjobs");
     fs::create_dir_all(&cronjob_dir)?;
 
-    // Create log files if they don't exist
     let execution_log = cronjob_dir.join("execution.log");
     let errors_log = cronjob_dir.join("errors.log");
 
@@ -71,7 +66,6 @@ fn ensure_cronjob_dirs(config: &Config) -> io::Result<()> {
     Ok(())
 }
 
-// Format duration for display
 fn format_duration(seconds: i32) -> String {
     if seconds < 60 {
         format!("{}s", seconds)
@@ -88,21 +82,16 @@ fn format_duration(seconds: i32) -> String {
     }
 }
 
-// Format timestamp for display
 fn format_timestamp(timestamp: Option<i64>) -> String {
     match timestamp {
-        Some(ts) => {
-            if let Some(dt) = Local.timestamp_opt(ts, 0).single() {
-                dt.format("%Y-%m-%d %H:%M:%S").to_string()
-            } else {
-                "Invalid timestamp".to_string()
-            }
-        }
+        Some(ts) => match Local.timestamp_opt(ts, 0).single() {
+            Some(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+            None => "Invalid timestamp".to_string(),
+        },
         None => "Never".to_string(),
     }
 }
 
-// Calculate next run time
 fn calc_next_run(last_run: Option<i64>, timer: i32) -> String {
     match last_run {
         Some(ts) => {
@@ -120,55 +109,36 @@ fn calc_next_run(last_run: Option<i64>, timer: i32) -> String {
     }
 }
 
-// Log to the cronjob execution log
-fn log_to_execution(config: &Config, message: &str) -> Result<(), String> {
+fn log_to_execution(config: &Config, message: &str) -> BlastResult<()> {
     let log_path = Path::new(&config.project_dir).join("storage").join("cronjobs").join("execution.log");
 
-    let mut file = OpenOptions::new().create(true).append(true).open(log_path).map_err(|e| format!("Failed to open execution log: {}", e))?;
+    let mut file = OpenOptions::new().create(true).append(true).open(log_path)?;
 
     let timestamp = Local::now().format("[%Y-%m-%d %H:%M:%S]");
-    writeln!(file, "{} {}", timestamp, message).map_err(|e| format!("Failed to write to execution log: {}", e))?;
+    writeln!(file, "{} {}", timestamp, message)?;
 
     Ok(())
 }
 
-// Log to the cronjob errors log
-#[allow(dead_code)]
-fn log_to_errors(config: &Config, message: &str) -> Result<(), String> {
-    let log_path = Path::new(&config.project_dir).join("storage").join("cronjobs").join("errors.log");
+fn establish_connection(config: &Config) -> BlastResult<PgConnection> {
+    let current_dir = std::env::current_dir()?;
+    std::env::set_current_dir(&config.project_dir)?;
 
-    let mut file = OpenOptions::new().create(true).append(true).open(log_path).map_err(|e| format!("Failed to open errors log: {}", e))?;
+    if let Err(e) = dotenv() {
+        drop(e);
+    }
 
-    let timestamp = Local::now().format("[%Y-%m-%d %H:%M:%S]");
-    writeln!(file, "{} {}", timestamp, message).map_err(|e| format!("Failed to write to errors log: {}", e))?;
+    let database_url = std::env::var("DATABASE_URL")
+        .map_err(|_e| BlastError::Config("DATABASE_URL not found in .env".to_string()))?;
 
-    Ok(())
+    std::env::set_current_dir(current_dir)?;
+
+    Ok(PgConnection::establish(&database_url)?)
 }
 
-// Establish database connection using connection string from .env
-fn establish_connection(config: &Config) -> Result<PgConnection, String> {
-    // Change to the project directory to ensure we pick up the correct .env file
-    let current_dir = std::env::current_dir().map_err(|e| format!("Failed to get current directory: {}", e))?;
-    std::env::set_current_dir(&config.project_dir).map_err(|e| format!("Failed to change to project directory: {}", e))?;
-
-    // Load .env file
-    dotenv().ok();
-
-    // Get database URL
-    let database_url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not found in .env file".to_string())?;
-
-    // Restore original directory
-    std::env::set_current_dir(current_dir).map_err(|e| format!("Failed to restore directory: {}", e))?;
-
-    // Connect to database
-    PgConnection::establish(&database_url).map_err(|e| format!("Error connecting to database: {}", e))
-}
-
-// Check if cronjobs table exists
-fn check_cronjobs_table(conn: &mut PgConnection) -> Result<bool, String> {
+fn check_cronjobs_table(conn: &mut PgConnection) -> BlastResult<bool> {
     let results = sql_query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'cronjobs') as exists")
-        .load::<BoolResult>(conn)
-        .map_err(|e| format!("Failed to check if cronjobs table exists: {}", e))?;
+        .load::<BoolResult>(conn)?;
 
     if results.is_empty() {
         Ok(false)
@@ -177,11 +147,8 @@ fn check_cronjobs_table(conn: &mut PgConnection) -> Result<bool, String> {
     }
 }
 
-// Ensure cronjobs table exists (create if needed)
-fn ensure_cronjobs_table(conn: &mut PgConnection) -> Result<(), String> {
-    // Check if table exists first
+fn ensure_cronjobs_table(conn: &mut PgConnection) -> BlastResult<()> {
     if !check_cronjobs_table(conn)? {
-        // Create table without IF NOT EXISTS since we already checked
         sql_query(
             r#"
             CREATE TABLE cronjobs (
@@ -191,51 +158,42 @@ fn ensure_cronjobs_table(conn: &mut PgConnection) -> Result<(), String> {
                 status VARCHAR NOT NULL DEFAULT 'active',
                 last_run BIGINT
             );
-            
+
             CREATE INDEX idx_cronjobs_name ON cronjobs(name);
         "#,
         )
-        .execute(conn)
-        .map_err(|e| format!("Failed to create cronjobs table: {}", e))?;
+        .execute(conn)?;
 
-        // Add example cronjobs (without ON CONFLICT since the table is new)
         sql_query(
             r#"
-            INSERT INTO cronjobs (name, timer, status) 
-            VALUES 
+            INSERT INTO cronjobs (name, timer, status)
+            VALUES
                 ('cleanup_temp_files', 3600, 'active'),
                 ('send_digest_emails', 86400, 'active'),
                 ('update_search_index', 43200, 'paused');
         "#,
         )
-        .execute(conn)
-        .map_err(|e| format!("Failed to insert example cronjobs: {}", e))?;
+        .execute(conn)?;
     }
 
     Ok(())
 }
 
-// List all cronjobs with their status
-pub fn list_cronjobs(config: &Config) -> Result<(), String> {
-    ensure_cronjob_dirs(config).map_err(|e| format!("Failed to create cronjob directories: {}", e))?;
+pub fn list_cronjobs(config: &Config) -> BlastResult<()> {
+    ensure_cronjob_dirs(config)?;
 
-    // Connect to database
     let mut conn = establish_connection(config)?;
 
-    // Ensure cronjobs table exists
     ensure_cronjobs_table(&mut conn)?;
 
-    // Fetch cronjobs
     let jobs = sql_query("SELECT id, name, timer, status, last_run FROM cronjobs ORDER BY id")
-        .load::<CronjobInfo>(&mut conn)
-        .map_err(|e| format!("Failed to load cronjobs: {}", e))?;
+        .load::<CronjobInfo>(&mut conn)?;
 
     if jobs.is_empty() {
         println!("No scheduled jobs found.");
         return Ok(());
     }
 
-    // Format output
     println!("╔═════╦════════════════════════╦══════════════╦══════════════╦═══════════════════════╦═══════════════════════╗");
     println!("║ ID  ║ Name                   ║ Interval     ║ Status       ║ Last Run              ║ Next Run              ║");
     println!("╠═════╬════════════════════════╬══════════════╬══════════════╬═══════════════════════╬═══════════════════════╣");
@@ -250,16 +208,14 @@ pub fn list_cronjobs(config: &Config) -> Result<(), String> {
             next_run: calc_next_run(job.last_run, job.timer),
         };
 
-        // Create colorized status while preserving padding
         let status_colorized = match display.status.as_str() {
-            "active" => format!("\x1b[32m{}\x1b[0m", display.status),    // Green for active
-            "paused" => format!("\x1b[33m{}\x1b[0m", display.status),    // Yellow for paused
-            "completed" => format!("\x1b[34m{}\x1b[0m", display.status), // Blue for completed
-            "failed" => format!("\x1b[31m{}\x1b[0m", display.status),    // Red for failed
-            _ => display.status.clone(),
+            "active" => format!("\x1b[32m{}\x1b[0m", display.status),
+            "paused" => format!("\x1b[33m{}\x1b[0m", display.status),
+            "completed" => format!("\x1b[34m{}\x1b[0m", display.status),
+            "failed" => format!("\x1b[31m{}\x1b[0m", display.status),
+            other => other.to_string(),
         };
 
-        // Calculate padding needed for status column
         let status_visible_len = display.status.len();
         let padding_needed = if status_visible_len < 12 { 12 - status_visible_len } else { 0 };
         let status_padding = " ".repeat(padding_needed);
@@ -275,31 +231,23 @@ pub fn list_cronjobs(config: &Config) -> Result<(), String> {
     Ok(())
 }
 
-// Add a new cronjob
-pub fn add_cronjob(config: &Config, name: &str, interval: i32) -> Result<(), String> {
-    ensure_cronjob_dirs(config).map_err(|e| format!("Failed to create cronjob directories: {}", e))?;
+pub fn add_cronjob(config: &Config, name: &str, interval: i32) -> BlastResult<()> {
+    ensure_cronjob_dirs(config)?;
 
-    // Connect to database
     let mut conn = establish_connection(config)?;
 
-    // Ensure cronjobs table exists
     ensure_cronjobs_table(&mut conn)?;
 
-    // Check if job with this name already exists
     let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM cronjobs WHERE name = '{}') as exists", name))
-        .load::<BoolResult>(&mut conn)
-        .map_err(|e| format!("Database error: {}", e))?;
+        .load::<BoolResult>(&mut conn)?;
 
     if !exists_results.is_empty() && exists_results[0].exists {
-        return Err(format!("A job with name '{}' already exists", name));
+        return Err(BlastError::Cronjob(format!("a job with name '{}' already exists", name)));
     }
 
-    // Insert new cronjob
     sql_query(&format!("INSERT INTO cronjobs (name, timer, status) VALUES ('{}', {}, 'active')", name, interval))
-        .execute(&mut conn)
-        .map_err(|e| format!("Failed to add cronjob: {}", e))?;
+        .execute(&mut conn)?;
 
-    // Log action
     log_to_execution(config, &format!("Added new job '{}' with interval of {}", name, format_duration(interval)))?;
 
     logger::success(&format!("Added new cronjob '{}' with interval of {}", name, format_duration(interval)))?;
@@ -307,56 +255,43 @@ pub fn add_cronjob(config: &Config, name: &str, interval: i32) -> Result<(), Str
     Ok(())
 }
 
-// Toggle a cronjob's active status
-pub fn toggle_cronjob(config: &Config, id: i32) -> Result<(), String> {
-    ensure_cronjob_dirs(config).map_err(|e| format!("Failed to create cronjob directories: {}", e))?;
+pub fn toggle_cronjob(config: &Config, id: i32) -> BlastResult<()> {
+    ensure_cronjob_dirs(config)?;
 
-    // Connect to database
     let mut conn = establish_connection(config)?;
 
-    // Ensure cronjobs table exists
     ensure_cronjobs_table(&mut conn)?;
 
-    // Check if the job exists
     let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM cronjobs WHERE id = {}) as exists", id))
-        .load::<BoolResult>(&mut conn)
-        .map_err(|e| format!("Database error: {}", e))?;
+        .load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
-        return Err(format!("No job found with ID {}", id));
+        return Err(BlastError::Cronjob(format!("no job found with ID {}", id)));
     }
 
-    // Get current status
     let status_results = sql_query(&format!("SELECT status as result FROM cronjobs WHERE id = {}", id))
-        .load::<StringResult>(&mut conn)
-        .map_err(|e| format!("Database error: {}", e))?;
+        .load::<StringResult>(&mut conn)?;
 
     if status_results.is_empty() {
-        return Err(format!("Failed to get status for job ID {}", id));
+        return Err(BlastError::Cronjob(format!("failed to get status for job ID {}", id)));
     }
 
     let current_status = &status_results[0].result;
 
-    // Determine new status
     let new_status = if current_status == "active" { "paused" } else { "active" };
 
-    // Update status
     sql_query(&format!("UPDATE cronjobs SET status = '{}' WHERE id = {}", new_status, id))
-        .execute(&mut conn)
-        .map_err(|e| format!("Failed to update job status: {}", e))?;
+        .execute(&mut conn)?;
 
-    // Get job name for logging
     let name_results = sql_query(&format!("SELECT name as result FROM cronjobs WHERE id = {}", id))
-        .load::<StringResult>(&mut conn)
-        .map_err(|e| format!("Database error: {}", e))?;
+        .load::<StringResult>(&mut conn)?;
 
     if name_results.is_empty() {
-        return Err(format!("Failed to get name for job ID {}", id));
+        return Err(BlastError::Cronjob(format!("failed to get name for job ID {}", id)));
     }
 
     let job_name = &name_results[0].result;
 
-    // Log action
     log_to_execution(config, &format!("Job '{}' (ID: {}) status changed from '{}' to '{}'", job_name, id, current_status, new_status))?;
 
     logger::success(&format!("Job '{}' is now {}", job_name, new_status))?;
@@ -364,46 +299,35 @@ pub fn toggle_cronjob(config: &Config, id: i32) -> Result<(), String> {
     Ok(())
 }
 
-// Remove a cronjob
-pub fn remove_cronjob(config: &Config, id: i32) -> Result<(), String> {
-    ensure_cronjob_dirs(config).map_err(|e| format!("Failed to create cronjob directories: {}", e))?;
+pub fn remove_cronjob(config: &Config, id: i32) -> BlastResult<()> {
+    ensure_cronjob_dirs(config)?;
 
-    // Connect to database
     let mut conn = establish_connection(config)?;
 
-    // Ensure cronjobs table exists
     ensure_cronjobs_table(&mut conn)?;
 
-    // Check if the job exists
     let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM cronjobs WHERE id = {}) as exists", id))
-        .load::<BoolResult>(&mut conn)
-        .map_err(|e| format!("Database error: {}", e))?;
+        .load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
-        return Err(format!("No job found with ID {}", id));
+        return Err(BlastError::Cronjob(format!("no job found with ID {}", id)));
     }
 
-    // Get job name for logging
     let name_results = sql_query(&format!("SELECT name as result FROM cronjobs WHERE id = {}", id))
-        .load::<StringResult>(&mut conn)
-        .map_err(|e| format!("Database error: {}", e))?;
+        .load::<StringResult>(&mut conn)?;
 
     if name_results.is_empty() {
-        return Err(format!("Failed to get name for job ID {}", id));
+        return Err(BlastError::Cronjob(format!("failed to get name for job ID {}", id)));
     }
 
     let job_name = &name_results[0].result;
 
-    // Delete job
     sql_query(&format!("DELETE FROM cronjobs WHERE id = {}", id))
-        .execute(&mut conn)
-        .map_err(|e| format!("Failed to delete job: {}", e))?;
+        .execute(&mut conn)?;
 
-    // Log action
     log_to_execution(config, &format!("Removed job '{}' (ID: {})", job_name, id))?;
 
     logger::success(&format!("Removed cronjob '{}' (ID: {})", job_name, id))?;
 
     Ok(())
 }
-

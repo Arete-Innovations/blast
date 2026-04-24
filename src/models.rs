@@ -1,67 +1,78 @@
 use crate::configs::Config;
+use crate::error::BlastResult;
 use crate::progress::ProgressManager;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
-use std::io;
 use std::path::Path;
 
-// Structure to hold column information
 #[derive(Debug, Clone)]
 struct ColumnInfo {
     name: String,
     column_type: String,
-    #[allow(dead_code)]
-    nullable: bool,
 }
 
-// Structure to hold relationships
 #[derive(Debug, Clone)]
 struct RelationshipInfo {
     source_table: String,
     source_column: String,
     target_table: String,
-    #[allow(dead_code)]
-    target_column: String,
 }
 
-// Structure to hold table information
 #[derive(Debug)]
 struct TableInfo {
     name: String,
     columns: Vec<ColumnInfo>,
 }
 
-fn load_schema_table_info(schema_path: &str) -> io::Result<Vec<TableInfo>> {
+fn load_schema_table_info(schema_path: &str) -> BlastResult<Vec<TableInfo>> {
     let content = fs::read_to_string(schema_path)?;
 
-    // Extract table declarations
-    let table_re = Regex::new(r"table!\s*\{\s*([A-Za-z0-9_]+)\s*\([^)]+\)\s*\{([^}]+)\}").unwrap();
-    let column_re = Regex::new(r"([A-Za-z0-9_]+)\s*->\s*([^,]+)").unwrap();
-    let nullable_re = Regex::new(r"Nullable<([^>]+)>").unwrap();
+    let table_re = Regex::new(r"table!\s*\{\s*([A-Za-z0-9_]+)\s*\([^)]+\)\s*\{([^}]+)\}")?;
+    let column_re = Regex::new(r"([A-Za-z0-9_]+)\s*->\s*([^,]+)")?;
+    let nullable_re = Regex::new(r"Nullable<([^>]+)>")?;
 
     let mut tables = Vec::new();
 
     for table_cap in table_re.captures_iter(&content) {
-        let table_name = table_cap.get(1).unwrap().as_str().to_string();
-        let columns_section = table_cap.get(2).unwrap().as_str();
+        let table_name = table_cap
+            .get(1)
+            .ok_or_else(|| crate::error::BlastError::Invalid("table regex group 1 missing".into()))?
+            .as_str()
+            .to_string();
+        let columns_section = table_cap
+            .get(2)
+            .ok_or_else(|| crate::error::BlastError::Invalid("table regex group 2 missing".into()))?
+            .as_str();
 
         let mut columns = Vec::new();
 
         for column_cap in column_re.captures_iter(columns_section) {
-            let column_name = column_cap.get(1).unwrap().as_str().to_string();
-            let column_type = column_cap.get(2).unwrap().as_str().trim().to_string();
+            let column_name = column_cap
+                .get(1)
+                .ok_or_else(|| crate::error::BlastError::Invalid("column regex group 1 missing".into()))?
+                .as_str()
+                .to_string();
+            let column_type = column_cap
+                .get(2)
+                .ok_or_else(|| crate::error::BlastError::Invalid("column regex group 2 missing".into()))?
+                .as_str()
+                .trim()
+                .to_string();
 
-            // Check if column is nullable
-            let nullable = column_type.contains("Nullable");
+            let is_nullable = column_type.contains("Nullable");
 
-            // Extract the inner type if nullable
-            let clean_type = if nullable {
-                if let Some(inner_cap) = nullable_re.captures(&column_type) {
-                    inner_cap.get(1).unwrap().as_str().trim().to_string()
-                } else {
-                    column_type.clone()
-                }
+            let clean_type = if is_nullable {
+                let Some(inner_cap) = nullable_re.captures(&column_type) else {
+                    columns.push(ColumnInfo { name: column_name, column_type });
+                    continue;
+                };
+                inner_cap
+                    .get(1)
+                    .ok_or_else(|| crate::error::BlastError::Invalid("nullable regex group 1 missing".into()))?
+                    .as_str()
+                    .trim()
+                    .to_string()
             } else {
                 column_type.clone()
             };
@@ -69,7 +80,6 @@ fn load_schema_table_info(schema_path: &str) -> io::Result<Vec<TableInfo>> {
             columns.push(ColumnInfo {
                 name: column_name,
                 column_type: clean_type,
-                nullable,
             });
         }
 
@@ -77,33 +87,37 @@ fn load_schema_table_info(schema_path: &str) -> io::Result<Vec<TableInfo>> {
     }
 
     if tables.is_empty() {
-        crate::logger::warning(&format!("No tables found in schema file for models at {}", schema_path)).unwrap_or_default();
+        if let Err(e) = crate::logger::warning(&format!("No tables found in schema file for models at {}", schema_path)) {
+            eprintln!("logger warning failed: {}", e);
+        }
     }
 
     Ok(tables)
 }
 
-#[allow(dead_code)]
-fn load_schema_table_names(schema_path: &str) -> io::Result<Vec<String>> {
-    let tables = load_schema_table_info(schema_path)?;
-    Ok(tables.into_iter().map(|t| t.name).collect())
-}
-
-// Parse schema for relationships (joinable! macros)
-fn load_schema_relationships(schema_path: &str) -> io::Result<Vec<RelationshipInfo>> {
+fn load_schema_relationships(schema_path: &str) -> BlastResult<Vec<RelationshipInfo>> {
     let content = fs::read_to_string(schema_path)?;
 
-    // We'll use this to track which relationships we've already detected
-    // to prevent duplicates from different detection methods
     let mut relationship_map: HashMap<(String, String), RelationshipInfo> = HashMap::new();
 
-    // Match joinable! declaration
-    let joinable_re = Regex::new(r"joinable!\s*\(\s*([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*\(\s*([A-Za-z0-9_]+)\s*\)\s*\)").unwrap();
+    let joinable_re = Regex::new(r"joinable!\s*\(\s*([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*\(\s*([A-Za-z0-9_]+)\s*\)\s*\)")?;
 
     for join_cap in joinable_re.captures_iter(&content) {
-        let source_table = join_cap.get(1).unwrap().as_str().to_string();
-        let target_table = join_cap.get(2).unwrap().as_str().to_string();
-        let source_column = join_cap.get(3).unwrap().as_str().to_string();
+        let source_table = join_cap
+            .get(1)
+            .ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 1 missing".into()))?
+            .as_str()
+            .to_string();
+        let target_table = join_cap
+            .get(2)
+            .ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 2 missing".into()))?
+            .as_str()
+            .to_string();
+        let source_column = join_cap
+            .get(3)
+            .ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 3 missing".into()))?
+            .as_str()
+            .to_string();
 
         let key = (source_table.clone(), source_column.clone());
         relationship_map.insert(
@@ -112,22 +126,18 @@ fn load_schema_relationships(schema_path: &str) -> io::Result<Vec<RelationshipIn
                 source_table,
                 source_column,
                 target_table,
-                target_column: "id".to_string(), // Default assumption for joinable! macros
             },
         );
     }
 
-    // Also check for columns with _id suffix as potential foreign keys
     let tables = load_schema_table_info(schema_path)?;
     let table_map: HashMap<String, TableInfo> = tables.into_iter().map(|t| (t.name.clone(), t)).collect();
 
     for (table_name, table_info) in &table_map {
         for column in &table_info.columns {
             if column.name.ends_with("_id") && column.name != "id" {
-                // Extract potential target table name from column
                 let potential_table = column.name.trim_end_matches("_id");
 
-                // Check if this table exists
                 if table_map.contains_key(potential_table) || table_map.contains_key(&format!("{}s", potential_table)) {
                     let target_table = if table_map.contains_key(potential_table) {
                         potential_table.to_string()
@@ -135,7 +145,6 @@ fn load_schema_relationships(schema_path: &str) -> io::Result<Vec<RelationshipIn
                         format!("{}s", potential_table)
                     };
 
-                    // Only add if not already found in joinable! macros
                     let key = (table_name.clone(), column.name.clone());
                     if !relationship_map.contains_key(&key) {
                         relationship_map.insert(
@@ -144,7 +153,6 @@ fn load_schema_relationships(schema_path: &str) -> io::Result<Vec<RelationshipIn
                                 source_table: table_name.clone(),
                                 source_column: column.name.clone(),
                                 target_table,
-                                target_column: "id".to_string(),
                             },
                         );
                     }
@@ -153,7 +161,6 @@ fn load_schema_relationships(schema_path: &str) -> io::Result<Vec<RelationshipIn
         }
     }
 
-    // Convert the HashMap values to a Vec
     let relationships: Vec<RelationshipInfo> = relationship_map.into_values().collect();
 
     Ok(relationships)
@@ -163,10 +170,10 @@ fn to_pascal(s: &str) -> String {
     s.split('_')
         .map(|w| {
             let mut chars = w.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
-            }
+            let Some(f) = chars.next() else {
+                return String::new();
+            };
+            f.to_uppercase().collect::<String>() + chars.as_str()
         })
         .collect()
 }
@@ -179,7 +186,6 @@ fn singular(table_name: &str) -> String {
     }
 }
 
-// Generate methods for boolean fields
 fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
     let mut bool_methods = String::new();
 
@@ -187,7 +193,6 @@ fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
         if column.column_type == "Bool" {
             let column_name = &column.name;
 
-            // Generate is_VALUE getter
             bool_methods.push_str(&format!(
                 r#"
     pub async fn is_{0}(&self, tenant_name: &str) -> bool {{
@@ -198,13 +203,13 @@ fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
         let current_timestamp = Utc::now().timestamp();
         let item_id = self.id;
-        
+
         let updated = diesel::update({1}_dsl::{2}.filter({1}_dsl::id.eq(item_id)))
             .set(({1}_dsl::{0}.eq(value), {1}_dsl::updated_at.eq(current_timestamp)))
             .get_result::<Self>(&mut conn)
             .await
             .map_err(|e| MeltDown::from(e).with_context("operation", "set_{0}").with_context("id", item_id.to_string()))?;
-        
+
         *self = updated.clone();
         Ok(updated)
     }}
@@ -225,26 +230,23 @@ fn generate_bool_methods(table: &TableInfo, singular_name: &str) -> String {
     bool_methods
 }
 
-// Generate methods for timestamp fields
 fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String {
     let mut timestamp_methods = String::new();
 
     let created_at_column = table.columns.iter().find(|c| c.name == "created_at");
     let updated_at_column = table.columns.iter().find(|c| c.name == "updated_at");
 
-    let has_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8" || c.column_type == "Timestamp");
-    let has_updated_at = updated_at_column.map_or(false, |c| c.column_type == "Int8" || c.column_type == "Timestamp");
-
-    // Only generate timestamp-related methods if the column is Int8 (bigint in SQL, i64 in Rust)
-    let has_int8_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8");
-    let has_int8_updated_at = updated_at_column.map_or(false, |c| c.column_type == "Int8");
+    let has_created_at = matches!(created_at_column, Some(c) if c.column_type == "Int8" || c.column_type == "Timestamp");
+    let has_updated_at = matches!(updated_at_column, Some(c) if c.column_type == "Int8" || c.column_type == "Timestamp");
+    let has_int8_created_at = matches!(created_at_column, Some(c) if c.column_type == "Int8");
+    let has_int8_updated_at = matches!(updated_at_column, Some(c) if c.column_type == "Int8");
 
     if has_created_at && has_int8_created_at {
         timestamp_methods.push_str(&format!(
             r#"
     pub async fn created_after(timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.gt(timestamp))
             .order({0}_dsl::created_at.desc())
@@ -255,7 +257,7 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
 
     pub async fn created_before(timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.lt(timestamp))
             .order({0}_dsl::created_at.desc())
@@ -266,7 +268,7 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
 
     pub async fn created_between(start: i64, end: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {0}_dsl::{1}
             .filter({0}_dsl::created_at.ge(start).and({0}_dsl::created_at.le(end)))
             .order({0}_dsl::created_at.desc())
@@ -277,7 +279,7 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
 
     pub async fn recent(limit: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {0}_dsl::{1}
             .order({0}_dsl::created_at.desc())
             .limit(limit)
@@ -295,7 +297,7 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
             r#"
     pub async fn updated_after(timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {0}_dsl::{1}
             .filter({0}_dsl::updated_at.gt(timestamp))
             .order({0}_dsl::updated_at.desc())
@@ -306,7 +308,7 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
 
     pub async fn recently_updated(limit: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {0}_dsl::{1}
             .order({0}_dsl::updated_at.desc())
             .limit(limit)
@@ -322,26 +324,22 @@ fn generate_timestamp_methods(table: &TableInfo, singular_name: &str) -> String 
     timestamp_methods
 }
 
-// Generate methods for relationships
 fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_name: &str, relationships: &[RelationshipInfo]) -> String {
     let mut relationship_methods = String::new();
 
-    // Check if created_at column exists and is Int8 (bigint)
     let created_at_column = table.columns.iter().find(|c| c.name == "created_at");
-    let has_int8_created_at = created_at_column.map_or(false, |c| c.column_type == "Int8");
+    let has_int8_created_at = matches!(created_at_column, Some(c) if c.column_type == "Int8");
 
-    // Find relationships where this table is the source
     for relationship in relationships.iter().filter(|r| r.source_table == table_name) {
         let target_table = &relationship.target_table;
         let _target_struct = to_pascal(target_table);
         let foreign_key = &relationship.source_column;
 
-        // Always generate the basic lookup method
         relationship_methods.push_str(&format!(
             r#"
     pub async fn get_by_{0}({0}: i32, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
             .load::<Self>(&mut conn)
@@ -352,13 +350,12 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
             foreign_key, singular_name, &table_name
         ));
 
-        // Only generate timestamp-based methods if created_at is an Int8 (bigint) column
         if has_int8_created_at {
             relationship_methods.push_str(&format!(
                 r#"
     pub async fn get_by_{0}_created_before({0}: i32, timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
             .filter({1}_dsl::created_at.lt(timestamp))
@@ -370,7 +367,7 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
 
     pub async fn get_by_{0}_created_after({0}: i32, timestamp: i64, tenant_name: &str) -> Result<Vec<Self>, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {1}_dsl::{2}
             .filter({1}_dsl::{0}.eq({0}))
             .filter({1}_dsl::created_at.gt(timestamp))
@@ -389,25 +386,22 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
 }
 
 fn write_model_file(_config: &Config, table: &TableInfo, relationships: &[RelationshipInfo]) -> bool {
-    // TODO(blueprint): read models_dir from Blueprint IR.
     let output_dir = "src/models/generated";
 
-    // Create the output directory if it doesn't exist
     if let Err(e) = fs::create_dir_all(output_dir) {
-        crate::logger::error(&format!("Error creating directory {}: {}", output_dir, e)).unwrap_or_default();
+        if let Err(log_err) = crate::logger::error(&format!("Error creating directory {}: {}", output_dir, e)) {
+            eprintln!("logger error failed: {}", log_err);
+        }
         return false;
     }
 
     let table_name = &table.name;
     let struct_name = to_pascal(table_name);
 
-    // Always use the exact table_name from schema for the file_path
     let file_path = format!("{}/{}.rs", output_dir, table_name);
 
-    // For dsl alias, we can still use a singular form for readability
     let singular_name = singular(table_name);
 
-    // Generate specialized methods
     let bool_methods = generate_bool_methods(table, &singular_name);
     let timestamp_methods = generate_timestamp_methods(table, &singular_name);
     let relationship_methods = generate_relationship_methods(table, table_name, &singular_name, relationships);
@@ -445,7 +439,7 @@ impl {1} {{
 
     pub async fn create(new_record: New{1}, tenant_name: &str) -> Result<{1}, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         diesel::insert_into({2}_dsl::{0})
             .values(&new_record)
             .get_result::<{1}>(&mut conn)
@@ -455,7 +449,7 @@ impl {1} {{
 
     pub async fn update_by_id(id: i32, updates: &New{1}, tenant_name: &str) -> Result<{1}, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         diesel::update({2}_dsl::{0}.filter({2}_dsl::id.eq(id)))
             .set(updates)
             .get_result::<{1}>(&mut conn)
@@ -468,15 +462,15 @@ impl {1} {{
 
         conn.transaction::<_, MeltDown, _>(|conn| {{
             async move {{
-                let _ = {2}_dsl::{0}
+                {2}_dsl::{0}
                     .filter({2}_dsl::id.eq(id))
                     .first::<{1}>(conn)
                     .await?;
-                    
+
                 diesel::delete({2}_dsl::{0}.filter({2}_dsl::id.eq(id)))
                     .execute(conn)
                     .await?;
-                    
+
                 Ok(())
             }}
             .scope_boxed()
@@ -487,7 +481,7 @@ impl {1} {{
 
     pub async fn count(tenant_name: &str) -> Result<i64, MeltDown> {{
         let mut conn = establish_connection_with_tenant(tenant_name).await?;
-        
+
         {2}_dsl::{0}
             .count()
             .get_result::<i64>(&mut conn)
@@ -500,7 +494,9 @@ impl {1} {{
     );
 
     if let Err(e) = fs::write(&file_path, model_template) {
-        crate::logger::error(&format!("Error writing model file {}: {}", file_path, e)).unwrap_or_default();
+        if let Err(log_err) = crate::logger::error(&format!("Error writing model file {}: {}", file_path, e)) {
+            eprintln!("logger error failed: {}", log_err);
+        }
         false
     } else {
         true
@@ -509,14 +505,25 @@ impl {1} {{
 
 fn update_mod_file(_config: &Config, processed_tables: &[String]) -> bool {
     if processed_tables.is_empty() {
-        return true; // Nothing to do, but not an error
+        return true;
     }
 
-    // TODO(blueprint): read models_dir from Blueprint IR.
     let output_dir = "src/models/generated";
 
     let mod_file_path = Path::new(output_dir).join("mod.rs");
-    let mut mod_file_content = fs::read_to_string(&mod_file_path).unwrap_or_default();
+    let mut mod_file_content = if mod_file_path.exists() {
+        match fs::read_to_string(&mod_file_path) {
+            Ok(content) => content,
+            Err(e) => {
+                if let Err(log_err) = crate::logger::error(&format!("Error reading mod.rs file: {}", e)) {
+                    eprintln!("logger error failed: {}", log_err);
+                }
+                return false;
+            }
+        }
+    } else {
+        String::new()
+    };
 
     let mut updated = false;
     for table_name in processed_tables {
@@ -533,7 +540,9 @@ fn update_mod_file(_config: &Config, processed_tables: &[String]) -> bool {
 
     if updated {
         if let Err(e) = fs::write(&mod_file_path, mod_file_content) {
-            crate::logger::error(&format!("Error writing mod.rs file: {}", e)).unwrap_or_default();
+            if let Err(log_err) = crate::logger::error(&format!("Error writing mod.rs file: {}", e)) {
+                eprintln!("logger error failed: {}", log_err);
+            }
             return false;
         }
     }
@@ -545,10 +554,8 @@ pub fn generate(config: &Config) -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Generating enhanced model implementations...");
 
-    // TODO(blueprint): read schema_file + ignore list from Blueprint IR.
     let schema_path = "src/database/schema.rs";
 
-    // Check if schema file exists
     if !Path::new(schema_path).exists() {
         progress.error(&format!("Schema file not found at {}", schema_path));
         return false;
@@ -556,7 +563,6 @@ pub fn generate(config: &Config) -> bool {
 
     let ignore_list: Vec<String> = Vec::new();
 
-    // Load detailed schema information
     let tables = match load_schema_table_info(schema_path) {
         Ok(tables) => {
             if tables.is_empty() {
@@ -571,20 +577,19 @@ pub fn generate(config: &Config) -> bool {
         }
     };
 
-    // Load relationship information
     let relationships = match load_schema_relationships(schema_path) {
         Ok(rels) => rels,
         Err(e) => {
-            crate::logger::warning(&format!("Error loading relationship information: {}. Continuing without relationship methods.", e)).unwrap_or_default();
+            if let Err(log_err) = crate::logger::warning(&format!("Error loading relationship information: {}. Continuing without relationship methods.", e)) {
+                eprintln!("logger warning failed: {}", log_err);
+            }
             Vec::new()
         }
     };
 
     let mut processed_tables = Vec::new();
 
-    // Process each table
     for table in &tables {
-        // Skip ignored tables - properly handle case sensitivity
         if ignore_list.iter().any(|ignored| ignored.to_lowercase() == table.name.to_lowercase()) {
             progress.set_message(&format!("Skipping ignored table: {}", table.name));
             continue;
@@ -599,7 +604,6 @@ pub fn generate(config: &Config) -> bool {
         progress.error("No models were generated");
         false
     } else {
-        // Update mod.rs file
         if update_mod_file(config, &processed_tables) {
             progress.success(&format!("Generated {} enhanced model files with specialized methods", processed_tables.len()));
             true
@@ -609,4 +613,3 @@ pub fn generate(config: &Config) -> bool {
         }
     }
 }
-

@@ -116,6 +116,7 @@ dependencies = [
  "sass-rs",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "toml",
  "toml_edit",
