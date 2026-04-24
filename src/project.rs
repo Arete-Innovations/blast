@@ -82,6 +82,12 @@ pub fn create_new_project(project_name: &str, use_dev_branch: bool) {
         return;
     }
 
+    println!("{} Writing systemd unit...", style("⚙").cyan());
+    if let Err(e) = write_systemd_unit(project_path, project_name) {
+        eprintln!("{} Failed to write systemd unit: {}", style("Error:").red().bold(), e);
+        return;
+    }
+
     println!(
         "\n{} Project {} created successfully! {}",
         style("✅").green().bold(),
@@ -342,6 +348,38 @@ fn edit_env_file(env_path: &Path) -> BlastResult<()> {
             println!("{} No changes made to .env file", style("ℹ️").cyan());
         }
     }
+
+    Ok(())
+}
+
+fn write_systemd_unit(project_path: &Path, project_name: &str) -> BlastResult<()> {
+    let systemd_dir = project_path.join("deploy").join("systemd");
+    fs::create_dir_all(&systemd_dir)?;
+
+    let unit_content = format!(
+        "[Unit]\n\
+         Description={name} Catablast app\n\
+         After=network.target postgresql.service\n\
+         Wants=postgresql.service\n\
+         \n\
+         [Service]\n\
+         Type=simple\n\
+         User={name}\n\
+         WorkingDirectory=/var/www/{name}\n\
+         EnvironmentFile=/var/www/{name}/.env\n\
+         ExecStart=/var/www/{name}/{name}\n\
+         Restart=on-failure\n\
+         RestartSec=5\n\
+         StandardOutput=journal\n\
+         StandardError=journal\n\
+         \n\
+         [Install]\n\
+         WantedBy=multi-user.target\n",
+        name = project_name,
+    );
+
+    let unit_path = systemd_dir.join(format!("{}.service", project_name));
+    fs::write(&unit_path, unit_content)?;
 
     Ok(())
 }
