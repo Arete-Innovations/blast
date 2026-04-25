@@ -154,7 +154,16 @@ fn dispatch_gen(
             }
             Ok(())
         }
-        GenCmd::Table => crate::gen_table::run(),
+        GenCmd::Table => {
+            let mut sink = crate::io::cli_sink(false, None);
+            let mut progress = crate::io::cli_progress(None);
+            let project_root = config.project_dir.clone();
+            match crate::gen_table::run_with_picker(&project_root, &mut sink, &mut progress) {
+                Ok(_outcome) => Ok(()),
+                Err(crate::error::BlastError::Invalid(msg)) if msg.contains("cancelled") => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
         GenCmd::Migration { custom, name } => {
             if !custom {
                 return Err(BlastError::Invalid(
