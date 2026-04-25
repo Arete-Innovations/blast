@@ -35,6 +35,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[Cronjobs] Toggle Job",
         "[Cronjobs] Remove Job",
         "[LOG] Truncate Logs",
+        "[LINT] Governor Check",
         "[Exit] Kill Session",
     ];
 
@@ -145,6 +146,8 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             }
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
+
+            "[LINT] Governor Check" => Command::Check { verbose: false },
 
             "[Exit] Kill Session" => {
                 logger::info("Killing Zellij session...")?;
