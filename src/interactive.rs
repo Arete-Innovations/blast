@@ -25,6 +25,9 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[CODEGEN] Schema",
         "[CODEGEN] Structs",
         "[CODEGEN] Models",
+        "[CODEGEN] Gen Picker",
+        "[CODEGEN] Gen Table (wizard)",
+        "[CODEGEN] Gen Migration (--custom)",
         "[DB] New Migration",
         "[DB] Migrate",
         "[DB] Rollback",
@@ -77,6 +80,14 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             "[CODEGEN] Schema" => Command::GenerateSchema,
             "[CODEGEN] Structs" => Command::GenerateStructs,
             "[CODEGEN] Models" => Command::GenerateModels,
+            "[CODEGEN] Gen Picker" => Command::GenInteractivePicker,
+            "[CODEGEN] Gen Table (wizard)" => Command::GenTable,
+            "[CODEGEN] Gen Migration (--custom)" => {
+                let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Migration name (snake_case)")
+                    .interact_text()?;
+                Command::GenMigrationCustom(name)
+            }
 
             "[DB] New Migration" => Command::NewMigration,
             "[DB] Migrate" => Command::Migrate,

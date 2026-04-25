@@ -44,6 +44,10 @@ pub enum Command {
     RefreshApp,
     Help,
     Exit,
+
+    GenTable,
+    GenMigrationCustom(String),
+    GenInteractivePicker,
 }
 
 pub fn parse_cli_args(args: &[String]) -> Option<Command> {
@@ -111,6 +115,11 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
 
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("structs") => Some(Command::GenerateStructs),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("models") => Some(Command::GenerateModels),
+        Some("gen") if args.get(2).map(|s| s.as_str()) == Some("table") => Some(Command::GenTable),
+        Some("gen") if args.get(2).map(|s| s.as_str()) == Some("migration") => {
+            parse_gen_migration(args)
+        }
+        Some("gen") if args.get(2).is_none() => Some(Command::GenInteractivePicker),
 
         Some("build") => Some(Command::Build),
         Some("package") => Some(Command::Package),
@@ -135,6 +144,19 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
 
         _sub => None,
     }
+}
+
+fn parse_gen_migration(args: &[String]) -> Option<Command> {
+    let custom = args.iter().any(|arg| arg == "--custom");
+    if !custom {
+        return None;
+    }
+    let name = args
+        .iter()
+        .skip(3)
+        .find(|arg| !arg.starts_with("--"))
+        .cloned()?;
+    Some(Command::GenMigrationCustom(name))
 }
 
 pub fn show_help() {
@@ -174,8 +196,11 @@ pub fn show_help() {
     println!("  schema               Generate database schema");
     println!();
     println!("CODE GENERATION:");
+    println!("  gen                  Interactive picker for codegen targets");
     println!("  gen structs          Generate structs from schema");
     println!("  gen models           Generate model implementations");
+    println!("  gen table            Interactive wizard to author a CREATE TABLE migration");
+    println!("  gen migration --custom <name>  Scaffold an empty migration and open $EDITOR");
     println!();
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
@@ -588,5 +613,55 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         },
         
         Command::Exit => Ok(()),
+
+        Command::GenTable => {
+            crate::gen_table::run()
+        }
+
+        Command::GenMigrationCustom(name) => {
+            crate::gen_migration::run_custom(&name)
+        }
+
+        Command::GenInteractivePicker => {
+            run_gen_picker(config, dep_manager)
+        }
+    }
+}
+
+fn run_gen_picker(
+    config: &mut Config,
+    dep_manager: &mut DependencyManager,
+) -> BlastResult<()> {
+    use dialoguer::{theme::ColorfulTheme, FuzzySelect};
+
+    let items = vec![
+        "Generate schema (diesel print-schema)",
+        "Generate structs",
+        "Generate models",
+        "Generate table (interactive wizard)",
+        "Generate custom migration (--custom)",
+    ];
+
+    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
+        .with_prompt("blast gen — pick a target")
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    match selection {
+        0 => execute(Command::GenerateSchema, config, dep_manager),
+        1 => execute(Command::GenerateStructs, config, dep_manager),
+        2 => execute(Command::GenerateModels, config, dep_manager),
+        3 => execute(Command::GenTable, config, dep_manager),
+        4 => {
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Migration name (snake_case)")
+                .interact_text()?;
+            execute(Command::GenMigrationCustom(name), config, dep_manager)
+        }
+        other => Err(BlastError::Invalid(format!(
+            "unknown gen picker selection: {}",
+            other
+        ))),
     }
 }
