@@ -36,6 +36,7 @@ const STEP_SCHEMA: &str = "schema generation";
 const STEP_STRUCTS: &str = "structs generation";
 const STEP_MODELS: &str = "models generation";
 const STEP_FLOWS: &str = "flows generation";
+const STEP_HTTP_ROUTES: &str = "http routes generation";
 const STEP_FRONTEND: &str = "frontend generation";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
@@ -73,6 +74,7 @@ pub fn run(
     run_structs_step(config, sink, progress, &mut outcome)?;
     run_models_step(config, sink, progress, &mut outcome)?;
     run_flows_step(sink, progress, &mut outcome);
+    run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_env_example_step(sink, progress, &mut outcome);
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -168,6 +170,43 @@ fn run_flows_step(sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mu
     ));
     progress.step_done(STEP_FLOWS);
     outcome.steps_run += 1;
+}
+
+fn run_http_routes_step(
+    project_root: &PathBuf,
+    resource_count: usize,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    if resource_count == 0 {
+        progress.step_start(STEP_HTTP_ROUTES);
+        sink.info(format!(
+            "{}: no resources declared; skipping",
+            STEP_HTTP_ROUTES
+        ));
+        progress.step_done(STEP_HTTP_ROUTES);
+        outcome.steps_run += 1;
+        return Ok(());
+    }
+    match codegen::http_routes::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!(
+                "{}: {} written, {} skipped",
+                STEP_HTTP_ROUTES,
+                report.written.len(),
+                report.skipped.len()
+            ));
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_HTTP_ROUTES, err));
+            Err(err)
+        }
+    }
 }
 
 fn run_frontend_step(
