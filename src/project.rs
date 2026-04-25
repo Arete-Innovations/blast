@@ -319,11 +319,7 @@ fn edit_env_file(env_path: &Path) -> BlastResult<()> {
     let current_content = fs::read_to_string(env_path)?;
 
     if is_verbose {
-        println!("\nYou can add multiple database connections as follows:");
-        println!("DATABASE_URL=postgres://postgres:postgres@localhost/postgres");
-        println!("DATABASE_URL_USERS=postgres://postgres:postgres@localhost/users");
-        println!("DATABASE_URL_LOGS=postgres://postgres:postgres@localhost/logs");
-        println!("\nThe first connection will be used as the default.");
+        println!("\nDATABASE_URL=postgres://postgres:postgres@localhost/postgres");
     }
 
     println!("\n{} Opening .env file in your editor so you can set the values...", style("📝").cyan());
