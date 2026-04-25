@@ -139,7 +139,8 @@ fn dispatch_gen(
     dep_manager: &mut DependencyManager,
 ) -> BlastResult<()> {
     let Some(target) = sub else {
-        return crate::gen_picker::run(config, dep_manager);
+        let chosen = crate::gen_picker::pick_gen_target()?;
+        return execute(chosen, config, dep_manager);
     };
     match target {
         GenCmd::Structs => {
