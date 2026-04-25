@@ -31,9 +31,6 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[DB] Seed",
         "[Fuses] Interactive Manager",
         "[Fuses] List Fuses",
-        "[Fuses] Add Fuse",
-        "[Fuses] Toggle Fuse",
-        "[Fuses] Remove Fuse",
         "[LOG] Truncate Logs",
         "[Exit] Kill Session",
     ];
@@ -85,67 +82,6 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
 
             "[Fuses] Interactive Manager" => Command::FusesInteractive,
             "[Fuses] List Fuses" => Command::FusesList,
-            "[Fuses] Add Fuse" => {
-                print!("\x1B[2J\x1B[1;1H");
-
-                println!("Enter fuse name:");
-                let mut name = String::new();
-                std::io::stdin().read_line(&mut name)?;
-                let name = name.trim().to_string();
-
-                println!("Enter interval in seconds:");
-                let mut interval_str = String::new();
-                std::io::stdin().read_line(&mut interval_str)?;
-                let interval = match interval_str.trim().parse::<i32>() {
-                    Ok(n) => n,
-                    Err(parse_err) => {
-                        logger::warning(&format!("Invalid interval, defaulting to 60: {}", parse_err))?;
-                        60
-                    }
-                };
-
-                Command::FusesAdd(name, interval)
-            }
-            "[Fuses] Toggle Fuse" => {
-                print!("\x1B[2J\x1B[1;1H");
-
-                if let Err(e) = crate::fuses::list_fuses(&config) {
-                    logger::warning(&format!("Failed to list fuses: {}", e))?;
-                }
-
-                println!("\nEnter fuse ID to toggle:");
-                let mut id_str = String::new();
-                std::io::stdin().read_line(&mut id_str)?;
-                let id = match id_str.trim().parse::<i32>() {
-                    Ok(n) => n,
-                    Err(parse_err) => {
-                        logger::warning(&format!("Invalid ID, defaulting to 0: {}", parse_err))?;
-                        0
-                    }
-                };
-
-                Command::FusesToggle(id)
-            }
-            "[Fuses] Remove Fuse" => {
-                print!("\x1B[2J\x1B[1;1H");
-
-                if let Err(e) = crate::fuses::list_fuses(&config) {
-                    logger::warning(&format!("Failed to list fuses: {}", e))?;
-                }
-
-                println!("\nEnter fuse ID to remove:");
-                let mut id_str = String::new();
-                std::io::stdin().read_line(&mut id_str)?;
-                let id = match id_str.trim().parse::<i32>() {
-                    Ok(n) => n,
-                    Err(parse_err) => {
-                        logger::warning(&format!("Invalid ID, defaulting to 0: {}", parse_err))?;
-                        0
-                    }
-                };
-
-                Command::FusesRemove(id)
-            }
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
 

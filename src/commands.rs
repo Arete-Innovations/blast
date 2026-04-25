@@ -32,8 +32,6 @@ pub enum Command {
     LogView(String),
 
     FusesList,
-    FusesAdd(String, i32),
-    FusesRemove(i32),
     FusesToggle(i32),
     FusesInteractive,
     FusesLiveTable,
@@ -66,24 +64,6 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("fuses") => {
             match args.get(2).map(|s| s.as_str()) {
                 Some("list") => Some(Command::FusesList),
-                Some("add") if args.len() >= 5 => {
-                    match args[4].parse::<i32>() {
-                        Ok(interval) => Some(Command::FusesAdd(args[3].clone(), interval)),
-                        Err(parse_err) => {
-                            eprintln!("invalid interval: {}", parse_err);
-                            None
-                        }
-                    }
-                }
-                Some("remove") if args.len() >= 4 => {
-                    match args[3].parse::<i32>() {
-                        Ok(job_id) => Some(Command::FusesRemove(job_id)),
-                        Err(parse_err) => {
-                            eprintln!("invalid id: {}", parse_err);
-                            None
-                        }
-                    }
-                }
                 Some("toggle") if args.len() >= 4 => {
                     match args[3].parse::<i32>() {
                         Ok(job_id) => Some(Command::FusesToggle(job_id)),
@@ -165,9 +145,7 @@ pub fn show_help() {
     println!("  fuses table          Display live auto-refreshing table of fuses");
     println!("  fuses live           Display live auto-refreshing table of fuses");
     println!("  fuses list           List all registered fuses and their status");
-    println!("  fuses add <name> <interval>  Add a new fuse with name and interval in seconds");
-    println!("  fuses remove <id>    Remove a fuse by ID");
-    println!("  fuses toggle <id>    Toggle a fuse's active status");
+    println!("  fuses toggle <id>    Toggle a fuse's enabled flag");
     println!();
     println!("DATABASE COMMANDS:");
     println!("  migration            Create a new migration");
@@ -208,10 +186,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
     match cmd {
         Command::FusesList => crate::fuses::list_fuses(config),
-
-        Command::FusesAdd(name, interval) => crate::fuses::add_fuse(config, &name, interval),
-
-        Command::FusesRemove(id) => crate::fuses::remove_fuse(config, id),
 
         Command::FusesToggle(id) => crate::fuses::toggle_fuse(config, id),
 

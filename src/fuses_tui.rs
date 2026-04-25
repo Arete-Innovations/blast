@@ -1,9 +1,8 @@
 use crate::configs::Config;
 use crate::error::BlastResult;
-use crate::fuses::{add_fuse, remove_fuse, toggle_fuse, FuseInfo};
-use chrono::{Local, TimeZone, Utc};
+use crate::fuses::{remove_fuse, toggle_fuse, FuseInfo};
 use console::Style;
-use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input};
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::*;
@@ -15,49 +14,6 @@ use std::io::Write;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
-
-fn format_duration(seconds: i32) -> String {
-    if seconds < 60 {
-        format!("{}s", seconds)
-    } else if seconds < 3600 {
-        format!("{}m {}s", seconds / 60, seconds % 60)
-    } else if seconds < 86400 {
-        let hours = seconds / 3600;
-        let mins = (seconds % 3600) / 60;
-        format!("{}h {}m", hours, mins)
-    } else {
-        let days = seconds / 86400;
-        let hours = (seconds % 86400) / 3600;
-        format!("{}d {}h", days, hours)
-    }
-}
-
-fn format_timestamp(timestamp: Option<i64>) -> String {
-    match timestamp {
-        Some(ts) => match Local.timestamp_opt(ts, 0).single() {
-            Some(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
-            None => "Invalid timestamp".to_string(),
-        },
-        None => "Never".to_string(),
-    }
-}
-
-fn calc_next_run(last_run: Option<i64>, timer: i32) -> String {
-    match last_run {
-        Some(ts) => {
-            let next_ts = ts + timer as i64;
-            let now = Utc::now().timestamp();
-
-            if next_ts <= now {
-                "Pending execution".to_string()
-            } else {
-                let time_left = next_ts - now;
-                format_duration(time_left as i32)
-            }
-        }
-        None => "ASAP".to_string(),
-    }
-}
 
 fn establish_connection(config: &Config) -> BlastResult<PgConnection> {
     let current_dir = std::env::current_dir()?;
@@ -93,39 +49,6 @@ fn check_fuses_table(conn: &mut PgConnection) -> BlastResult<bool> {
     }
 }
 
-fn ensure_fuses_table(conn: &mut PgConnection) -> BlastResult<()> {
-    if !check_fuses_table(conn)? {
-        sql_query(
-            r#"
-            CREATE TABLE IF NOT EXISTS fuses (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR NOT NULL UNIQUE,
-                timer INT NOT NULL,
-                status VARCHAR NOT NULL DEFAULT 'active',
-                last_run BIGINT
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_fuses_name ON fuses(name);
-        "#,
-        )
-        .execute(conn)?;
-
-        sql_query(
-            r#"
-            INSERT INTO fuses (name, timer, status)
-            VALUES
-                ('cleanup_temp_files', 3600, 'active'),
-                ('send_digest_emails', 86400, 'active'),
-                ('update_search_index', 43200, 'paused')
-            ON CONFLICT DO NOTHING;
-        "#,
-        )
-        .execute(conn)?;
-    }
-
-    Ok(())
-}
-
 fn ensure_fuse_dirs(config: &Config) -> BlastResult<()> {
     let fuse_dir = Path::new(&config.project_dir).join("storage").join("fuses");
     std::fs::create_dir_all(&fuse_dir)?;
@@ -137,10 +60,16 @@ fn fetch_fuses(config: &Config) -> BlastResult<Vec<FuseInfo>> {
 
     let mut conn = establish_connection(config)?;
 
-    ensure_fuses_table(&mut conn)?;
+    if !check_fuses_table(&mut conn)? {
+        return Ok(Vec::new());
+    }
 
-    Ok(sql_query("SELECT id, name, timer, status, last_run FROM fuses ORDER BY id")
-        .load::<FuseInfo>(&mut conn)?)
+    Ok(sql_query(
+        "SELECT id, name, flow_name, schedule_kind, schedule_spec, \
+         enabled, last_run_status, last_error, run_count \
+         FROM fuses ORDER BY id",
+    )
+    .load::<FuseInfo>(&mut conn)?)
 }
 
 pub fn display_fuses_table(config: &Config) -> BlastResult<()> {
@@ -152,7 +81,7 @@ pub fn display_fuses_table(config: &Config) -> BlastResult<()> {
     let mut jobs = fetch_fuses(config)?;
 
     if jobs.is_empty() {
-        println!("No fuses registered.");
+        println!("No fuses registered. Create the fuses table with FUSES_MIGRATION_UP.");
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         return Ok(());
@@ -177,7 +106,6 @@ pub fn display_fuses_table(config: &Config) -> BlastResult<()> {
     });
 
     let rows = render_table(&jobs)?;
-
     for row in &rows {
         println!("{}", row);
     }
@@ -230,46 +158,55 @@ pub fn display_fuses_table(config: &Config) -> BlastResult<()> {
 
 fn render_table(jobs: &[FuseInfo]) -> BlastResult<Vec<String>> {
     let mut table = Table::new();
-
     table.set_format(*format::consts::FORMAT_BOX_CHARS);
 
     table.add_row(Row::new(vec![
         Cell::new("ID"),
         Cell::new("Name"),
+        Cell::new("Flow"),
+        Cell::new("Kind"),
+        Cell::new("Spec"),
+        Cell::new("Enabled"),
         Cell::new("Status"),
-        Cell::new("Interval"),
-        Cell::new("Last Run"),
-        Cell::new("Next Run"),
+        Cell::new("Runs"),
     ]));
 
     for job in jobs {
-        let status_cell = match job.status.as_str() {
-            "active" => Cell::new(&job.status).style_spec("Fg=green"),
-            "paused" => Cell::new(&job.status).style_spec("Fg=yellow"),
-            "completed" => Cell::new(&job.status).style_spec("Fg=blue"),
-            "failed" => Cell::new(&job.status).style_spec("Fg=red"),
-            other => Cell::new(other),
+        let enabled_cell = if job.enabled {
+            Cell::new("yes").style_spec("Fg=green")
+        } else {
+            Cell::new("no").style_spec("Fg=yellow")
         };
 
-        let name_display = if job.name.len() > 25 {
-            format!("{}...", &job.name[0..22])
+        let status_cell = match job.last_run_status.as_deref() {
+            Some("ok") => Cell::new("ok").style_spec("Fg=green"),
+            Some("error") => Cell::new("error").style_spec("Fg=red"),
+            Some("running") => Cell::new("running").style_spec("Fg=cyan"),
+            Some(other) => Cell::new(other),
+            None => Cell::new("-"),
+        };
+
+        let name_display = if job.name.len() > 28 {
+            format!("{}...", &job.name[0..25])
         } else {
             job.name.clone()
         };
 
-        let last_run = format_timestamp(job.last_run);
-        let next_run = calc_next_run(job.last_run, job.timer);
-        let interval = format_duration(job.timer);
-
-        let padded_next_run = format!("{:<20}", next_run);
+        let flow_display = if job.flow_name.len() > 20 {
+            format!("{}...", &job.flow_name[0..17])
+        } else {
+            job.flow_name.clone()
+        };
 
         table.add_row(Row::new(vec![
             Cell::new(&job.id.to_string()),
             Cell::new(&name_display),
+            Cell::new(&flow_display),
+            Cell::new(&job.schedule_kind),
+            Cell::new(&job.schedule_spec),
+            enabled_cell,
             status_cell,
-            Cell::new(&interval),
-            Cell::new(&last_run),
-            Cell::new(&padded_next_run),
+            Cell::new(&job.run_count.to_string()),
         ]));
     }
 
@@ -293,35 +230,28 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
         let jobs = fetch_fuses(config)?;
 
         let format_job_for_display = |job: &FuseInfo| -> String {
-            let interval = format_duration(job.timer);
-            let status = match job.status.as_str() {
-                "active" => "Active",
-                "paused" => "Paused",
-                "completed" => "Completed",
-                "failed" => "Failed",
-                other => other,
-            };
-
-            let name_display = if job.name.len() > 18 {
-                format!("{}...", &job.name[0..15])
+            let state = if job.enabled { "[ENABLED ]" } else { "[DISABLED]" };
+            let name_display = if job.name.len() > 22 {
+                format!("{}...", &job.name[0..19])
             } else {
                 job.name.clone()
             };
-
             format!(
-                "ID: {:<3} - {:<18} (Status: {:<12}, Interval: {:<12})",
-                job.id, name_display, status, interval
+                "{}  {:<22}  {}  {}  runs: {}",
+                state, name_display, job.schedule_kind, job.schedule_spec, job.run_count
             )
         };
 
         if jobs.is_empty() {
-            println!("No fuses registered.\n");
+            println!(
+                "No fuses registered. Create the fuses table with FUSES_MIGRATION_UP.\n"
+            );
         } else {
             println!("{} fuses registered.\n", jobs.len());
         }
 
         let menu_options =
-            vec!["View Live Table", "View and Manage Fuses", "Add New Fuse", "Back to Main Menu"];
+            vec!["View Live Table", "View and Manage Fuses", "Back to Main Menu"];
 
         let selection = FuzzySelect::with_theme(&theme)
             .with_prompt("Select an option")
@@ -335,7 +265,7 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
             }
             1 => {
                 if jobs.is_empty() {
-                    println!("No fuses to manage. Please add a fuse first.");
+                    println!("No fuses to manage.");
                     thread::sleep(Duration::from_secs(2));
                 } else {
                     let job_displays: Vec<String> =
@@ -352,7 +282,7 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
                     let fuse_actions = vec![
                         format!(
                             "{} Fuse",
-                            if selected_job.status == "active" { "Pause" } else { "Activate" }
+                            if selected_job.enabled { "Disable" } else { "Enable" }
                         ),
                         "Remove Fuse".to_string(),
                         "Cancel".to_string(),
@@ -363,6 +293,8 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
                         .default(0)
                         .items(&fuse_actions)
                         .interact()?;
+
+                    let fuse_id_i32 = selected_job.id as i32;
 
                     match action_selection {
                         0 => {
@@ -377,7 +309,7 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
                             );
                             pb.set_message(format!("Toggling fuse '{}'...", selected_job.name));
 
-                            match toggle_fuse(config, selected_job.id) {
+                            match toggle_fuse(config, fuse_id_i32) {
                                 Ok(()) => {
                                     pb.finish_with_message(format!(
                                         "Fuse '{}' toggled successfully",
@@ -409,9 +341,12 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
                                             crate::error::BlastError::Invalid(e.to_string())
                                         })?,
                                 );
-                                pb.set_message(format!("Removing fuse '{}'...", selected_job.name));
+                                pb.set_message(format!(
+                                    "Removing fuse '{}'...",
+                                    selected_job.name
+                                ));
 
-                                match remove_fuse(config, selected_job.id) {
+                                match remove_fuse(config, fuse_id_i32) {
                                     Ok(()) => {
                                         pb.finish_with_message(format!(
                                             "Fuse '{}' removed successfully",
@@ -433,57 +368,7 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
                     }
                 }
             }
-            2 => {
-                let name: String =
-                    Input::with_theme(&theme).with_prompt("Enter fuse name").interact_text()?;
-
-                if name.trim().is_empty() {
-                    println!("Fuse name cannot be empty.");
-                    thread::sleep(Duration::from_secs(2));
-                    continue;
-                }
-
-                let interval: String = Input::with_theme(&theme)
-                    .with_prompt("Enter interval in seconds (e.g. 3600 for hourly)")
-                    .default("3600".into())
-                    .interact_text()?;
-
-                match interval.parse::<i32>() {
-                    Ok(interval_seconds) if interval_seconds > 0 => {
-                        let pb = ProgressBar::new_spinner();
-                        pb.set_style(
-                            ProgressStyle::default_spinner()
-                                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                                .template("{spinner:.green} {msg}")
-                                .map_err(|e| crate::error::BlastError::Invalid(e.to_string()))?,
-                        );
-                        pb.set_message(format!("Adding fuse '{}'...", name));
-
-                        match add_fuse(config, &name, interval_seconds) {
-                            Ok(()) => {
-                                pb.finish_with_message(format!(
-                                    "Fuse '{}' added successfully",
-                                    name
-                                ));
-                                thread::sleep(Duration::from_secs(1));
-                            }
-                            Err(e) => {
-                                pb.finish_with_message(format!("Error: {}", e));
-                                thread::sleep(Duration::from_secs(2));
-                            }
-                        }
-                    }
-                    Ok(interval_seconds) => {
-                        println!("Interval must be positive, got {}.", interval_seconds);
-                        thread::sleep(Duration::from_secs(2));
-                    }
-                    Err(e) => {
-                        println!("Please enter a valid number for the interval: {}", e);
-                        thread::sleep(Duration::from_secs(2));
-                    }
-                }
-            }
-            3 => break,
+            2 => break,
             other => {
                 eprintln!("unexpected menu selection: {}", other);
                 break;
