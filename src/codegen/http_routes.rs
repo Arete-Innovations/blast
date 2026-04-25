@@ -98,7 +98,7 @@ fn build_resource_file(r: &ResourceState) -> String {
     out.push_str("use axum::http::StatusCode;\n");
     out.push_str("use axum::routing::{delete, get, patch, post};\n");
     out.push_str("use axum::{Json, Router};\n");
-    out.push_str("use catalyst::context::Ctx;\n");
+    out.push_str("use catalyst::Ctx;\n");
     out.push_str("use catalyst::meltdown::MeltDown;\n");
     out.push_str("use catalyst::transport::http::list_query::{ListQuery, ListResponse};\n");
     out.push('\n');
@@ -107,7 +107,7 @@ fn build_resource_file(r: &ResourceState) -> String {
         table = table,
     ));
     out.push_str(&format!(
-        "use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}PublicRow}};\n",
+        "use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}Public}};\n",
         table = table,
         ty = type_name,
     ));
@@ -137,7 +137,7 @@ fn list_handler(type_name: &str) -> String {
         "pub async fn list(\n\
         \x20   State(ctx): State<Ctx>,\n\
         \x20   Query(params): Query<ListQuery>,\n\
-        ) -> Result<Json<ListResponse<{ty}PublicRow>>, MeltDown> {{\n\
+        ) -> Result<Json<ListResponse<{ty}Public>>, MeltDown> {{\n\
         \x20   let result = flow::list::run(&ctx, params).await?;\n\
         \x20   Ok(Json(result))\n\
         }}\n",
@@ -150,7 +150,7 @@ fn get_handler(type_name: &str) -> String {
         "pub async fn get_one(\n\
         \x20   State(ctx): State<Ctx>,\n\
         \x20   Path(id): Path<i64>,\n\
-        ) -> Result<Json<{ty}PublicRow>, MeltDown> {{\n\
+        ) -> Result<Json<{ty}Public>, MeltDown> {{\n\
         \x20   let result = flow::get::run(&ctx, id).await?;\n\
         \x20   Ok(Json(result))\n\
         }}\n",
@@ -163,7 +163,7 @@ fn create_handler(type_name: &str) -> String {
         "pub async fn create(\n\
         \x20   State(ctx): State<Ctx>,\n\
         \x20   Json(input): Json<{ty}Insertable>,\n\
-        ) -> Result<(StatusCode, Json<{ty}PublicRow>), MeltDown> {{\n\
+        ) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n\
         \x20   let result = flow::create::run(&ctx, input).await?;\n\
         \x20   Ok((StatusCode::CREATED, Json(result)))\n\
         }}\n",
@@ -177,7 +177,7 @@ fn update_handler(type_name: &str) -> String {
         \x20   State(ctx): State<Ctx>,\n\
         \x20   Path(id): Path<i64>,\n\
         \x20   Json(patch): Json<{ty}Patch>,\n\
-        ) -> Result<Json<{ty}PublicRow>, MeltDown> {{\n\
+        ) -> Result<Json<{ty}Public>, MeltDown> {{\n\
         \x20   let result = flow::update::run(&ctx, id, patch).await?;\n\
         \x20   Ok(Json(result))\n\
         }}\n",
@@ -261,7 +261,7 @@ fn build_barrel(resources: &[ResourceState]) -> String {
     }
     out.push('\n');
     out.push_str("use axum::Router;\n");
-    out.push_str("use catalyst::context::Ctx;\n");
+    out.push_str("use catalyst::Ctx;\n");
     out.push('\n');
     out.push_str("pub fn router() -> Router<Ctx> {\n");
     out.push_str("    let mut router = Router::new();\n");
