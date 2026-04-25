@@ -1,10 +1,12 @@
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::schema_parser::{self, ParsedTable};
-use crate::state::names::ResourceName;
-use crate::state::resource::ResourceState;
+use crate::state::names::{FieldName, ResourceName, SqlType};
+use crate::state::resource::{FieldState, ResourceState};
 use crate::state::{self, io as state_io};
-use crate::wizards::gen_resource::{confirm, fields, list, pick, verbs, ws};
+use crate::wizards::gen_resource::{confirm, fields, list, pick, schema_diff, verbs, ws};
+use dialoguer::{theme::ColorfulTheme, Confirm};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 pub struct Args {
@@ -82,6 +84,12 @@ pub fn run(
         None => ResourceState::new(resource_name.clone()),
     };
 
+    if was_existing {
+        progress.step_start("schema diff");
+        detect_and_apply_drift(table, &mut resource, sink)?;
+        progress.step_done("schema diff");
+    }
+
     progress.step_start("fields");
     fields::collect_fields(table, &mut resource)?;
     progress.step_done("fields");
@@ -134,4 +142,74 @@ fn load_existing_or_none(
     }
     let loaded = state::load_resource(state_dir, name)?;
     Ok(Some(loaded))
+}
+
+fn detect_and_apply_drift(
+    table: &ParsedTable,
+    resource: &mut ResourceState,
+    sink: &mut dyn Sink,
+) -> BlastResult<()> {
+    let schema_columns: Vec<(String, String)> = table
+        .columns
+        .iter()
+        .map(|c| (c.name.clone(), c.diesel_type.clone()))
+        .collect();
+
+    let diff = schema_diff::compute(&schema_columns, resource);
+    if schema_diff::is_empty(&diff) {
+        return Ok(());
+    }
+
+    sink.warn(schema_diff::render(&diff));
+
+    if diff.added_columns.is_empty() {
+        return Ok(());
+    }
+
+    let prompt = format!(
+        "Schema has changed: {} added, {} removed, {} type-changed. Apply additions automatically with default variants?",
+        diff.added_columns.len(),
+        diff.removed_columns.len(),
+        diff.type_changes.len(),
+    );
+
+    let apply = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .default(true)
+        .interact()?;
+
+    if !apply {
+        return Ok(());
+    }
+
+    apply_added_columns(table, &diff.added_columns, resource);
+    Ok(())
+}
+
+fn apply_added_columns(
+    table: &ParsedTable,
+    added: &[(FieldName, SqlType)],
+    resource: &mut ResourceState,
+) {
+    for (field_name, sql_type) in added {
+        let column_match = table
+            .columns
+            .iter()
+            .find(|col| col.name == field_name.as_str());
+        let Some(column) = column_match else {
+            continue;
+        };
+        let is_pk = table.primary_key.iter().any(|pk| pk == &column.name);
+        let variants: BTreeSet<_> = fields::smart_defaults(&column.name, is_pk);
+        resource.fields.insert(
+            field_name.clone(),
+            FieldState {
+                sql_type: sql_type.clone(),
+                variants,
+                nullable: column.nullable,
+                primary_key: is_pk,
+                validators: BTreeSet::new(),
+            },
+        );
+    }
 }
