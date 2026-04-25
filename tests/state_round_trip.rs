@@ -1,8 +1,10 @@
-use blast::state::{
-    AppPolicySection, AppState, AuthMode, AuthScopeField, FeLintState, FieldName, FieldState,
-    FieldVariant, ListOptions, PayloadShape, ResourceName, ResourceState, ServiceBackend,
-    ServicesState, SqlType, TopicScope, Verb, VerbState, WsEventsState,
+use blast::state::app::{AppState, ServiceBackend, ServicesState};
+use blast::state::names::{AuthScopeField, FieldName, ResourceName, SqlType};
+use blast::state::resource::{
+    AuthMode, FieldState, FieldVariant, ListOptions, PayloadShape, ResourceState, TopicScope, Verb,
+    VerbState, WsEventsState,
 };
+use blast::state::{AppPolicySection, FeLintState};
 use std::collections::BTreeSet;
 
 fn sample_resource() -> ResourceState {
@@ -116,8 +118,8 @@ fn sample_app() -> AppState {
 fn resource_round_trip_is_identity() {
     let dir = tempfile::tempdir().expect("tempdir");
     let res = sample_resource();
-    blast::state::save_resource(dir.path(), &res).expect("save");
-    let loaded = blast::state::load_resource(dir.path(), &res.name).expect("load");
+    blast::state::io::save_resource(dir.path(), &res).expect("save");
+    let loaded = blast::state::io::load_resource(dir.path(), &res.name).expect("load");
 
     let mut canonical = res.clone();
     canonical.canonicalize();
@@ -128,8 +130,8 @@ fn resource_round_trip_is_identity() {
 fn app_round_trip_is_identity() {
     let dir = tempfile::tempdir().expect("tempdir");
     let app = sample_app();
-    blast::state::save_app(dir.path(), &app).expect("save");
-    let loaded = blast::state::load_app(dir.path()).expect("load");
+    blast::state::io::save_app(dir.path(), &app).expect("save");
+    let loaded = blast::state::io::load_app(dir.path()).expect("load");
 
     let mut canonical = app.clone();
     canonical.canonicalize();
@@ -141,8 +143,8 @@ fn save_is_byte_stable() {
     let dir1 = tempfile::tempdir().expect("tempdir 1");
     let dir2 = tempfile::tempdir().expect("tempdir 2");
     let res = sample_resource();
-    blast::state::save_resource(dir1.path(), &res).expect("save 1");
-    blast::state::save_resource(dir2.path(), &res).expect("save 2");
+    blast::state::io::save_resource(dir1.path(), &res).expect("save 1");
+    blast::state::io::save_resource(dir2.path(), &res).expect("save 2");
 
     let p1 = dir1
         .path()
@@ -153,8 +155,8 @@ fn save_is_byte_stable() {
         .join(blast::state::io::RESOURCES_DIR)
         .join("users.ron");
 
-    let h1 = blast::state::content_hash(&p1).expect("hash 1");
-    let h2 = blast::state::content_hash(&p2).expect("hash 2");
+    let h1 = blast::state::hash::content_hash(&p1).expect("hash 1");
+    let h2 = blast::state::hash::content_hash(&p2).expect("hash 2");
     assert_eq!(h1, h2);
 }
 
@@ -198,11 +200,11 @@ fn list_resources_returns_sorted() {
         },
     );
 
-    blast::state::save_resource(dir.path(), &zebra).expect("save zebra");
-    blast::state::save_resource(dir.path(), &alpha).expect("save alpha");
-    blast::state::save_resource(dir.path(), &middle).expect("save middle");
+    blast::state::io::save_resource(dir.path(), &zebra).expect("save zebra");
+    blast::state::io::save_resource(dir.path(), &alpha).expect("save alpha");
+    blast::state::io::save_resource(dir.path(), &middle).expect("save middle");
 
-    let names = blast::state::list_resources(dir.path()).expect("list");
+    let names = blast::state::io::list_resources(dir.path()).expect("list");
     let raw: Vec<String> = names.iter().map(|n| n.to_string()).collect();
     assert_eq!(raw, vec!["alpha", "middle", "zebra"]);
 }
@@ -210,7 +212,7 @@ fn list_resources_returns_sorted() {
 #[test]
 fn list_resources_empty_dir_is_ok() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let names = blast::state::list_resources(dir.path()).expect("list");
+    let names = blast::state::io::list_resources(dir.path()).expect("list");
     assert!(names.is_empty());
 }
 
@@ -227,7 +229,7 @@ fn newtype_display_returns_inner() {
 fn save_writes_atomic_no_temp_left_behind() {
     let dir = tempfile::tempdir().expect("tempdir");
     let res = sample_resource();
-    blast::state::save_resource(dir.path(), &res).expect("save");
+    blast::state::io::save_resource(dir.path(), &res).expect("save");
     let entries: Vec<_> = std::fs::read_dir(
         dir.path().join(blast::state::io::RESOURCES_DIR),
     )
