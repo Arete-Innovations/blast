@@ -124,7 +124,10 @@ fn dispatch_fuses(sub: Option<FusesCmd>, config: &Config) -> BlastResult<()> {
         FusesCmd::Logs { name } => crate::fuses::logs_fuse(config, &name),
         FusesCmd::Interactive => {
             logger::info("Launching interactive fuses manager...")?;
-            crate::fuses_tui::run_fuses_tui(config)
+            let mut sink = crate::io::NullSink;
+            let mut progress = crate::io::NullProgress;
+            crate::fuses_tui::run_with_picker(config, &mut sink, &mut progress)?;
+            Ok(())
         }
         FusesCmd::LiveTable => {
             logger::info("Launching live fuses table view...")?;
