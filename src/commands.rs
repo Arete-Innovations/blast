@@ -53,6 +53,7 @@ pub enum Command {
     ArsenalServe,
     GenFrontend,
     GenGovernorPlugin,
+    GenFeScaffold,
     GenTest(GenTestSelector),
 }
 
@@ -116,6 +117,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("table") => Some(Command::GenTable),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("frontend") => Some(Command::GenFrontend),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("governor-plugin") => Some(Command::GenGovernorPlugin),
+        Some("gen") if args.get(2).map(|s| s.as_str()) == Some("fe-scaffold") => Some(Command::GenFeScaffold),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("test") => parse_gen_test(args),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("migration") => {
             parse_gen_migration(args)
@@ -229,7 +231,8 @@ pub fn show_help() {
     println!("  gen table            Interactive wizard to author a CREATE TABLE migration");
     println!("  gen migration --custom <name>  Scaffold an empty migration and open $EDITOR");
     println!("  gen frontend         Generate FE artifacts (TS validators, list query helpers) from primer IR");
-    println!("  gen governor-plugin  Emit frontend/scripts/governor-plugin.js (Vite shim for blast check)");
+    println!("  gen governor-plugin  Emit frontend/scripts/governor-plugin.js + .rule_violations_whitelist");
+    println!("  gen fe-scaffold      Seed tokens.css, base.css, primevue.ts (write-once; skips if present)");
     println!("  gen test             Scaffold per-flow + per-route integration test stubs (idempotent)");
     println!("    --flow <name>      Only scaffold flow tests for <table> or <table>/<verb>");
     println!("    --route <name>     Only scaffold the route smoke test for <table>");
@@ -696,7 +699,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         Command::GenInteractivePicker => {
-            run_gen_picker(config, dep_manager)
+            crate::gen_picker::run(config, dep_manager)
         }
 
         Command::GenFrontend => {
@@ -711,6 +714,18 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             let paths = crate::codegen::governor_plugin::run(&config.project_dir)?;
             for p in &paths {
                 logger::success(&format!("emitted {}", p.display()))?;
+            }
+            Ok(())
+        }
+
+        Command::GenFeScaffold => {
+            logger::info("Seeding frontend scaffold (tokens.css, base.css, primevue.ts)...")?;
+            let outcome = crate::codegen::frontend_scaffold::run(&config.project_dir)?;
+            for p in &outcome.written {
+                logger::success(&format!("seeded {}", p.display()))?;
+            }
+            for p in &outcome.skipped {
+                logger::info(&format!("skipped {} (already present)", p.display()))?;
             }
             Ok(())
         }
@@ -736,50 +751,3 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
     }
 }
 
-fn run_gen_picker(
-    config: &mut Config,
-    dep_manager: &mut DependencyManager,
-) -> BlastResult<()> {
-    use dialoguer::{theme::ColorfulTheme, FuzzySelect};
-
-    let items = vec![
-        "Generate schema (diesel print-schema)",
-        "Generate structs",
-        "Generate models",
-        "Generate table (interactive wizard)",
-        "Generate custom migration (--custom)",
-        "Generate frontend (validators + list query helpers)",
-        "Generate governor Vite plugin (frontend/scripts/governor-plugin.js)",
-        "Generate test scaffolds (per-flow + per-route, idempotent)",
-    ];
-
-    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
-        .with_prompt("blast gen — pick a target")
-        .items(&items)
-        .default(0)
-        .interact()?;
-
-    match selection {
-        0 => execute(Command::GenerateSchema, config, dep_manager),
-        1 => execute(Command::GenerateStructs, config, dep_manager),
-        2 => execute(Command::GenerateModels, config, dep_manager),
-        3 => execute(Command::GenTable, config, dep_manager),
-        4 => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Migration name (snake_case)")
-                .interact_text()?;
-            execute(Command::GenMigrationCustom(name), config, dep_manager)
-        }
-        5 => execute(Command::GenFrontend, config, dep_manager),
-        6 => execute(Command::GenGovernorPlugin, config, dep_manager),
-        7 => execute(
-            Command::GenTest(GenTestSelector::All),
-            config,
-            dep_manager,
-        ),
-        other => Err(BlastError::Invalid(format!(
-            "unknown gen picker selection: {}",
-            other
-        ))),
-    }
-}

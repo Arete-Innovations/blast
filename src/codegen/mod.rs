@@ -1,4 +1,5 @@
 pub mod frontend;
+pub mod frontend_scaffold;
 pub mod governor_plugin;
 pub mod ir_loader;
 pub mod test_scaffold;

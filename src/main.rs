@@ -12,6 +12,7 @@ mod database;
 mod dependencies;
 mod error;
 mod gen_migration;
+mod gen_picker;
 mod gen_table;
 mod governor;
 mod interactive;
