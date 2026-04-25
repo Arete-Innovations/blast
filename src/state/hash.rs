@@ -19,6 +19,3 @@ pub fn content_hash(path: &Path) -> BlastResult<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
-pub fn content_hash_bytes(bytes: &[u8]) -> String {
-    blake3::hash(bytes).to_hex().to_string()
-}
