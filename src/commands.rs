@@ -32,9 +32,11 @@ pub enum Command {
     LogView(String),
 
     FusesList,
-    FusesToggle(i32),
+    FusesToggle(String),
     FusesInteractive,
     FusesLiveTable,
+    FusesRun(String),
+    FusesLogs(String),
 
     Build,
     Package,
@@ -65,13 +67,13 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
             match args.get(2).map(|s| s.as_str()) {
                 Some("list") => Some(Command::FusesList),
                 Some("toggle") if args.len() >= 4 => {
-                    match args[3].parse::<i32>() {
-                        Ok(job_id) => Some(Command::FusesToggle(job_id)),
-                        Err(parse_err) => {
-                            eprintln!("invalid id: {}", parse_err);
-                            None
-                        }
-                    }
+                    Some(Command::FusesToggle(args[3].clone()))
+                }
+                Some("run") if args.len() >= 4 => {
+                    Some(Command::FusesRun(args[3].clone()))
+                }
+                Some("logs") if args.len() >= 4 => {
+                    Some(Command::FusesLogs(args[3].clone()))
                 }
                 Some("interactive") | Some("tui") => Some(Command::FusesInteractive),
                 Some("table") | Some("live") => Some(Command::FusesLiveTable),
@@ -141,11 +143,10 @@ pub fn show_help() {
     println!();
     println!("FUSES COMMANDS:");
     println!("  fuses                Launch interactive TUI for fuse management");
-    println!("  fuses interactive    Launch interactive TUI for fuse management");
-    println!("  fuses table          Display live auto-refreshing table of fuses");
-    println!("  fuses live           Display live auto-refreshing table of fuses");
     println!("  fuses list           List all registered fuses and their status");
-    println!("  fuses toggle <id>    Toggle a fuse's enabled flag");
+    println!("  fuses toggle <name>  Toggle a fuse's enabled flag by name");
+    println!("  fuses run <name>     Trigger immediate run of a fuse (bypass schedule)");
+    println!("  fuses logs <name>    Show recent run log entries for a fuse");
     println!();
     println!("DATABASE COMMANDS:");
     println!("  migration            Create a new migration");
@@ -187,7 +188,14 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
     match cmd {
         Command::FusesList => crate::fuses::list_fuses(config),
 
-        Command::FusesToggle(id) => crate::fuses::toggle_fuse(config, id),
+        Command::FusesToggle(name) => crate::fuses::toggle_fuse(config, &name),
+
+        Command::FusesRun(name) => {
+            logger::info(&format!("Triggering immediate run of fuse '{}'...", name))?;
+            crate::fuses::run_fuse(config, &name)
+        }
+
+        Command::FusesLogs(name) => crate::fuses::logs_fuse(config, &name),
 
         Command::FusesInteractive => {
             logger::info("Launching interactive fuses manager...")?;

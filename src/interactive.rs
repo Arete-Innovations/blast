@@ -29,8 +29,8 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[DB] Migrate",
         "[DB] Rollback",
         "[DB] Seed",
-        "[Fuses] Interactive Manager",
-        "[Fuses] List Fuses",
+        "[FUSES] Manage fuses",
+        "[FUSES] List fuses",
         "[LOG] Truncate Logs",
         "[Exit] Kill Session",
     ];
@@ -80,8 +80,8 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             "[DB] Rollback" => Command::Rollback,
             "[DB] Seed" => Command::Seed(None),
 
-            "[Fuses] Interactive Manager" => Command::FusesInteractive,
-            "[Fuses] List Fuses" => Command::FusesList,
+            "[FUSES] Manage fuses" => Command::FusesInteractive,
+            "[FUSES] List fuses" => Command::FusesList,
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
 

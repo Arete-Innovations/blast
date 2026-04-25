@@ -196,7 +196,7 @@ pub fn list_fuses(config: &Config) -> BlastResult<()> {
     Ok(())
 }
 
-pub fn toggle_fuse(config: &Config, id: i32) -> BlastResult<()> {
+pub fn toggle_fuse(config: &Config, name: &str) -> BlastResult<()> {
     ensure_fuse_dirs(config)?;
 
     let mut conn = establish_connection(config)?;
@@ -206,21 +206,26 @@ pub fn toggle_fuse(config: &Config, id: i32) -> BlastResult<()> {
     }
 
     let exists_results = sql_query(&format!(
-        "SELECT EXISTS (SELECT 1 FROM fuses WHERE id = {}) as exists",
-        id
+        "SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists",
+        name
     ))
     .load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
-        return Err(BlastError::Fuse(format!("no fuse found with ID {}", id)));
+        return Err(BlastError::Fuse(format!("no fuse found with name '{}'", name)));
     }
 
-    let status_results =
-        sql_query(&format!("SELECT enabled::text as result FROM fuses WHERE id = {}", id))
-            .load::<StringResult>(&mut conn)?;
+    let status_results = sql_query(&format!(
+        "SELECT enabled::text as result FROM fuses WHERE name = '{}'",
+        name
+    ))
+    .load::<StringResult>(&mut conn)?;
 
     if status_results.is_empty() {
-        return Err(BlastError::Fuse(format!("failed to get enabled flag for fuse ID {}", id)));
+        return Err(BlastError::Fuse(format!(
+            "failed to get enabled flag for fuse '{}'",
+            name
+        )));
     }
 
     let currently_enabled =
@@ -228,27 +233,124 @@ pub fn toggle_fuse(config: &Config, id: i32) -> BlastResult<()> {
     let new_enabled = !currently_enabled;
 
     sql_query(&format!(
-        "UPDATE fuses SET enabled = {}, updated_at = NOW() WHERE id = {}",
-        new_enabled, id
+        "UPDATE fuses SET enabled = {}, updated_at = NOW() WHERE name = '{}'",
+        new_enabled, name
     ))
     .execute(&mut conn)?;
 
-    let name_results =
-        sql_query(&format!("SELECT name as result FROM fuses WHERE id = {}", id))
-            .load::<StringResult>(&mut conn)?;
-
-    if name_results.is_empty() {
-        return Err(BlastError::Fuse(format!("failed to get name for fuse ID {}", id)));
-    }
-
-    let fuse_name = &name_results[0].result;
     let new_state = if new_enabled { "enabled" } else { "disabled" };
 
-    log_to_execution(
-        config,
-        &format!("Fuse '{}' (ID: {}) toggled to {}", fuse_name, id, new_state),
-    )?;
-    logger::success(&format!("Fuse '{}' is now {}", fuse_name, new_state))?;
+    log_to_execution(config, &format!("Fuse '{}' toggled to {}", name, new_state))?;
+    logger::success(&format!("Fuse '{}' is now {}", name, new_state))?;
+
+    Ok(())
+}
+
+pub fn run_fuse(config: &Config, name: &str) -> BlastResult<()> {
+    ensure_fuse_dirs(config)?;
+
+    let mut conn = establish_connection(config)?;
+
+    if !check_fuses_table(&mut conn)? {
+        return Err(BlastError::Fuse("fuses table not found".to_string()));
+    }
+
+    let exists_results = sql_query(&format!(
+        "SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists",
+        name
+    ))
+    .load::<BoolResult>(&mut conn)?;
+
+    if exists_results.is_empty() || !exists_results[0].exists {
+        return Err(BlastError::Fuse(format!("no fuse found with name '{}'", name)));
+    }
+
+    sql_query(&format!(
+        "UPDATE fuses SET next_run_at = NOW(), updated_at = NOW() WHERE name = '{}'",
+        name
+    ))
+    .execute(&mut conn)?;
+
+    log_to_execution(config, &format!("Fuse '{}' queued for immediate run", name))?;
+    logger::success(&format!(
+        "Fuse '{}' queued for immediate run (next_run_at set to now)",
+        name
+    ))?;
+
+    Ok(())
+}
+
+pub fn logs_fuse(config: &Config, name: &str) -> BlastResult<()> {
+    ensure_fuse_dirs(config)?;
+
+    let mut conn = establish_connection(config)?;
+
+    if !check_fuses_table(&mut conn)? {
+        return Err(BlastError::Fuse("fuses table not found".to_string()));
+    }
+
+    let exists_results = sql_query(&format!(
+        "SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists",
+        name
+    ))
+    .load::<BoolResult>(&mut conn)?;
+
+    if exists_results.is_empty() || !exists_results[0].exists {
+        return Err(BlastError::Fuse(format!("no fuse found with name '{}'", name)));
+    }
+
+    let info = sql_query(&format!(
+        "SELECT id, name, flow_name, schedule_kind, schedule_spec, \
+         enabled, last_run_status, last_error, run_count \
+         FROM fuses WHERE name = '{}'",
+        name
+    ))
+    .load::<FuseInfo>(&mut conn)?;
+
+    if info.is_empty() {
+        return Err(BlastError::Fuse(format!("failed to fetch fuse '{}'", name)));
+    }
+
+    let fuse = &info[0];
+    println!("Fuse: {}", fuse.name);
+    println!("  flow_name:       {}", fuse.flow_name);
+    println!("  schedule_kind:   {}", fuse.schedule_kind);
+    println!("  schedule_spec:   {}", fuse.schedule_spec);
+    println!("  enabled:         {}", fuse.enabled);
+    let status_display = match fuse.last_run_status.as_deref() {
+        Some(s) => s.to_string(),
+        None => "-".to_string(),
+    };
+    let error_display = match fuse.last_error.as_deref() {
+        Some(s) => s.to_string(),
+        None => "-".to_string(),
+    };
+    println!("  last_run_status: {}", status_display);
+    println!("  last_error:      {}", error_display);
+    println!("  run_count:       {}", fuse.run_count);
+
+    let log_path = Path::new(&config.project_dir)
+        .join("storage")
+        .join("fuses")
+        .join("execution.log");
+
+    if log_path.exists() {
+        let contents = fs::read_to_string(&log_path)?;
+        let relevant: Vec<&str> = contents
+            .lines()
+            .filter(|line| line.contains(&format!("'{}'", name)))
+            .collect();
+
+        if relevant.is_empty() {
+            println!("\nNo log entries found for fuse '{}'.", name);
+        } else {
+            println!("\nRecent log entries:");
+            let start = relevant.len().saturating_sub(20);
+            for line in &relevant[start..] {
+                println!("  {}", line);
+            }
+        }
+    }
 
     Ok(())
 }

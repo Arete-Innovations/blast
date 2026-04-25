@@ -309,7 +309,7 @@ pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
                             );
                             pb.set_message(format!("Toggling fuse '{}'...", selected_job.name));
 
-                            match toggle_fuse(config, fuse_id_i32) {
+                            match toggle_fuse(config, &selected_job.name) {
                                 Ok(()) => {
                                     pb.finish_with_message(format!(
                                         "Fuse '{}' toggled successfully",
