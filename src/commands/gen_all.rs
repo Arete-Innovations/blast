@@ -4,7 +4,7 @@
 //!     schema → structs → models → flows → frontend
 //!            → env-example → governor-plugin → test scaffolds
 //!
-//! Steps that have no underlying generator yet (`flows`, `env-example`) emit a
+//! Steps that have no underlying generator yet (`env-example`) emit a
 //! `sink.warn` and are skipped without aborting the pipeline. Every other step
 //! is run via its existing handler; on failure the pipeline aborts and the
 //! error propagates to the caller. No retries — that is `blast init`'s job.
@@ -74,7 +74,7 @@ pub fn run(
     run_schema_step(sink, progress, &mut outcome)?;
     run_structs_step(config, sink, progress, &mut outcome)?;
     run_models_step(config, sink, progress, &mut outcome)?;
-    run_flows_step(sink, progress, &mut outcome);
+    run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_ws_topics_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -164,14 +164,29 @@ fn run_models_step(
     Ok(())
 }
 
-fn run_flows_step(sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) {
-    progress.step_start(STEP_FLOWS);
-    sink.warn(format!(
-        "{}: no generator wired yet; skipping",
-        STEP_FLOWS
-    ));
-    progress.step_done(STEP_FLOWS);
-    outcome.steps_run += 1;
+fn run_flows_step(
+    project_root: &PathBuf,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    match codegen::flows::run(project_root, sink, progress) {
+        Ok(report) => {
+            for path in &report.written {
+                sink.info(format!("wrote {}", path.display()));
+            }
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_FLOWS, &reason);
+            sink.error(format!("{}: {}", STEP_FLOWS, reason));
+            Err(err)
+        }
+    }
 }
 
 fn run_http_routes_step(
