@@ -159,6 +159,9 @@ pub enum GenCmd {
 
     #[command(about = "Run the full codegen pipeline (schema → structs → models → flows → frontend → governor → tests)")]
     All,
+
+    #[command(about = "TUI wizard to author/edit a resource state file")]
+    Resource { name: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]

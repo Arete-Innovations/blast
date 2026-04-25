@@ -26,6 +26,7 @@ mod schema_parser;
 mod state;
 mod structs;
 mod tui_viewer;
+mod wizards;
 
 fn main() {
     let mut dep_manager = dependencies::DependencyManager::new();
