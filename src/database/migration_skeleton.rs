@@ -61,13 +61,21 @@ fn validate_migration_name(name: &str) -> BlastResult<String> {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Mutex;
+
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
     fn with_tempdir<F: FnOnce()>(f: F) {
+        let guard = match CWD_LOCK.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         let tmp = tempfile::tempdir().expect("tempdir");
         let prev = env::current_dir().expect("cwd");
         env::set_current_dir(tmp.path()).expect("chdir tmp");
         f();
         env::set_current_dir(prev).expect("chdir back");
+        drop(guard);
     }
 
     #[test]
