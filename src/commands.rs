@@ -48,6 +48,7 @@ pub enum Command {
     GenTable,
     GenMigrationCustom(String),
     GenInteractivePicker,
+    Check { verbose: bool },
 }
 
 pub fn parse_cli_args(args: &[String]) -> Option<Command> {
@@ -123,6 +124,11 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
 
         Some("build") => Some(Command::Build),
         Some("package") => Some(Command::Package),
+
+        Some("check") => {
+            let verbose = logger::is_verbose();
+            Some(Command::Check { verbose })
+        }
 
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
 
@@ -210,6 +216,10 @@ pub fn show_help() {
     println!("BUILD COMMANDS:");
     println!("  build                Production build (lint + frontend + cargo release)");
     println!("  package              Tarball binary + dist + .env.example + systemd unit");
+    println!();
+    println!("LINT COMMANDS:");
+    println!("  check                Run frontend lint engine (Governor)");
+    println!("    --verbose          Extra diagnostic output");
     println!();
     println!("OTHER COMMANDS:");
     println!("  new <project_name>   Create a new project");
@@ -612,6 +622,17 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         },
         
+        Command::Check { verbose } => {
+            let project_root = config.project_dir.clone();
+            let outcome = crate::governor::run_check(&project_root, verbose)?;
+            print!("{}", outcome.output);
+            std::io::stdout().flush()?;
+            if outcome.violation_count > 0 {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+
         Command::Exit => Ok(()),
 
         Command::GenTable => {
