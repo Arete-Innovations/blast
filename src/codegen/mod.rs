@@ -1,3 +1,4 @@
+pub mod build_rs_template;
 pub mod frontend;
 pub mod frontend_scaffold;
 pub mod governor_plugin;

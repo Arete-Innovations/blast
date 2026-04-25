@@ -1,3 +1,4 @@
+use crate::codegen::build_rs_template;
 use crate::error::{BlastError, BlastResult};
 use chrono;
 use std::fs;
@@ -258,6 +259,10 @@ fn update_project(project_path: &Path, project_name: &str) -> BlastResult<()> {
     if prompt_for_env_edit() {
         edit_env_file(&env_path)?;
     }
+
+    build_rs_template::run(build_rs_template::Args {
+        project_root: project_path.to_path_buf(),
+    })?;
 
     initialize_git_repository(project_path)?;
 
