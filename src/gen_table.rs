@@ -28,7 +28,6 @@ pub struct Args {
     pub table_name: String,
     pub columns: Vec<ColumnArgs>,
     pub indexes: Vec<IndexArgs>,
-    pub include_timestamps: bool,
 }
 
 pub struct Outcome {
@@ -105,7 +104,6 @@ pub fn pick_args(project_root: &Path) -> BlastResult<Args> {
         table_name,
         columns,
         indexes,
-        include_timestamps,
     })
 }
 

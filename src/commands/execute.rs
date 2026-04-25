@@ -165,7 +165,16 @@ fn dispatch_gen(
             let mut progress = crate::io::cli_progress(None);
             let project_root = config.project_dir.clone();
             match crate::gen_table::run_with_picker(&project_root, &mut sink, &mut progress) {
-                Ok(_outcome) => Ok(()),
+                Ok(outcome) => {
+                    logger::success(&format!(
+                        "table '{}' migration written: up={} down={} cols={}",
+                        outcome.table_name,
+                        outcome.up_sql_path.display(),
+                        outcome.down_sql_path.display(),
+                        outcome.column_count,
+                    ))?;
+                    Ok(())
+                }
                 Err(crate::error::BlastError::Invalid(msg)) if msg.contains("cancelled") => Ok(()),
                 Err(e) => Err(e),
             }
@@ -222,7 +231,6 @@ fn dispatch_gen(
             Ok(())
         }
         GenCmd::All => run_gen_all(config),
-        GenCmd::Resource { name } => run_gen_resource(config, name),
     }
 }
 
