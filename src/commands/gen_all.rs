@@ -74,7 +74,7 @@ pub fn run(
     run_models_step(config, sink, progress, &mut outcome)?;
     run_flows_step(sink, progress, &mut outcome);
     run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_env_example_step(sink, progress, &mut outcome);
+    run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
     run_test_scaffolds_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
 
@@ -202,14 +202,33 @@ fn run_frontend_step(
     }
 }
 
-fn run_env_example_step(sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) {
+fn run_env_example_step(
+    project_root: &PathBuf,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
     progress.step_start(STEP_ENV_EXAMPLE);
-    sink.warn(format!(
-        "{}: no generator wired yet; skipping",
-        STEP_ENV_EXAMPLE
-    ));
-    progress.step_done(STEP_ENV_EXAMPLE);
-    outcome.steps_run += 1;
+    match codegen::env_example::run(project_root, sink, progress) {
+        Ok(report) => {
+            match report.written {
+                Some(path) => {
+                    sink.info(format!("emitted {}", path.display()));
+                    outcome.files_written += 1;
+                }
+                None => {}
+            }
+            progress.step_done(STEP_ENV_EXAMPLE);
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_ENV_EXAMPLE, &reason);
+            sink.error(format!("{}: {}", STEP_ENV_EXAMPLE, reason));
+            Err(err)
+        }
+    }
 }
 
 fn run_governor_plugin_step(
