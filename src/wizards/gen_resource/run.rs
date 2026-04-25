@@ -1,6 +1,6 @@
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::schema_parser::{self, ParsedTable};
+use crate::schema_parser;
 use crate::state::names::ResourceName;
 use crate::state::resource::ResourceState;
 use crate::state::{self, io as state_io};
@@ -21,10 +21,6 @@ pub enum WriteAction {
     Created,
     Updated,
     Cancelled,
-}
-
-pub fn pick_args(project_root: PathBuf) -> BlastResult<Args> {
-    pick_args_with_name(project_root, None)
 }
 
 pub fn pick_args_with_name(project_root: PathBuf, name: Option<String>) -> BlastResult<Args> {
