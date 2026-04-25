@@ -46,7 +46,9 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Cli => crate::interactive::run_interactive_cli(config.clone(), dep_manager),
 
         Command::Migration => {
-            crate::database::new_migration();
+            let mut sink = crate::io::cli_sink(false, None);
+            let mut progress = crate::io::cli_progress(None);
+            crate::database::migration_wizard::run_with_picker(&mut sink, &mut progress)?;
             Ok(())
         }
 
