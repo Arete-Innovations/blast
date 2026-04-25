@@ -1,4 +1,4 @@
-use crate::governor::config::GovernorConfig;
+use crate::state::FeLintState;
 use crate::governor::rules::helpers::{is_comment_line, snippet_of};
 use crate::governor::rules::traits::Rule;
 use crate::governor::violation::Violation;
@@ -31,7 +31,7 @@ impl Rule for ConsoleLog {
         file: &Path,
         line: &str,
         line_no: usize,
-        _config: &GovernorConfig,
+        _config: &FeLintState,
     ) -> Option<Violation> {
         if is_comment_line(line) {
             return None;

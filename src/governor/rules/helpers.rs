@@ -1,10 +1,11 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 
 pub fn rel_path_str(file: &Path) -> String {
     file.to_string_lossy().replace('\\', "/")
 }
 
-pub fn file_in_list(file: &Path, list: &[String]) -> bool {
+pub fn file_in_list(file: &Path, list: &BTreeSet<String>) -> bool {
     let path = rel_path_str(file);
     list.iter().any(|allowed| {
         let allowed_norm = allowed.replace('\\', "/");

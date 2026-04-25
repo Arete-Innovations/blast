@@ -1,4 +1,4 @@
-use crate::governor::config::GovernorConfig;
+use crate::state::FeLintState;
 use crate::governor::rules::helpers::{extension_is, snippet_of};
 use crate::governor::rules::traits::FileRule;
 use crate::governor::violation::Violation;
@@ -21,7 +21,7 @@ impl FileRule for MaxLinesPerSfc {
         &self,
         file: &Path,
         contents: &str,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Vec<Violation> {
         if !extension_is(file, "vue") {
             return Vec::new();

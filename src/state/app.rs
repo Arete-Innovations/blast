@@ -3,6 +3,90 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+fn default_rules() -> BTreeSet<String> {
+    [
+        "RawColorOutsidePreset",
+        "HardcodedPx",
+        "RawRemOutsideTokens",
+        "InlineStyle",
+        "TypeAny",
+        "TsIgnore",
+        "SilentFallback",
+        "ConsoleLog",
+        "IconClassOutsideIconsFile",
+        "MaxLinesPerSfc",
+        "MaxLinesPerFn",
+        "PrimeVueConfigImportOutsidePresetFile",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+fn default_exempt_color_files() -> BTreeSet<String> {
+    ["src/plugins/primevue.ts"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn default_exempt_px_files() -> BTreeSet<String> {
+    [
+        "src/plugins/primevue.ts",
+        "src/styles/tokens.css",
+        "src/styles/base.css",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+fn default_max_lines_per_sfc() -> usize {
+    600
+}
+
+fn default_max_lines_per_fn() -> usize {
+    120
+}
+
+fn default_icon_class_patterns() -> BTreeSet<String> {
+    [
+        r"\bpi pi-[a-z0-9-]+\b",
+        r"\bph ph-[a-z0-9-]+\b",
+        r"\bfa fa-[a-z0-9-]+\b",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+fn default_scan_globs() -> BTreeSet<String> {
+    [
+        "frontend/src/**/*.ts",
+        "frontend/src/**/*.vue",
+        "frontend/src/**/*.css",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+fn default_hairline_border_rem() -> String {
+    "0.0625rem".to_string()
+}
+
+fn default_icons_file() -> String {
+    "src/icons.ts".to_string()
+}
+
+fn default_tokens_file() -> String {
+    "src/styles/tokens.css".to_string()
+}
+
+fn default_primevue_preset_file() -> String {
+    "src/plugins/primevue.ts".to_string()
+}
+
 pub const APP_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +158,31 @@ pub enum ServiceBackend {
     LocalDisk { root: String },
     Smtp { host: String, port: u16 },
     InMemory,
+}
+
+impl FeLintState {
+    pub fn rule_enabled(&self, rule_name: &str) -> bool {
+        self.rules.contains(rule_name)
+    }
+}
+
+impl Default for FeLintState {
+    fn default() -> Self {
+        Self {
+            rules: default_rules(),
+            exempt_color_files: default_exempt_color_files(),
+            exempt_px_files: default_exempt_px_files(),
+            max_lines_per_sfc: default_max_lines_per_sfc(),
+            max_lines_per_fn: default_max_lines_per_fn(),
+            whitelist_snippets: BTreeSet::new(),
+            icon_class_patterns: default_icon_class_patterns(),
+            scan_globs: default_scan_globs(),
+            hairline_border_rem: default_hairline_border_rem(),
+            icons_file: default_icons_file(),
+            tokens_file: default_tokens_file(),
+            primevue_preset_file: default_primevue_preset_file(),
+        }
+    }
 }
 
 impl AppState {

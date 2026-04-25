@@ -1,4 +1,4 @@
-use crate::governor::config::GovernorConfig;
+use crate::state::FeLintState;
 use crate::governor::rules::helpers::{is_comment_line, rel_path_str, snippet_of};
 use crate::governor::rules::traits::Rule;
 use crate::governor::violation::Violation;
@@ -38,7 +38,7 @@ impl Rule for PrimeVueConfigImportOutsidePresetFile {
         file: &Path,
         line: &str,
         line_no: usize,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Option<Violation> {
         if is_preset_file(file, &config.primevue_preset_file) {
             return None;

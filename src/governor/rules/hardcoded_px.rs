@@ -1,7 +1,7 @@
-use crate::governor::config::GovernorConfig;
 use crate::governor::rules::helpers::{file_in_list, is_comment_line, snippet_of};
 use crate::governor::rules::traits::Rule;
 use crate::governor::violation::Violation;
+use crate::state::FeLintState;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::path::Path;
@@ -45,7 +45,7 @@ impl Rule for HardcodedPx {
         file: &Path,
         line: &str,
         line_no: usize,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Option<Violation> {
         if file_in_list(file, &config.exempt_px_files) {
             return None;

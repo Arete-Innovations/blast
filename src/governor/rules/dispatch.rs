@@ -1,5 +1,5 @@
-use crate::governor::config::GovernorConfig;
 use crate::governor::rules::traits::{FileRule, Rule};
+use crate::state::FeLintState;
 use crate::governor::violation::Violation;
 use std::path::Path;
 
@@ -16,7 +16,7 @@ use super::silent_fallback::SilentFallback;
 use super::ts_ignore::TsIgnore;
 use super::type_any::TypeAny;
 
-pub fn run_all(file: &Path, contents: &str, config: &GovernorConfig) -> Vec<Violation> {
+pub fn run_all(file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
     let line_rules = build_line_rules();
     let file_rules = build_file_rules();
 

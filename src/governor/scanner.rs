@@ -1,8 +1,8 @@
 use crate::error::BlastResult;
-use crate::governor::config::GovernorConfig;
 use crate::governor::rules;
 use crate::governor::violation::Violation;
 use crate::governor::whitelist::Whitelist;
+use crate::state::FeLintState;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -12,7 +12,7 @@ pub struct ScanReport {
     pub files_scanned: usize,
 }
 
-pub fn scan_project(root: &Path, config: &GovernorConfig) -> BlastResult<ScanReport> {
+pub fn scan_project(root: &Path, config: &FeLintState) -> BlastResult<ScanReport> {
     let frontend_root = root.join("frontend");
     let whitelist = Whitelist::load(&root.join(".rule_violations_whitelist"))?;
 
@@ -34,7 +34,7 @@ pub fn scan_project(root: &Path, config: &GovernorConfig) -> BlastResult<ScanRep
 fn scan_one(
     path: &Path,
     root: &Path,
-    config: &GovernorConfig,
+    config: &FeLintState,
     whitelist: &Whitelist,
 ) -> Vec<Violation> {
     let raw = match std::fs::read_to_string(path) {
@@ -77,7 +77,7 @@ fn is_target_file(path: &Path) -> bool {
     matches!(ext.as_str(), "ts" | "vue" | "css")
 }
 
-fn is_globally_whitelisted(snippet: &str, config: &GovernorConfig) -> bool {
+fn is_globally_whitelisted(snippet: &str, config: &FeLintState) -> bool {
     config
         .whitelist_snippets
         .iter()

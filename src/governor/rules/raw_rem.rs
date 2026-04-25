@@ -1,4 +1,4 @@
-use crate::governor::config::GovernorConfig;
+use crate::state::FeLintState;
 use crate::governor::rules::helpers::{is_comment_line, rel_path_str, snippet_of};
 use crate::governor::rules::traits::Rule;
 use crate::governor::violation::Violation;
@@ -53,7 +53,7 @@ impl Rule for RawRemOutsideTokens {
         file: &Path,
         line: &str,
         line_no: usize,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Option<Violation> {
         if is_in_tokens_file(file, &config.tokens_file) {
             return None;
