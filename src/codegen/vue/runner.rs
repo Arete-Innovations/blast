@@ -286,7 +286,7 @@ mod tests {
             "List should import per-resource query helpers"
         );
         assert!(
-            form_body.contains("WidgetInsertableForCreate"),
+            form_body.contains("WidgetInsertable"),
             "Form should emit Widget* payload type"
         );
 

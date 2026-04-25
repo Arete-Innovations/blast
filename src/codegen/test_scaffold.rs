@@ -300,7 +300,7 @@ mod tests {
     async fn __TABLE___routes_smoke() {
         let pool = test_pool().await;
         run_in_test(&pool, |b| b, |ctx| Box::pin(async move {
-            let app = route_mod::routes();
+            let app = route_mod::router();
             let response = app
                 .oneshot(
                     Request::builder()

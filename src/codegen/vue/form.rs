@@ -111,9 +111,9 @@ fn build_form_imports(fields: &[(&FieldName, &FieldState)], table: &str) -> Stri
 
 fn render_form_emits(has_create: bool, has_update: bool, pascal: &str) -> String {
     let payload = match (has_create, has_update) {
-        (true, true) => format!("{p}InsertableForCreate | {p}PatchForUpdate", p = pascal),
-        (true, false) => format!("{}InsertableForCreate", pascal),
-        (false, true) => format!("{}PatchForUpdate", pascal),
+        (true, true) => format!("{p}Insertable | {p}Patch", p = pascal),
+        (true, false) => format!("{}Insertable", pascal),
+        (false, true) => format!("{}Patch", pascal),
         (false, false) => "unknown".to_string(),
     };
     format!("<{{ submit: [payload: {}] }}>", payload)

@@ -179,27 +179,27 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
 fn verb_signature(verb: Verb, type_stem: &str) -> (String, String, String, String) {
     match verb {
         Verb::List => (
-            format!(", filters: {type_stem}Filter, page: catalyst::list::Page"),
-            String::from(", &filters, &page"),
-            format!("catalyst::list::PaginatedList<{type_stem}PublicRow>"),
+            format!(", query: catalyst::transport::http::list_query::ListQuery"),
+            String::from(", &query"),
+            format!("catalyst::transport::http::list_query::ListResponse<{type_stem}Public>"),
             String::from("list"),
         ),
         Verb::Get => (
             String::from(", id: i64"),
             String::from(", id"),
-            format!("{type_stem}PublicRow"),
+            format!("{type_stem}Public"),
             String::from("get"),
         ),
         Verb::Create => (
-            format!(", input: {type_stem}InsertableForCreate"),
+            format!(", input: {type_stem}Insertable"),
             String::from(", &input"),
-            format!("{type_stem}PublicRow"),
+            format!("{type_stem}Public"),
             String::from("create"),
         ),
         Verb::Update => (
-            format!(", id: i64, patch: {type_stem}PatchForUpdate"),
+            format!(", id: i64, patch: {type_stem}Patch"),
             String::from(", id, &patch"),
-            format!("{type_stem}PublicRow"),
+            format!("{type_stem}Public"),
             String::from("update"),
         ),
         Verb::Delete => (
