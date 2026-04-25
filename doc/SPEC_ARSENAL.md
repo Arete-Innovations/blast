@@ -4,7 +4,7 @@ Capability inventory tool. Walks the user's app, extracts every `pub fn` across 
 
 ## Role
 
-Pairs with the strict layered architecture + Primer-driven codegen to eliminate "AI slop" failure modes:
+Pairs with the strict layered architecture + state-file-driven codegen to eliminate "AI slop" failure modes:
 
 - AI re-implements a utility that already exists → Arsenal shows it, AI reuses
 - AI writes business logic in a route → layer rules + `cargo check` reject
@@ -15,7 +15,7 @@ Combined with `blast check` (FE lint) + `cargo check` + layer-enforced imports, 
 
 ## Invocation
 
-- `blast arsenal` — scans source, writes `target/arsenal.json`
+- `blast arsenal` — scans source + state files, writes `target/arsenal.json`
 - `blast arsenal serve` — serves same data over MCP stdio protocol (for AI agents)
 - Auto-regenerated as a post-pass in `blast gen all`
 - Regenerated on source change by `blast watch`
@@ -29,10 +29,11 @@ Combined with `blast check` (FE lint) + `cargo check` + layer-enforced imports, 
 | `models/` | `pub fn` signatures, resource ownership |
 | `flows/` | `pub fn` signatures, inputs/outputs, retry presence (Crank detected) |
 | `transport/` | route → flow mapping (http/ws/fuses entry points) |
+| `storage/blast/state/` | resource names, declared verbs, field variants — for capability surface context |
 
 NOT scanned: `src/structs/`, `src/database/`, `frontend/` — those are shape/presentation, not capabilities.
 
-Both `generated/` and `custom/` subtrees are indexed.
+Both `generated/` and `custom/` subtrees are indexed. State file contents supplement the Rust scan: Arsenal knows what verbs exist even if codegen hasn't run yet.
 
 ## Output Schema (`target/arsenal.json`)
 
