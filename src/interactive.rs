@@ -35,6 +35,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[Cronjobs] Toggle Job",
         "[Cronjobs] Remove Job",
         "[LOG] Truncate Logs",
+        "[Arsenal] Scan & Write JSON",
         "[Exit] Kill Session",
     ];
 
@@ -145,6 +146,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             }
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
+            "[Arsenal] Scan & Write JSON" => Command::Arsenal,
 
             "[Exit] Kill Session" => {
                 logger::info("Killing Zellij session...")?;
