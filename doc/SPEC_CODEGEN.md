@@ -134,17 +134,27 @@ See `catalyst/doc/SPEC_ADMIN.md` for the admin shell layout and the generic comp
 Emitted by `blast gen test`. Idempotent — does not overwrite existing files.
 
 ```
-flows/generated/users/list.test.rs          (baseline integration test: fixture insert → flow call → assert)
-flows/generated/users/get.test.rs
-flows/generated/users/update.test.rs
-flows/generated/users/delete.test.rs
+src/flows/generated/users/list.test.rs        (per declared verb: fixture insert → flow call → assert)
+src/flows/generated/users/get.test.rs
+src/flows/generated/users/create.test.rs
+src/flows/generated/users/update.test.rs
+src/flows/generated/users/delete.test.rs
 
-transport/http/generated/users.test.rs      (baseline HTTP test: oneshot request through full stack)
+src/transport/http/generated/users.test.rs    (per resource: oneshot request through full stack)
 
-tests/fixtures/users.rs                     (fixture helper that calls the create flow)
+tests/fixtures/users.rs                       (`impl Fixture for User` calling create flow)
+tests/fixtures/mod.rs                         (barrel re-exporting every fixture module)
+tests/common/mod.rs                           (shared `use catalyst::testing::*` + `test_pool` helper)
 ```
 
-Test scaffold format: `with_test_tx` wrapper + fixture creation + minimal valid input + assert on return value and HTTP status. See `catalyst/doc/SPEC_TESTING.md` for the harness shape.
+Each scaffold consumes the catalyst testing harness shipped behind the `testing` Cargo feature:
+
+- `catalyst::testing::with_test_transaction` — always-rollback Postgres wrapper
+- `catalyst::testing::run_in_test` — composes the wrapper with a `TestCtxBuilder`
+- `catalyst::testing::TestCtx<'a>` — flow-shaped test context (conn + session)
+- `catalyst::testing::Fixture` trait + `catalyst::fixture!` macro — flow-driven fixture data
+
+CLI surface: `blast gen test`, `blast gen test --flow <table>` or `<table>/<verb>`, `blast gen test --route <table>`. See `SPEC_BLAST_COMMANDS.md` and `catalyst/doc/SPEC_TESTING.md`.
 
 ### Misc output
 

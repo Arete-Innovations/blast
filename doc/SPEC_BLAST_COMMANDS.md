@@ -245,10 +245,22 @@ After the wizard exits, run `blast migrate` → `blast gen schema` → `blast ge
 Scaffolds baseline test files for all generated flows and routes. Idempotent on existing files — does not overwrite tests the user has already modified.
 
 ```
-flows/generated/<resource>/<verb>.test.rs   (per generated flow)
-transport/http/generated/<resource>.test.rs  (per generated resource's route handler)
-tests/fixtures/<resource>.rs               (fixture helper, one per resource)
+blast gen test                       # scaffold every flow + every route from primer IR
+blast gen test --flow <name>         # only flow tests; <name> is "<table>" or "<table>/<verb>"
+blast gen test --route <name>        # only the route smoke test for <table>
 ```
+
+Outputs:
+
+```
+src/flows/generated/<resource>/<verb>.test.rs   (per primer-declared verb)
+src/transport/http/generated/<resource>.test.rs (one per resource with routes)
+tests/fixtures/<resource>.rs                    (fixture impl, one per resource)
+tests/fixtures/mod.rs                            (barrel of fixture modules)
+tests/common/mod.rs                              (shared `use catalyst::testing::*` + test_pool helper)
+```
+
+Every emitted file is an **opinionated stub**: imports, `#[tokio::test]` attribute, `run_in_test` wrapper, fixture call, and a placeholder assertion the user replaces.
 
 For each target file:
 - If the file does not exist: write the Blast-generated scaffold.
@@ -256,7 +268,7 @@ For each target file:
 
 `blast gen all` runs `blast gen test` as the final pass in the pipeline.
 
-See `catalyst/doc/SPEC_TESTING.md` for what the scaffolds contain.
+See `catalyst/doc/SPEC_TESTING.md` for what the scaffolds contain and how the catalyst-side harness primitives (`with_test_transaction`, `TestCtx`, `Fixture`, `fixture!`) wire together.
 
 ## Legacy Commands (Removed or Superseded)
 
