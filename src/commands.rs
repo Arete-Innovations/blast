@@ -708,8 +708,10 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
         Command::GenGovernorPlugin => {
             logger::info("Emitting governor Vite plugin shim...")?;
-            let path = crate::codegen::governor_plugin::run(&config.project_dir)?;
-            logger::success(&format!("emitted {}", path.display()))?;
+            let paths = crate::codegen::governor_plugin::run(&config.project_dir)?;
+            for p in &paths {
+                logger::success(&format!("emitted {}", p.display()))?;
+            }
             Ok(())
         }
 
