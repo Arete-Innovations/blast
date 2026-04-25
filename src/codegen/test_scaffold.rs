@@ -5,6 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::codegen::header;
 use crate::codegen::ir_loader::{self, ResourceIr, VerbKind};
 use crate::error::BlastResult;
 
@@ -25,9 +26,10 @@ pub fn run(project_root: &Path, filter: &Filter) -> BlastResult<EmitReport> {
     let resources = ir_loader::load_primer_ir(project_root)?;
     let mut report = EmitReport::default();
 
+    let app_marker = header::marker_for_app(project_root)?;
     write_once(
         &project_root.join("tests").join("common").join("mod.rs"),
-        &common_mod_rs(),
+        &format!("{}{}", app_marker, common_mod_rs()),
         &mut report,
     )?;
 
@@ -36,16 +38,18 @@ pub fn run(project_root: &Path, filter: &Filter) -> BlastResult<EmitReport> {
             continue;
         }
 
+        let resource_marker = header::marker_for_resource(project_root, &r.table)?;
+
         write_once(
             &fixture_path(project_root, &r.table),
-            &fixture_stub(&r.table),
+            &format!("{}{}", resource_marker, fixture_stub(&r.table)),
             &mut report,
         )?;
 
         if filter.includes_routes(r) {
             write_once(
                 &route_test_path(project_root, &r.table),
-                &route_test_stub(&r.table),
+                &format!("{}{}", resource_marker, route_test_stub(&r.table)),
                 &mut report,
             )?;
         }
@@ -56,7 +60,7 @@ pub fn run(project_root: &Path, filter: &Filter) -> BlastResult<EmitReport> {
             }
             write_once(
                 &flow_test_path(project_root, &r.table, verb.kind),
-                &flow_test_stub(&r.table, verb.kind),
+                &format!("{}{}", resource_marker, flow_test_stub(&r.table, verb.kind)),
                 &mut report,
             )?;
         }
@@ -64,7 +68,7 @@ pub fn run(project_root: &Path, filter: &Filter) -> BlastResult<EmitReport> {
 
     write_once(
         &project_root.join("tests").join("fixtures").join("mod.rs"),
-        &fixtures_mod_rs(&resources),
+        &format!("{}{}", app_marker, fixtures_mod_rs(&resources)),
         &mut report,
     )?;
 
