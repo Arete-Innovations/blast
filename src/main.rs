@@ -10,6 +10,7 @@ mod dashboard;
 mod database;
 mod dependencies;
 mod error;
+mod gen_migration;
 mod gen_table;
 mod interactive;
 mod logger;
