@@ -52,6 +52,7 @@ pub enum Command {
     Arsenal,
     ArsenalServe,
     GenFrontend,
+    GenGovernorPlugin,
 }
 
 pub fn parse_cli_args(args: &[String]) -> Option<Command> {
@@ -106,6 +107,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("models") => Some(Command::GenerateModels),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("table") => Some(Command::GenTable),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("frontend") => Some(Command::GenFrontend),
+        Some("gen") if args.get(2).map(|s| s.as_str()) == Some("governor-plugin") => Some(Command::GenGovernorPlugin),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("migration") => {
             parse_gen_migration(args)
         }
@@ -200,6 +202,7 @@ pub fn show_help() {
     println!("  gen table            Interactive wizard to author a CREATE TABLE migration");
     println!("  gen migration --custom <name>  Scaffold an empty migration and open $EDITOR");
     println!("  gen frontend         Generate FE artifacts (TS validators, list query helpers) from primer IR");
+    println!("  gen governor-plugin  Emit frontend/scripts/governor-plugin.js (Vite shim for blast check)");
     println!();
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
@@ -672,6 +675,13 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             logger::success("Frontend codegen complete")?;
             Ok(())
         }
+
+        Command::GenGovernorPlugin => {
+            logger::info("Emitting governor Vite plugin shim...")?;
+            let path = crate::codegen::governor_plugin::run(&config.project_dir)?;
+            logger::success(&format!("emitted {}", path.display()))?;
+            Ok(())
+        }
     }
 }
 
@@ -688,6 +698,7 @@ fn run_gen_picker(
         "Generate table (interactive wizard)",
         "Generate custom migration (--custom)",
         "Generate frontend (validators + list query helpers)",
+        "Generate governor Vite plugin (frontend/scripts/governor-plugin.js)",
     ];
 
     let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
@@ -708,6 +719,7 @@ fn run_gen_picker(
             execute(Command::GenMigrationCustom(name), config, dep_manager)
         }
         5 => execute(Command::GenFrontend, config, dep_manager),
+        6 => execute(Command::GenGovernorPlugin, config, dep_manager),
         other => Err(BlastError::Invalid(format!(
             "unknown gen picker selection: {}",
             other
