@@ -9,6 +9,7 @@ pub mod http_routes;
 pub mod ir_loader;
 pub mod test_scaffold;
 pub mod ts_validator;
+pub mod vue;
 pub mod ws_topics;
 
 pub use frontend::run_frontend;
