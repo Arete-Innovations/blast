@@ -1,14 +1,3 @@
-//! `blast gen governor-plugin` — emits the Vite plugin shim that calls
-//! `blast check` on prebuild/predev hooks.
-//!
-//! The plugin is intentionally a tiny `execSync` bridge — all real lint
-//! logic lives in the Rust `governor` module. The user wires the plugin
-//! into `vite.config.ts` once; from then on every Vite build invokes the
-//! Rust lint engine.
-//!
-//! Whitelist file emission (`.rule_violations_whitelist`) is deferred until
-//! blueprint IR exposes `whitelist_snippet([...])` data — for now an empty
-//! whitelist is the implicit default and Governor handles its absence.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -36,8 +25,6 @@ export default function governorPlugin() {
 }
 "#;
 
-/// Emit `frontend/scripts/governor-plugin.js` rooted at `project_root`.
-/// Returns the absolute path of the emitted file so the caller can log it.
 pub fn run(project_root: &Path) -> BlastResult<PathBuf> {
     let target = project_root.join(PLUGIN_RELATIVE_PATH);
 

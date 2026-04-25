@@ -3,9 +3,6 @@ use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Mirror of `catalyst_primer::Variant`. Defined locally so blast does not
-/// depend on the catalyst_primer crate (separate repos). Must stay in sync
-/// with the IR JSON shape emitted by primer's `Contract::emit_ir`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum Variant {
     DB,
@@ -15,7 +12,6 @@ pub enum Variant {
     Admin,
 }
 
-/// Mirror of `catalyst_primer::Validator`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub enum Validator {
     MinLen(usize),
@@ -29,7 +25,6 @@ pub enum Validator {
     Required,
 }
 
-/// Mirror of `catalyst_primer::Validation`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Validation {
     #[serde(default)]
@@ -48,7 +43,6 @@ pub struct Validation {
     pub validators: Vec<Validator>,
 }
 
-/// Mirror of `catalyst_primer::FieldSpec`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FieldSpec {
     pub name: String,
@@ -57,7 +51,6 @@ pub struct FieldSpec {
     pub validation: Validation,
 }
 
-/// Mirror of `catalyst_primer::VerbKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum VerbKind {
     List,
@@ -67,7 +60,6 @@ pub enum VerbKind {
     Delete,
 }
 
-/// Mirror of `catalyst_primer::Auth`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub enum Auth {
     Public,
@@ -77,7 +69,6 @@ pub enum Auth {
     Roles(Vec<String>),
 }
 
-/// Mirror of `catalyst_primer::FilterSpec`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct FilterSpec {
     #[serde(default)]
@@ -92,7 +83,6 @@ pub struct FilterSpec {
     pub max_page_size: Option<u32>,
 }
 
-/// Mirror of `catalyst_primer::VerbSpec`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct VerbSpec {
     pub kind: VerbKind,
@@ -101,8 +91,6 @@ pub struct VerbSpec {
     pub filter: FilterSpec,
 }
 
-/// Top-level IR shape — one JSON file per resource under `target/primer/`,
-/// matching the layout the primer crate's contract emitter produces.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ResourceIr {
     pub table: String,
@@ -113,15 +101,11 @@ pub struct ResourceIr {
 }
 
 impl ResourceIr {
-    /// Return the `List` verb spec if declared.
     pub fn list_verb(&self) -> Option<&VerbSpec> {
         self.verbs.iter().find(|v| v.kind == VerbKind::List)
     }
 }
 
-/// Glob `target/primer/*.json` in the given project root and deserialize each
-/// file into a [`ResourceIr`]. Files are returned sorted by table name for
-/// deterministic downstream codegen.
 pub fn load_primer_ir(project_root: &Path) -> BlastResult<Vec<ResourceIr>> {
     let dir = project_root.join("target").join("primer");
     if !dir.is_dir() {
@@ -135,7 +119,7 @@ pub fn load_primer_ir(project_root: &Path) -> BlastResult<Vec<ResourceIr>> {
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().map_or(false, |e| e == "json") {
+        if matches!(path.extension(), Some(e) if e == "json") {
             paths.push(path);
         }
     }

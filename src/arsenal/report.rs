@@ -93,10 +93,6 @@ mod tests {
         let s = String::from_utf8(bytes).expect("utf8");
         let crypto_idx = s.find("services::crypto::hash").expect("crypto present");
         let email_idx = s.find("services::email::send").expect("email present");
-        // BTreeMap<String, Vec<Entry>>: layers sorted by key (services only).
-        // Entries within layer sorted by fqn at scanner time. The fixture isn't
-        // pre-sorted, so the order here just reflects insertion order. We
-        // verify sorting at the scanner layer; here we only assert determinism.
         assert!(crypto_idx > 0 || email_idx > 0);
     }
 }

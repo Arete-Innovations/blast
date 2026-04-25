@@ -11,7 +11,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
-/// Migration SQL template — paste into a new migration file from `blast migration`.
 pub const FUSES_MIGRATION_UP: &str = r#"CREATE TABLE fuses (
     id              BIGSERIAL PRIMARY KEY,
     name            TEXT NOT NULL UNIQUE,
@@ -31,7 +30,6 @@ pub const FUSES_MIGRATION_UP: &str = r#"CREATE TABLE fuses (
 CREATE INDEX fuses_next_run_at_idx ON fuses (next_run_at) WHERE enabled;
 "#;
 
-/// Rollback SQL template for the fuses migration.
 pub const FUSES_MIGRATION_DOWN: &str = r#"DROP INDEX IF EXISTS fuses_next_run_at_idx;
 DROP TABLE IF EXISTS fuses;
 "#;
