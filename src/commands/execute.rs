@@ -149,9 +149,18 @@ fn dispatch_gen(
     };
     match target {
         GenCmd::Structs => {
-            if !crate::structs::generate(config) {
-                logger::warning("Some struct generation issues occurred")?;
+            let mut sink = crate::io::cli_sink(false, None);
+            let mut progress = crate::io::cli_progress(None);
+            let project_root = config.project_dir.clone();
+            let report = crate::codegen::structs::run(&project_root, &mut sink, &mut progress)?;
+            for p in &report.written {
+                logger::success(&format!("wrote {}", p.display()))?;
             }
+            logger::info(&format!(
+                "structs: {} written, {} skipped",
+                report.written.len(),
+                report.skipped.len(),
+            ))?;
             Ok(())
         }
         GenCmd::Models => {
@@ -431,7 +440,9 @@ fn run_refresh(config: &mut Config) -> BlastResult<()> {
     let schema_ok = crate::database::generate_schema();
 
     progress.set_message("Generating structs...");
-    let structs_ok = crate::structs::generate(config);
+    let mut sink = crate::io::cli_sink(false, None);
+    let mut structs_progress = crate::io::cli_progress(None);
+    let structs_ok = crate::codegen::structs::run(&config.project_dir, &mut sink, &mut structs_progress).is_ok();
 
     progress.set_message("Generating models...");
     let models_ok = crate::models::generate(config);
