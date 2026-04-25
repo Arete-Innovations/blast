@@ -18,7 +18,11 @@
 
 use crate::error::{BlastError, BlastResult};
 use crate::state::content_hash;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+const STATE_DIR_RELATIVE: &str = "storage/blast/state";
+const APP_STATE_FILE: &str = "app.ron";
+const RESOURCES_SUBDIR: &str = "resources";
 
 const MARKER_PREFIX: &str = "// AUTO-GENERATED from ";
 const MARKER_SEPARATOR: &str = " @ ";
@@ -60,6 +64,34 @@ pub fn marker_for_state_file(project_root: &Path, state_path: &Path) -> BlastRes
     };
     let hash = content_hash(state_path)?;
     Ok(marker(&relative_str, &hash))
+}
+
+/// Absolute path to the per-resource state file under the conventional
+/// `storage/blast/state/resources/<table>.ron` layout.
+pub fn resource_state_path(project_root: &Path, table: &str) -> PathBuf {
+    project_root
+        .join(STATE_DIR_RELATIVE)
+        .join(RESOURCES_SUBDIR)
+        .join(format!("{}.ron", table))
+}
+
+/// Absolute path to the app-wide state file at
+/// `storage/blast/state/app.ron`.
+pub fn app_state_path(project_root: &Path) -> PathBuf {
+    project_root.join(STATE_DIR_RELATIVE).join(APP_STATE_FILE)
+}
+
+/// Convenience: marker for a resource state file by table name. Reads
+/// the on-disk state file at the conventional path and embeds its hash.
+pub fn marker_for_resource(project_root: &Path, table: &str) -> BlastResult<String> {
+    let state_path = resource_state_path(project_root, table);
+    marker_for_state_file(project_root, &state_path)
+}
+
+/// Convenience: marker for the app-wide state file.
+pub fn marker_for_app(project_root: &Path) -> BlastResult<String> {
+    let state_path = app_state_path(project_root);
+    marker_for_state_file(project_root, &state_path)
 }
 
 /// Parse a marker header from the start of a generated file. Returns
