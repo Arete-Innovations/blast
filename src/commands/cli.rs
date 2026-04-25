@@ -156,6 +156,9 @@ pub enum GenCmd {
         #[arg(long, conflicts_with = "flow")]
         route: Option<String>,
     },
+
+    #[command(about = "Run the full codegen pipeline (schema → structs → models → flows → frontend → governor → tests)")]
+    All,
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]

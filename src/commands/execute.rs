@@ -220,7 +220,23 @@ fn dispatch_gen(
             ))?;
             Ok(())
         }
+        GenCmd::All => run_gen_all(config),
     }
+}
+
+fn run_gen_all(config: &mut Config) -> BlastResult<()> {
+    let verbose = logger::is_verbose();
+    let mut sink = crate::io::cli_sink(verbose, None);
+    let mut progress = crate::io::cli_progress(None);
+    let args = crate::commands::gen_all::Args {
+        project_root: config.project_dir.clone(),
+    };
+    let outcome = crate::commands::gen_all::run(args, config, &mut sink, &mut progress)?;
+    logger::info(&format!(
+        "gen all complete: {} steps, {} files written, {} files skipped",
+        outcome.steps_run, outcome.files_written, outcome.files_skipped
+    ))?;
+    Ok(())
 }
 
 fn resolve_test_filter(
