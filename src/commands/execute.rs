@@ -191,6 +191,7 @@ fn dispatch_gen(
             }
             Ok(())
         }
+        GenCmd::Resource { name } => run_gen_resource(config, name),
         GenCmd::Test { flow, route } => {
             let filter = resolve_test_filter(flow, route);
             logger::info("Scaffolding test files from primer IR...")?;
@@ -206,6 +207,27 @@ fn dispatch_gen(
             Ok(())
         }
     }
+}
+
+fn run_gen_resource(config: &Config, name: Option<String>) -> BlastResult<()> {
+    let project_root = config.project_dir.clone();
+    let args = crate::wizards::gen_resource::pick_args_with_name(project_root, name)?;
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    let outcome = crate::wizards::gen_resource::run(args, &mut sink, &mut progress)?;
+    match outcome.action {
+        crate::wizards::gen_resource::WriteAction::Created => {
+            logger::success(&format!("created {}", outcome.state_file.display()))?;
+        }
+        crate::wizards::gen_resource::WriteAction::Updated => {
+            logger::success(&format!("updated {}", outcome.state_file.display()))?;
+        }
+        crate::wizards::gen_resource::WriteAction::Cancelled => {
+            logger::info("resource wizard cancelled, no file written")?;
+        }
+    }
+    logger::info("run `blast gen all` to regenerate code from the new state")?;
+    Ok(())
 }
 
 fn resolve_test_filter(

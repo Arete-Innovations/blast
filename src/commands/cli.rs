@@ -156,6 +156,9 @@ pub enum GenCmd {
         #[arg(long, conflicts_with = "flow")]
         route: Option<String>,
     },
+
+    #[command(about = "TUI wizard to author/edit a resource state file")]
+    Resource { name: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]
