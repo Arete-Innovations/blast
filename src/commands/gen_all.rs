@@ -38,6 +38,7 @@ const STEP_MODELS: &str = "models generation";
 const STEP_FLOWS: &str = "flows generation";
 const STEP_HTTP_ROUTES: &str = "http routes generation";
 const STEP_FRONTEND: &str = "frontend generation";
+const STEP_WS_TOPICS: &str = "ws topics generation";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
 const STEP_TEST_SCAFFOLDS: &str = "test scaffold emission";
@@ -76,6 +77,7 @@ pub fn run(
     run_flows_step(sink, progress, &mut outcome);
     run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
+    run_ws_topics_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_env_example_step(sink, progress, &mut outcome);
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
     run_test_scaffolds_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -236,6 +238,43 @@ fn run_frontend_step(
             let reason = err.to_string();
             progress.step_fail(STEP_FRONTEND, &reason);
             sink.error(format!("{}: {}", STEP_FRONTEND, reason));
+            Err(err)
+        }
+    }
+}
+
+fn run_ws_topics_step(
+    project_root: &PathBuf,
+    resource_count: usize,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    if resource_count == 0 {
+        progress.step_start(STEP_WS_TOPICS);
+        sink.info(format!(
+            "{}: no resources declared; skipping",
+            STEP_WS_TOPICS
+        ));
+        progress.step_done(STEP_WS_TOPICS);
+        outcome.steps_run += 1;
+        return Ok(());
+    }
+    match codegen::ws_topics::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!(
+                "{}: {} written, {} skipped",
+                STEP_WS_TOPICS,
+                report.written.len(),
+                report.skipped.len()
+            ));
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_WS_TOPICS, err));
             Err(err)
         }
     }
