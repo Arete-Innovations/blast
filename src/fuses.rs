@@ -11,28 +11,6 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
-pub const FUSES_MIGRATION_UP: &str = r#"CREATE TABLE fuses (
-    id              BIGSERIAL PRIMARY KEY,
-    name            TEXT NOT NULL UNIQUE,
-    flow_name       TEXT NOT NULL,
-    schedule_kind   TEXT NOT NULL,
-    schedule_spec   TEXT NOT NULL,
-    enabled         BOOLEAN NOT NULL DEFAULT true,
-    last_run_at     TIMESTAMPTZ,
-    last_run_status TEXT,
-    last_error      TEXT,
-    next_run_at     TIMESTAMPTZ NOT NULL,
-    run_count       BIGINT NOT NULL DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX fuses_next_run_at_idx ON fuses (next_run_at) WHERE enabled;
-"#;
-
-pub const FUSES_MIGRATION_DOWN: &str = r#"DROP INDEX IF EXISTS fuses_next_run_at_idx;
-DROP TABLE IF EXISTS fuses;
-"#;
 
 #[derive(Debug, QueryableByName)]
 pub struct FuseInfo {

@@ -25,10 +25,6 @@ pub enum WriteAction {
     Cancelled,
 }
 
-pub fn pick_args(project_root: PathBuf) -> BlastResult<Args> {
-    pick_args_with_name(project_root, None)
-}
-
 pub fn pick_args_with_name(project_root: PathBuf, name: Option<String>) -> BlastResult<Args> {
     Ok(Args {
         project_root,

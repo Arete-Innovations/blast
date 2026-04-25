@@ -15,4 +15,3 @@ pub mod ts_ignore;
 pub mod type_any;
 
 pub use dispatch::run_all;
-pub use traits::{FileRule, Rule};

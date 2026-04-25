@@ -7,4 +7,4 @@ pub mod schema_diff;
 pub mod verbs;
 pub mod ws;
 
-pub use run::{pick_args, pick_args_with_name, run, Args, Outcome, WriteAction};
+pub use run::{pick_args_with_name, run, WriteAction};

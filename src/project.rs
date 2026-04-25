@@ -260,9 +260,19 @@ fn update_project(project_path: &Path, project_name: &str) -> BlastResult<()> {
         edit_env_file(&env_path)?;
     }
 
-    build_rs_template::run(build_rs_template::Args {
+    let build_rs_outcome = build_rs_template::run(build_rs_template::Args {
         project_root: project_path.to_path_buf(),
     })?;
+    if verbose_flag() {
+        match build_rs_outcome.action {
+            build_rs_template::WriteAction::Created => {
+                println!("wrote {}", build_rs_outcome.written.display());
+            }
+            build_rs_template::WriteAction::Overwritten => {
+                println!("overwrote {}", build_rs_outcome.written.display());
+            }
+        }
+    }
 
     initialize_git_repository(project_path)?;
 
