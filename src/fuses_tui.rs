@@ -1,6 +1,6 @@
 use crate::configs::Config;
-use crate::cronjobs::{add_cronjob, remove_cronjob, toggle_cronjob, CronjobInfo};
 use crate::error::BlastResult;
+use crate::fuses::{add_fuse, remove_fuse, toggle_fuse, FuseInfo};
 use chrono::{Local, TimeZone, Utc};
 use console::Style;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input};
@@ -11,7 +11,6 @@ use diesel::{PgConnection, RunQueryDsl};
 use dotenv::dotenv;
 use indicatif::{ProgressBar, ProgressStyle};
 use prettytable::{format, Cell, Row, Table};
-use std::fs::create_dir_all;
 use std::io::Write;
 use std::path::Path;
 use std::thread;
@@ -75,15 +74,17 @@ fn establish_connection(config: &Config) -> BlastResult<PgConnection> {
     Ok(PgConnection::establish(&database_url)?)
 }
 
-fn check_cronjobs_table(conn: &mut PgConnection) -> BlastResult<bool> {
+fn check_fuses_table(conn: &mut PgConnection) -> BlastResult<bool> {
     #[derive(Debug, QueryableByName)]
     struct BoolResult {
         #[diesel(sql_type = Bool)]
         pub exists: bool,
     }
 
-    let results = sql_query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'cronjobs') as exists")
-        .load::<BoolResult>(conn)?;
+    let results = sql_query(
+        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'fuses') as exists",
+    )
+    .load::<BoolResult>(conn)?;
 
     if results.is_empty() {
         Ok(false)
@@ -92,11 +93,11 @@ fn check_cronjobs_table(conn: &mut PgConnection) -> BlastResult<bool> {
     }
 }
 
-fn ensure_cronjobs_table(conn: &mut PgConnection) -> BlastResult<()> {
-    if !check_cronjobs_table(conn)? {
+fn ensure_fuses_table(conn: &mut PgConnection) -> BlastResult<()> {
+    if !check_fuses_table(conn)? {
         sql_query(
             r#"
-            CREATE TABLE IF NOT EXISTS cronjobs (
+            CREATE TABLE IF NOT EXISTS fuses (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR NOT NULL UNIQUE,
                 timer INT NOT NULL,
@@ -104,14 +105,14 @@ fn ensure_cronjobs_table(conn: &mut PgConnection) -> BlastResult<()> {
                 last_run BIGINT
             );
 
-            CREATE INDEX IF NOT EXISTS idx_cronjobs_name ON cronjobs(name);
+            CREATE INDEX IF NOT EXISTS idx_fuses_name ON fuses(name);
         "#,
         )
         .execute(conn)?;
 
         sql_query(
             r#"
-            INSERT INTO cronjobs (name, timer, status)
+            INSERT INTO fuses (name, timer, status)
             VALUES
                 ('cleanup_temp_files', 3600, 'active'),
                 ('send_digest_emails', 86400, 'active'),
@@ -125,33 +126,33 @@ fn ensure_cronjobs_table(conn: &mut PgConnection) -> BlastResult<()> {
     Ok(())
 }
 
-fn ensure_cronjob_dirs(config: &Config) -> BlastResult<()> {
-    let cronjob_dir = Path::new(&config.project_dir).join("storage").join("cronjobs");
-    create_dir_all(&cronjob_dir)?;
+fn ensure_fuse_dirs(config: &Config) -> BlastResult<()> {
+    let fuse_dir = Path::new(&config.project_dir).join("storage").join("fuses");
+    std::fs::create_dir_all(&fuse_dir)?;
     Ok(())
 }
 
-fn fetch_cronjobs(config: &Config) -> BlastResult<Vec<CronjobInfo>> {
-    ensure_cronjob_dirs(config)?;
+fn fetch_fuses(config: &Config) -> BlastResult<Vec<FuseInfo>> {
+    ensure_fuse_dirs(config)?;
 
     let mut conn = establish_connection(config)?;
 
-    ensure_cronjobs_table(&mut conn)?;
+    ensure_fuses_table(&mut conn)?;
 
-    Ok(sql_query("SELECT id, name, timer, status, last_run FROM cronjobs ORDER BY id")
-        .load::<CronjobInfo>(&mut conn)?)
+    Ok(sql_query("SELECT id, name, timer, status, last_run FROM fuses ORDER BY id")
+        .load::<FuseInfo>(&mut conn)?)
 }
 
-pub fn display_cronjobs_table(config: &Config) -> BlastResult<()> {
+pub fn display_fuses_table(config: &Config) -> BlastResult<()> {
     print!("\x1B[2J\x1B[1;1H");
     std::io::stdout().flush()?;
 
-    println!("\n{}\n", Style::new().bold().underlined().apply_to("📋 CRONJOBS TABLE (LIVE)"));
+    println!("\n{}\n", Style::new().bold().underlined().apply_to("FUSES TABLE (LIVE)"));
 
-    let mut jobs = fetch_cronjobs(config)?;
+    let mut jobs = fetch_fuses(config)?;
 
     if jobs.is_empty() {
-        println!("No scheduled jobs found.");
+        println!("No fuses registered.");
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
         return Ok(());
@@ -184,7 +185,7 @@ pub fn display_cronjobs_table(config: &Config) -> BlastResult<()> {
 
     loop {
         if last_refresh.elapsed() >= refresh_interval {
-            let updated_jobs_result = fetch_cronjobs(config);
+            let updated_jobs_result = fetch_fuses(config);
             match updated_jobs_result {
                 Ok(updated_jobs) => {
                     jobs = updated_jobs;
@@ -206,22 +207,28 @@ pub fn display_cronjobs_table(config: &Config) -> BlastResult<()> {
             }
         }
 
-        if rx.try_recv().is_ok() {
-            break;
+        match rx.try_recv() {
+            Ok(()) => break,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                thread::sleep(Duration::from_millis(100));
+                continue;
+            }
         }
-
-        thread::sleep(Duration::from_millis(100));
     }
 
     drop(rx);
-    if let Err(e) = input_handle.join() {
-        eprintln!("input thread panicked: {:?}", e);
+    match input_handle.join() {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("input thread panicked: {:?}", e);
+        }
     }
 
     Ok(())
 }
 
-fn render_table(jobs: &[CronjobInfo]) -> BlastResult<Vec<String>> {
+fn render_table(jobs: &[FuseInfo]) -> BlastResult<Vec<String>> {
     let mut table = Table::new();
 
     table.set_format(*format::consts::FORMAT_BOX_CHARS);
@@ -241,10 +248,14 @@ fn render_table(jobs: &[CronjobInfo]) -> BlastResult<Vec<String>> {
             "paused" => Cell::new(&job.status).style_spec("Fg=yellow"),
             "completed" => Cell::new(&job.status).style_spec("Fg=blue"),
             "failed" => Cell::new(&job.status).style_spec("Fg=red"),
-            _other => Cell::new(&job.status),
+            other => Cell::new(other),
         };
 
-        let name_display = if job.name.len() > 25 { format!("{}...", &job.name[0..22]) } else { job.name.clone() };
+        let name_display = if job.name.len() > 25 {
+            format!("{}...", &job.name[0..22])
+        } else {
+            job.name.clone()
+        };
 
         let last_run = format_timestamp(job.last_run);
         let next_run = calc_next_run(job.last_run, job.timer);
@@ -265,43 +276,52 @@ fn render_table(jobs: &[CronjobInfo]) -> BlastResult<Vec<String>> {
     let mut output = Vec::new();
     table.print(&mut output)?;
 
-    let text = String::from_utf8(output).map_err(|e| crate::error::BlastError::Invalid(e.to_string()))?;
+    let text =
+        String::from_utf8(output).map_err(|e| crate::error::BlastError::Invalid(e.to_string()))?;
     Ok(text.lines().map(|line| line.to_string()).collect())
 }
 
-pub fn run_cronjobs_tui(config: &Config) -> BlastResult<()> {
+pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
     let theme = ColorfulTheme::default();
 
     print!("\x1B[2J\x1B[1;1H");
     std::io::stdout().flush()?;
 
     loop {
-        println!("\n{}\n", Style::new().bold().underlined().apply_to("📋 CRONJOBS MANAGER"));
+        println!("\n{}\n", Style::new().bold().underlined().apply_to("FUSES MANAGER"));
 
-        let jobs = fetch_cronjobs(config)?;
+        let jobs = fetch_fuses(config)?;
 
-        let format_job_for_display = |job: &CronjobInfo| -> String {
+        let format_job_for_display = |job: &FuseInfo| -> String {
             let interval = format_duration(job.timer);
             let status = match job.status.as_str() {
-                "active" => "⚡ Active",
-                "paused" => "⏸️ Paused",
-                "completed" => "✅ Completed",
-                "failed" => "❌ Failed",
-                _other => "Unknown",
+                "active" => "Active",
+                "paused" => "Paused",
+                "completed" => "Completed",
+                "failed" => "Failed",
+                other => other,
             };
 
-            let name_display = if job.name.len() > 18 { format!("{}...", &job.name[0..15]) } else { job.name.clone() };
+            let name_display = if job.name.len() > 18 {
+                format!("{}...", &job.name[0..15])
+            } else {
+                job.name.clone()
+            };
 
-            format!("ID: {:<3} - {:<18} (Status: {:<12}, Interval: {:<12})", job.id, name_display, status, interval)
+            format!(
+                "ID: {:<3} - {:<18} (Status: {:<12}, Interval: {:<12})",
+                job.id, name_display, status, interval
+            )
         };
 
         if jobs.is_empty() {
-            println!("No scheduled jobs found.\n");
+            println!("No fuses registered.\n");
         } else {
-            println!("{} scheduled jobs found.\n", jobs.len());
+            println!("{} fuses registered.\n", jobs.len());
         }
 
-        let menu_options = vec!["View Live Table", "View and Manage Jobs", "Add New Job", "Back to Main Menu"];
+        let menu_options =
+            vec!["View Live Table", "View and Manage Fuses", "Add New Fuse", "Back to Main Menu"];
 
         let selection = FuzzySelect::with_theme(&theme)
             .with_prompt("Select an option")
@@ -311,33 +331,37 @@ pub fn run_cronjobs_tui(config: &Config) -> BlastResult<()> {
 
         match selection {
             0 => {
-                display_cronjobs_table(config)?;
+                display_fuses_table(config)?;
             }
             1 => {
                 if jobs.is_empty() {
-                    println!("No jobs to manage. Please add a job first.");
+                    println!("No fuses to manage. Please add a fuse first.");
                     thread::sleep(Duration::from_secs(2));
                 } else {
-                    let job_displays: Vec<String> = jobs.iter().map(|job| format_job_for_display(job)).collect();
+                    let job_displays: Vec<String> =
+                        jobs.iter().map(|job| format_job_for_display(job)).collect();
 
                     let job_selection = FuzzySelect::with_theme(&theme)
-                        .with_prompt("Select a job to manage")
+                        .with_prompt("Select a fuse to manage")
                         .default(0)
                         .items(&job_displays)
                         .interact()?;
 
                     let selected_job = &jobs[job_selection];
 
-                    let job_actions = vec![
-                        format!("{} Job", if selected_job.status == "active" { "Pause" } else { "Activate" }),
-                        "Remove Job".to_string(),
+                    let fuse_actions = vec![
+                        format!(
+                            "{} Fuse",
+                            if selected_job.status == "active" { "Pause" } else { "Activate" }
+                        ),
+                        "Remove Fuse".to_string(),
                         "Cancel".to_string(),
                     ];
 
                     let action_selection = FuzzySelect::with_theme(&theme)
-                        .with_prompt(&format!("Action for job '{}'", selected_job.name))
+                        .with_prompt(&format!("Action for fuse '{}'", selected_job.name))
                         .default(0)
-                        .items(&job_actions)
+                        .items(&fuse_actions)
                         .interact()?;
 
                     match action_selection {
@@ -347,24 +371,32 @@ pub fn run_cronjobs_tui(config: &Config) -> BlastResult<()> {
                                 ProgressStyle::default_spinner()
                                     .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
                                     .template("{spinner:.green} {msg}")
-                                    .map_err(|e| crate::error::BlastError::Invalid(e.to_string()))?,
+                                    .map_err(|e| {
+                                        crate::error::BlastError::Invalid(e.to_string())
+                                    })?,
                             );
-                            pb.set_message(format!("Toggling job '{}'...", selected_job.name));
+                            pb.set_message(format!("Toggling fuse '{}'...", selected_job.name));
 
-                            match toggle_cronjob(config, selected_job.id) {
+                            match toggle_fuse(config, selected_job.id) {
                                 Ok(()) => {
-                                    pb.finish_with_message(format!("✅ Job '{}' toggled successfully", selected_job.name));
+                                    pb.finish_with_message(format!(
+                                        "Fuse '{}' toggled successfully",
+                                        selected_job.name
+                                    ));
                                     thread::sleep(Duration::from_secs(1));
                                 }
                                 Err(e) => {
-                                    pb.finish_with_message(format!("❌ Error: {}", e));
+                                    pb.finish_with_message(format!("Error: {}", e));
                                     thread::sleep(Duration::from_secs(2));
                                 }
                             }
                         }
                         1 => {
                             if Confirm::with_theme(&theme)
-                                .with_prompt(format!("Are you sure you want to remove job '{}'?", selected_job.name))
+                                .with_prompt(format!(
+                                    "Are you sure you want to remove fuse '{}'?",
+                                    selected_job.name
+                                ))
                                 .default(false)
                                 .interact()?
                             {
@@ -373,31 +405,40 @@ pub fn run_cronjobs_tui(config: &Config) -> BlastResult<()> {
                                     ProgressStyle::default_spinner()
                                         .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
                                         .template("{spinner:.red} {msg}")
-                                        .map_err(|e| crate::error::BlastError::Invalid(e.to_string()))?,
+                                        .map_err(|e| {
+                                            crate::error::BlastError::Invalid(e.to_string())
+                                        })?,
                                 );
-                                pb.set_message(format!("Removing job '{}'...", selected_job.name));
+                                pb.set_message(format!("Removing fuse '{}'...", selected_job.name));
 
-                                match remove_cronjob(config, selected_job.id) {
+                                match remove_fuse(config, selected_job.id) {
                                     Ok(()) => {
-                                        pb.finish_with_message(format!("✅ Job '{}' removed successfully", selected_job.name));
+                                        pb.finish_with_message(format!(
+                                            "Fuse '{}' removed successfully",
+                                            selected_job.name
+                                        ));
                                         thread::sleep(Duration::from_secs(1));
                                     }
                                     Err(e) => {
-                                        pb.finish_with_message(format!("❌ Error: {}", e));
+                                        pb.finish_with_message(format!("Error: {}", e));
                                         thread::sleep(Duration::from_secs(2));
                                     }
                                 }
                             }
                         }
-                        _other => {}
+                        2 => {}
+                        other => {
+                            eprintln!("unexpected action: {}", other);
+                        }
                     }
                 }
             }
             2 => {
-                let name: String = Input::with_theme(&theme).with_prompt("Enter job name").interact_text()?;
+                let name: String =
+                    Input::with_theme(&theme).with_prompt("Enter fuse name").interact_text()?;
 
                 if name.trim().is_empty() {
-                    println!("Job name cannot be empty.");
+                    println!("Fuse name cannot be empty.");
                     thread::sleep(Duration::from_secs(2));
                     continue;
                 }
@@ -416,15 +457,18 @@ pub fn run_cronjobs_tui(config: &Config) -> BlastResult<()> {
                                 .template("{spinner:.green} {msg}")
                                 .map_err(|e| crate::error::BlastError::Invalid(e.to_string()))?,
                         );
-                        pb.set_message(format!("Adding job '{}'...", name));
+                        pb.set_message(format!("Adding fuse '{}'...", name));
 
-                        match add_cronjob(config, &name, interval_seconds) {
+                        match add_fuse(config, &name, interval_seconds) {
                             Ok(()) => {
-                                pb.finish_with_message(format!("✅ Job '{}' added successfully", name));
+                                pb.finish_with_message(format!(
+                                    "Fuse '{}' added successfully",
+                                    name
+                                ));
                                 thread::sleep(Duration::from_secs(1));
                             }
                             Err(e) => {
-                                pb.finish_with_message(format!("❌ Error: {}", e));
+                                pb.finish_with_message(format!("Error: {}", e));
                                 thread::sleep(Duration::from_secs(2));
                             }
                         }
@@ -440,7 +484,10 @@ pub fn run_cronjobs_tui(config: &Config) -> BlastResult<()> {
                 }
             }
             3 => break,
-            _other => {}
+            other => {
+                eprintln!("unexpected menu selection: {}", other);
+                break;
+            }
         }
 
         print!("\x1B[2J\x1B[1;1H");

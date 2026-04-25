@@ -29,11 +29,11 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[DB] Migrate",
         "[DB] Rollback",
         "[DB] Seed",
-        "[Cronjobs] Interactive Manager",
-        "[Cronjobs] List Jobs",
-        "[Cronjobs] Add Job",
-        "[Cronjobs] Toggle Job",
-        "[Cronjobs] Remove Job",
+        "[Fuses] Interactive Manager",
+        "[Fuses] List Fuses",
+        "[Fuses] Add Fuse",
+        "[Fuses] Toggle Fuse",
+        "[Fuses] Remove Fuse",
         "[LOG] Truncate Logs",
         "[Exit] Kill Session",
     ];
@@ -83,12 +83,12 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             "[DB] Rollback" => Command::Rollback,
             "[DB] Seed" => Command::Seed(None),
 
-            "[Cronjobs] Interactive Manager" => Command::CronjobsInteractive,
-            "[Cronjobs] List Jobs" => Command::CronjobsList,
-            "[Cronjobs] Add Job" => {
+            "[Fuses] Interactive Manager" => Command::FusesInteractive,
+            "[Fuses] List Fuses" => Command::FusesList,
+            "[Fuses] Add Fuse" => {
                 print!("\x1B[2J\x1B[1;1H");
 
-                println!("Enter job name:");
+                println!("Enter fuse name:");
                 let mut name = String::new();
                 std::io::stdin().read_line(&mut name)?;
                 let name = name.trim().to_string();
@@ -98,50 +98,53 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
                 std::io::stdin().read_line(&mut interval_str)?;
                 let interval = match interval_str.trim().parse::<i32>() {
                     Ok(n) => n,
-                    Err(_e) => {
+                    Err(parse_err) => {
+                        logger::warning(&format!("Invalid interval, defaulting to 60: {}", parse_err))?;
                         60
                     }
                 };
 
-                Command::CronjobsAdd(name, interval)
+                Command::FusesAdd(name, interval)
             }
-            "[Cronjobs] Toggle Job" => {
+            "[Fuses] Toggle Fuse" => {
                 print!("\x1B[2J\x1B[1;1H");
 
-                if let Err(e) = crate::cronjobs::list_cronjobs(&config) {
-                    logger::warning(&format!("Failed to list jobs: {}", e))?;
+                if let Err(e) = crate::fuses::list_fuses(&config) {
+                    logger::warning(&format!("Failed to list fuses: {}", e))?;
                 }
 
-                println!("\nEnter job ID to toggle:");
+                println!("\nEnter fuse ID to toggle:");
                 let mut id_str = String::new();
                 std::io::stdin().read_line(&mut id_str)?;
                 let id = match id_str.trim().parse::<i32>() {
                     Ok(n) => n,
-                    Err(_e) => {
+                    Err(parse_err) => {
+                        logger::warning(&format!("Invalid ID, defaulting to 0: {}", parse_err))?;
                         0
                     }
                 };
 
-                Command::CronjobsToggle(id)
+                Command::FusesToggle(id)
             }
-            "[Cronjobs] Remove Job" => {
+            "[Fuses] Remove Fuse" => {
                 print!("\x1B[2J\x1B[1;1H");
 
-                if let Err(e) = crate::cronjobs::list_cronjobs(&config) {
-                    logger::warning(&format!("Failed to list jobs: {}", e))?;
+                if let Err(e) = crate::fuses::list_fuses(&config) {
+                    logger::warning(&format!("Failed to list fuses: {}", e))?;
                 }
 
-                println!("\nEnter job ID to remove:");
+                println!("\nEnter fuse ID to remove:");
                 let mut id_str = String::new();
                 std::io::stdin().read_line(&mut id_str)?;
                 let id = match id_str.trim().parse::<i32>() {
                     Ok(n) => n,
-                    Err(_e) => {
+                    Err(parse_err) => {
+                        logger::warning(&format!("Invalid ID, defaulting to 0: {}", parse_err))?;
                         0
                     }
                 };
 
-                Command::CronjobsRemove(id)
+                Command::FusesRemove(id)
             }
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),

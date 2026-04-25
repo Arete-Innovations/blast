@@ -59,8 +59,8 @@ pub enum BlastError {
     #[error("project: {0}")]
     Project(String),
 
-    #[error("cronjob: {0}")]
-    Cronjob(String),
+    #[error("fuse: {0}")]
+    Fuse(String),
 
     #[error("dashboard: {0}")]
     Dashboard(String),

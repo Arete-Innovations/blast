@@ -12,7 +12,7 @@ use std::io::Write;
 use std::path::Path;
 
 #[derive(Debug, QueryableByName)]
-pub struct CronjobInfo {
+pub struct FuseInfo {
     #[diesel(sql_type = Integer)]
     pub id: i32,
     #[diesel(sql_type = Text)]
@@ -37,7 +37,7 @@ pub struct StringResult {
     pub result: String,
 }
 
-pub struct CronjobDisplay {
+pub struct FuseDisplay {
     pub id: i32,
     pub name: String,
     pub interval: String,
@@ -46,21 +46,21 @@ pub struct CronjobDisplay {
     pub next_run: String,
 }
 
-fn ensure_cronjob_dirs(config: &Config) -> BlastResult<()> {
-    let cronjob_dir = Path::new(&config.project_dir).join("storage").join("cronjobs");
-    fs::create_dir_all(&cronjob_dir)?;
+fn ensure_fuse_dirs(config: &Config) -> BlastResult<()> {
+    let fuse_dir = Path::new(&config.project_dir).join("storage").join("fuses");
+    fs::create_dir_all(&fuse_dir)?;
 
-    let execution_log = cronjob_dir.join("execution.log");
-    let errors_log = cronjob_dir.join("errors.log");
+    let execution_log = fuse_dir.join("execution.log");
+    let errors_log = fuse_dir.join("errors.log");
 
     if !execution_log.exists() {
         let mut file = File::create(&execution_log)?;
-        writeln!(file, "--- Cronjob Execution Log ---")?;
+        writeln!(file, "--- Fuses Execution Log ---")?;
     }
 
     if !errors_log.exists() {
         let mut file = File::create(&errors_log)?;
-        writeln!(file, "--- Cronjob Error Log ---")?;
+        writeln!(file, "--- Fuses Error Log ---")?;
     }
 
     Ok(())
@@ -110,7 +110,10 @@ fn calc_next_run(last_run: Option<i64>, timer: i32) -> String {
 }
 
 fn log_to_execution(config: &Config, message: &str) -> BlastResult<()> {
-    let log_path = Path::new(&config.project_dir).join("storage").join("cronjobs").join("execution.log");
+    let log_path = Path::new(&config.project_dir)
+        .join("storage")
+        .join("fuses")
+        .join("execution.log");
 
     let mut file = OpenOptions::new().create(true).append(true).open(log_path)?;
 
@@ -136,9 +139,11 @@ fn establish_connection(config: &Config) -> BlastResult<PgConnection> {
     Ok(PgConnection::establish(&database_url)?)
 }
 
-fn check_cronjobs_table(conn: &mut PgConnection) -> BlastResult<bool> {
-    let results = sql_query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'cronjobs') as exists")
-        .load::<BoolResult>(conn)?;
+fn check_fuses_table(conn: &mut PgConnection) -> BlastResult<bool> {
+    let results = sql_query(
+        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'fuses') as exists",
+    )
+    .load::<BoolResult>(conn)?;
 
     if results.is_empty() {
         Ok(false)
@@ -147,11 +152,11 @@ fn check_cronjobs_table(conn: &mut PgConnection) -> BlastResult<bool> {
     }
 }
 
-fn ensure_cronjobs_table(conn: &mut PgConnection) -> BlastResult<()> {
-    if !check_cronjobs_table(conn)? {
+fn ensure_fuses_table(conn: &mut PgConnection) -> BlastResult<()> {
+    if !check_fuses_table(conn)? {
         sql_query(
             r#"
-            CREATE TABLE cronjobs (
+            CREATE TABLE fuses (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR NOT NULL UNIQUE,
                 timer INT NOT NULL,
@@ -159,14 +164,14 @@ fn ensure_cronjobs_table(conn: &mut PgConnection) -> BlastResult<()> {
                 last_run BIGINT
             );
 
-            CREATE INDEX idx_cronjobs_name ON cronjobs(name);
+            CREATE INDEX idx_fuses_name ON fuses(name);
         "#,
         )
         .execute(conn)?;
 
         sql_query(
             r#"
-            INSERT INTO cronjobs (name, timer, status)
+            INSERT INTO fuses (name, timer, status)
             VALUES
                 ('cleanup_temp_files', 3600, 'active'),
                 ('send_digest_emails', 86400, 'active'),
@@ -179,18 +184,18 @@ fn ensure_cronjobs_table(conn: &mut PgConnection) -> BlastResult<()> {
     Ok(())
 }
 
-pub fn list_cronjobs(config: &Config) -> BlastResult<()> {
-    ensure_cronjob_dirs(config)?;
+pub fn list_fuses(config: &Config) -> BlastResult<()> {
+    ensure_fuse_dirs(config)?;
 
     let mut conn = establish_connection(config)?;
 
-    ensure_cronjobs_table(&mut conn)?;
+    ensure_fuses_table(&mut conn)?;
 
-    let jobs = sql_query("SELECT id, name, timer, status, last_run FROM cronjobs ORDER BY id")
-        .load::<CronjobInfo>(&mut conn)?;
+    let jobs = sql_query("SELECT id, name, timer, status, last_run FROM fuses ORDER BY id")
+        .load::<FuseInfo>(&mut conn)?;
 
     if jobs.is_empty() {
-        println!("No scheduled jobs found.");
+        println!("No fuses registered.");
         return Ok(());
     }
 
@@ -199,7 +204,7 @@ pub fn list_cronjobs(config: &Config) -> BlastResult<()> {
     println!("╠═════╬════════════════════════╬══════════════╬══════════════╬═══════════════════════╬═══════════════════════╣");
 
     for job in &jobs {
-        let display = CronjobDisplay {
+        let display = FuseDisplay {
             id: job.id,
             name: job.name.clone(),
             interval: format_duration(job.timer),
@@ -217,12 +222,22 @@ pub fn list_cronjobs(config: &Config) -> BlastResult<()> {
         };
 
         let status_visible_len = display.status.len();
-        let padding_needed = if status_visible_len < 12 { 12 - status_visible_len } else { 0 };
+        let padding_needed = if status_visible_len < 12 {
+            12 - status_visible_len
+        } else {
+            0
+        };
         let status_padding = " ".repeat(padding_needed);
 
         println!(
             "║ {:3} ║ {:22} ║ {:12} ║ {}{} ║ {:21} ║ {:21} ║",
-            display.id, display.name, display.interval, status_colorized, status_padding, display.last_run, display.next_run
+            display.id,
+            display.name,
+            display.interval,
+            status_colorized,
+            status_padding,
+            display.last_run,
+            display.next_run
         );
     }
 
@@ -231,103 +246,133 @@ pub fn list_cronjobs(config: &Config) -> BlastResult<()> {
     Ok(())
 }
 
-pub fn add_cronjob(config: &Config, name: &str, interval: i32) -> BlastResult<()> {
-    ensure_cronjob_dirs(config)?;
+pub fn add_fuse(config: &Config, name: &str, interval: i32) -> BlastResult<()> {
+    ensure_fuse_dirs(config)?;
 
     let mut conn = establish_connection(config)?;
 
-    ensure_cronjobs_table(&mut conn)?;
+    ensure_fuses_table(&mut conn)?;
 
-    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM cronjobs WHERE name = '{}') as exists", name))
-        .load::<BoolResult>(&mut conn)?;
+    let exists_results = sql_query(&format!(
+        "SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists",
+        name
+    ))
+    .load::<BoolResult>(&mut conn)?;
 
     if !exists_results.is_empty() && exists_results[0].exists {
-        return Err(BlastError::Cronjob(format!("a job with name '{}' already exists", name)));
+        return Err(BlastError::Fuse(format!("a fuse with name '{}' already exists", name)));
     }
 
-    sql_query(&format!("INSERT INTO cronjobs (name, timer, status) VALUES ('{}', {}, 'active')", name, interval))
-        .execute(&mut conn)?;
+    sql_query(&format!(
+        "INSERT INTO fuses (name, timer, status) VALUES ('{}', {}, 'active')",
+        name, interval
+    ))
+    .execute(&mut conn)?;
 
-    log_to_execution(config, &format!("Added new job '{}' with interval of {}", name, format_duration(interval)))?;
+    log_to_execution(
+        config,
+        &format!("Added new fuse '{}' with interval of {}", name, format_duration(interval)),
+    )?;
 
-    logger::success(&format!("Added new cronjob '{}' with interval of {}", name, format_duration(interval)))?;
+    logger::success(&format!(
+        "Added new fuse '{}' with interval of {}",
+        name,
+        format_duration(interval)
+    ))?;
 
     Ok(())
 }
 
-pub fn toggle_cronjob(config: &Config, id: i32) -> BlastResult<()> {
-    ensure_cronjob_dirs(config)?;
+pub fn toggle_fuse(config: &Config, id: i32) -> BlastResult<()> {
+    ensure_fuse_dirs(config)?;
 
     let mut conn = establish_connection(config)?;
 
-    ensure_cronjobs_table(&mut conn)?;
+    ensure_fuses_table(&mut conn)?;
 
-    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM cronjobs WHERE id = {}) as exists", id))
-        .load::<BoolResult>(&mut conn)?;
+    let exists_results = sql_query(&format!(
+        "SELECT EXISTS (SELECT 1 FROM fuses WHERE id = {}) as exists",
+        id
+    ))
+    .load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
-        return Err(BlastError::Cronjob(format!("no job found with ID {}", id)));
+        return Err(BlastError::Fuse(format!("no fuse found with ID {}", id)));
     }
 
-    let status_results = sql_query(&format!("SELECT status as result FROM cronjobs WHERE id = {}", id))
-        .load::<StringResult>(&mut conn)?;
+    let status_results =
+        sql_query(&format!("SELECT status as result FROM fuses WHERE id = {}", id))
+            .load::<StringResult>(&mut conn)?;
 
     if status_results.is_empty() {
-        return Err(BlastError::Cronjob(format!("failed to get status for job ID {}", id)));
+        return Err(BlastError::Fuse(format!("failed to get status for fuse ID {}", id)));
     }
 
     let current_status = &status_results[0].result;
 
     let new_status = if current_status == "active" { "paused" } else { "active" };
 
-    sql_query(&format!("UPDATE cronjobs SET status = '{}' WHERE id = {}", new_status, id))
-        .execute(&mut conn)?;
+    sql_query(&format!(
+        "UPDATE fuses SET status = '{}' WHERE id = {}",
+        new_status, id
+    ))
+    .execute(&mut conn)?;
 
-    let name_results = sql_query(&format!("SELECT name as result FROM cronjobs WHERE id = {}", id))
-        .load::<StringResult>(&mut conn)?;
+    let name_results =
+        sql_query(&format!("SELECT name as result FROM fuses WHERE id = {}", id))
+            .load::<StringResult>(&mut conn)?;
 
     if name_results.is_empty() {
-        return Err(BlastError::Cronjob(format!("failed to get name for job ID {}", id)));
+        return Err(BlastError::Fuse(format!("failed to get name for fuse ID {}", id)));
     }
 
-    let job_name = &name_results[0].result;
+    let fuse_name = &name_results[0].result;
 
-    log_to_execution(config, &format!("Job '{}' (ID: {}) status changed from '{}' to '{}'", job_name, id, current_status, new_status))?;
+    log_to_execution(
+        config,
+        &format!(
+            "Fuse '{}' (ID: {}) status changed from '{}' to '{}'",
+            fuse_name, id, current_status, new_status
+        ),
+    )?;
 
-    logger::success(&format!("Job '{}' is now {}", job_name, new_status))?;
+    logger::success(&format!("Fuse '{}' is now {}", fuse_name, new_status))?;
 
     Ok(())
 }
 
-pub fn remove_cronjob(config: &Config, id: i32) -> BlastResult<()> {
-    ensure_cronjob_dirs(config)?;
+pub fn remove_fuse(config: &Config, id: i32) -> BlastResult<()> {
+    ensure_fuse_dirs(config)?;
 
     let mut conn = establish_connection(config)?;
 
-    ensure_cronjobs_table(&mut conn)?;
+    ensure_fuses_table(&mut conn)?;
 
-    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM cronjobs WHERE id = {}) as exists", id))
-        .load::<BoolResult>(&mut conn)?;
+    let exists_results = sql_query(&format!(
+        "SELECT EXISTS (SELECT 1 FROM fuses WHERE id = {}) as exists",
+        id
+    ))
+    .load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
-        return Err(BlastError::Cronjob(format!("no job found with ID {}", id)));
+        return Err(BlastError::Fuse(format!("no fuse found with ID {}", id)));
     }
 
-    let name_results = sql_query(&format!("SELECT name as result FROM cronjobs WHERE id = {}", id))
-        .load::<StringResult>(&mut conn)?;
+    let name_results =
+        sql_query(&format!("SELECT name as result FROM fuses WHERE id = {}", id))
+            .load::<StringResult>(&mut conn)?;
 
     if name_results.is_empty() {
-        return Err(BlastError::Cronjob(format!("failed to get name for job ID {}", id)));
+        return Err(BlastError::Fuse(format!("failed to get name for fuse ID {}", id)));
     }
 
-    let job_name = &name_results[0].result;
+    let fuse_name = &name_results[0].result;
 
-    sql_query(&format!("DELETE FROM cronjobs WHERE id = {}", id))
-        .execute(&mut conn)?;
+    sql_query(&format!("DELETE FROM fuses WHERE id = {}", id)).execute(&mut conn)?;
 
-    log_to_execution(config, &format!("Removed job '{}' (ID: {})", job_name, id))?;
+    log_to_execution(config, &format!("Removed fuse '{}' (ID: {})", fuse_name, id))?;
 
-    logger::success(&format!("Removed cronjob '{}' (ID: {})", job_name, id))?;
+    logger::success(&format!("Removed fuse '{}' (ID: {})", fuse_name, id))?;
 
     Ok(())
 }

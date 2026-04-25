@@ -31,12 +31,12 @@ pub enum Command {
     LogTruncate(Option<String>),
     LogView(String),
 
-    CronjobsList,
-    CronjobsAdd(String, i32),
-    CronjobsRemove(i32),
-    CronjobsToggle(i32),
-    CronjobsInteractive,
-    CronjobsLiveTable,
+    FusesList,
+    FusesAdd(String, i32),
+    FusesRemove(i32),
+    FusesToggle(i32),
+    FusesInteractive,
+    FusesLiveTable,
 
     Build,
     Package,
@@ -63,36 +63,39 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("cli") => Some(Command::RunInteractiveCLI),
         Some("toggle-env") | Some("env") => Some(Command::ToggleEnvironment),
 
-        Some("cronjobs") => {
+        Some("fuses") => {
             match args.get(2).map(|s| s.as_str()) {
-                Some("list") => Some(Command::CronjobsList),
+                Some("list") => Some(Command::FusesList),
                 Some("add") if args.len() >= 5 => {
                     match args[4].parse::<i32>() {
-                        Ok(interval) => Some(Command::CronjobsAdd(args[3].clone(), interval)),
-                        Err(_parse) => {
+                        Ok(interval) => Some(Command::FusesAdd(args[3].clone(), interval)),
+                        Err(parse_err) => {
+                            eprintln!("invalid interval: {}", parse_err);
                             None
                         }
                     }
                 }
                 Some("remove") if args.len() >= 4 => {
                     match args[3].parse::<i32>() {
-                        Ok(job_id) => Some(Command::CronjobsRemove(job_id)),
-                        Err(_parse) => {
+                        Ok(job_id) => Some(Command::FusesRemove(job_id)),
+                        Err(parse_err) => {
+                            eprintln!("invalid id: {}", parse_err);
                             None
                         }
                     }
                 }
                 Some("toggle") if args.len() >= 4 => {
                     match args[3].parse::<i32>() {
-                        Ok(job_id) => Some(Command::CronjobsToggle(job_id)),
-                        Err(_parse) => {
+                        Ok(job_id) => Some(Command::FusesToggle(job_id)),
+                        Err(parse_err) => {
+                            eprintln!("invalid id: {}", parse_err);
                             None
                         }
                     }
                 }
-                Some("interactive") | Some("tui") => Some(Command::CronjobsInteractive),
-                Some("table") | Some("live") => Some(Command::CronjobsLiveTable),
-                None => Some(Command::CronjobsInteractive),
+                Some("interactive") | Some("tui") => Some(Command::FusesInteractive),
+                Some("table") | Some("live") => Some(Command::FusesLiveTable),
+                None => Some(Command::FusesInteractive),
                 _sub => None,
             }
         }
@@ -156,15 +159,15 @@ pub fn show_help() {
     println!("  cli                  Launch the interactive CLI");
     println!("  toggle-env           Toggle between development and production environments");
     println!();
-    println!("CRONJOB COMMANDS:");
-    println!("  cronjobs             Launch interactive TUI for cronjob management");
-    println!("  cronjobs interactive Launch interactive TUI for cronjob management");
-    println!("  cronjobs table       Display live auto-refreshing table of cronjobs");
-    println!("  cronjobs live        Display live auto-refreshing table of cronjobs");
-    println!("  cronjobs list        List all scheduled jobs and their status");
-    println!("  cronjobs add <name> <interval>  Add a new cronjob with name and interval in seconds");
-    println!("  cronjobs remove <id> Remove a scheduled job by ID");
-    println!("  cronjobs toggle <id> Toggle a job's active status");
+    println!("FUSES COMMANDS:");
+    println!("  fuses                Launch interactive TUI for fuse management");
+    println!("  fuses interactive    Launch interactive TUI for fuse management");
+    println!("  fuses table          Display live auto-refreshing table of fuses");
+    println!("  fuses live           Display live auto-refreshing table of fuses");
+    println!("  fuses list           List all registered fuses and their status");
+    println!("  fuses add <name> <interval>  Add a new fuse with name and interval in seconds");
+    println!("  fuses remove <id>    Remove a fuse by ID");
+    println!("  fuses toggle <id>    Toggle a fuse's active status");
     println!();
     println!("DATABASE COMMANDS:");
     println!("  migration            Create a new migration");
@@ -204,22 +207,22 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
     }
 
     match cmd {
-        Command::CronjobsList => crate::cronjobs::list_cronjobs(config),
+        Command::FusesList => crate::fuses::list_fuses(config),
 
-        Command::CronjobsAdd(name, interval) => crate::cronjobs::add_cronjob(config, &name, interval),
+        Command::FusesAdd(name, interval) => crate::fuses::add_fuse(config, &name, interval),
 
-        Command::CronjobsRemove(id) => crate::cronjobs::remove_cronjob(config, id),
+        Command::FusesRemove(id) => crate::fuses::remove_fuse(config, id),
 
-        Command::CronjobsToggle(id) => crate::cronjobs::toggle_cronjob(config, id),
+        Command::FusesToggle(id) => crate::fuses::toggle_fuse(config, id),
 
-        Command::CronjobsInteractive => {
-            logger::info("Launching interactive cronjob manager...")?;
-            crate::cronjobs_tui::run_cronjobs_tui(config)
+        Command::FusesInteractive => {
+            logger::info("Launching interactive fuses manager...")?;
+            crate::fuses_tui::run_fuses_tui(config)
         }
 
-        Command::CronjobsLiveTable => {
-            logger::info("Launching live cronjobs table view...")?;
-            crate::cronjobs_tui::display_cronjobs_table(config)
+        Command::FusesLiveTable => {
+            logger::info("Launching live fuses table view...")?;
+            crate::fuses_tui::display_fuses_table(config)
         }
 
         Command::StopServer => {
