@@ -1,6 +1,6 @@
 # SPEC_BLAST_COMMANDS
 
-Full command surface of the `blast` CLI. TUI flows, dashboard, and interactive menu. Designed so that CLI and dashboard are two interfaces over the same underlying behavior.
+Full command surface of the `blast` CLI. TUI flows, dashboard, and interactive menu. Designed so that CLI and dashboard are two surfaces over the same underlying behavior.
 
 ## Top-Level Commands
 
@@ -28,10 +28,6 @@ blast watch                      # cargo-watch on backend
 blast dashboard                  # Zellij-based TUI dashboard
 blast cli                        # dialoguer FuzzySelect menu
 
-blast spark add <repo>           # install a spark from git
-blast spark sync                 # sync all sparks declared in blueprint
-blast spark list                 # list installed sparks
-
 blast fuses                      # interactive fuses TUI
 blast fuses list                 # list registered fuses
 blast fuses toggle <name>        # flip enabled flag
@@ -54,29 +50,29 @@ blast help                       # top-level help
 
 ```
 blast gen schema                  # diesel migration run + print-schema
-blast gen primer                  # compile primer sub-crate, emit IR to target/primer/
-blast gen primer <resource>       # TUI flow to author/edit primer/src/<resource>.rs, then emit
-blast gen blueprint               # compile blueprint sub-crate, emit IR
-blast gen structs                 # primer IR + schema → src/structs/generated/
-blast gen models                  # primer IR + schema → src/models/generated/
-blast gen flows                   # primer IR → src/flows/generated/ + transport/http/generated/ + transport/ws/generated/
-blast gen frontend                # primer + blueprint IR → frontend/src/generated/
-blast gen env-example             # blueprint IR → .env.example
-blast gen governor-plugin         # blueprint fe_lint IR → frontend/scripts/governor-plugin.js + .rule_violations_whitelist
+blast gen structs                 # schema.rs + resource state → src/structs/generated/
+blast gen models                  # schema.rs + resource state → src/models/generated/
+blast gen flows                   # resource state → src/flows/generated/ + transport/http/generated/ + transport/ws/generated/
+blast gen frontend                # resource state + app state → frontend/src/generated/
+blast gen env-example             # app state env spec → .env.example
+blast gen governor-plugin         # app state fe_lint section → frontend/scripts/governor-plugin.js + .rule_violations_whitelist
 blast gen table [name]            # interactive migration wizard; emits up.sql / down.sql in migrations/
-blast gen test                    # primer IR → *.test.rs scaffolds per flow + per route (idempotent on existing files)
-blast gen all                     # schema → primer → blueprint → structs → models → flows → frontend → env-example → governor-plugin → test scaffolds
+blast gen resource [name]         # TUI wizard to author/edit storage/blast/state/resources/<name>.ron
+blast gen test                    # resource state → *.test.rs scaffolds per flow + per route (idempotent on existing files)
+blast gen all                     # full pipeline: schema → structs → models → flows → frontend → env-example → governor-plugin → test scaffolds
 ```
+
+All `blast gen` targets read from `storage/blast/state/` (see `SPEC_STATE.md`). There is no `blast gen primer` or `blast gen blueprint` — the DSL sub-crates are gone.
 
 ## TUI Flows
 
-### `blast gen primer <resource>`
+### `blast gen resource [name]`
 
-Interactive contract authoring, powered by dialoguer (`FuzzySelect`, `MultiSelect`, `Input`, `Confirm`).
+Interactive resource state authoring, powered by dialoguer (`FuzzySelect`, `MultiSelect`, `Input`, `Confirm`). Produces or updates `storage/blast/state/resources/<name>.ron`. Does not run codegen — user runs `blast gen all` after.
 
 Steps:
 
-1. **Pick table** — if `<resource>` not provided, list tables from `schema.rs`, user picks via `FuzzySelect`. If the resource already has a primer, pre-selections are loaded.
+1. **Pick table** — if `[name]` not provided, list tables from `schema.rs`, user picks via `FuzzySelect`. If the resource already has a state file, pre-selections are loaded.
 
 2. **Per field:** multi-select which variants it belongs to (`DB`, `Insertable`, `Patch`, `Public`, `Admin`). Defaults are smart:
    - Primary keys: `DB + Public`
@@ -91,17 +87,17 @@ Steps:
    - `scoped_to:<field>` — dialoguer shows available field names
    - `roles:[...]` — multi-select from known role enum variants
 
-4. **List-specific:** toggle `.paginated()`, multi-select filterable columns for `.filtered_by([...])`.
+4. **List-specific:** toggle `.paginated()`, multi-select filterable columns.
 
 5. **WebSocket events:** toggle, pick trigger columns, pick payload shape (`FullPublicRow` or `IdOnly`), pick topic scope.
 
-6. **Confirm:** show Rust code preview, confirm → write `primer/src/<resource>.rs`, update `primer/src/lib.rs` re-exports, emit IR.
+6. **Confirm:** show state file preview, confirm → write `storage/blast/state/resources/<name>.ron`.
 
-7. **Power-user bypass:** user can press `e` during confirm to drop into `$EDITOR` and edit the Rust directly.
+There is no `raw_rust` field in state files. If TUI can't express it, user writes Rust in `src/<layer>/custom/`. The layer split is the escape hatch.
 
 ### `blast gen` (no args)
 
-Launches the dialoguer menu with all codegen targets as selectable items. User picks → runs that target (which may itself have a TUI, like `primer <resource>`).
+Launches the dialoguer menu with all codegen targets as selectable items. User picks → runs that target (which may itself have a TUI, like `gen resource`).
 
 ## Dashboard (`blast dashboard`)
 
@@ -112,21 +108,21 @@ Zellij layout (`storage/blast/dashboard.kdl`):
 - **Side pane:** live log viewer (ratatui-based, `storage/blast/blast.log`)
 - **Bottom pane:** fuses live table (`blast fuses` auto-refresh view)
 
-Process: runs `zellij --layout ...kdl`, replaces current process. Writes to log file instead of stdout since stdout is captured by Zellij panes.
+Process: runs `zellij --layout ...kdl`, replaces current process. The panes are normal `blast` subprocesses. There is no special "dashboard mode" inside command bodies. The old `logger.rs` "dashboard suppress stdout" branch is dead — commands output through the injected `Sink`, not via a global logger with a dashboard gate.
 
-Dashboard is a presentation layer. All actual work goes through the same `execute()` path as CLI.
+Dashboard is a presentation layer. All actual work goes through the same `run()` path as CLI.
 
 ## Interactive CLI (`blast cli`)
 
-Simpler alternative to dashboard. `FuzzySelect` menu:
+Simpler alternative to dashboard. `FuzzySelect` menu backed by the `Command` registry:
 
 ```
 > blast cli
 ? Select a Blast command:
 ❯ [GEN]      Generate all (full pipeline)
-  [GEN]      Generate primer (interactive)
-  [GEN]      Generate blueprint
+  [GEN]      Generate resource (interactive)
   [GEN]      Generate flows
+  [GEN]      Generate frontend
   [DB]       Run migrations
   [DB]       Rollback migration
   [DB]       Seed data
@@ -134,7 +130,6 @@ Simpler alternative to dashboard. `FuzzySelect` menu:
   [SERVER]   Run prod
   [FUSES]    Manage fuses
   [LINT]     Run blast check
-  [SPARK]    Add spark
   [UTIL]     Toggle env
   [UTIL]     Refresh project
   [EXIT]     Kill session
@@ -147,17 +142,16 @@ Selection drops into that command's handler (possibly another TUI, possibly a di
 For a freshly-cloned or newly-created project:
 
 ```
-Step 1/8: Dependency check               (cargo, diesel_cli, node, zellij available?)
-Step 2/8: Database: rollback + migrate   (idempotent reset)
-Step 3/8: Seed data (if seed file)
-Step 4/8: Schema generation              (blast gen schema)
-Step 5/8: Primer IR emission             (blast gen primer)
-Step 6/8: Blueprint IR emission          (blast gen blueprint)
-Step 7/8: Codegen pipeline               (structs → models → flows → frontend)
-Step 8/8: Governor plugin + env-example  (blast gen governor-plugin, env-example)
+Step 1/7: Dependency check               (cargo, diesel_cli, node, zellij available?)
+Step 2/7: Database: rollback + migrate   (idempotent reset)
+Step 3/7: Seed data (if seed file)
+Step 4/7: Schema generation              (blast gen schema)
+Step 5/7: Full codegen pipeline          (blast gen all)
+Step 6/7: Governor plugin + env-example  (included in gen all)
+Step 7/7: Arsenal scan                   (blast arsenal)
 ```
 
-Retries critical steps (schema, primer compile, codegen) up to 3 times on failure before exiting.
+Retries critical steps (schema, codegen) up to 3 times on failure before exiting.
 
 Progress shown via `indicatif` progress bars. File log at `storage/blast/init.log`.
 
@@ -170,7 +164,7 @@ Step 1/6: Clone template repo (GitHub/GitLab/Bitbucket fallback)
 Step 2/6: Rename temp dir to <name>
 Step 3/6: Set Cargo.toml package name
 Step 4/6: Write .env from .env.example template with generated SESSION_SIGNING_KEY
-Step 5/6: Initialize primer/ and blueprint/ sub-crates with starter content
+Step 5/6: Write initial storage/blast/state/app.ron + resources/ stub
 Step 6/6: Write initial schema.rs stub + CLAUDE.md scaffold
 ```
 
@@ -238,14 +232,14 @@ Steps:
 
 `down.sql` is `DROP TABLE IF EXISTS <name>;` by default.
 
-After the wizard exits, run `blast migrate` → `blast gen schema` → `blast gen primer <name>` to complete the new-resource flow. See `catalyst/doc/SPEC_PRIMER.md` for the full order of operations.
+After the wizard exits, run `blast migrate` → `blast gen schema` → `blast gen resource <name>` to complete the new-resource flow.
 
 ## `blast gen test`
 
 Scaffolds baseline test files for all generated flows and routes. Idempotent on existing files — does not overwrite tests the user has already modified.
 
 ```
-blast gen test                       # scaffold every flow + every route from primer IR
+blast gen test                       # scaffold every flow + every route from resource state
 blast gen test --flow <name>         # only flow tests; <name> is "<table>" or "<table>/<verb>"
 blast gen test --route <name>        # only the route smoke test for <table>
 ```
@@ -253,7 +247,7 @@ blast gen test --route <name>        # only the route smoke test for <table>
 Outputs:
 
 ```
-src/flows/generated/<resource>/<verb>.test.rs   (per primer-declared verb)
+src/flows/generated/<resource>/<verb>.test.rs   (per declared verb)
 src/transport/http/generated/<resource>.test.rs (one per resource with routes)
 tests/fixtures/<resource>.rs                    (fixture impl, one per resource)
 tests/fixtures/mod.rs                            (barrel of fixture modules)
@@ -274,32 +268,29 @@ See `catalyst/doc/SPEC_TESTING.md` for what the scaffolds contain and how the ca
 
 - `scss`, `css`, `publish-css`, `js`, `cdn` — legacy asset pipeline. Vite handles everything now. Removed.
 - `vessel migrate`, `vessel refresh` — legacy migration system. Diesel is the only path. Removed.
-- `cronjobs` commands — renamed to `blast fuses`. The `cronjobs` subcommand and `src/cronjobs.rs` / `src/cronjobs_tui.rs` are removed; use `blast fuses` and its subcommands.
+- `cronjobs` commands — renamed to `blast fuses`. Removed.
+- `blast spark` — plugin system killed. No sparks. Removed.
+- `blast gen primer`, `blast gen blueprint` — the DSL sub-crates (`catalyst_primer`, `catalyst_blueprint`) are deleted. State lives in `storage/blast/state/` RON files. Removed.
 
 ## Config Source
 
-Blast itself is configured almost entirely by the user's blueprint. No `Blast.toml`. Behaviors influenced:
+Blast operating config comes from `storage/blast/state/app.ron` in the user's project. No `Blast.toml`. The `--config-file <path>` flag (planned: deserialize any command's `Args` from a RON/JSON file) supports CI/automation without interactive input.
 
-- Env var spec (where `blast init` reads expected env vars)
-- Default struct derives (applied in codegen unless per-primer override)
+Behaviors driven by `app.ron`:
+- Env var spec (where `blast init` reads expected env vars, drives `.env.example`)
+- Default struct derives (applied in codegen unless per-resource override)
 - FE lint rules (Governor)
-- Sparks list
+- Admin config, fuses schedule, services config
 
-Blast reads `target/blueprint/*.json` as its own operating config.
+See `SPEC_STATE.md` for the full `app.ron` schema.
 
 ## Logging
 
-```rust
-logger::info("...");       // ℹ️ (cli) / file (dashboard)
-logger::warning("...");    // ⚠️ (cli) / file
-logger::error("...");      // ❌ (cli) / file
-logger::success("...");    // ✅ (cli) / file
-logger::debug("...");      // 🔍 (cli, verbose only) / file
-```
+Commands output through the injected `Sink` — not through a global logger. The CLI `StdoutSink` impl uses emoji-prefixed stdout internally; the TUI `WidgetSink` routes to ratatui widgets. There is no "dashboard mode" branch that suppresses stdout — that model is gone.
 
-Dashboard mode routes logger output to file only (stdout captured by Zellij panes).
+Progress via `indicatif` (CLI) or `WidgetProgress` (TUI), ephemeral — not persisted.
 
-Progress bars via `indicatif`, ephemeral — not logged.
+File log at `storage/blast/blast.log` for post-hoc review (`blast log view`).
 
 ## Command Core Contract
 
@@ -308,8 +299,8 @@ Progress bars via `indicatif`, ephemeral — not logged.
 ### Layering
 
 ```
-src/cli.rs          ← clap parser → Command::Args
-src/tui/...         ← ratatui/dialoguer → Command::Args
+src/cli.rs          ← clap derive → Command::Args
+src/tui/...         ← dialoguer wizards → Command::Args (wizards never execute)
 src/commands/       ← pure command core (this is the surface)
   └─ <verb>.rs      ← fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome>
 ```
@@ -318,7 +309,7 @@ src/commands/       ← pure command core (this is the surface)
 
 1. **Args fully resolved at front-end boundary.** The function signature for every command is `fn run(args: FullyTypedArgs, sink, progress) -> BlastResult<Outcome>`. No `Option<T>` for "ask if missing" — the front-end already asked. Commands take ground truth.
 
-2. **No prompting inside command bodies.** Zero `dialoguer::*` calls under `src/commands/`. If a wizard exists (`gen table`, `gen primer`), it lives in `src/tui/<wizard>/` and *outputs* a fully-resolved arg struct that gets passed to the core command.
+2. **No prompting inside command bodies.** Zero `dialoguer::*` calls under `src/commands/`. Wizards live in `src/tui/<wizard>/` and *output* a fully-resolved arg struct that gets passed to the core command.
 
 3. **No direct stdout/stderr.** Zero `println!`, `eprintln!`, raw `print!`. Commands emit through an injected `Sink` trait:
    ```rust
@@ -331,7 +322,7 @@ src/commands/       ← pure command core (this is the surface)
        fn structured(&mut self, event: SinkEvent);  // typed events for TUI widgets
    }
    ```
-   CLI front-end uses `StdoutSink` (current emoji-prefixed stdout). TUI front-end uses `WidgetSink` (events into a ratatui pane).
+   CLI front-end uses `StdoutSink` (emoji-prefixed stdout). TUI front-end uses `WidgetSink` (events into a ratatui pane).
 
 4. **Progress via injected `Progress` sink.** Long-running ops (`gen all`, `init`, `build`) emit progress events:
    ```rust
@@ -356,10 +347,11 @@ src/commands/       ← pure command core (this is the surface)
 
 ### What this kills
 
-- The `commands::execute()` switch + `interactive.rs` dispatch + dashboard menu wiring as three separate sites of truth.
+- The `commands.rs` custom parser + `interactive.rs` dispatch + dashboard menu wiring as three separate sites of truth.
 - Any command body that does `dialoguer::FuzzySelect::new()...interact()`.
-- `logger::info(...)` calls inside command bodies (logger becomes the CLI sink impl, not a global).
+- `logger::info(...)` calls inside command bodies (the CLI `Sink` impl does that, not the command).
 - Hand-written menu lists in `interactive.rs` and `dashboard.rs` that drift from the CLI surface.
+- "Dashboard suppress stdout" branch in the old logger.
 
 ## Guidance For Blast Maintainers
 
@@ -372,8 +364,7 @@ src/commands/       ← pure command core (this is the surface)
 
 ## Related Specs
 
+- `SPEC_STATE.md` — state file format, schema versioning, atomic write, build.rs safety net
 - `SPEC_CODEGEN.md` — what each `blast gen` target emits
 - `SPEC_GOVERNOR.md` — `blast check` internals
-- `catalyst/doc/SPEC_PRIMER.md` — TUI flow produces primer files
-- `catalyst/doc/SPEC_BLUEPRINT.md` — blueprint the TUI may also author
 - `catalyst/doc/SPEC_FUSES.md` — `blast fuses` subcommand semantics
