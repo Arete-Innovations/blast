@@ -24,7 +24,6 @@ mod progress;
 mod project;
 mod schema_parser;
 mod state;
-mod structs;
 mod tui_viewer;
 mod wizards;
 

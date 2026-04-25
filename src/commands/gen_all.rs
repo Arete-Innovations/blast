@@ -18,7 +18,6 @@ use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::models;
 use crate::state;
-use crate::structs;
 
 #[derive(Debug, Clone)]
 pub struct Args {
@@ -73,7 +72,7 @@ pub fn run(
     let mut outcome = Outcome::default();
 
     run_schema_step(sink, progress, &mut outcome)?;
-    run_structs_step(config, sink, progress, &mut outcome)?;
+    run_structs_step(&args.project_root, sink, progress, &mut outcome)?;
     run_models_step(config, sink, progress, &mut outcome)?;
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -123,25 +122,28 @@ fn run_schema_step(
 }
 
 fn run_structs_step(
-    config: &mut Config,
+    project_root: &PathBuf,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
-    progress.step_start(STEP_STRUCTS);
-    let ok = structs::generate(config);
-    if !ok {
-        let reason = "structs generator reported failure";
-        progress.step_fail(STEP_STRUCTS, reason);
-        sink.warn(format!(
-            "{}: {} (continuing — may be normal for empty schemas)",
-            STEP_STRUCTS, reason
-        ));
-    } else {
-        progress.step_done(STEP_STRUCTS);
+    match codegen::structs::run(project_root, sink, progress) {
+        Ok(report) => {
+            for path in &report.written {
+                sink.info(format!("wrote {}", path.display()));
+            }
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_STRUCTS, &reason);
+            sink.error(format!("{}: {}", STEP_STRUCTS, reason));
+            Err(err)
+        }
     }
-    outcome.steps_run += 1;
-    Ok(())
 }
 
 fn run_models_step(
