@@ -10,6 +10,7 @@ mod dashboard;
 mod database;
 mod dependencies;
 mod error;
+mod governor;
 mod interactive;
 mod logger;
 mod models;

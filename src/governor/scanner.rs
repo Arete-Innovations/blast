@@ -1,0 +1,74 @@
+use crate::error::BlastResult;
+use crate::governor::config::GovernorConfig;
+use crate::governor::rules;
+use crate::governor::violation::Violation;
+use crate::governor::whitelist::Whitelist;
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
+
+pub struct ScanReport {
+    pub violations: Vec<Violation>,
+    pub files_scanned: usize,
+}
+
+pub fn scan_project(root: &Path, config: &GovernorConfig) -> BlastResult<ScanReport> {
+    let frontend_root = root.join("frontend");
+    let whitelist = Whitelist::load(&root.join(".rule_violations_whitelist"))?;
+
+    let targets = collect_targets(&frontend_root)?;
+    let files_scanned = targets.len();
+    let mut all_violations: Vec<Violation> = Vec::new();
+
+    for path in &targets {
+        let raw = match std::fs::read_to_string(path) {
+            Ok(v) => v,
+            Err(_read_failed) => continue,
+        };
+        let rel: &Path = match path.strip_prefix(root) {
+            Ok(stripped) => stripped,
+            Err(_no_prefix) => path.as_path(),
+        };
+        let mut file_violations = rules::run_all(rel, &raw, config);
+        file_violations.retain(|v| !whitelist.suppresses(rel, &v.snippet));
+        file_violations.retain(|v| !is_globally_whitelisted(&v.snippet, config));
+        all_violations.extend(file_violations);
+    }
+
+    Ok(ScanReport {
+        violations: all_violations,
+        files_scanned,
+    })
+}
+
+fn collect_targets(root: &Path) -> BlastResult<Vec<PathBuf>> {
+    let mut targets: Vec<PathBuf> = Vec::new();
+    if !root.is_dir() {
+        return Ok(targets);
+    }
+    for entry in WalkDir::new(root).into_iter() {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if is_target_file(path) {
+            targets.push(path.to_path_buf());
+        }
+    }
+    Ok(targets)
+}
+
+fn is_target_file(path: &Path) -> bool {
+    let ext = match path.extension() {
+        Some(e) => e.to_string_lossy().to_string(),
+        None => return false,
+    };
+    matches!(ext.as_str(), "ts" | "vue" | "css")
+}
+
+fn is_globally_whitelisted(snippet: &str, config: &GovernorConfig) -> bool {
+    config
+        .whitelist_snippets
+        .iter()
+        .any(|w| snippet.contains(w))
+}
