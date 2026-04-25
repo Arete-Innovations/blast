@@ -125,6 +125,8 @@ fn pick_fuse_action(
 
     let fuse_actions = vec![
         format!("{} Fuse", if selected_job.enabled { "Disable" } else { "Enable" }),
+        "Run Fuse Now".to_string(),
+        "View Logs".to_string(),
         "Remove Fuse".to_string(),
         "Cancel".to_string(),
     ];
@@ -137,7 +139,9 @@ fn pick_fuse_action(
 
     match action_selection {
         0 => Ok(FusesAction::Toggle { fuse_name: selected_job.name.clone() }),
-        1 => {
+        1 => Ok(FusesAction::Run { fuse_name: selected_job.name.clone() }),
+        2 => Ok(FusesAction::ViewLogs { fuse_name: selected_job.name.clone() }),
+        3 => {
             let confirmed = Confirm::with_theme(theme)
                 .with_prompt(format!(
                     "Are you sure you want to remove fuse '{}'?",
@@ -151,7 +155,7 @@ fn pick_fuse_action(
                 Ok(FusesAction::List)
             }
         }
-        2 => Ok(FusesAction::List),
+        4 => Ok(FusesAction::List),
         other => Err(BlastError::Invalid(format!("unexpected fuse action index: {}", other))),
     }
 }
@@ -167,7 +171,7 @@ pub fn pick_action(config: &Config) -> BlastResult<FusesAction> {
     let jobs = fetch_fuses(config)?;
 
     if jobs.is_empty() {
-        println!("No fuses registered. Create the fuses table with FUSES_MIGRATION_UP.\n");
+        println!("No fuses registered. Run `blast migrate` to create the fuses table.\n");
     } else {
         println!("{} fuses registered.\n", jobs.len());
     }

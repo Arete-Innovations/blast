@@ -126,8 +126,8 @@ fn dispatch_fuses(sub: Option<FusesCmd>, config: &Config) -> BlastResult<()> {
         FusesCmd::Logs { name } => crate::fuses::logs_fuse(config, &name),
         FusesCmd::Interactive => {
             logger::info("Launching interactive fuses manager...")?;
-            let mut sink = crate::io::NullSink;
-            let mut progress = crate::io::NullProgress;
+            let mut sink = crate::io::cli_sink(false, None);
+            let mut progress = crate::io::cli_progress(None);
             crate::fuses_tui::run_with_picker(config, &mut sink, &mut progress)?;
             Ok(())
         }
@@ -164,20 +164,18 @@ fn dispatch_gen(
             let mut sink = crate::io::cli_sink(false, None);
             let mut progress = crate::io::cli_progress(None);
             let project_root = config.project_dir.clone();
-            match crate::gen_table::run_with_picker(&project_root, &mut sink, &mut progress) {
-                Ok(outcome) => {
-                    logger::success(&format!(
-                        "table '{}' migration written: up={} down={} cols={}",
-                        outcome.table_name,
-                        outcome.up_sql_path.display(),
-                        outcome.down_sql_path.display(),
-                        outcome.column_count,
-                    ))?;
-                    Ok(())
-                }
-                Err(crate::error::BlastError::Invalid(msg)) if msg.contains("cancelled") => Ok(()),
-                Err(e) => Err(e),
+            let outcome = crate::gen_table::run_with_picker(&project_root, &mut sink, &mut progress)?;
+            if outcome.cancelled {
+                return Ok(());
             }
+            logger::success(&format!(
+                "table '{}' migration written: up={} down={} cols={}",
+                outcome.table_name,
+                outcome.up_sql_path.display(),
+                outcome.down_sql_path.display(),
+                outcome.column_count,
+            ))?;
+            Ok(())
         }
         GenCmd::Migration { custom, name } => {
             if !custom {

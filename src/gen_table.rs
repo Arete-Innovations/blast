@@ -1,5 +1,5 @@
 use crate::database::write_migration;
-use crate::error::{BlastError, BlastResult};
+use crate::error::BlastResult;
 use crate::io::{Progress, Sink, SinkExt};
 use crate::logger;
 use crate::schema_parser;
@@ -35,6 +35,7 @@ pub struct Outcome {
     pub up_sql_path: PathBuf,
     pub down_sql_path: PathBuf,
     pub column_count: usize,
+    pub cancelled: bool,
 }
 
 pub fn pick_args(project_root: &Path) -> BlastResult<Args> {
@@ -132,6 +133,7 @@ pub fn run(
         up_sql_path,
         down_sql_path,
         column_count,
+        cancelled: false,
     })
 }
 
@@ -162,7 +164,13 @@ pub fn run_with_picker(
     if !confirmed {
         logger::info("Migration discarded; nothing written.")?;
         sink.info("Migration discarded; nothing written.");
-        return Err(BlastError::Invalid("migration cancelled by user".to_string()));
+        return Ok(Outcome {
+            table_name: args.table_name,
+            up_sql_path: PathBuf::new(),
+            down_sql_path: PathBuf::new(),
+            column_count: 0,
+            cancelled: true,
+        });
     }
 
     run(args, sink, progress)

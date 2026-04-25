@@ -22,12 +22,6 @@ fn log_error(msg: &str) {
     }
 }
 
-fn log_success(msg: &str) {
-    if let Err(e) = logger::success(msg) {
-        drop(e);
-    }
-}
-
 fn read_database_url() -> Option<String> {
     let env_content = match fs::read_to_string(".env") {
         Ok(c) => c,
@@ -162,21 +156,3 @@ pub fn generate_schema() -> bool {
     true
 }
 
-pub fn force_regenerate_main_schema() -> bool {
-    log_info("FORCING schema regeneration from DATABASE_URL");
-
-    let database_url = match read_database_url() {
-        Some(url) => url,
-        None => {
-            log_error("DATABASE_URL not found in .env file");
-            return false;
-        }
-    };
-
-    if !write_schema_file(&database_url, "src/database/schema.rs") {
-        return false;
-    }
-
-    log_success("Forced schema regeneration successful");
-    true
-}
