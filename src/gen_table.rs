@@ -1,22 +1,55 @@
 use crate::database::write_migration;
-use crate::error::BlastResult;
+use crate::error::{BlastError, BlastResult};
+use crate::io::{Progress, Sink, SinkExt};
 use crate::logger;
 use crate::schema_parser;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, MultiSelect};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-pub fn run() -> BlastResult<()> {
+// ── public surface ────────────────────────────────────────────────────────────
+
+pub struct ColumnArgs {
+    pub name: String,
+    pub sql_type: String,
+    pub nullable: bool,
+    pub default: Option<String>,
+    pub is_primary_key: bool,
+    pub fk_table: Option<String>,
+    pub fk_column: Option<String>,
+}
+
+pub struct IndexArgs {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+}
+
+pub struct Args {
+    pub table_name: String,
+    pub columns: Vec<ColumnArgs>,
+    pub indexes: Vec<IndexArgs>,
+    pub include_timestamps: bool,
+}
+
+pub struct Outcome {
+    pub table_name: String,
+    pub up_sql_path: PathBuf,
+    pub down_sql_path: PathBuf,
+    pub column_count: usize,
+}
+
+pub fn pick_args(project_root: &Path) -> BlastResult<Args> {
     let theme = ColorfulTheme::default();
 
     let table_name = prompt_table_name(&theme)?;
 
-    let mut columns: Vec<ColumnDef> = Vec::new();
-    columns.push(ColumnDef::primary_key());
+    let mut raw_cols: Vec<ColumnDef> = Vec::new();
+    raw_cols.push(ColumnDef::primary_key());
 
     loop {
         let prompt_msg = format!(
             "Columns so far: {}. Add another column?",
-            describe_columns(&columns)
+            describe_columns(&raw_cols)
         );
         let add_more = Confirm::with_theme(&theme)
             .with_prompt(prompt_msg)
@@ -26,28 +59,97 @@ pub fn run() -> BlastResult<()> {
             break;
         }
 
-        match collect_column(&theme, &table_name) {
-            Ok(col) => columns.push(col),
+        match collect_column(&theme, &table_name, project_root) {
+            Ok(col) => raw_cols.push(col),
             Err(e) => {
                 logger::warning(&format!("column skipped: {}", e))?;
             }
         }
     }
 
-    let want_timestamps = Confirm::with_theme(&theme)
+    let include_timestamps = Confirm::with_theme(&theme)
         .with_prompt("Auto-add created_at / updated_at TIMESTAMPTZ NOT NULL DEFAULT now()?")
         .default(true)
         .interact()?;
 
-    if want_timestamps {
-        columns.push(ColumnDef::timestamp("created_at"));
-        columns.push(ColumnDef::timestamp("updated_at"));
+    if include_timestamps {
+        raw_cols.push(ColumnDef::timestamp("created_at"));
+        raw_cols.push(ColumnDef::timestamp("updated_at"));
     }
 
-    let indexes = prompt_indexes(&theme, &table_name, &columns)?;
+    let raw_indexes = prompt_indexes(&theme, &table_name, &raw_cols)?;
 
-    let up_sql = render_up_sql(&table_name, &columns, &indexes);
-    let down_sql = render_down_sql(&table_name, &indexes);
+    let columns: Vec<ColumnArgs> = raw_cols
+        .into_iter()
+        .map(|c| ColumnArgs {
+            name: c.name,
+            sql_type: c.sql_type,
+            nullable: c.nullable,
+            default: c.default,
+            is_primary_key: c.is_primary_key,
+            fk_table: c.fk.as_ref().map(|f| f.table.clone()),
+            fk_column: c.fk.map(|f| f.column),
+        })
+        .collect();
+
+    let indexes: Vec<IndexArgs> = raw_indexes
+        .into_iter()
+        .map(|i| IndexArgs {
+            name: i.name,
+            columns: i.columns,
+            unique: i.unique,
+        })
+        .collect();
+
+    Ok(Args {
+        table_name,
+        columns,
+        indexes,
+        include_timestamps,
+    })
+}
+
+pub fn run(
+    args: Args,
+    sink: &mut dyn Sink,
+    _progress: &mut dyn Progress,
+) -> BlastResult<Outcome> {
+    let col_defs = args_to_col_defs(&args);
+    let idx_defs = args_to_idx_defs(&args);
+
+    let up_sql = render_up_sql(&args.table_name, &col_defs, &idx_defs);
+    let down_sql = render_down_sql(&args.table_name, &idx_defs);
+
+    let migration_name = format!("create_{}", args.table_name);
+    let dir = write_migration(&migration_name, &up_sql, &down_sql)?;
+    logger::success(&format!("Migration written: {}", dir.display()))?;
+    sink.success(format!("Migration written: {}", dir.display()));
+
+    let column_count = args.columns.len();
+    let up_sql_path = dir.join("up.sql");
+    let down_sql_path = dir.join("down.sql");
+
+    Ok(Outcome {
+        table_name: args.table_name,
+        up_sql_path,
+        down_sql_path,
+        column_count,
+    })
+}
+
+pub fn run_with_picker(
+    project_root: &Path,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+) -> BlastResult<Outcome> {
+    let theme = ColorfulTheme::default();
+
+    let args = pick_args(project_root)?;
+
+    let col_defs = args_to_col_defs(&args);
+    let idx_defs = args_to_idx_defs(&args);
+    let up_sql = render_up_sql(&args.table_name, &col_defs, &idx_defs);
+    let down_sql = render_down_sql(&args.table_name, &idx_defs);
 
     logger::info("\n=== Generated migration preview ===")?;
     logger::info(&format!("up.sql:\n{}", up_sql))?;
@@ -58,16 +160,17 @@ pub fn run() -> BlastResult<()> {
         .with_prompt("Write this migration?")
         .default(true)
         .interact()?;
+
     if !confirmed {
         logger::info("Migration discarded; nothing written.")?;
-        return Ok(());
+        sink.info("Migration discarded; nothing written.");
+        return Err(BlastError::Invalid("migration cancelled by user".to_string()));
     }
 
-    let migration_name = format!("create_{}", table_name);
-    let dir = write_migration(&migration_name, &up_sql, &down_sql)?;
-    logger::success(&format!("Migration written: {}", dir.display()))?;
-    Ok(())
+    run(args, sink, progress)
 }
+
+// ── private helpers ───────────────────────────────────────────────────────────
 
 struct ColumnDef {
     name: String,
@@ -105,6 +208,49 @@ impl ColumnDef {
             fk: None,
         }
     }
+}
+
+struct IndexDef {
+    name: String,
+    columns: Vec<String>,
+    unique: bool,
+}
+
+fn fk_from_args(fk_table: &Option<String>, fk_column: &Option<String>) -> Option<ForeignKey> {
+    match (fk_table, fk_column) {
+        (Some(t), Some(col)) => Some(ForeignKey {
+            table: t.clone(),
+            column: col.clone(),
+        }),
+        (Some(_t), None) => None,
+        (None, Some(_col)) => None,
+        (None, None) => None,
+    }
+}
+
+fn args_to_col_defs(args: &Args) -> Vec<ColumnDef> {
+    args.columns
+        .iter()
+        .map(|c| ColumnDef {
+            name: c.name.clone(),
+            sql_type: c.sql_type.clone(),
+            nullable: c.nullable,
+            default: c.default.clone(),
+            is_primary_key: c.is_primary_key,
+            fk: fk_from_args(&c.fk_table, &c.fk_column),
+        })
+        .collect()
+}
+
+fn args_to_idx_defs(args: &Args) -> Vec<IndexDef> {
+    args.indexes
+        .iter()
+        .map(|i| IndexDef {
+            name: i.name.clone(),
+            columns: i.columns.clone(),
+            unique: i.unique,
+        })
+        .collect()
 }
 
 fn describe_columns(columns: &[ColumnDef]) -> String {
@@ -157,7 +303,11 @@ const COLUMN_TYPES: &[&str] = &[
     "NUMERIC(p,s)",
 ];
 
-fn collect_column(theme: &ColorfulTheme, current_table: &str) -> BlastResult<ColumnDef> {
+fn collect_column(
+    theme: &ColorfulTheme,
+    current_table: &str,
+    project_root: &Path,
+) -> BlastResult<ColumnDef> {
     let name: String = Input::with_theme(theme)
         .with_prompt("Column name (snake_case)")
         .validate_with(|input: &String| -> Result<(), &str> {
@@ -232,12 +382,12 @@ fn collect_column(theme: &ColorfulTheme, current_table: &str) -> BlastResult<Col
             .interact()?;
 
     let fk = if want_fk {
-        pick_fk_target(theme, current_table)?
+        pick_fk_target(theme, current_table, project_root)?
     } else {
         None
     };
 
-    if matches!(sql_type.as_str(), "BIGSERIAL") && !is_pk {
+    if sql_type.as_str() == "BIGSERIAL" && !is_pk {
         sql_type = "BIGSERIAL".to_string();
     }
 
@@ -251,10 +401,16 @@ fn collect_column(theme: &ColorfulTheme, current_table: &str) -> BlastResult<Col
     })
 }
 
-fn pick_fk_target(theme: &ColorfulTheme, current_table: &str) -> BlastResult<Option<ForeignKey>> {
-    let tables = discover_tables(current_table);
+fn pick_fk_target(
+    theme: &ColorfulTheme,
+    current_table: &str,
+    project_root: &Path,
+) -> BlastResult<Option<ForeignKey>> {
+    let tables = discover_tables(current_table, project_root);
     if tables.is_empty() {
-        logger::warning("No tables found in src/database/schema.rs or migrations/. Skipping FK.")?;
+        logger::warning(
+            "No tables found in src/database/schema.rs or migrations/. Skipping FK.",
+        )?;
         return Ok(None);
     }
 
@@ -276,12 +432,12 @@ fn pick_fk_target(theme: &ColorfulTheme, current_table: &str) -> BlastResult<Opt
     }))
 }
 
-fn discover_tables(current_table: &str) -> Vec<String> {
-    let schema_path = Path::new("src/database/schema.rs");
+fn discover_tables(current_table: &str, project_root: &Path) -> Vec<String> {
+    let schema_path = project_root.join("src/database/schema.rs");
     let mut tables: Vec<String> = Vec::new();
 
     if schema_path.exists() {
-        match schema_parser::parse_schema(schema_path) {
+        match schema_parser::parse_schema(&schema_path) {
             Ok(parsed) => {
                 for t in parsed {
                     tables.push(t.name);
@@ -369,12 +525,6 @@ fn prompt_indexes(
     }
 
     Ok(indexes)
-}
-
-struct IndexDef {
-    name: String,
-    columns: Vec<String>,
-    unique: bool,
 }
 
 fn render_up_sql(table: &str, columns: &[ColumnDef], indexes: &[IndexDef]) -> String {
