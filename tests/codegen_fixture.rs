@@ -1,16 +1,7 @@
-//! Integration smoke test for the frontend codegen pass.
-//!
-//! Builds a fixture primer IR JSON file in a temp dir, drives
-//! `blast::codegen::run_frontend`, and asserts the emitted TS files contain
-//! the expected substrings — proving the IR loader, validator emitter, and
-//! list query helper writer wire together.
 
 use std::fs;
 use std::path::Path;
 
-// We reach the codegen module through the `blast` crate root. The blast
-// binary already exposes `mod codegen;` from `main.rs`, so an integration
-// test can `use blast::codegen::...`.
 
 fn write_fixture_ir(project_root: &Path) {
     let dir = project_root.join("target").join("primer");

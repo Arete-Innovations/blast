@@ -1,10 +1,3 @@
-//! Integration smoke test for the `blast gen test` codegen pass.
-//!
-//! Builds a fixture primer IR JSON file in a temp dir, drives
-//! `blast::codegen::test_scaffold::run` for each filter mode, and asserts:
-//!   - the expected files land on disk
-//!   - their bodies reference the catalyst harness primitives
-//!   - re-running the pass leaves existing files untouched (idempotence)
 
 use std::fs;
 use std::path::Path;
