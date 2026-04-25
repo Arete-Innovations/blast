@@ -53,6 +53,14 @@ pub enum Command {
     ArsenalServe,
     GenFrontend,
     GenGovernorPlugin,
+    GenTest(GenTestSelector),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GenTestSelector {
+    All,
+    Flow(String),
+    Route(String),
 }
 
 pub fn parse_cli_args(args: &[String]) -> Option<Command> {
@@ -108,6 +116,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("table") => Some(Command::GenTable),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("frontend") => Some(Command::GenFrontend),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("governor-plugin") => Some(Command::GenGovernorPlugin),
+        Some("gen") if args.get(2).map(|s| s.as_str()) == Some("test") => parse_gen_test(args),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("migration") => {
             parse_gen_migration(args)
         }
@@ -162,6 +171,24 @@ fn parse_gen_migration(args: &[String]) -> Option<Command> {
     Some(Command::GenMigrationCustom(name))
 }
 
+fn parse_gen_test(args: &[String]) -> Option<Command> {
+    let rest: Vec<&String> = args.iter().skip(3).collect();
+    if rest.is_empty() {
+        return Some(Command::GenTest(GenTestSelector::All));
+    }
+    match rest[0].as_str() {
+        "--flow" => {
+            let name = rest.get(1)?.to_string();
+            Some(Command::GenTest(GenTestSelector::Flow(name)))
+        }
+        "--route" => {
+            let name = rest.get(1)?.to_string();
+            Some(Command::GenTest(GenTestSelector::Route(name)))
+        }
+        _other => None,
+    }
+}
+
 pub fn show_help() {
     println!("Blast - Suckless Web Framework CLI");
     println!();
@@ -203,6 +230,9 @@ pub fn show_help() {
     println!("  gen migration --custom <name>  Scaffold an empty migration and open $EDITOR");
     println!("  gen frontend         Generate FE artifacts (TS validators, list query helpers) from primer IR");
     println!("  gen governor-plugin  Emit frontend/scripts/governor-plugin.js (Vite shim for blast check)");
+    println!("  gen test             Scaffold per-flow + per-route integration test stubs (idempotent)");
+    println!("    --flow <name>      Only scaffold flow tests for <table> or <table>/<verb>");
+    println!("    --route <name>     Only scaffold the route smoke test for <table>");
     println!();
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
@@ -682,6 +712,25 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             logger::success(&format!("emitted {}", path.display()))?;
             Ok(())
         }
+
+        Command::GenTest(selector) => {
+            let filter = match selector {
+                GenTestSelector::All => crate::codegen::test_scaffold::Filter::All,
+                GenTestSelector::Flow(name) => crate::codegen::test_scaffold::Filter::Flow(name),
+                GenTestSelector::Route(name) => crate::codegen::test_scaffold::Filter::Route(name),
+            };
+            logger::info("Scaffolding test files from primer IR...")?;
+            let report = crate::codegen::test_scaffold::run(&config.project_dir, &filter)?;
+            for path in &report.written {
+                logger::success(&format!("wrote {}", path.display()))?;
+            }
+            logger::info(&format!(
+                "test scaffold: {} written, {} skipped (already present)",
+                report.written.len(),
+                report.skipped.len(),
+            ))?;
+            Ok(())
+        }
     }
 }
 
@@ -699,6 +748,7 @@ fn run_gen_picker(
         "Generate custom migration (--custom)",
         "Generate frontend (validators + list query helpers)",
         "Generate governor Vite plugin (frontend/scripts/governor-plugin.js)",
+        "Generate test scaffolds (per-flow + per-route, idempotent)",
     ];
 
     let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
@@ -720,6 +770,11 @@ fn run_gen_picker(
         }
         5 => execute(Command::GenFrontend, config, dep_manager),
         6 => execute(Command::GenGovernorPlugin, config, dep_manager),
+        7 => execute(
+            Command::GenTest(GenTestSelector::All),
+            config,
+            dep_manager,
+        ),
         other => Err(BlastError::Invalid(format!(
             "unknown gen picker selection: {}",
             other
