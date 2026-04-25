@@ -32,11 +32,8 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[DB] Migrate",
         "[DB] Rollback",
         "[DB] Seed",
-        "[Cronjobs] Interactive Manager",
-        "[Cronjobs] List Jobs",
-        "[Cronjobs] Add Job",
-        "[Cronjobs] Toggle Job",
-        "[Cronjobs] Remove Job",
+        "[FUSES] Manage fuses",
+        "[FUSES] List fuses",
         "[LOG] Truncate Logs",
         "[LINT] Governor Check",
         "[Arsenal] Scan & Write JSON",
@@ -96,66 +93,8 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             "[DB] Rollback" => Command::Rollback,
             "[DB] Seed" => Command::Seed(None),
 
-            "[Cronjobs] Interactive Manager" => Command::CronjobsInteractive,
-            "[Cronjobs] List Jobs" => Command::CronjobsList,
-            "[Cronjobs] Add Job" => {
-                print!("\x1B[2J\x1B[1;1H");
-
-                println!("Enter job name:");
-                let mut name = String::new();
-                std::io::stdin().read_line(&mut name)?;
-                let name = name.trim().to_string();
-
-                println!("Enter interval in seconds:");
-                let mut interval_str = String::new();
-                std::io::stdin().read_line(&mut interval_str)?;
-                let interval = match interval_str.trim().parse::<i32>() {
-                    Ok(n) => n,
-                    Err(_e) => {
-                        60
-                    }
-                };
-
-                Command::CronjobsAdd(name, interval)
-            }
-            "[Cronjobs] Toggle Job" => {
-                print!("\x1B[2J\x1B[1;1H");
-
-                if let Err(e) = crate::cronjobs::list_cronjobs(&config) {
-                    logger::warning(&format!("Failed to list jobs: {}", e))?;
-                }
-
-                println!("\nEnter job ID to toggle:");
-                let mut id_str = String::new();
-                std::io::stdin().read_line(&mut id_str)?;
-                let id = match id_str.trim().parse::<i32>() {
-                    Ok(n) => n,
-                    Err(_e) => {
-                        0
-                    }
-                };
-
-                Command::CronjobsToggle(id)
-            }
-            "[Cronjobs] Remove Job" => {
-                print!("\x1B[2J\x1B[1;1H");
-
-                if let Err(e) = crate::cronjobs::list_cronjobs(&config) {
-                    logger::warning(&format!("Failed to list jobs: {}", e))?;
-                }
-
-                println!("\nEnter job ID to remove:");
-                let mut id_str = String::new();
-                std::io::stdin().read_line(&mut id_str)?;
-                let id = match id_str.trim().parse::<i32>() {
-                    Ok(n) => n,
-                    Err(_e) => {
-                        0
-                    }
-                };
-
-                Command::CronjobsRemove(id)
-            }
+            "[FUSES] Manage fuses" => Command::FusesInteractive,
+            "[FUSES] List fuses" => Command::FusesList,
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
             "[Arsenal] Scan & Write JSON" => Command::Arsenal,
