@@ -1,5 +1,5 @@
-use crate::governor::config::GovernorConfig;
 use crate::governor::violation::Violation;
+use crate::state::FeLintState;
 use std::path::Path;
 
 pub trait Rule: Sync + Send {
@@ -9,7 +9,7 @@ pub trait Rule: Sync + Send {
         file: &Path,
         line: &str,
         line_no: usize,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Option<Violation>;
 }
 
@@ -19,6 +19,6 @@ pub trait FileRule: Sync + Send {
         &self,
         file: &Path,
         contents: &str,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Vec<Violation>;
 }

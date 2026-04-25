@@ -1,4 +1,4 @@
-use crate::governor::config::GovernorConfig;
+use crate::state::FeLintState;
 use crate::governor::rules::helpers::snippet_of;
 use crate::governor::rules::traits::Rule;
 use crate::governor::violation::Violation;
@@ -22,7 +22,7 @@ impl Rule for TsIgnore {
         file: &Path,
         line: &str,
         line_no: usize,
-        _config: &GovernorConfig,
+        _config: &FeLintState,
     ) -> Option<Violation> {
         if !line.contains("@ts-ignore") && !line.contains("@ts-nocheck") {
             return None;

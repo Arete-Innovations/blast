@@ -1,8 +1,9 @@
-use crate::governor::config::GovernorConfig;
 use crate::governor::rules::helpers::{is_comment_line, rel_path_str, snippet_of};
 use crate::governor::rules::traits::Rule;
 use crate::governor::violation::Violation;
+use crate::state::FeLintState;
 use regex::Regex;
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -17,7 +18,7 @@ impl IconClassOutsideIconsFile {
         }
     }
 
-    fn ensure_compiled(&self, patterns: &[String]) -> Vec<Regex> {
+    fn ensure_compiled(&self, patterns: &BTreeSet<String>) -> Vec<Regex> {
         let mut guard = match self.compiled.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
@@ -55,7 +56,7 @@ impl Rule for IconClassOutsideIconsFile {
         file: &Path,
         line: &str,
         line_no: usize,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Option<Violation> {
         if is_icons_file(file, &config.icons_file) {
             return None;

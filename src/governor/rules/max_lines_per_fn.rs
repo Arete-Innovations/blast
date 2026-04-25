@@ -1,4 +1,4 @@
-use crate::governor::config::GovernorConfig;
+use crate::state::FeLintState;
 use crate::governor::rules::helpers::{extension_is, snippet_of};
 use crate::governor::rules::traits::FileRule;
 use crate::governor::violation::Violation;
@@ -70,7 +70,7 @@ impl FileRule for MaxLinesPerFn {
         &self,
         file: &Path,
         contents: &str,
-        config: &GovernorConfig,
+        config: &FeLintState,
     ) -> Vec<Violation> {
         let is_ts_or_vue = extension_is(file, "ts") || extension_is(file, "vue");
         if !is_ts_or_vue {
