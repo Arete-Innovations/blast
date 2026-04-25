@@ -103,26 +103,21 @@ pub fn marker_for_schema(project_root: &Path) -> BlastResult<String> {
     marker_for_state_file(project_root, &schema_path)
 }
 
-/// Parse a marker header from the start of a generated file. Returns
-/// `(relative_path, hash)` when the first line matches the expected shape.
-///
-/// Used by the user app's `build.rs` validator — kept here so the format is
-/// owned in one place.
-pub fn parse_marker(file_contents: &str) -> Option<(String, String)> {
-    let first_line = file_contents.lines().next()?;
-    let rest = first_line.strip_prefix(MARKER_PREFIX)?;
-    let sep_idx = rest.find(MARKER_SEPARATOR)?;
-    let path = rest[..sep_idx].trim();
-    let hash = rest[sep_idx + MARKER_SEPARATOR.len()..].trim();
-    if path.is_empty() || hash.is_empty() {
-        return None;
-    }
-    Some((path.to_string(), hash.to_string()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_marker(file_contents: &str) -> Option<(String, String)> {
+        let first_line = file_contents.lines().next()?;
+        let rest = first_line.strip_prefix(MARKER_PREFIX)?;
+        let sep_idx = rest.find(MARKER_SEPARATOR)?;
+        let path = rest[..sep_idx].trim();
+        let hash = rest[sep_idx + MARKER_SEPARATOR.len()..].trim();
+        if path.is_empty() || hash.is_empty() {
+            return None;
+        }
+        Some((path.to_string(), hash.to_string()))
+    }
 
     #[test]
     fn marker_formats_expected_shape() {
