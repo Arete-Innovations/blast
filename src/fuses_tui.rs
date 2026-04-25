@@ -1,6 +1,7 @@
 use crate::configs::Config;
-use crate::error::BlastResult;
+use crate::error::{BlastError, BlastResult};
 use crate::fuses::{remove_fuse, toggle_fuse, FuseInfo};
+use crate::io::traits::{SinkExt};
 use console::Style;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
 use diesel::prelude::*;
@@ -14,6 +15,21 @@ use std::io::Write;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
+
+pub enum FusesAction {
+    List,
+    Toggle { fuse_name: String },
+    Run { fuse_name: String },
+    ViewLogs { fuse_name: String },
+    Remove { fuse_name: String },
+    LiveTable,
+    Exit,
+}
+
+pub enum Outcome {
+    Continue,
+    Exit,
+}
 
 fn establish_connection(config: &Config) -> BlastResult<PgConnection> {
     let current_dir = std::env::current_dir()?;
@@ -70,6 +86,220 @@ fn fetch_fuses(config: &Config) -> BlastResult<Vec<FuseInfo>> {
          FROM fuses ORDER BY id",
     )
     .load::<FuseInfo>(&mut conn)?)
+}
+
+fn format_job_for_display(job: &FuseInfo) -> String {
+    let state = if job.enabled { "[ENABLED ]" } else { "[DISABLED]" };
+    let name_display = if job.name.len() > 22 {
+        format!("{}...", &job.name[0..19])
+    } else {
+        job.name.clone()
+    };
+    format!(
+        "{}  {:<22}  {}  {}  runs: {}",
+        state, name_display, job.schedule_kind, job.schedule_spec, job.run_count
+    )
+}
+
+fn pick_fuse_action(
+    theme: &ColorfulTheme,
+    config: &Config,
+) -> BlastResult<FusesAction> {
+    let jobs = fetch_fuses(config)?;
+
+    if jobs.is_empty() {
+        println!("No fuses to manage.");
+        thread::sleep(Duration::from_secs(2));
+        return Ok(FusesAction::List);
+    }
+
+    let job_displays: Vec<String> = jobs.iter().map(|job| format_job_for_display(job)).collect();
+
+    let job_selection = FuzzySelect::with_theme(theme)
+        .with_prompt("Select a fuse to manage")
+        .default(0)
+        .items(&job_displays)
+        .interact()?;
+
+    let selected_job = &jobs[job_selection];
+
+    let fuse_actions = vec![
+        format!("{} Fuse", if selected_job.enabled { "Disable" } else { "Enable" }),
+        "Remove Fuse".to_string(),
+        "Cancel".to_string(),
+    ];
+
+    let action_selection = FuzzySelect::with_theme(theme)
+        .with_prompt(&format!("Action for fuse '{}'", selected_job.name))
+        .default(0)
+        .items(&fuse_actions)
+        .interact()?;
+
+    match action_selection {
+        0 => Ok(FusesAction::Toggle { fuse_name: selected_job.name.clone() }),
+        1 => {
+            let confirmed = Confirm::with_theme(theme)
+                .with_prompt(format!(
+                    "Are you sure you want to remove fuse '{}'?",
+                    selected_job.name
+                ))
+                .default(false)
+                .interact()?;
+            if confirmed {
+                Ok(FusesAction::Remove { fuse_name: selected_job.name.clone() })
+            } else {
+                Ok(FusesAction::List)
+            }
+        }
+        2 => Ok(FusesAction::List),
+        other => Err(BlastError::Invalid(format!("unexpected fuse action index: {}", other))),
+    }
+}
+
+pub fn pick_action(config: &Config) -> BlastResult<FusesAction> {
+    let theme = ColorfulTheme::default();
+
+    print!("\x1B[2J\x1B[1;1H");
+    std::io::stdout().flush()?;
+
+    println!("\n{}\n", Style::new().bold().underlined().apply_to("FUSES MANAGER"));
+
+    let jobs = fetch_fuses(config)?;
+
+    if jobs.is_empty() {
+        println!("No fuses registered. Create the fuses table with FUSES_MIGRATION_UP.\n");
+    } else {
+        println!("{} fuses registered.\n", jobs.len());
+    }
+
+    let menu_options = vec!["View Live Table", "View and Manage Fuses", "Back to Main Menu"];
+
+    let selection = FuzzySelect::with_theme(&theme)
+        .with_prompt("Select an option")
+        .default(0)
+        .items(&menu_options)
+        .interact()?;
+
+    match selection {
+        0 => Ok(FusesAction::LiveTable),
+        1 => pick_fuse_action(&theme, config),
+        2 => Ok(FusesAction::Exit),
+        other => Err(BlastError::Invalid(format!("unexpected menu selection: {}", other))),
+    }
+}
+
+pub fn run(
+    action: FusesAction,
+    config: &Config,
+    sink: &mut dyn crate::io::traits::Sink,
+    _progress: &mut dyn crate::io::traits::Progress,
+) -> BlastResult<Outcome> {
+    match action {
+        FusesAction::Exit => Ok(Outcome::Exit),
+
+        FusesAction::List => {
+            let jobs = fetch_fuses(config)?;
+            if jobs.is_empty() {
+                sink.info("No fuses registered.");
+            } else {
+                sink.info(&format!("{} fuses registered.", jobs.len()));
+            }
+            Ok(Outcome::Continue)
+        }
+
+        FusesAction::LiveTable => {
+            display_fuses_table(config)?;
+            Ok(Outcome::Continue)
+        }
+
+        FusesAction::Toggle { fuse_name } => {
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+                    .template("{spinner:.green} {msg}")
+                    .map_err(|e| BlastError::Invalid(e.to_string()))?,
+            );
+            pb.set_message(format!("Toggling fuse '{}'...", fuse_name));
+
+            match toggle_fuse(config, &fuse_name) {
+                Ok(()) => {
+                    pb.finish_with_message(format!("Fuse '{}' toggled successfully", fuse_name));
+                    sink.success(&format!("fuse '{}' toggled", fuse_name));
+                    thread::sleep(Duration::from_secs(1));
+                }
+                Err(e) => {
+                    pb.finish_with_message(format!("Error: {}", e));
+                    sink.error(&format!("toggle failed: {}", e));
+                    thread::sleep(Duration::from_secs(2));
+                }
+            }
+            Ok(Outcome::Continue)
+        }
+
+        FusesAction::Remove { fuse_name } => {
+            let jobs = fetch_fuses(config)?;
+            let fuse_id = jobs
+                .iter()
+                .find(|j| j.name == fuse_name)
+                .map(|j| j.id as i32)
+                .ok_or_else(|| BlastError::NotFound(format!("fuse '{}' not found", fuse_name)))?;
+
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(
+                ProgressStyle::default_spinner()
+                    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+                    .template("{spinner:.red} {msg}")
+                    .map_err(|e| BlastError::Invalid(e.to_string()))?,
+            );
+            pb.set_message(format!("Removing fuse '{}'...", fuse_name));
+
+            match remove_fuse(config, fuse_id) {
+                Ok(()) => {
+                    pb.finish_with_message(format!("Fuse '{}' removed successfully", fuse_name));
+                    sink.success(&format!("fuse '{}' removed", fuse_name));
+                    thread::sleep(Duration::from_secs(1));
+                }
+                Err(e) => {
+                    pb.finish_with_message(format!("Error: {}", e));
+                    sink.error(&format!("remove failed: {}", e));
+                    thread::sleep(Duration::from_secs(2));
+                }
+            }
+            Ok(Outcome::Continue)
+        }
+
+        FusesAction::Run { fuse_name } => {
+            sink.info(&format!("triggering immediate run of fuse '{}'...", fuse_name));
+            crate::fuses::run_fuse(config, &fuse_name)?;
+            sink.success(&format!("fuse '{}' triggered", fuse_name));
+            Ok(Outcome::Continue)
+        }
+
+        FusesAction::ViewLogs { fuse_name } => {
+            crate::fuses::logs_fuse(config, &fuse_name)?;
+            Ok(Outcome::Continue)
+        }
+    }
+}
+
+pub fn run_with_picker(
+    config: &Config,
+    sink: &mut dyn crate::io::traits::Sink,
+    progress: &mut dyn crate::io::traits::Progress,
+) -> BlastResult<Outcome> {
+    loop {
+        let action = pick_action(config)?;
+        let outcome = run(action, config, sink, progress)?;
+
+        match outcome {
+            Outcome::Exit => return Ok(Outcome::Exit),
+            Outcome::Continue => {
+                print!("\x1B[2J\x1B[1;1H");
+                std::io::stdout().flush()?;
+            }
+        }
+    }
 }
 
 pub fn display_fuses_table(config: &Config) -> BlastResult<()> {
@@ -214,170 +444,6 @@ fn render_table(jobs: &[FuseInfo]) -> BlastResult<Vec<String>> {
     table.print(&mut output)?;
 
     let text =
-        String::from_utf8(output).map_err(|e| crate::error::BlastError::Invalid(e.to_string()))?;
+        String::from_utf8(output).map_err(|e| BlastError::Invalid(e.to_string()))?;
     Ok(text.lines().map(|line| line.to_string()).collect())
-}
-
-pub fn run_fuses_tui(config: &Config) -> BlastResult<()> {
-    let theme = ColorfulTheme::default();
-
-    print!("\x1B[2J\x1B[1;1H");
-    std::io::stdout().flush()?;
-
-    loop {
-        println!("\n{}\n", Style::new().bold().underlined().apply_to("FUSES MANAGER"));
-
-        let jobs = fetch_fuses(config)?;
-
-        let format_job_for_display = |job: &FuseInfo| -> String {
-            let state = if job.enabled { "[ENABLED ]" } else { "[DISABLED]" };
-            let name_display = if job.name.len() > 22 {
-                format!("{}...", &job.name[0..19])
-            } else {
-                job.name.clone()
-            };
-            format!(
-                "{}  {:<22}  {}  {}  runs: {}",
-                state, name_display, job.schedule_kind, job.schedule_spec, job.run_count
-            )
-        };
-
-        if jobs.is_empty() {
-            println!(
-                "No fuses registered. Create the fuses table with FUSES_MIGRATION_UP.\n"
-            );
-        } else {
-            println!("{} fuses registered.\n", jobs.len());
-        }
-
-        let menu_options =
-            vec!["View Live Table", "View and Manage Fuses", "Back to Main Menu"];
-
-        let selection = FuzzySelect::with_theme(&theme)
-            .with_prompt("Select an option")
-            .default(0)
-            .items(&menu_options)
-            .interact()?;
-
-        match selection {
-            0 => {
-                display_fuses_table(config)?;
-            }
-            1 => {
-                if jobs.is_empty() {
-                    println!("No fuses to manage.");
-                    thread::sleep(Duration::from_secs(2));
-                } else {
-                    let job_displays: Vec<String> =
-                        jobs.iter().map(|job| format_job_for_display(job)).collect();
-
-                    let job_selection = FuzzySelect::with_theme(&theme)
-                        .with_prompt("Select a fuse to manage")
-                        .default(0)
-                        .items(&job_displays)
-                        .interact()?;
-
-                    let selected_job = &jobs[job_selection];
-
-                    let fuse_actions = vec![
-                        format!(
-                            "{} Fuse",
-                            if selected_job.enabled { "Disable" } else { "Enable" }
-                        ),
-                        "Remove Fuse".to_string(),
-                        "Cancel".to_string(),
-                    ];
-
-                    let action_selection = FuzzySelect::with_theme(&theme)
-                        .with_prompt(&format!("Action for fuse '{}'", selected_job.name))
-                        .default(0)
-                        .items(&fuse_actions)
-                        .interact()?;
-
-                    let fuse_id_i32 = selected_job.id as i32;
-
-                    match action_selection {
-                        0 => {
-                            let pb = ProgressBar::new_spinner();
-                            pb.set_style(
-                                ProgressStyle::default_spinner()
-                                    .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                                    .template("{spinner:.green} {msg}")
-                                    .map_err(|e| {
-                                        crate::error::BlastError::Invalid(e.to_string())
-                                    })?,
-                            );
-                            pb.set_message(format!("Toggling fuse '{}'...", selected_job.name));
-
-                            match toggle_fuse(config, &selected_job.name) {
-                                Ok(()) => {
-                                    pb.finish_with_message(format!(
-                                        "Fuse '{}' toggled successfully",
-                                        selected_job.name
-                                    ));
-                                    thread::sleep(Duration::from_secs(1));
-                                }
-                                Err(e) => {
-                                    pb.finish_with_message(format!("Error: {}", e));
-                                    thread::sleep(Duration::from_secs(2));
-                                }
-                            }
-                        }
-                        1 => {
-                            if Confirm::with_theme(&theme)
-                                .with_prompt(format!(
-                                    "Are you sure you want to remove fuse '{}'?",
-                                    selected_job.name
-                                ))
-                                .default(false)
-                                .interact()?
-                            {
-                                let pb = ProgressBar::new_spinner();
-                                pb.set_style(
-                                    ProgressStyle::default_spinner()
-                                        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                                        .template("{spinner:.red} {msg}")
-                                        .map_err(|e| {
-                                            crate::error::BlastError::Invalid(e.to_string())
-                                        })?,
-                                );
-                                pb.set_message(format!(
-                                    "Removing fuse '{}'...",
-                                    selected_job.name
-                                ));
-
-                                match remove_fuse(config, fuse_id_i32) {
-                                    Ok(()) => {
-                                        pb.finish_with_message(format!(
-                                            "Fuse '{}' removed successfully",
-                                            selected_job.name
-                                        ));
-                                        thread::sleep(Duration::from_secs(1));
-                                    }
-                                    Err(e) => {
-                                        pb.finish_with_message(format!("Error: {}", e));
-                                        thread::sleep(Duration::from_secs(2));
-                                    }
-                                }
-                            }
-                        }
-                        2 => {}
-                        other => {
-                            eprintln!("unexpected action: {}", other);
-                        }
-                    }
-                }
-            }
-            2 => break,
-            other => {
-                eprintln!("unexpected menu selection: {}", other);
-                break;
-            }
-        }
-
-        print!("\x1B[2J\x1B[1;1H");
-        std::io::stdout().flush()?;
-    }
-
-    Ok(())
 }
