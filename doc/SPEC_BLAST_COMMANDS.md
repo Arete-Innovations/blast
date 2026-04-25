@@ -301,13 +301,73 @@ Dashboard mode routes logger output to file only (stdout captured by Zellij pane
 
 Progress bars via `indicatif`, ephemeral — not logged.
 
+## Command Core Contract
+
+**One core, two front-ends.** CLI clap parser and TUI menu are *front-ends*. The actual work lives in pure command functions. Front-ends resolve args, then call the core.
+
+### Layering
+
+```
+src/cli.rs          ← clap parser → Command::Args
+src/tui/...         ← ratatui/dialoguer → Command::Args
+src/commands/       ← pure command core (this is the surface)
+  └─ <verb>.rs      ← fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome>
+```
+
+### Hard rules
+
+1. **Args fully resolved at front-end boundary.** The function signature for every command is `fn run(args: FullyTypedArgs, sink, progress) -> BlastResult<Outcome>`. No `Option<T>` for "ask if missing" — the front-end already asked. Commands take ground truth.
+
+2. **No prompting inside command bodies.** Zero `dialoguer::*` calls under `src/commands/`. If a wizard exists (`gen table`, `gen primer`), it lives in `src/tui/<wizard>/` and *outputs* a fully-resolved arg struct that gets passed to the core command.
+
+3. **No direct stdout/stderr.** Zero `println!`, `eprintln!`, raw `print!`. Commands emit through an injected `Sink` trait:
+   ```rust
+   pub trait Sink {
+       fn info(&mut self, msg: &str);
+       fn warn(&mut self, msg: &str);
+       fn error(&mut self, msg: &str);
+       fn success(&mut self, msg: &str);
+       fn debug(&mut self, msg: &str);
+       fn structured(&mut self, event: SinkEvent);  // typed events for TUI widgets
+   }
+   ```
+   CLI front-end uses `StdoutSink` (current emoji-prefixed stdout). TUI front-end uses `WidgetSink` (events into a ratatui pane).
+
+4. **Progress via injected `Progress` sink.** Long-running ops (`gen all`, `init`, `build`) emit progress events:
+   ```rust
+   pub trait Progress {
+       fn step_start(&mut self, label: &str);
+       fn step_done(&mut self, label: &str);
+       fn step_fail(&mut self, label: &str, reason: &str);
+       fn tick(&mut self, current: u64, total: u64);
+   }
+   ```
+   CLI uses `IndicatifProgress`. TUI uses `WidgetProgress`. Tests use `NullProgress`.
+
+5. **Outcome is a typed return value.** Each command returns `Outcome` describing what it did (files written, files skipped, errors recovered). Front-ends render the outcome in their idiomatic way.
+
+6. **Command registry is single-source.** `enum Command` lives in `src/commands/mod.rs`. Each variant has:
+   - typed args struct
+   - clap derive metadata (CLI parses straight into the variant)
+   - menu metadata (label, category, description) consumed by TUI for menu rendering
+   - `run` fn
+
+   Adding a command = one variant, one args struct, one `run` fn. CLI and TUI pick it up automatically. No four-place sync.
+
+### What this kills
+
+- The `commands::execute()` switch + `interactive.rs` dispatch + dashboard menu wiring as three separate sites of truth.
+- Any command body that does `dialoguer::FuzzySelect::new()...interact()`.
+- `logger::info(...)` calls inside command bodies (logger becomes the CLI sink impl, not a global).
+- Hand-written menu lists in `interactive.rs` and `dashboard.rs` that drift from the CLI surface.
+
 ## Guidance For Blast Maintainers
 
-- CLI and dashboard must call the same `execute()` function for each command. No feature drift.
-- When adding a new command: add to `commands::Command` enum, `parse_cli_args()`, `execute()`, dialoguer menu in `interactive.rs`. All four.
+- CLI and TUI front-ends call the same command-core `run` fn. Front-ends never duplicate work.
+- When adding a command: add a `Command` variant + args struct + `run` fn. Done. Both front-ends pick it up.
 - Prefer explicit command names over cleverness. `blast gen flows` beats `blast flux`.
 - Deterministic output layouts only. No "depending on time, this ends up here or there."
-- Avoid one-off project-specific behavior in core commands. If a project needs something weird, it's a Spark.
+- Avoid one-off project-specific behavior in core commands. If a project needs something weird, fork.
 - Run `cargo check` in `blast/` after touching Blast source.
 
 ## Related Specs
