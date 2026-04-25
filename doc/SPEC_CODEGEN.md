@@ -94,6 +94,58 @@ frontend/src/generated/api/index.ts     (barrel)
 frontend/src/generated/composables/index.ts
 ```
 
+### TS validator output
+
+```
+frontend/src/generated/validators/users.ts
+  - validateNewUser(input: unknown): Result<NewUser, ValidationError[]>
+  - validateUserPatch(input: unknown): Result<UserPatch, ValidationError[]>
+  - validateUserListFilters(input: unknown): Result<UserListFilters, ValidationError[]>
+```
+
+Generated from primer validation modifiers (`.max_len()`, `.pattern()`, `.enum_values()`, `.min()`, `.max()`) plus the list endpoint wire schema (`.filtered_by()`, `.paginated()`). Called by generated API clients before the fetch; surfaces errors client-side without a network round-trip.
+
+Rule: every constraint declared in Primer emits both a Rust validator (in the generated route handler's extractor) and a TS validator. The two are structurally mirrored. Blast's `gen frontend` pass drives both in a single codegen cycle to keep them in sync.
+
+### Admin shell route output
+
+```
+src/transport/http/generated/admin/users.rs
+  - admin::users::routes() -> Router            (mounted under /admin/users)
+  - list handler: GET  /admin/users
+  - detail handler: GET  /admin/users/:id
+  - edit handler: GET  /admin/users/:id/edit
+  - update handler: PATCH /admin/users/:id
+  - delete handler: DELETE /admin/users/:id
+  - action handlers: POST /admin/users/:id/actions/:action_slug  (one per blueprint admin_action)
+
+frontend/src/generated/admin/users.ts
+  - AdminUserPublic (Admin-variant shape)
+  - admin API client (list, get, update, delete, action calls)
+  - useAdminUsers(), useAdminUser(id) composables
+```
+
+Generated from: primer (Admin variant field list, admin_hints) + blueprint (admin_actions). The admin shell is a schema-driven generic UI; Blast emits route handlers and typed FE clients for it. The admin list/detail rendering is handled by a shared generic admin shell component — Blast does not emit per-resource Vue pages for admin.
+
+See `catalyst/doc/SPEC_ADMIN.md` for the admin shell layout and the generic component.
+
+### Test scaffold output
+
+Emitted by `blast gen test`. Idempotent — does not overwrite existing files.
+
+```
+flows/generated/users/list.test.rs          (baseline integration test: fixture insert → flow call → assert)
+flows/generated/users/get.test.rs
+flows/generated/users/update.test.rs
+flows/generated/users/delete.test.rs
+
+transport/http/generated/users.test.rs      (baseline HTTP test: oneshot request through full stack)
+
+tests/fixtures/users.rs                     (fixture helper that calls the create flow)
+```
+
+Test scaffold format: `with_test_tx` wrapper + fixture creation + minimal valid input + assert on return value and HTTP status. See `catalyst/doc/SPEC_TESTING.md` for the harness shape.
+
 ### Misc output
 
 ```
@@ -137,10 +189,11 @@ pub mod custom;
 - `blast gen structs` — reads schema.rs + primer IR; writes `src/structs/generated/`
 - `blast gen models` — reads schema.rs + primer IR; writes `src/models/generated/`
 - `blast gen flows` — reads primer IR; writes `src/flows/generated/` + `src/transport/http/generated/` + `src/transport/ws/generated/`
-- `blast gen frontend` — reads schema.rs + primer IR + blueprint IR; writes `frontend/src/generated/`
+- `blast gen frontend` — reads schema.rs + primer IR + blueprint IR; writes `frontend/src/generated/` (types, API clients, composables, TS validators, admin clients)
 - `blast gen env-example` — reads blueprint manifest IR; writes `.env.example`
 - `blast gen governor-plugin` — reads blueprint fe_lint IR; writes `frontend/scripts/governor-plugin.js` + `.rule_violations_whitelist`
-- `blast gen all` — full pipeline: schema → primer → blueprint → structs → models → flows → frontend → env-example → governor-plugin
+- `blast gen test` — reads primer IR; scaffolds `*.test.rs` per flow + per route; idempotent on existing files
+- `blast gen all` — full pipeline: schema → primer → blueprint → structs → models → flows → frontend → env-example → governor-plugin → test scaffolds
 
 **Hard order:** schema must exist before primer IR can be validated. Primer IR must exist before structs/models/flows can generate. Blast's commands check prerequisites and fail loudly if missing.
 
@@ -186,6 +239,9 @@ Blast reads: IR JSON files + `schema.rs` (Diesel output, considered stable forma
 - `frontend/scripts/governor-plugin.js`
 - `frontend/.rule_violations_whitelist`
 - `src/database/schema.rs` (indirectly, by invoking Diesel CLI)
+- `flows/generated/**/*.test.rs` (initial scaffold only; not overwritten once written)
+- `transport/http/generated/**/*.test.rs` (initial scaffold only)
+- `tests/fixtures/<resource>.rs` (initial scaffold only)
 
 ## What Blast DOES NOT Write
 
