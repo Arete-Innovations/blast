@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 const STATE_DIR_RELATIVE: &str = "storage/blast/state";
 const APP_STATE_FILE: &str = "app.ron";
 const RESOURCES_SUBDIR: &str = "resources";
+const SCHEMA_RELATIVE: &str = "src/database/schema.rs";
 
 const MARKER_PREFIX: &str = "// AUTO-GENERATED from ";
 const MARKER_SEPARATOR: &str = " @ ";
@@ -92,6 +93,14 @@ pub fn marker_for_resource(project_root: &Path, table: &str) -> BlastResult<Stri
 pub fn marker_for_app(project_root: &Path) -> BlastResult<String> {
     let state_path = app_state_path(project_root);
     marker_for_state_file(project_root, &state_path)
+}
+
+/// Convenience: marker for the diesel schema file. Used by structs/models
+/// codegen which is schema-driven, not state-driven — but the same stale
+/// detection mechanism applies (regenerate when schema.rs changes).
+pub fn marker_for_schema(project_root: &Path) -> BlastResult<String> {
+    let schema_path = project_root.join(SCHEMA_RELATIVE);
+    marker_for_state_file(project_root, &schema_path)
 }
 
 /// Parse a marker header from the start of a generated file. Returns
