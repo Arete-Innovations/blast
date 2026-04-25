@@ -3,6 +3,26 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+/// A single declared environment variable in the app's env spec.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnvVarSpec {
+    /// Default value to emit in `.env.example`.  Ignored when `sensitive = true`.
+    pub default: String,
+    /// Optional human-readable comment rendered above the var line.
+    pub comment: Option<String>,
+    /// When true the `.env.example` line shows `<NAME>=<changeme>` instead of
+    /// the actual default, so secrets are never committed in example files.
+    pub sensitive: bool,
+}
+
+/// Ordered set of declared env vars.  The key is the env var name (e.g.
+/// `DATABASE_URL`).  `IndexMap` preserves insertion order for deterministic
+/// file output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnvSpecState {
+    pub vars: IndexMap<String, EnvVarSpec>,
+}
+
 fn default_rules() -> BTreeSet<String> {
     [
         "RawColorOutsidePreset",
@@ -101,6 +121,7 @@ pub enum AppPolicySection {
     Admin(AdminState),
     Fuses(FusesPolicyState),
     Services(ServicesState),
+    EnvSpec(EnvSpecState),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -229,6 +250,13 @@ impl AppPolicySection {
                 }
             }
             Self::Services(_) => {}
+            Self::EnvSpec(state) => {
+                let mut pairs: Vec<(String, EnvVarSpec)> = state.vars.drain(..).collect();
+                pairs.sort_by(|a, b| a.0.cmp(&b.0));
+                for (k, v) in pairs {
+                    state.vars.insert(k, v);
+                }
+            }
         }
     }
 }

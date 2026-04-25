@@ -9,6 +9,8 @@ pub use app::AdminAction;
 pub use app::AdminState;
 pub use app::AppPolicySection;
 pub use app::AppState;
+pub use app::EnvSpecState;
+pub use app::EnvVarSpec;
 pub use app::FeLintState;
 pub use app::FuseEntry;
 pub use app::FusesPolicyState;
