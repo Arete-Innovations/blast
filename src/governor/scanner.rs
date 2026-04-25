@@ -3,6 +3,7 @@ use crate::governor::config::GovernorConfig;
 use crate::governor::rules;
 use crate::governor::violation::Violation;
 use crate::governor::whitelist::Whitelist;
+use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -17,27 +18,37 @@ pub fn scan_project(root: &Path, config: &GovernorConfig) -> BlastResult<ScanRep
 
     let targets = collect_targets(&frontend_root)?;
     let files_scanned = targets.len();
-    let mut all_violations: Vec<Violation> = Vec::new();
 
-    for path in &targets {
-        let raw = match std::fs::read_to_string(path) {
-            Ok(v) => v,
-            Err(_read_failed) => continue,
-        };
-        let rel: &Path = match path.strip_prefix(root) {
-            Ok(stripped) => stripped,
-            Err(_no_prefix) => path.as_path(),
-        };
-        let mut file_violations = rules::run_all(rel, &raw, config);
-        file_violations.retain(|v| !whitelist.suppresses(rel, &v.snippet));
-        file_violations.retain(|v| !is_globally_whitelisted(&v.snippet, config));
-        all_violations.extend(file_violations);
-    }
+    let root_buf = root.to_path_buf();
+    let violations: Vec<Violation> = targets
+        .par_iter()
+        .flat_map(|path| scan_one(path, &root_buf, config, &whitelist))
+        .collect();
 
     Ok(ScanReport {
-        violations: all_violations,
+        violations,
         files_scanned,
     })
+}
+
+fn scan_one(
+    path: &Path,
+    root: &Path,
+    config: &GovernorConfig,
+    whitelist: &Whitelist,
+) -> Vec<Violation> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(v) => v,
+        Err(_read_failed) => return Vec::new(),
+    };
+    let rel: &Path = match path.strip_prefix(root) {
+        Ok(stripped) => stripped,
+        Err(_no_prefix) => path,
+    };
+    let mut file_violations = rules::run_all(rel, &raw, config);
+    file_violations.retain(|v| !whitelist.suppresses(rel, &v.snippet));
+    file_violations.retain(|v| !is_globally_whitelisted(&v.snippet, config));
+    file_violations
 }
 
 fn collect_targets(root: &Path) -> BlastResult<Vec<PathBuf>> {
