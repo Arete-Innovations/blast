@@ -14,6 +14,12 @@ pub enum BlastError {
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("ron parse: {0}")]
+    RonDe(#[from] ron::error::SpannedError),
+
+    #[error("ron ser: {0}")]
+    RonSer(#[from] ron::Error),
+
     #[error("toml parse: {0}")]
     TomlDe(#[from] toml::de::Error),
 
