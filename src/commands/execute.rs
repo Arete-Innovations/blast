@@ -41,7 +41,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::Init => run_init(config),
+        Command::Init => run_init(config, dep_manager),
 
         Command::Cli => crate::interactive::run_interactive_loop(config, dep_manager),
 
@@ -314,97 +314,49 @@ fn dispatch_arsenal(sub: Option<ArsenalCmd>, config: &Config) -> BlastResult<()>
     }
 }
 
-fn run_init(config: &mut Config) -> BlastResult<()> {
-    use console::style;
+// blast init pipeline (per SPEC_BLAST_COMMANDS.md):
+//   step 1/4: dependency check  — cargo, diesel_cli, node, zellij
+//   step 2/4: database reset    — rollback all then migrate
+//   step 3/4: seed data         — no-op if no seed file
+//   step 4/4: codegen pipeline  — delegates to gen_all
+fn run_init(config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
+    logger::info("initializing project...")?;
 
-    let is_verbose = logger::is_verbose();
-    println!("{} Initializing project...", style("🚀").cyan());
+    // Step 1/4: dependency check
+    logger::info("init 1/4: checking dependencies")?;
+    dep_manager.ensure_installed(&["cargo", "diesel", "node", "zellij"], false)?;
 
-    let total_steps = 4;
-    let mut main_progress = logger::create_progress(Some(total_steps));
-
-    if is_verbose {
-        main_progress.set_message("Project initialization (1/4): Setting up dependencies");
+    // Step 2/4: database reset (rollback then migrate — idempotent)
+    logger::info("init 2/4: resetting database (rollback + migrate)")?;
+    if !crate::database::rollback_all() {
+        logger::warning("rollback had issues — proceeding with migrate")?;
     }
-    main_progress.inc(1);
-
-    if is_verbose {
-        main_progress.set_message("Project initialization (2/4): Setting up database");
-    }
-
-    main_progress.set_message("Running database migrations...");
-    let migrations_ok = crate::database::migrate();
-    if !migrations_ok {
-        main_progress.warning("Some migration issues occurred - check database configuration")?;
+    if !crate::database::migrate() {
+        logger::warning("some migration issues occurred — check database configuration")?;
     }
 
-    main_progress.set_message("Seeding database...");
-    let seed_ok = crate::database::seed(None);
-    if !seed_ok {
-        main_progress.warning("Some seeding issues occurred - this may be normal for new projects")?;
+    // Step 3/4: seed data
+    logger::info("init 3/4: seeding database")?;
+    if !crate::database::seed(None) {
+        logger::warning("some seeding issues occurred — normal for new projects")?;
     }
 
-    main_progress.inc(1);
+    // Step 4/4: full codegen pipeline (schema → structs → models → flows → frontend → …)
+    logger::info("init 4/4: running codegen pipeline")?;
+    let verbose = logger::is_verbose();
+    let mut sink = crate::io::cli_sink(verbose, None);
+    let mut progress = crate::io::cli_progress(None);
+    let args = crate::commands::gen_all::Args {
+        project_root: config.project_dir.clone(),
+    };
+    let outcome = crate::commands::gen_all::run(args, config, &mut sink, &mut progress)?;
 
-    if is_verbose {
-        main_progress.set_message("Project initialization (3/4): Generating database schema");
-    } else {
-        main_progress.set_message("Generating database schema...");
-    }
-
-    let schema_ok = crate::database::force_regenerate_main_schema();
-    if !schema_ok {
-        main_progress.warning("Some schema generation issues occurred")?;
-    }
-    main_progress.inc(1);
-
-    if is_verbose {
-        main_progress.set_message("Project initialization (4/4): Generating code files");
-    }
-
-    main_progress.set_message("Generating structs...");
-    let mut structs_ok = crate::structs::generate(config);
-    if !structs_ok {
-        structs_ok = crate::structs::generate(config);
-        if !structs_ok {
-            main_progress.warning("Struct generation issues persisted - may be normal for empty schemas")?;
-        }
-    }
-
-    main_progress.set_message("Generating models...");
-    let mut models_ok = crate::models::generate(config);
-    if !models_ok {
-        models_ok = crate::models::generate(config);
-        if !models_ok {
-            main_progress.warning("Model generation issues persisted - may be normal for empty schemas")?;
-        }
-    }
-    main_progress.inc(1);
-
-    main_progress.set_message("Ensuring schema is generated for main database...");
-    let schema_fixed = crate::database::force_regenerate_main_schema();
-    if !schema_fixed {
-        main_progress.warning("Failed to force-regenerate schema from main database. The schema may be incorrect.")?;
-    } else {
-        main_progress.success("Schema has been correctly regenerated from main DATABASE_URL");
-    }
-
-    main_progress.set_message("Regenerating structs and models from fixed schema...");
-    let structs_regenerated = crate::structs::generate(config);
-    let models_regenerated = crate::models::generate(config);
-
-    if !structs_regenerated || !models_regenerated {
-        main_progress.warning("Failed to regenerate some structs or models. You may need to run 'blast gen structs' and 'blast gen models' manually.")?;
-    } else {
-        main_progress.success("Structs and models have been regenerated successfully");
-    }
-
-    main_progress.success("Project initialization complete!");
-
-    println!("{} Your project is ready to run! {}", style("🎉").green(), style("🚀").green());
-    println!("\nNext steps:");
-    println!("  {} Run 'blast run' to start the development server", style("1.").cyan());
-    println!("  {} Run 'blast dashboard' to launch the interactive dashboard", style("2.").cyan());
+    logger::success(&format!(
+        "init complete: {} codegen steps, {} files written, {} files skipped",
+        outcome.steps_run, outcome.files_written, outcome.files_skipped
+    ))?;
+    logger::info("run 'blast run' to start the development server")?;
+    logger::info("run 'blast dashboard' to launch the interactive dashboard")?;
 
     Ok(())
 }
