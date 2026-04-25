@@ -1,4 +1,4 @@
-use crate::commands::Command;
+use crate::commands::{Command, FusesCmd, GenCmd, LogCmd};
 use crate::configs::Config;
 use crate::dependencies::DependencyManager;
 use crate::error::BlastResult;
@@ -67,45 +67,47 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             .interact()?;
 
         let cmd = match commands[selection] {
-            "[APP] Refresh" => Command::RefreshApp,
+            "[APP] Refresh" => Command::Refresh,
             "[APP] Run Server" => {
                 if config.environment == "prod" || config.environment == "production" {
-                    Command::RunProdServer
+                    Command::RunProd
                 } else {
-                    Command::RunDevServer
+                    Command::Run
                 }
             }
-            "[APP] Watch Server" => Command::WatchServer,
-            "[APP] Stop Server" => Command::StopServer,
-            "[APP] Toggle Dev/Prod" => Command::ToggleEnvironment,
+            "[APP] Watch Server" => Command::Watch,
+            "[APP] Stop Server" => Command::Stop,
+            "[APP] Toggle Dev/Prod" => Command::ToggleEnv,
 
-            "[CODEGEN] Schema" => Command::GenerateSchema,
-            "[CODEGEN] Structs" => Command::GenerateStructs,
-            "[CODEGEN] Models" => Command::GenerateModels,
-            "[CODEGEN] Gen Picker" => Command::GenInteractivePicker,
-            "[CODEGEN] Gen Table (wizard)" => Command::GenTable,
+            "[CODEGEN] Schema" => Command::Schema,
+            "[CODEGEN] Structs" => Command::Gen { cmd: Some(GenCmd::Structs) },
+            "[CODEGEN] Models" => Command::Gen { cmd: Some(GenCmd::Models) },
+            "[CODEGEN] Gen Picker" => Command::Gen { cmd: None },
+            "[CODEGEN] Gen Table (wizard)" => Command::Gen { cmd: Some(GenCmd::Table) },
             "[CODEGEN] Gen Migration (--custom)" => {
                 let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
                     .with_prompt("Migration name (snake_case)")
                     .interact_text()?;
-                Command::GenMigrationCustom(name)
+                Command::Gen {
+                    cmd: Some(GenCmd::Migration { custom: true, name: Some(name) }),
+                }
             }
-            "[CODEGEN] Gen Frontend" => Command::GenFrontend,
-            "[CODEGEN] Gen Governor Plugin" => Command::GenGovernorPlugin,
-            "[CODEGEN] Gen Test Scaffolds" => {
-                Command::GenTest(crate::commands::GenTestSelector::All)
-            }
+            "[CODEGEN] Gen Frontend" => Command::Gen { cmd: Some(GenCmd::Frontend) },
+            "[CODEGEN] Gen Governor Plugin" => Command::Gen { cmd: Some(GenCmd::GovernorPlugin) },
+            "[CODEGEN] Gen Test Scaffolds" => Command::Gen {
+                cmd: Some(GenCmd::Test { flow: None, route: None }),
+            },
 
-            "[DB] New Migration" => Command::NewMigration,
+            "[DB] New Migration" => Command::Migration,
             "[DB] Migrate" => Command::Migrate,
             "[DB] Rollback" => Command::Rollback,
-            "[DB] Seed" => Command::Seed(None),
+            "[DB] Seed" => Command::Seed { file: None },
 
-            "[FUSES] Manage fuses" => Command::FusesInteractive,
-            "[FUSES] List fuses" => Command::FusesList,
+            "[FUSES] Manage fuses" => Command::Fuses { cmd: Some(FusesCmd::Interactive) },
+            "[FUSES] List fuses" => Command::Fuses { cmd: Some(FusesCmd::List) },
 
-            "[LOG] Truncate Logs" => Command::LogTruncate(None),
-            "[Arsenal] Scan & Write JSON" => Command::Arsenal,
+            "[LOG] Truncate Logs" => Command::Log { cmd: LogCmd::Truncate { file: None } },
+            "[Arsenal] Scan & Write JSON" => Command::Arsenal { cmd: None },
 
             "[LINT] Governor Check" => Command::Check { verbose: false },
 
@@ -115,14 +117,10 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
                 drop(std::process::Command::new("zellij").args(["kill-session"]).spawn());
                 drop(std::process::Command::new("zellij").args(["kill-all-sessions", "-y"]).spawn());
 
-                Command::Exit
+                break;
             }
             _other_cmd => continue,
         };
-
-        if cmd == Command::Exit {
-            break;
-        }
 
         print!("\x1B[2J\x1B[1;1H");
         std::io::stdout().flush()?;

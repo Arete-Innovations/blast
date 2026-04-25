@@ -1,16 +1,17 @@
-use std::env;
+use clap::Parser;
 use std::process;
 
 mod arsenal;
 mod build;
+mod codegen;
 mod commands;
 mod configs;
-mod fuses;
-mod fuses_tui;
 mod dashboard;
 mod database;
 mod dependencies;
 mod error;
+mod fuses;
+mod fuses_tui;
 mod gen_migration;
 mod gen_picker;
 mod gen_table;
@@ -28,16 +29,9 @@ mod tui_viewer;
 fn main() {
     let mut dep_manager = dependencies::DependencyManager::new();
 
-    let args: Vec<String> = env::args().collect();
+    let cli = commands::Cli::parse();
 
-    let verbose_mode = args.iter().any(|arg| arg == "-v" || arg == "--verbose");
-
-    let filtered_args: Vec<String> = args.iter()
-        .filter(|arg| *arg != "-v" && *arg != "--verbose")
-        .cloned()
-        .collect();
-
-    if verbose_mode {
+    if cli.verbose {
         std::env::set_var("BLAST_VERBOSE", "1");
     }
 
@@ -45,79 +39,56 @@ fn main() {
         eprintln!("logger init failed: {}", e);
     }
 
-    logger::set_verbose_mode(verbose_mode);
+    logger::set_verbose_mode(cli.verbose);
 
-    if filtered_args.len() > 1 {
-        match commands::parse_cli_args(&filtered_args) {
-            Some(cmd) => {
-                match configs::get_project_info() {
-                    Ok(mut config) => {
-                        if let Err(e) = logger::setup_for_mode(&config, false) {
-                            eprintln!("Warning: Failed to set up logging: {}", e);
-                        }
-
-                        if let Err(e) = commands::execute(cmd.clone(), &mut config, &mut dep_manager) {
-                            eprintln!("Error executing command: {}", e);
-                            process::exit(1);
-                        }
-                    }
-                    Err(e) => {
-                        if matches!(cmd, commands::Command::NewProject(..)) || cmd == commands::Command::Help {
-                            let cwd = match std::env::current_dir() {
-                                Ok(c) => c,
-                                Err(io_err) => {
-                                    eprintln!("Failed to get current directory: {}", io_err);
-                                    process::exit(1);
-                                }
-                            };
-                            let mut default_config = configs::Config {
-                                environment: "dev".to_string(),
-                                project_name: match &cmd {
-                                    commands::Command::NewProject(name, _) => name.clone(),
-                                    _other => "unknown".to_string(),
-                                },
-                                project_dir: cwd,
-                                show_compiler_warnings: true,
-                                last_modified: std::time::SystemTime::now(),
-                            };
-
-                            if let Err(e) = commands::execute(cmd, &mut default_config, &mut dep_manager) {
-                                eprintln!("Error executing command: {}", e);
-                                process::exit(1);
-                            }
-                        } else {
-                            eprintln!("Failed to read project info: {}", e);
-                            eprintln!("You must run this command from a project directory or use 'blast new <project_name>' to create a new project.");
-                            process::exit(1);
-                        }
-                    }
-                }
-                process::exit(0);
-            }
-            None => {
-                eprintln!("Unknown command. Run 'blast help' for usage information.");
-                process::exit(1);
-            }
-        }
-    }
+    let cmd = match cli.cmd {
+        Some(c) => c,
+        None => commands::Command::Dashboard,
+    };
 
     match configs::get_project_info() {
         Ok(mut config) => {
-            if let Err(e) = logger::setup_for_mode(&config, true) {
+            let interactive = matches!(cmd, commands::Command::Dashboard | commands::Command::Cli);
+            if let Err(e) = logger::setup_for_mode(&config, interactive) {
                 eprintln!("Warning: Failed to set up logging: {}", e);
             }
 
-            if let Err(e) = commands::execute(commands::Command::LaunchDashboard, &mut config, &mut dep_manager) {
-                eprintln!("Error launching dashboard: {}", e);
+            if let Err(e) = commands::execute(cmd, &mut config, &mut dep_manager) {
+                eprintln!("Error executing command: {}", e);
                 process::exit(1);
             }
         }
         Err(e) => {
-            eprintln!("Failed to read project info: {}", e);
-            eprintln!("You must run this command from a project directory or use 'blast new <project_name>' to create a new project.");
-            process::exit(1);
+            if matches!(cmd, commands::Command::New { .. } | commands::Command::Help) {
+                let cwd = match std::env::current_dir() {
+                    Ok(c) => c,
+                    Err(io_err) => {
+                        eprintln!("Failed to get current directory: {}", io_err);
+                        process::exit(1);
+                    }
+                };
+                let project_name = match &cmd {
+                    commands::Command::New { name, .. } => name.clone(),
+                    _other => "unknown".to_string(),
+                };
+                let mut default_config = configs::Config {
+                    environment: "dev".to_string(),
+                    project_name,
+                    project_dir: cwd,
+                    show_compiler_warnings: true,
+                    last_modified: std::time::SystemTime::now(),
+                };
+
+                if let Err(e) = commands::execute(cmd, &mut default_config, &mut dep_manager) {
+                    eprintln!("Error executing command: {}", e);
+                    process::exit(1);
+                }
+            } else {
+                eprintln!("Failed to read project info: {}", e);
+                eprintln!("You must run this command from a project directory or use 'blast new <project_name>' to create a new project.");
+                process::exit(1);
+            }
         }
     }
+    process::exit(0);
 }
-
-mod codegen;
