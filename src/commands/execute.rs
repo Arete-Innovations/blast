@@ -37,7 +37,9 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         }
 
         Command::New { name, dev } => {
-            crate::project::create_new_project(&name, dev);
+            let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+            let mut progress = crate::io::cli_progress(None);
+            crate::project::create_new_project(&name, dev, &mut sink, &mut progress)?;
             Ok(())
         }
 
