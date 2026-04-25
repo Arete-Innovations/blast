@@ -49,6 +49,8 @@ pub enum Command {
     GenMigrationCustom(String),
     GenInteractivePicker,
     Check { verbose: bool },
+    Arsenal,
+    ArsenalServe,
 }
 
 pub fn parse_cli_args(args: &[String]) -> Option<Command> {
@@ -129,6 +131,12 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
             let verbose = logger::is_verbose();
             Some(Command::Check { verbose })
         }
+
+        Some("arsenal") => match args.get(2).map(|s| s.as_str()) {
+            Some("serve") => Some(Command::ArsenalServe),
+            None => Some(Command::Arsenal),
+            Some(_other) => None,
+        },
 
         Some("help") | Some("-h") | Some("--help") => Some(Command::Help),
 
@@ -220,6 +228,10 @@ pub fn show_help() {
     println!("LINT COMMANDS:");
     println!("  check                Run frontend lint engine (Governor)");
     println!("    --verbose          Extra diagnostic output");
+    println!();
+    println!("ARSENAL:");
+    println!("  arsenal              Scan source and write target/arsenal.json");
+    println!("  arsenal serve        Serve capability inventory over MCP stdio");
     println!();
     println!("OTHER COMMANDS:");
     println!("  new <project_name>   Create a new project");
@@ -631,6 +643,25 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 std::process::exit(1);
             }
             Ok(())
+        }
+
+        Command::Arsenal => {
+            logger::info("Scanning source for arsenal report...")?;
+            let report = crate::arsenal::scanner::scan(&config.project_dir)?;
+            crate::arsenal::report::write_report(&report, &config.project_dir)?;
+            let total_entries: usize = report.layers.values().map(|v| v.len()).sum();
+            logger::success(&format!(
+                "arsenal: {} entries across {} layers, {} routes -> target/arsenal.json",
+                total_entries,
+                report.layers.len(),
+                report.routes.len(),
+            ))?;
+            Ok(())
+        }
+
+        Command::ArsenalServe => {
+            let report = crate::arsenal::scanner::scan(&config.project_dir)?;
+            crate::arsenal::mcp::serve(report)
         }
 
         Command::Exit => Ok(()),

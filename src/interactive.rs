@@ -39,6 +39,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[Cronjobs] Remove Job",
         "[LOG] Truncate Logs",
         "[LINT] Governor Check",
+        "[Arsenal] Scan & Write JSON",
         "[Exit] Kill Session",
     ];
 
@@ -157,6 +158,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             }
 
             "[LOG] Truncate Logs" => Command::LogTruncate(None),
+            "[Arsenal] Scan & Write JSON" => Command::Arsenal,
 
             "[LINT] Governor Check" => Command::Check { verbose: false },
 
