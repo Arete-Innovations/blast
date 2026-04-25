@@ -7,4 +7,3 @@ pub mod violation;
 pub mod whitelist;
 
 pub use runner::run_check;
-pub use violation::Violation;
