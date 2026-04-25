@@ -22,36 +22,37 @@ blast check --fix                   # v2; not implemented in v1
 
 Exit code 0 = clean. Exit code 1 = violations found (and printed). Blast emits a Vite plugin (`frontend/scripts/governor-plugin.js`) that calls `blast check` on Vite's `prebuild` and `predev` hooks — build fails cleanly if lint fails.
 
-## Rule Config (from Blueprint)
+## Rule Config (from `app.ron`)
 
-Rules are not hardcoded in Blast. They're configured via `blueprint/src/fe_lint.rs`:
+Rules are not hardcoded in Blast. They're configured via the `fe_lint` section of `storage/blast/state/app.ron`:
 
-```rust
-pub fn fe_lint() -> FeLintConfig {
-    FeLintConfig::default()
-        .max_lines_per_sfc(600)
-        .max_lines_per_fn(120)
-        .hairline_border_rem("0.0625rem")
-        .exempt_color_files(["src/plugins/primevue.ts"])
-        .exempt_px_files([
-            "src/plugins/primevue.ts",
-            "src/styles/tokens.css",
-            "src/styles/base.css",
-        ])
-        .whitelist_snippet("schema.org")
-        .deny_rule(Rule::ConsoleLog)
-        .deny_rule(Rule::InlineStyle)
-        .deny_rule(Rule::RawRemOutsideTokens)
-        .deny_rule(Rule::TypeAny)
-        .deny_rule(Rule::TsIgnore)
-        .deny_rule(Rule::SilentFallback)
-        .deny_rule(Rule::IconClassOutsideIconsFile)
-        .deny_rule(Rule::RawColorOutsidePreset)
-        .deny_rule(Rule::HardcodedPx)
-}
+```ron
+fe_lint: FeLintConfig(
+    max_lines_per_sfc: 600,
+    max_lines_per_fn: 120,
+    hairline_border_rem: "0.0625rem",
+    exempt_color_files: ["src/plugins/primevue.ts"],
+    exempt_px_files: [
+        "src/plugins/primevue.ts",
+        "src/styles/tokens.css",
+        "src/styles/base.css",
+    ],
+    whitelist_snippets: ["schema.org"],
+    deny_rules: [
+        ConsoleLog,
+        InlineStyle,
+        RawRemOutsideTokens,
+        TypeAny,
+        TsIgnore,
+        SilentFallback,
+        IconClassOutsideIconsFile,
+        RawColorOutsidePreset,
+        HardcodedPx,
+    ],
+),
 ```
 
-Blast reads `target/blueprint/fe_lint.json` IR and applies the configured rules.
+Blast reads `storage/blast/state/app.ron` directly and applies the configured rules. There is no `target/blueprint/fe_lint.json` IR — the `catalyst_blueprint` DSL crate is deleted.
 
 ## Rules
 
@@ -119,7 +120,9 @@ src/components/**/*.vue : schema.org
 src/icons.ts : xmlns
 ```
 
-Configured via `blueprint/src/fe_lint.rs` `.whitelist_snippet("...")`. Minimal by design — whitelisting is escape-hatch behavior, not extension mechanism.
+Configured via `app.ron` `fe_lint.whitelist_snippets`. Minimal by design — whitelisting is escape-hatch behavior, not extension mechanism.
+
+The whitelist file `frontend/.rule_violations_whitelist` is codegen'd by `blast gen governor-plugin` and carries an `app.ron` content hash in its header. The user app's `build.rs` hard-fails if `app.ron` changed since last regen (same mechanism as all generated files — see `SPEC_STATE.md`).
 
 ## Violation Output
 
@@ -177,7 +180,7 @@ export default defineConfig({
 });
 ```
 
-Regenerated from blueprint `fe_lint` IR — never hand-edited.
+Regenerated from `app.ron` `fe_lint` section via `blast gen governor-plugin` — never hand-edited.
 
 ## Implementation Notes (Blast-side)
 
@@ -193,15 +196,15 @@ Governor lints the FRONTEND. Backend Rust still goes through `cargo clippy`. Dif
 
 ## Anti-Patterns (for Blast maintainers)
 
-- Hardcoding rule behavior into Blast. All thresholds and exempt lists come from blueprint IR.
+- Hardcoding rule behavior into Blast. All thresholds and exempt lists come from `app.ron`'s `fe_lint` section.
 - Writing an AST parser for Vue/TS v1. Regex is adequate; upgrade if rules genuinely need AST.
 - Emitting warnings for rules the user hasn't opted into. If a rule isn't in blueprint's `deny_rule()` list, it doesn't run.
 - Silent failure modes. Governor always exits non-zero on violation; never "warn and continue."
 
 ## Related Specs
 
-- `catalyst/doc/SPEC_BLUEPRINT.md` — fe_lint config source
+- `SPEC_STATE.md` — `app.ron` fe_lint config source, hash-marker contract
 - `catalyst/doc/SPEC_CSS.md` — CSS rules being enforced
 - `catalyst/doc/SPEC_FRONTEND.md` — frontend layout scanned
-- `SPEC_CODEGEN.md` — Vite plugin wrapper emission
+- `SPEC_CODEGEN.md` — Vite plugin wrapper emission, hash markers
 - `SPEC_BLAST_COMMANDS.md` — `blast check` subcommand
