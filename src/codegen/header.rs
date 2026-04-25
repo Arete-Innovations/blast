@@ -1,0 +1,161 @@
+//! Centralized state-hash marker helper.
+//!
+//! Every generated file begins with a marker pointing at the state file it
+//! was produced from, plus that file's content hash. The user app's
+//! `build.rs` re-reads this header, recomputes the hash, and panics on
+//! mismatch — making stale codegen a hard build failure.
+//!
+//! Format (byte-stable, no timestamps, no clocks):
+//!
+//! ```text
+//! // AUTO-GENERATED from <state-relative-path> @ <hash>
+//! //
+//! // Do not edit by hand. Run `blast gen all` after mutating state.
+//! ```
+//!
+//! The trailing blank line is included so callers can prepend the marker
+//! directly to their generated body.
+
+use crate::error::{BlastError, BlastResult};
+use crate::state::content_hash;
+use std::path::Path;
+
+const MARKER_PREFIX: &str = "// AUTO-GENERATED from ";
+const MARKER_SEPARATOR: &str = " @ ";
+const MARKER_BLANK_LINE: &str = "//";
+const MARKER_FOOTER: &str = "// Do not edit by hand. Run `blast gen all` after mutating state.";
+
+/// Format a marker header given an already-resolved relative path + hash.
+///
+/// The relative path is emitted verbatim — callers must normalize separators
+/// to forward slashes for cross-platform stability before calling this fn.
+pub fn marker(state_relative_path: &str, content_hash: &str) -> String {
+    format!(
+        "{prefix}{path}{sep}{hash}\n{blank}\n{footer}\n\n",
+        prefix = MARKER_PREFIX,
+        path = state_relative_path,
+        sep = MARKER_SEPARATOR,
+        hash = content_hash,
+        blank = MARKER_BLANK_LINE,
+        footer = MARKER_FOOTER,
+    )
+}
+
+/// Convenience: compute the relative path + content hash of a state file
+/// and return the formatted marker header.
+///
+/// `state_path` must live under `project_root` (typically
+/// `<project_root>/storage/blast/state/...`); the relative form is what
+/// gets embedded so the user app's `build.rs` can resolve it portably.
+pub fn marker_for_state_file(project_root: &Path, state_path: &Path) -> BlastResult<String> {
+    let relative = state_path.strip_prefix(project_root)?;
+    let relative_str = match relative.to_str() {
+        Some(s) => s.replace('\\', "/"),
+        None => {
+            return Err(BlastError::Invalid(format!(
+                "non-utf8 state path: {}",
+                relative.display()
+            )));
+        }
+    };
+    let hash = content_hash(state_path)?;
+    Ok(marker(&relative_str, &hash))
+}
+
+/// Parse a marker header from the start of a generated file. Returns
+/// `(relative_path, hash)` when the first line matches the expected shape.
+///
+/// Used by the user app's `build.rs` validator — kept here so the format is
+/// owned in one place.
+pub fn parse_marker(file_contents: &str) -> Option<(String, String)> {
+    let first_line = file_contents.lines().next()?;
+    let rest = first_line.strip_prefix(MARKER_PREFIX)?;
+    let sep_idx = rest.find(MARKER_SEPARATOR)?;
+    let path = rest[..sep_idx].trim();
+    let hash = rest[sep_idx + MARKER_SEPARATOR.len()..].trim();
+    if path.is_empty() || hash.is_empty() {
+        return None;
+    }
+    Some((path.to_string(), hash.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marker_formats_expected_shape() {
+        let header = marker("storage/blast/state/resources/users.ron", "abc123");
+        let expected = "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ abc123\n\
+                        //\n\
+                        // Do not edit by hand. Run `blast gen all` after mutating state.\n\
+                        \n";
+        assert_eq!(header, expected);
+    }
+
+    #[test]
+    fn marker_round_trips_through_parse() {
+        let path = "storage/blast/state/resources/orders.ron";
+        let hash = "deadbeefcafef00d";
+        let header = marker(path, hash);
+        let parsed = parse_marker(&header);
+        match parsed {
+            Some((p, h)) => {
+                assert_eq!(p, path);
+                assert_eq!(h, hash);
+            }
+            None => panic!("expected marker to parse"),
+        }
+    }
+
+    #[test]
+    fn parse_marker_accepts_marker_followed_by_body() {
+        let body = format!(
+            "{header}export const FOO = 1\n",
+            header = marker("storage/blast/state/app.ron", "ff00")
+        );
+        match parse_marker(&body) {
+            Some((p, h)) => {
+                assert_eq!(p, "storage/blast/state/app.ron");
+                assert_eq!(h, "ff00");
+            }
+            None => panic!("expected marker to parse from prefixed body"),
+        }
+    }
+
+    #[test]
+    fn parse_marker_returns_none_on_missing_header() {
+        let body = "// some other comment\nfn main() {}\n";
+        assert!(parse_marker(body).is_none());
+    }
+
+    #[test]
+    fn parse_marker_returns_none_on_empty_input() {
+        assert!(parse_marker("").is_none());
+    }
+
+    #[test]
+    fn parse_marker_returns_none_when_separator_missing() {
+        let body = "// AUTO-GENERATED from no-separator-here\n";
+        assert!(parse_marker(body).is_none());
+    }
+
+    #[test]
+    fn parse_marker_returns_none_when_hash_missing() {
+        let body = "// AUTO-GENERATED from foo.ron @ \n";
+        assert!(parse_marker(body).is_none());
+    }
+
+    #[test]
+    fn parse_marker_returns_none_when_path_missing() {
+        let body = "// AUTO-GENERATED from  @ abc123\n";
+        assert!(parse_marker(body).is_none());
+    }
+
+    #[test]
+    fn marker_is_byte_stable() {
+        let a = marker("x.ron", "h");
+        let b = marker("x.ron", "h");
+        assert_eq!(a, b);
+    }
+}
