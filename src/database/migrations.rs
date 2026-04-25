@@ -32,7 +32,7 @@ fn handle_diesel_output(output: &std::process::Output) -> bool {
         let prefix = if success { "\x1b[32m✔\x1b[0m" } else { "\x1b[31m✖\x1b[0m" };
         let formatted_line = format!("{} {}", prefix, line);
         if is_interactive {
-            if let Err(e) = crate::output::log(&formatted_line) {
+            if let Err(e) = crate::logger::info(&formatted_line) {
                 drop(e);
             }
         } else if let Err(e) = crate::logger::log(crate::logger::LogLevel::Info, &formatted_line) {

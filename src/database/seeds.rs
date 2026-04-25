@@ -279,7 +279,7 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
         Err(e) => {
             let error_msg = format!("Error: Unable to read seed file {}: {}", file_name, e);
             if is_interactive {
-                if let Err(log_e) = crate::output::log(&error_msg) {
+                if let Err(log_e) = crate::logger::info(&error_msg) {
                     drop(log_e);
                 }
             } else if let Err(log_e) = crate::logger::error(&error_msg) {
@@ -301,7 +301,7 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
         match diesel::sql_query(trimmed).execute(connection) {
             Ok(_rows) => {
                 if is_interactive {
-                    if let Err(log_e) = crate::output::log(&format!("Statement {} executed successfully", i + 1)) {
+                    if let Err(log_e) = crate::logger::info(&format!("Statement {} executed successfully", i + 1)) {
                         drop(log_e);
                     }
                 }
@@ -315,7 +315,7 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
                     e
                 );
                 if is_interactive {
-                    if let Err(log_e) = crate::output::log(&error_msg) {
+                    if let Err(log_e) = crate::logger::info(&error_msg) {
                         drop(log_e);
                     }
                 } else if let Err(log_e) = crate::logger::error(&error_msg) {
