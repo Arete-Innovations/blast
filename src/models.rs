@@ -1,3 +1,4 @@
+use crate::codegen::header;
 use crate::configs::Config;
 use crate::error::BlastResult;
 use crate::progress::ProgressManager;
@@ -385,7 +386,7 @@ fn generate_relationship_methods(table: &TableInfo, table_name: &str, singular_n
     relationship_methods
 }
 
-fn write_model_file(_config: &Config, table: &TableInfo, relationships: &[RelationshipInfo]) -> bool {
+fn write_model_file(_config: &Config, table: &TableInfo, relationships: &[RelationshipInfo], marker: &str) -> bool {
     let output_dir = "src/models/generated";
 
     if let Err(e) = fs::create_dir_all(output_dir) {
@@ -493,7 +494,8 @@ impl {1} {{
         table_name, struct_name, singular_name, bool_methods, timestamp_methods, relationship_methods
     );
 
-    if let Err(e) = fs::write(&file_path, model_template) {
+    let body = format!("{}{}", marker, model_template);
+    if let Err(e) = fs::write(&file_path, body) {
         if let Err(log_err) = crate::logger::error(&format!("Error writing model file {}: {}", file_path, e)) {
             eprintln!("logger error failed: {}", log_err);
         }
@@ -587,6 +589,14 @@ pub fn generate(config: &Config) -> bool {
         }
     };
 
+    let marker = match header::marker_for_schema(Path::new(".")) {
+        Ok(m) => m,
+        Err(e) => {
+            progress.error(&format!("Error computing schema hash marker: {}", e));
+            return false;
+        }
+    };
+
     let mut processed_tables = Vec::new();
 
     for table in &tables {
@@ -595,7 +605,7 @@ pub fn generate(config: &Config) -> bool {
             continue;
         }
 
-        if write_model_file(config, table, &relationships) {
+        if write_model_file(config, table, &relationships, &marker) {
             processed_tables.push(table.name.clone());
         }
     }

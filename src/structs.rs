@@ -1,3 +1,4 @@
+use crate::codegen::header;
 use crate::configs::Config;
 use crate::error::BlastResult;
 use crate::progress::ProgressManager;
@@ -90,7 +91,7 @@ fn extract_struct_name(struct_def: &str) -> Option<&str> {
     struct_def.lines().find(|line| line.trim().starts_with("pub struct")).and_then(|line| line.split_whitespace().nth(2))
 }
 
-fn parse_and_process_structs(content: &str, config: &Config, schema_tables: &[String]) -> Option<Vec<String>> {
+fn parse_and_process_structs(content: &str, config: &Config, schema_tables: &[String], marker: &str) -> Option<Vec<String>> {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Processing struct definitions...");
 
@@ -125,7 +126,7 @@ fn parse_and_process_structs(content: &str, config: &Config, schema_tables: &[St
                 }
                 let (fixed_name, table_name) = fix_struct_name(generated_name, schema_tables);
 
-                if write_struct_file(config, &fixed_name, &table_name, &current_struct, output_dir) {
+                if write_struct_file(config, &fixed_name, &table_name, &current_struct, output_dir, marker) {
                     processed_tables.push(table_name);
                 }
                 current_struct.clear();
@@ -216,7 +217,7 @@ fn check_migration_for_serial_fields(table_name: &str) -> Vec<String> {
     result
 }
 
-fn write_struct_file(_config: &Config, fixed_struct_name: &str, table_name: &str, struct_def: &str, output_dir: &str) -> bool {
+fn write_struct_file(_config: &Config, fixed_struct_name: &str, table_name: &str, struct_def: &str, output_dir: &str, marker: &str) -> bool {
     if let Err(e) = fs::create_dir_all(output_dir) {
         drop(crate::logger::error(&format!("Error creating directory {}: {}", output_dir, e)));
         return false;
@@ -324,7 +325,8 @@ pub struct New{1} {{
     drop(crate::logger::debug(&format!("For struct: {}, using table_name: {} for schema import", fixed_struct_name, table_name)));
 
     final_struct_def = format!(
-        "use crate::database::schema::{};\n{}{}",
+        "{}use crate::database::schema::{};\n{}{}",
+        marker,
         table_name,
         additional_imports_str,
         final_struct_def
@@ -348,7 +350,8 @@ pub struct New{1} {{
 
         drop(crate::logger::debug(&format!("Writing insertable struct file: {} for table: {}", insertable_file_name, table_name)));
 
-        if let Err(e) = fs::write(&insertable_file_name, insertable_struct) {
+        let insertable_with_marker = format!("{}{}", marker, insertable_struct);
+        if let Err(e) = fs::write(&insertable_file_name, insertable_with_marker) {
             drop(crate::logger::error(&format!("Error writing insertable struct file {}: {}", insertable_file_name, e)));
             false
         } else {
@@ -489,5 +492,13 @@ pub fn generate(config: &Config) -> bool {
         }
     };
 
-    parse_and_process_structs(&output, config, &schema_tables).is_some()
+    let marker = match header::marker_for_schema(Path::new(".")) {
+        Ok(m) => m,
+        Err(e) => {
+            progress.error(&format!("Error computing schema hash marker: {}", e));
+            return false;
+        }
+    };
+
+    parse_and_process_structs(&output, config, &schema_tables, &marker).is_some()
 }
