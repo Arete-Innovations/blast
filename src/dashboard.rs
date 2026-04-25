@@ -50,8 +50,6 @@ fn prepare_layout(project_dir: &Path) -> BlastResult<String> {
 }
 
 pub fn launch_dashboard(config: &Config) -> BlastResult<()> {
-    use crate::output::{self, OutputMode};
-
     if !check_zellij_installed()? {
         return Err(BlastError::Dashboard(
             "Zellij terminal multiplexer is not installed. Install it with 'cargo install zellij'".into(),
@@ -72,11 +70,10 @@ pub fn launch_dashboard(config: &Config) -> BlastResult<()> {
     writeln!(log_file, "Environment: {}", config.environment)?;
     writeln!(log_file, "-------------------------------------------")?;
 
-    output::set_output_mode(OutputMode::LogFile);
-    output::set_log_file_path(&blast_log_path)?;
+    crate::logger::init(crate::logger::RuntimeMode::Dashboard, Some(&blast_log_path))?;
 
     std::env::set_var("BLAST_INTERACTIVE", "1");
-    output::set_quiet_mode(true);
+    crate::logger::set_quiet_mode(true);
 
     let layout_path = prepare_layout(project_dir)?;
 

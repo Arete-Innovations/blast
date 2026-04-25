@@ -17,7 +17,7 @@ pub fn new_migration() {
 
     let log_message = |msg: &str| {
         if is_interactive {
-            if let Err(e) = crate::output::log(msg) {
+            if let Err(e) = crate::logger::info(msg) {
                 drop(e);
             }
         } else {
