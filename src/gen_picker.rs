@@ -1,12 +1,10 @@
 
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 
-use crate::commands::{execute, Command, GenCmd};
-use crate::configs::Config;
-use crate::dependencies::DependencyManager;
+use crate::commands::{Command, GenCmd};
 use crate::error::{BlastError, BlastResult};
 
-pub fn run(config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
+pub fn pick_gen_target() -> BlastResult<Command> {
     let items = vec![
         "Generate schema (diesel print-schema)",
         "Generate structs",
@@ -25,29 +23,28 @@ pub fn run(config: &mut Config, dep_manager: &mut DependencyManager) -> BlastRes
         .default(0)
         .interact()?;
 
-    let target = match selection {
-        0 => Command::Schema,
-        1 => Command::Gen { cmd: Some(GenCmd::Structs) },
-        2 => Command::Gen { cmd: Some(GenCmd::Models) },
-        3 => Command::Gen { cmd: Some(GenCmd::Table) },
+    match selection {
+        0 => Ok(Command::Schema),
+        1 => Ok(Command::Gen { cmd: Some(GenCmd::Structs) }),
+        2 => Ok(Command::Gen { cmd: Some(GenCmd::Models) }),
+        3 => Ok(Command::Gen { cmd: Some(GenCmd::Table) }),
         4 => {
             let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
                 .with_prompt("Migration name (snake_case)")
                 .interact_text()?;
-            Command::Gen {
+            Ok(Command::Gen {
                 cmd: Some(GenCmd::Migration { custom: true, name: Some(name) }),
-            }
+            })
         }
-        5 => Command::Gen { cmd: Some(GenCmd::Frontend) },
-        6 => Command::Gen { cmd: Some(GenCmd::GovernorPlugin) },
-        7 => Command::Gen { cmd: Some(GenCmd::FeScaffold) },
-        8 => Command::Gen {
+        5 => Ok(Command::Gen { cmd: Some(GenCmd::Frontend) }),
+        6 => Ok(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) }),
+        7 => Ok(Command::Gen { cmd: Some(GenCmd::FeScaffold) }),
+        8 => Ok(Command::Gen {
             cmd: Some(GenCmd::Test { flow: None, route: None }),
-        },
-        other => return Err(BlastError::Invalid(format!(
+        }),
+        other => Err(BlastError::Invalid(format!(
             "unknown gen picker selection: {}",
             other
         ))),
-    };
-    execute(target, config, dep_manager)
+    }
 }

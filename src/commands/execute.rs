@@ -43,7 +43,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
         Command::Init => run_init(config),
 
-        Command::Cli => crate::interactive::run_interactive_cli(config.clone(), dep_manager),
+        Command::Cli => crate::interactive::run_interactive_loop(config, dep_manager),
 
         Command::Migration => {
             crate::database::new_migration();
@@ -139,7 +139,8 @@ fn dispatch_gen(
     dep_manager: &mut DependencyManager,
 ) -> BlastResult<()> {
     let Some(target) = sub else {
-        return crate::gen_picker::run(config, dep_manager);
+        let chosen = crate::gen_picker::pick_gen_target()?;
+        return execute(chosen, config, dep_manager);
     };
     match target {
         GenCmd::Structs => {
