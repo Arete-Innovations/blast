@@ -28,6 +28,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[CODEGEN] Gen Picker",
         "[CODEGEN] Gen Table (wizard)",
         "[CODEGEN] Gen Migration (--custom)",
+        "[CODEGEN] Gen Frontend",
         "[DB] New Migration",
         "[DB] Migrate",
         "[DB] Rollback",
@@ -88,6 +89,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
                     .interact_text()?;
                 Command::GenMigrationCustom(name)
             }
+            "[CODEGEN] Gen Frontend" => Command::GenFrontend,
 
             "[DB] New Migration" => Command::NewMigration,
             "[DB] Migrate" => Command::Migrate,

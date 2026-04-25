@@ -48,6 +48,7 @@ pub enum Command {
     GenTable,
     GenMigrationCustom(String),
     GenInteractivePicker,
+    GenFrontend,
 }
 
 pub fn parse_cli_args(args: &[String]) -> Option<Command> {
@@ -116,6 +117,7 @@ pub fn parse_cli_args(args: &[String]) -> Option<Command> {
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("structs") => Some(Command::GenerateStructs),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("models") => Some(Command::GenerateModels),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("table") => Some(Command::GenTable),
+        Some("gen") if args.get(2).map(|s| s.as_str()) == Some("frontend") => Some(Command::GenFrontend),
         Some("gen") if args.get(2).map(|s| s.as_str()) == Some("migration") => {
             parse_gen_migration(args)
         }
@@ -201,6 +203,7 @@ pub fn show_help() {
     println!("  gen models           Generate model implementations");
     println!("  gen table            Interactive wizard to author a CREATE TABLE migration");
     println!("  gen migration --custom <name>  Scaffold an empty migration and open $EDITOR");
+    println!("  gen frontend         Generate FE artifacts (TS validators, list query helpers) from primer IR");
     println!();
     println!("LOG MANAGEMENT:");
     println!("  log truncate [file]   Truncate log files (all or specific file)");
@@ -625,6 +628,13 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::GenInteractivePicker => {
             run_gen_picker(config, dep_manager)
         }
+
+        Command::GenFrontend => {
+            logger::info("Generating frontend artifacts from primer IR...")?;
+            crate::codegen::run_frontend(&config.project_dir)?;
+            logger::success("Frontend codegen complete")?;
+            Ok(())
+        }
     }
 }
 
@@ -640,6 +650,7 @@ fn run_gen_picker(
         "Generate models",
         "Generate table (interactive wizard)",
         "Generate custom migration (--custom)",
+        "Generate frontend (validators + list query helpers)",
     ];
 
     let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
@@ -659,6 +670,7 @@ fn run_gen_picker(
                 .interact_text()?;
             execute(Command::GenMigrationCustom(name), config, dep_manager)
         }
+        5 => execute(Command::GenFrontend, config, dep_manager),
         other => Err(BlastError::Invalid(format!(
             "unknown gen picker selection: {}",
             other
