@@ -37,6 +37,7 @@ const STEP_STRUCTS: &str = "structs generation";
 const STEP_MODELS: &str = "models generation";
 const STEP_FLOWS: &str = "flows generation";
 const STEP_FRONTEND: &str = "frontend generation";
+const STEP_VUE_COMPONENTS: &str = "vue components generation";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
 const STEP_TEST_SCAFFOLDS: &str = "test scaffold emission";
@@ -74,6 +75,7 @@ pub fn run(
     run_models_step(config, sink, progress, &mut outcome)?;
     run_flows_step(sink, progress, &mut outcome);
     run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
+    run_vue_components_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_env_example_step(sink, progress, &mut outcome);
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
     run_test_scaffolds_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -197,6 +199,49 @@ fn run_frontend_step(
             let reason = err.to_string();
             progress.step_fail(STEP_FRONTEND, &reason);
             sink.error(format!("{}: {}", STEP_FRONTEND, reason));
+            Err(err)
+        }
+    }
+}
+
+fn run_vue_components_step(
+    project_root: &PathBuf,
+    resource_count: usize,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    progress.step_start(STEP_VUE_COMPONENTS);
+    if resource_count == 0 {
+        sink.info(format!(
+            "{}: no resources declared; skipping",
+            STEP_VUE_COMPONENTS
+        ));
+        progress.step_done(STEP_VUE_COMPONENTS);
+        outcome.steps_run += 1;
+        return Ok(());
+    }
+    match codegen::vue::run(project_root, sink, progress) {
+        Ok(report) => {
+            for path in &report.written {
+                sink.info(format!("wrote {}", path.display()));
+            }
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!(
+                "{}: {} written, {} skipped",
+                STEP_VUE_COMPONENTS,
+                report.written.len(),
+                report.skipped.len()
+            ));
+            progress.step_done(STEP_VUE_COMPONENTS);
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_VUE_COMPONENTS, &reason);
+            sink.error(format!("{}: {}", STEP_VUE_COMPONENTS, reason));
             Err(err)
         }
     }
