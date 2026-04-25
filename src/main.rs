@@ -1,6 +1,7 @@
 use std::env;
 use std::process;
 
+mod arsenal;
 mod build;
 mod commands;
 mod configs;

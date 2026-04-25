@@ -110,6 +110,7 @@ dependencies = [
  "notify",
  "prettytable",
  "proc-macro2",
+ "quote",
  "rand",
  "ratatui",
  "regex",
