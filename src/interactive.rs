@@ -30,6 +30,7 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
         "[CODEGEN] Gen Migration (--custom)",
         "[CODEGEN] Gen Frontend",
         "[CODEGEN] Gen Governor Plugin",
+        "[CODEGEN] Gen Test Scaffolds",
         "[DB] New Migration",
         "[DB] Migrate",
         "[DB] Rollback",
@@ -91,6 +92,9 @@ pub fn run_interactive_cli(mut config: Config, dep_manager: &mut DependencyManag
             }
             "[CODEGEN] Gen Frontend" => Command::GenFrontend,
             "[CODEGEN] Gen Governor Plugin" => Command::GenGovernorPlugin,
+            "[CODEGEN] Gen Test Scaffolds" => {
+                Command::GenTest(crate::commands::GenTestSelector::All)
+            }
 
             "[DB] New Migration" => Command::NewMigration,
             "[DB] Migrate" => Command::Migrate,
