@@ -41,6 +41,8 @@ const STEP_WS_TOPICS: &str = "ws topics generation";
 const STEP_VUE_COMPONENTS: &str = "vue components generation";
 const STEP_CRUD_PAGES: &str = "crud pages generation";
 const STEP_ROUTER: &str = "router codegen";
+const STEP_THEME: &str = "theme codegen";
+const STEP_ICONS: &str = "icons codegen";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
 const STEP_TEST_SCAFFOLDS: &str = "test scaffold emission";
@@ -84,6 +86,8 @@ pub fn run(
     run_vue_components_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_crud_pages_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_router_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_theme_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_icons_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
     run_test_scaffolds_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -491,6 +495,46 @@ fn run_env_example_step(
             let reason = err.to_string();
             progress.step_fail(STEP_ENV_EXAMPLE, &reason);
             sink.error(format!("{}: {}", STEP_ENV_EXAMPLE, reason));
+            Err(err)
+        }
+    }
+}
+
+fn run_theme_step(
+    project_root: &PathBuf,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    match codegen::theme::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_THEME, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_icons_step(
+    project_root: &PathBuf,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    match codegen::icons::run(project_root, sink, progress) {
+        Ok(report) => {
+            if report.written.is_some() {
+                outcome.files_written += 1;
+            }
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_ICONS, err));
             Err(err)
         }
     }

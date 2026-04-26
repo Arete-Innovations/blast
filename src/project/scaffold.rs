@@ -8,12 +8,17 @@
 //! `catalyst = { git = ... }` resolution. Forking-by-default.
 
 use crate::codegen::build_rs_template;
+use crate::codegen::{icons as icons_codegen, theme as theme_codegen};
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::project::db_bootstrap::{
     self, BootstrapArgs, BootstrapOutcome, RealDbAdmin,
 };
 use crate::project::templates;
+use crate::state::{
+    app::{ICONS_SECTION_KEY, THEME_SECTION_KEY},
+    save_app, AppPolicySection, AppState, IconConfig, ThemeConfig,
+};
 use dialoguer::{theme::ColorfulTheme, Input};
 use include_dir::{include_dir, Dir};
 use std::fs;
@@ -222,6 +227,19 @@ pub fn run(
     write_env_files(&args, &mut count)?;
     progress.step_done("write env files");
 
+    progress.step_start("seed app.ron with default theme and icons");
+    seed_default_app_state(&args.project_root)?;
+    count += 1;
+    progress.step_done("seed app.ron with default theme and icons");
+
+    let theme_report = theme_codegen::run(&args.project_root, sink, progress)?;
+    count += theme_report.written.len();
+
+    let icons_report = icons_codegen::run(&args.project_root, sink, progress)?;
+    if icons_report.written.is_some() {
+        count += 1;
+    }
+
     progress.step_start("emit build.rs hash check");
     let build_outcome = build_rs_template::run(build_rs_template::Args {
         project_root: args.project_root.clone(),
@@ -311,6 +329,20 @@ fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
         }
         Ok(_) | Err(_) => raw.to_vec(),
     }
+}
+
+fn seed_default_app_state(project_root: &Path) -> BlastResult<()> {
+    let mut state = AppState::new();
+    state.sections.insert(
+        THEME_SECTION_KEY.to_string(),
+        AppPolicySection::Theme(ThemeConfig::default()),
+    );
+    state.sections.insert(
+        ICONS_SECTION_KEY.to_string(),
+        AppPolicySection::Icons(IconConfig::default()),
+    );
+    let state_dir = project_root.join("storage").join("blast").join("state");
+    save_app(&state_dir, &state)
 }
 
 fn write_env_files(args: &Args, count: &mut usize) -> BlastResult<()> {
