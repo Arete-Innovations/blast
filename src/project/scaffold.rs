@@ -1,6 +1,7 @@
 use crate::codegen::{build_rs_template, fe_runtime, frontend_scaffold};
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
+use crate::project::auth_scaffold;
 use crate::project::templates;
 use crate::state::app::AppState;
 use crate::state::io as state_io;
@@ -180,6 +181,14 @@ pub fn run(
         count += 1;
     }
     progress.step_done("seed frontend runtime (page shell, router, progress)");
+
+    progress.step_start("scaffold auth resource");
+    let auth_outcome = auth_scaffold::emit(&args.project_root)?;
+    for path in &auth_outcome.written {
+        sink.debug(format!("auth bundle: {}", path.display()));
+        count += 1;
+    }
+    progress.step_done("scaffold auth resource");
 
     Ok(Outcome {
         project_root: args.project_root,
