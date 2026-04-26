@@ -12,8 +12,14 @@ pub fn render(routes: &[ResolvedRoute]) -> String {
     out.push('\n');
     out.push_str("import type { RouteRecordRaw } from 'vue-router';\n");
     out.push('\n');
-    out.push_str("import type { RouteName } from './route-names';\n");
-    out.push('\n');
+
+    // The `RouteName` import is only needed by the per-route `satisfies
+    // RouteName` annotations below; with no resolved routes it would be
+    // dead and `noUnusedLocals` would reject the file.
+    if !routes.is_empty() {
+        out.push_str("import type { RouteName } from './route-names';\n");
+        out.push('\n');
+    }
 
     out.push_str("export interface RouteMeta {\n");
     out.push_str("  readonly layout: 'cards' | 'split' | 'table' | 'bleed' | 'tabbed';\n");
