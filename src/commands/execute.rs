@@ -36,10 +36,21 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::New { name, dev } => {
+        Command::New { name, dev, db_url, force, no_test_db } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
-            crate::project::create_new_project(&name, dev, &mut sink, &mut progress)?;
+            let opts = crate::project::scaffold::NewOptions {
+                use_dev_branch: dev,
+                db_url,
+                force,
+                no_test_db,
+            };
+            crate::project::scaffold::create_new_project_with_opts(
+                &name,
+                opts,
+                &mut sink,
+                &mut progress,
+            )?;
             Ok(())
         }
 

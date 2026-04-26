@@ -17,6 +17,15 @@ pub enum Command {
         name: String,
         #[arg(long)]
         dev: bool,
+        /// Postgres URL for the new project. If omitted, prompts interactively.
+        #[arg(long = "db-url")]
+        db_url: Option<String>,
+        /// Drop and recreate target databases if they exist with tables.
+        #[arg(long)]
+        force: bool,
+        /// Skip creation of the `<dbname>_test` database and `.env.test` file.
+        #[arg(long = "no-test-db")]
+        no_test_db: bool,
     },
 
     #[command(about = "Initialize project (migrations, schema, codegen)")]
@@ -177,4 +186,58 @@ pub enum LogCmd {
 pub enum ArsenalCmd {
     #[command(about = "Serve capability inventory over MCP stdio")]
     Serve,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn new_command_accepts_minimum_args() {
+        let cli = Cli::try_parse_from(["blast", "new", "myapp"]).expect("parse");
+        match cli.cmd {
+            Some(Command::New { name, dev, db_url, force, no_test_db }) => {
+                assert_eq!(name, "myapp");
+                assert!(!dev);
+                assert!(db_url.is_none());
+                assert!(!force);
+                assert!(!no_test_db);
+            }
+            other => panic!("expected New, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn new_command_accepts_all_db_args() {
+        let cli = Cli::try_parse_from([
+            "blast",
+            "new",
+            "myapp",
+            "--db-url",
+            "postgres://u:p@h/x",
+            "--force",
+            "--no-test-db",
+        ])
+        .expect("parse");
+        match cli.cmd {
+            Some(Command::New { name, dev, db_url, force, no_test_db }) => {
+                assert_eq!(name, "myapp");
+                assert!(!dev);
+                assert_eq!(db_url.as_deref(), Some("postgres://u:p@h/x"));
+                assert!(force);
+                assert!(no_test_db);
+            }
+            other => panic!("expected New, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn new_command_dev_flag_still_works() {
+        let cli = Cli::try_parse_from(["blast", "new", "myapp", "--dev"]).expect("parse");
+        match cli.cmd {
+            Some(Command::New { dev, .. }) => assert!(dev),
+            other => panic!("expected New, got {:?}", other),
+        }
+    }
 }
