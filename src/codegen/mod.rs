@@ -7,6 +7,7 @@ pub mod governor_plugin;
 pub mod header;
 pub mod http_routes;
 pub mod ir_loader;
+pub mod models;
 pub mod structs;
 pub mod test_scaffold;
 pub mod ts_validator;

@@ -16,7 +16,6 @@ use crate::configs::Config;
 use crate::database;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::models;
 use crate::state;
 
 #[derive(Debug, Clone)]
@@ -73,7 +72,7 @@ pub fn run(
 
     run_schema_step(sink, progress, &mut outcome)?;
     run_structs_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_models_step(config, sink, progress, &mut outcome)?;
+    run_models_step(&args.project_root, config, sink, progress, &mut outcome)?;
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -147,25 +146,32 @@ fn run_structs_step(
 }
 
 fn run_models_step(
-    config: &mut Config,
+    project_root: &PathBuf,
+    _config: &mut Config,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
-    progress.step_start(STEP_MODELS);
-    let ok = models::generate(config);
-    if !ok {
-        let reason = "models generator reported failure";
-        progress.step_fail(STEP_MODELS, reason);
-        sink.warn(format!(
-            "{}: {} (continuing — may be normal for empty schemas)",
-            STEP_MODELS, reason
-        ));
-    } else {
-        progress.step_done(STEP_MODELS);
+    // Models v2 — state-driven emitter producing module fns plus auto-conn
+    // wrappers plus the fluent query builder. The legacy schema-driven
+    // generator stays imported but unused until full retirement.
+    match codegen::models::run(project_root, sink, progress) {
+        Ok(report) => {
+            for path in &report.written {
+                sink.info(format!("wrote {}", path.display()));
+            }
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_MODELS, &reason);
+            sink.error(format!("{}: {}", STEP_MODELS, reason));
+            Err(err)
+        }
     }
-    outcome.steps_run += 1;
-    Ok(())
 }
 
 fn run_flows_step(
