@@ -36,6 +36,8 @@ const STEP_MODELS: &str = "models generation";
 const STEP_FLOWS: &str = "flows generation";
 const STEP_HTTP_ROUTES: &str = "http routes generation";
 const STEP_FRONTEND: &str = "frontend generation";
+const STEP_FRONTEND_TYPES: &str = "frontend types generation";
+const STEP_FRONTEND_API: &str = "frontend api generation";
 const STEP_COMPOSABLES_V2: &str = "fe composables v2 generation";
 const STEP_WS_TOPICS: &str = "ws topics generation";
 const STEP_VUE_COMPONENTS: &str = "vue components generation";
@@ -81,6 +83,8 @@ pub fn run(
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
+    run_frontend_types_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
+    run_frontend_api_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_composables_v2_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_ws_topics_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_vue_components_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -254,6 +258,60 @@ fn run_frontend_step(
             let reason = err.to_string();
             progress.step_fail(STEP_FRONTEND, &reason);
             sink.error(format!("{}: {}", STEP_FRONTEND, reason));
+            Err(err)
+        }
+    }
+}
+
+fn run_frontend_types_step(
+    project_root: &PathBuf,
+    _resource_count: usize,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    match codegen::frontend_types::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!(
+                "{}: {} written, {} skipped",
+                STEP_FRONTEND_TYPES,
+                report.written.len(),
+                report.skipped.len()
+            ));
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_FRONTEND_TYPES, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_frontend_api_step(
+    project_root: &PathBuf,
+    _resource_count: usize,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    match codegen::frontend_api::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!(
+                "{}: {} written, {} skipped",
+                STEP_FRONTEND_API,
+                report.written.len(),
+                report.skipped.len()
+            ));
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_FRONTEND_API, err));
             Err(err)
         }
     }

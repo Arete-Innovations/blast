@@ -3,6 +3,8 @@ pub mod composables_v2;
 pub mod env_example;
 pub mod flows;
 pub mod frontend;
+pub mod frontend_api;
+pub mod frontend_types;
 pub mod governor_plugin;
 pub mod header;
 pub mod http_routes;
