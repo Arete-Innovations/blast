@@ -431,6 +431,7 @@ mod tests {
             }),
             singular_override: None,
             soft_delete: None,
+            relations: std::collections::BTreeMap::new(),
         }
     }
 

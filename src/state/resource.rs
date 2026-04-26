@@ -23,6 +23,29 @@ pub struct ResourceState {
     /// the configured default visibility behavior in list/get queries.
     #[serde(default)]
     pub soft_delete: Option<SoftDeleteConfig>,
+    /// Named relations to other tables, consumed by codegen to emit
+    /// loaders/joins. Keyed by relation name (e.g. `"author"`).
+    /// Many-to-many is intentionally not modeled in v2.
+    #[serde(default)]
+    pub relations: BTreeMap<String, Relation>,
+}
+
+/// A typed relation between this resource and another table.
+///
+/// `BelongsTo`: this resource carries the FK in `fk_local_field`,
+/// pointing at `table.id`.
+/// `HasMany`: the other `table` carries the FK in `fk_remote_field`,
+/// pointing back at this resource's id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Relation {
+    BelongsTo {
+        table: String,
+        fk_local_field: FieldName,
+    },
+    HasMany {
+        table: String,
+        fk_remote_field: FieldName,
+    },
 }
 
 /// Soft-delete policy attached to a resource.
@@ -168,6 +191,7 @@ impl ResourceState {
             ws_events: None,
             singular_override: None,
             soft_delete: None,
+            relations: BTreeMap::new(),
         }
     }
 

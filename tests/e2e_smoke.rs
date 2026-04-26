@@ -225,6 +225,7 @@ fn write_minimal_users_resource(state_dir: &Path) {
         ws_events: None,
         singular_override: None,
         soft_delete: None,
+        relations: BTreeMap::new(),
     };
 
     let mut id_variants = BTreeSet::new();

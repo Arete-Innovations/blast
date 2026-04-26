@@ -227,6 +227,7 @@ mod tests {
             ws_events: None,
             singular_override: None,
             soft_delete: None,
+            relations: BTreeMap::new(),
         }
     }
 
