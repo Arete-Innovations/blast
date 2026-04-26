@@ -29,10 +29,22 @@ use inflector::string::singularize::to_singular;
 /// English singularization via Inflector. `users` -> `user`,
 /// `categories` -> `category`, `addresses` -> `address`.
 ///
-/// Inflector ships its own irregular-plural table; we lean on it
-/// rather than re-rolling a heuristic. Override at the resource level
-/// (`singular_override`) when Inflector picks the wrong form.
+/// Inflector's built-in irregular table is incomplete; we patch the
+/// known gaps here. Override at the resource level
+/// (`singular_override`) for any remaining cases Inflector gets wrong.
 pub fn singularize(table: &str) -> String {
+    // Inflector does not handle these common English irregulars.
+    match table {
+        "people" => return "person".to_string(),
+        "children" => return "child".to_string(),
+        "men" => return "man".to_string(),
+        "women" => return "woman".to_string(),
+        "teeth" => return "tooth".to_string(),
+        "feet" => return "foot".to_string(),
+        "mice" => return "mouse".to_string(),
+        "geese" => return "goose".to_string(),
+        _ => {}
+    }
     to_singular(table)
 }
 

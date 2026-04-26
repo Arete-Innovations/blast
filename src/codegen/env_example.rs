@@ -79,6 +79,8 @@ fn extract_env_spec(
         AppPolicySection::Fuses(_) => Ok(None),
         AppPolicySection::Services(_) => Ok(None),
         AppPolicySection::Defaults(_) => Ok(None),
+        AppPolicySection::Nav(_) => Ok(None),
+        AppPolicySection::Pages(_) => Ok(None),
     }
 }
 

@@ -172,10 +172,10 @@ mod tests {
     use crate::io::null::{NullProgress, NullSink};
     use crate::state::names::{ResourceName, SqlType};
     use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
+        AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, Verb, VerbState,
     };
     use indexmap::IndexMap;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use tempfile::TempDir;
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
@@ -224,8 +224,8 @@ mod tests {
             },
         );
 
-        let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
-        filterable.insert(FieldName::new("email"));
+        let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+        filterable.insert(FieldName::new("email"), FilterKind::Eq);
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
         verbs.insert(
             Verb::List,
