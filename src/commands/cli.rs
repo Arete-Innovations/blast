@@ -28,8 +28,25 @@ pub enum Command {
         no_test_db: bool,
     },
 
-    #[command(about = "Initialize project (migrations, schema, codegen)")]
-    Init,
+    #[command(
+        about = "Scaffold a Catablast app in-place (or in <name>); like `new` but defaults to cwd"
+    )]
+    Init {
+        /// Optional project name. If given, scaffold to `./<name>/`. If
+        /// omitted, scaffold directly into the current directory (which
+        /// must be empty unless `--force` is set).
+        name: Option<String>,
+        /// Postgres URL for the new project. If omitted, prompts interactively.
+        #[arg(long = "db-url")]
+        db_url: Option<String>,
+        /// Allow scaffolding into a non-empty directory (or recreate
+        /// existing databases).
+        #[arg(long)]
+        force: bool,
+        /// Skip creation of the `<dbname>_test` database and `.env.test` file.
+        #[arg(long = "no-test-db")]
+        no_test_db: bool,
+    },
 
     #[command(about = "Create a new Diesel migration skeleton")]
     Migration,
@@ -107,6 +124,20 @@ pub enum Command {
     Arsenal {
         #[command(subcommand)]
         cmd: Option<ArsenalCmd>,
+    },
+
+    #[command(
+        name = "sync-canonical",
+        about = "Refresh vendored Catalyst snapshot in blast/templates/canonical/ (dev tool)"
+    )]
+    SyncCanonical {
+        /// Path to a live catalyst checkout. Defaults to sibling
+        /// `../catalyst/` resolved from the blast crate root.
+        #[arg(long = "catalyst-path")]
+        catalyst_path: Option<std::path::PathBuf>,
+        /// Diff without writing; non-zero exit if drift detected. CI mode.
+        #[arg(long)]
+        check: bool,
     },
 }
 
@@ -238,6 +269,43 @@ mod tests {
         match cli.cmd {
             Some(Command::New { dev, .. }) => assert!(dev),
             other => panic!("expected New, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn init_command_no_name_uses_cwd() {
+        let cli = Cli::try_parse_from(["blast", "init"]).expect("parse");
+        match cli.cmd {
+            Some(Command::Init { name, db_url, force, no_test_db }) => {
+                assert!(name.is_none(), "expected no name, got {:?}", name);
+                assert!(db_url.is_none());
+                assert!(!force);
+                assert!(!no_test_db);
+            }
+            other => panic!("expected Init, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn init_command_accepts_name_and_flags() {
+        let cli = Cli::try_parse_from([
+            "blast",
+            "init",
+            "myapp",
+            "--db-url",
+            "postgres://u:p@h/x",
+            "--force",
+            "--no-test-db",
+        ])
+        .expect("parse");
+        match cli.cmd {
+            Some(Command::Init { name, db_url, force, no_test_db }) => {
+                assert_eq!(name.as_deref(), Some("myapp"));
+                assert_eq!(db_url.as_deref(), Some("postgres://u:p@h/x"));
+                assert!(force);
+                assert!(no_test_db);
+            }
+            other => panic!("expected Init, got {:?}", other),
         }
     }
 }

@@ -3,15 +3,16 @@ name = "blast"
 version = "0.1.0"
 edition = "2021"
 
-# Exclude build artifacts and template-specific files
+# Exclude build artifacts but KEEP templates/canonical/ — that's the
+# vendored framework source baked into the binary via include_dir!.
 exclude = [
     "target/",
     "**/*.rs.bk",
     ".git/",
     ".gitignore",
-    "template/target/",
-    "template/Cargo.lock",
-    "template/storage/logs/*.log",
+    "templates/canonical/target/",
+    "templates/canonical/Cargo.lock",
+    "templates/canonical/storage/logs/*.log",
     "tests/"
 ]
 
@@ -51,8 +52,7 @@ ron = "0.8"
 indexmap = { version = "2", features = ["serde"] }
 blake3 = "1.5"
 Inflector = "0.11"
-argon2 = "0.5"
-rand_core06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+include_dir = "0.7"
 
 [dev-dependencies]
 tempfile = "3"
