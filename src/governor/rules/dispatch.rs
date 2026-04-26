@@ -26,6 +26,7 @@ use super::raw_color::RawColorOutsidePreset;
 use super::raw_fetch::RawFetchOutsideApi;
 use super::raw_rem::RawRemOutsideTokens;
 use super::silent_fallback::SilentFallback;
+use super::snake_case_interface_fields::SnakeCaseInterfaceFields;
 use super::ts_ignore::TsIgnore;
 use super::type_any::TypeAny;
 use super::websocket_outside_relay::WebSocketOutsideRelay;
@@ -93,5 +94,6 @@ fn build_file_rules() -> Vec<Box<dyn FileRule>> {
         Box::new(MaxTemplateDepth::new()),
         Box::new(MaxTemplateLoc::new()),
         Box::new(PrimeVueReinvented::new()),
+        Box::new(SnakeCaseInterfaceFields::new()),
     ]
 }

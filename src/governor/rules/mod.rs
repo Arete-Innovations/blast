@@ -23,6 +23,7 @@ pub mod raw_color;
 pub mod raw_fetch;
 pub mod raw_rem;
 pub mod silent_fallback;
+pub mod snake_case_interface_fields;
 pub mod traits;
 pub mod ts_ignore;
 pub mod type_any;
