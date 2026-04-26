@@ -81,12 +81,21 @@ pub fn gitignore() -> &'static str {
      /public/static/assets/\n"
 }
 
-pub fn env_example(project_name: &str) -> String {
+pub fn env_example(database_url: &str) -> String {
     format!(
-        "DATABASE_URL=postgres://postgres:postgres@localhost/{name}\n\
+        "DATABASE_URL={url}\n\
          BLAST_ENV=dev\n\
          RUST_LOG=info\n",
-        name = project_name,
+        url = database_url,
+    )
+}
+
+pub fn env_test_example(database_url: &str) -> String {
+    format!(
+        "DATABASE_URL={url}\n\
+         BLAST_ENV=test\n\
+         RUST_LOG=warn\n",
+        url = database_url,
     )
 }
 
