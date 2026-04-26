@@ -1,4 +1,5 @@
 use crate::state::names::{FieldName, ResourceName};
+use crate::state::resource::SoftDeleteDefault;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -122,6 +123,18 @@ pub enum AppPolicySection {
     Fuses(FusesPolicyState),
     Services(ServicesState),
     EnvSpec(EnvSpecState),
+    Defaults(DefaultsState),
+}
+
+/// App-wide defaults consumed by Blast's TUI as prefill values when
+/// scaffolding new resources or fields. These are NOT enforced at
+/// codegen time — they only steer wizards.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DefaultsState {
+    /// Default soft-delete behavior offered when `gen resource` creates
+    /// a new resource. `None` means the wizard prompts with no prefill.
+    #[serde(default)]
+    pub soft_delete_new_resources_default: Option<SoftDeleteDefault>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,6 +270,7 @@ impl AppPolicySection {
                     state.vars.insert(k, v);
                 }
             }
+            Self::Defaults(_) => {}
         }
     }
 }

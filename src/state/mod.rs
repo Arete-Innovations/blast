@@ -7,6 +7,7 @@ pub mod upgraders;
 
 pub use app::AppPolicySection;
 pub use app::AppState;
+pub use app::DefaultsState;
 pub use app::EnvSpecState;
 pub use app::EnvVarSpec;
 pub use app::FeLintState;
