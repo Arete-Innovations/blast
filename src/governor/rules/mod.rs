@@ -1,6 +1,7 @@
 pub mod console_log;
 pub mod dispatch;
 pub mod hardcoded_px;
+pub mod hardcoded_route_path;
 pub mod helpers;
 pub mod icon_class;
 pub mod inline_style;
