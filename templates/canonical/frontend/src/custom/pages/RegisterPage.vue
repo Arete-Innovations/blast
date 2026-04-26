@@ -1,10 +1,205 @@
 <script setup lang="ts">
-// TODO Phase 2 fills this in
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import PageShell from '@/components/PageShell.vue'
+import { useAuth } from '@/composables/auth'
+
+const router = useRouter()
+const { register } = useAuth()
+
+const email = ref('')
+const password = ref('')
+const confirm_password = ref('')
+const loading = ref(false)
+const server_error = ref<string | null>(null)
+
+const email_valid = computed<boolean>(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value))
+const password_valid = computed<boolean>(() => password.value.length >= 8)
+const confirm_valid = computed<boolean>(() => password.value === confirm_password.value && confirm_password.value.length > 0)
+const form_valid = computed<boolean>(() => email_valid.value && password_valid.value && confirm_valid.value)
+
+async function handle_submit(): Promise<void> {
+  if (!form_valid.value || loading.value) return
+  loading.value = true
+  server_error.value = null
+  const result = await register(email.value, password.value)
+  loading.value = false
+  if (!result.ok) {
+    server_error.value = result.error ?? 'Registration failed'
+    return
+  }
+  await router.push({ name: 'dashboard' })
+}
 </script>
 
 <template>
-  <PageShell layout="cards">
-    <template #header><h1>Register</h1></template>
+  <PageShell layout="bleed">
+    <div class="register-wrap">
+      <div class="register-card">
+        <h1 class="register-title">Create an account</h1>
+
+        <form class="register-form" novalidate @submit.prevent="handle_submit">
+          <div class="register-field">
+            <label for="register-email" class="register-label">Email</label>
+            <InputText
+              id="register-email"
+              v-model="email"
+              type="email"
+              autocomplete="email"
+              placeholder="you@example.com"
+              :invalid="email.length > 0 && !email_valid"
+              class="register-input"
+            />
+            <span v-if="email.length > 0 && !email_valid" class="register-hint register-hint--error">
+              Enter a valid email address.
+            </span>
+          </div>
+
+          <div class="register-field">
+            <label for="register-password" class="register-label">Password</label>
+            <Password
+              id="register-password"
+              v-model="password"
+              :feedback="true"
+              toggle-mask
+              autocomplete="new-password"
+              placeholder="At least 8 characters"
+              :invalid="password.length > 0 && !password_valid"
+              class="register-input"
+            />
+            <span v-if="password.length > 0 && !password_valid" class="register-hint register-hint--error">
+              Password must be at least 8 characters.
+            </span>
+          </div>
+
+          <div class="register-field">
+            <label for="register-confirm" class="register-label">Confirm password</label>
+            <Password
+              id="register-confirm"
+              v-model="confirm_password"
+              :feedback="false"
+              toggle-mask
+              autocomplete="new-password"
+              placeholder="Repeat your password"
+              :invalid="confirm_password.length > 0 && !confirm_valid"
+              class="register-input"
+            />
+            <span v-if="confirm_password.length > 0 && !confirm_valid" class="register-hint register-hint--error">
+              Passwords do not match.
+            </span>
+          </div>
+
+          <div v-if="server_error" class="register-server-error" role="alert">
+            {{ server_error }}
+          </div>
+
+          <Button
+            type="submit"
+            label="Create account"
+            :loading="loading"
+            :disabled="!form_valid || loading"
+            class="register-submit"
+          />
+        </form>
+
+        <p class="register-footer">
+          Already have an account?
+          <router-link :to="{ name: 'auth.login' }" class="register-link">Sign in</router-link>
+        </p>
+      </div>
+    </div>
   </PageShell>
 </template>
+
+<style scoped>
+@layer app {
+  .register-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: var(--app-space-md);
+    background: var(--p-content-background);
+  }
+
+  .register-card {
+    width: 100%;
+    max-width: 24rem;
+    background: var(--p-surface-card);
+    border: 0.0625rem solid var(--p-content-border-color);
+    border-radius: var(--app-radius-md);
+    padding: var(--app-space-xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-lg);
+  }
+
+  .register-title {
+    margin: 0;
+    font-size: var(--app-text-xl);
+    font-weight: var(--app-weight-semibold);
+    color: var(--p-text-color);
+    text-align: center;
+  }
+
+  .register-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-md);
+  }
+
+  .register-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-xs);
+  }
+
+  .register-label {
+    font-size: var(--app-text-sm);
+    font-weight: var(--app-weight-medium);
+    color: var(--p-text-color);
+  }
+
+  .register-input {
+    width: 100%;
+  }
+
+  .register-hint {
+    font-size: var(--app-text-xs);
+  }
+
+  .register-hint--error {
+    color: var(--p-red-500);
+  }
+
+  .register-server-error {
+    font-size: var(--app-text-sm);
+    color: var(--p-red-500);
+    background: var(--p-red-50);
+    border: 0.0625rem solid var(--p-red-200);
+    border-radius: var(--app-radius-sm);
+    padding: var(--app-space-sm) var(--app-space-md);
+  }
+
+  .register-submit {
+    width: 100%;
+    margin-top: var(--app-space-xs);
+  }
+
+  .register-footer {
+    margin: 0;
+    text-align: center;
+    font-size: var(--app-text-sm);
+    color: var(--p-text-muted-color);
+  }
+
+  .register-link {
+    color: var(--p-primary-color);
+    font-weight: var(--app-weight-medium);
+  }
+
+  .register-link:hover {
+    text-decoration: underline;
+  }
+}
+</style>
