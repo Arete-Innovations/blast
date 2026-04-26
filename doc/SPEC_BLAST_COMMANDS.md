@@ -5,8 +5,8 @@ Full command surface of the `blast` CLI. TUI flows, dashboard, and interactive m
 ## Top-Level Commands
 
 ```
-blast new <name> [--dev]        # scaffold a new Catablast app
-blast init                       # initialize project: deps, migrations, schema, codegen
+blast new <name>                 # scaffold a new Catablast app from vendored canonical
+blast init [<name>]              # in-place scaffolder (cwd or <name>/)
 
 blast migration [name]           # create a new Diesel migration skeleton
 blast migrate                    # run pending migrations
@@ -33,6 +33,8 @@ blast fuses list                 # list registered fuses
 blast fuses toggle <name>        # flip enabled flag
 blast fuses run <name>           # trigger immediate run (bypass schedule)
 blast fuses logs <name>          # show recent run logs
+
+blast sync-canonical [--catalyst-path PATH] [--check]  # refresh vendored canonical snapshot
 
 blast log [truncate|view LEVEL]  # tail/manage blast logs
 
@@ -68,23 +70,28 @@ All `blast gen` targets read from `storage/blast/state/` (see `SPEC_STATE.md`). 
 
 ### `blast gen all` pipeline
 
-`blast gen all` runs **eleven** ordered steps. Each step calls a dedicated codegen module and reports `{written, skipped}` counts back to the sink. On any step's failure the pipeline aborts; no retries (that's `blast init`'s job).
+`blast gen all` runs **sixteen** ordered steps. Each step calls a dedicated codegen module and reports `{written, skipped}` counts back to the sink. On any step's failure the pipeline aborts; no retries (that's `blast init`'s job).
 
 ```
-1. schema generation           (diesel print-schema → src/database/schema.rs)
-2. structs generation          (codegen::structs::run)
-3. models generation           (legacy models::generate — to be replaced by codegen::models::run)
-4. flows generation            (codegen::flows::run)
-5. http routes generation      (codegen::http_routes::run)
-6. frontend generation         (codegen::run_frontend — types + api + composables + validators)
-7. ws topics generation        (codegen::ws_topics::run)
-8. vue components generation   (codegen::vue::run — Form.vue + List.vue per resource)
-9. .env.example generation     (codegen::env_example::run)
-10. governor plugin emission    (codegen::governor_plugin::run)
-11. test scaffold emission      (codegen::test_scaffold::run, Filter::All)
+1.  schema generation           (diesel print-schema → src/database/schema.rs)
+2.  structs generation          (codegen::structs::run)
+3.  models generation           (codegen::models::run)
+4.  flows generation            (codegen::flows::run)
+5.  http routes generation      (codegen::http_routes::run)
+6.  frontend generation         (codegen::run_frontend — types + api + validators)
+7.  fe composables v2 generation (codegen::composables_v2::run)
+8.  ws topics generation        (codegen::ws_topics::run)
+9.  vue components generation   (codegen::vue::run — Form.vue + List.vue per resource)
+10. crud pages generation        (codegen::pages::run — resource list/detail pages)
+11. router codegen               (codegen::router::run — emits frontend/src/generated/router.ts)
+12. theme codegen                (codegen::theme::run — emits tokens.css + primevue.ts from app.ron theme section)
+13. icons codegen                (codegen::icons::run — emits icons.ts from app.ron icons section)
+14. .env.example generation     (codegen::env_example::run)
+15. governor plugin emission    (codegen::governor_plugin::run)
+16. test scaffold emission      (codegen::test_scaffold::run, Filter::All)
 ```
 
-Steps 5/7/8/11 short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping"). Step 3 is the only step that warns instead of aborting on failure (legacy models generator, expected to misbehave on empty schemas — slated for replacement).
+Steps 5/7/8/9/10/16 short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping").
 
 Implementation lives in `src/commands/gen_all.rs` as `pub fn run(args, config, sink, progress) -> BlastResult<Outcome>`. `Outcome` carries cumulative `steps_run`, `files_written`, `files_skipped`.
 
@@ -172,9 +179,9 @@ Simpler alternative to dashboard. `FuzzySelect` menu backed by the `Command` reg
 
 Selection drops into that command's handler (possibly another TUI, possibly a direct execution with log output).
 
-## `blast init` Pipeline
+## Post-Scaffold Initialization Pipeline
 
-For a freshly-cloned or newly-created project:
+Run after `blast new` or `blast init` to bring a freshly-scaffolded (or freshly-cloned) project to a working state. Also re-run via `blast refresh`.
 
 ```
 Step 1/7: Dependency check               (cargo, diesel_cli, node, zellij available?)
@@ -190,37 +197,61 @@ Retries critical steps (schema, codegen) up to 3 times on failure before exiting
 
 Progress shown via `indicatif` progress bars. File log at `storage/blast/init.log`.
 
-## `blast new <name> [--dev]`
+## `blast new <name>`
 
-Scaffolds a fresh Catablast app from **in-Blast templates**. Does not clone a remote repo. All template content lives in `src/project/templates.rs` and `src/codegen/{build_rs_template, frontend_scaffold}.rs`.
+Scaffolds a fresh Catablast app from the **vendored canonical snapshot** baked into the Blast binary at compile time via `include_dir!` from `blast/templates/canonical/`. Does not clone a remote repo. Does not resolve a `catalyst` Cargo dep — there is none. Each scaffolded app is a complete, self-contained framework copy.
 
 ```
-Step 1: create project root
-Step 2: write Cargo.toml                     (catalyst dep auto-detected — see below)
-Step 3: write top-level files                (.gitignore, .env.example, .env)
-Step 4: scaffold src/ layer tree             (mod.rs + generated/custom split per layer + transport sublayers)
-Step 5: scaffold storage/blast/state/        (initial app.ron + resources/.gitkeep + .gitignore)
-Step 6: scaffold migrations/
-Step 7: emit build.rs                        (codegen::build_rs_template — hash-mismatch hard-fail)
-Step 8: scaffold frontend/                   (vite + vue + ts + primevue)
-Step 9: seed frontend tokens/base/primevue   (codegen::frontend_scaffold — first-run seed only)
+blast new <name> [--db-url <url>] [--no-test-db] [--force]
 ```
+
+| Flag | Meaning |
+|------|---------|
+| `--db-url <url>` | Postgres URL for the new project. If omitted, prompts interactively. |
+| `--no-test-db` | Skip creation of the `<dbname>_test` database and `.env.test` file. |
+| `--force` | Drop and recreate target databases if they already contain tables. |
+
+Scaffold walks the vendored tree, substitutes `{{project_name}}` in both file paths and file bodies, and writes everything to `./<name>/`.
 
 Total emit: ~52 files. Full implementation in `src/project/{mod, scaffold, templates}.rs`.
 
-### Catalyst dep auto-detection
-
-Blast auto-resolves the `catalyst` Cargo dep based on its own location:
-
-- If a sibling `catalyst/` directory is found relative to where `blast` was built from (parent of `blast/`'s git worktree root), Blast emits a **path dep** with `features = ["testing"]`.
-- Otherwise Blast falls back to a **git dep** pointing at the canonical GitHub remote with `branch = "main"`.
-
-The `--dev` flag forces sibling-path detection (errors out if no sibling `catalyst/` exists). Useful for hacking on Catablast itself.
-
 NOT done by `blast new`:
-- Create database (user does it; template's `.env` has DATABASE_URL to point at)
 - Run initial migrations (`blast init` does that as a second step)
 - Install node deps (user runs `npm install` in `frontend/`)
+
+## `blast init [<name>]`
+
+In-place scaffolder. Mirrors `blast new` exactly but defaults to the current working directory when `<name>` is omitted.
+
+```
+blast init [<name>] [--db-url <url>] [--no-test-db] [--force]
+```
+
+| Flag | Meaning |
+|------|---------|
+| `<name>` | Optional. If given, scaffold to `./<name>/`. If omitted, scaffold directly into cwd (must be empty unless `--force`). |
+| `--db-url <url>` | Postgres URL for the project. If omitted, prompts interactively. |
+| `--no-test-db` | Skip creation of the test database and `.env.test` file. |
+| `--force` | Allow scaffolding into a non-empty directory; recreate existing databases. |
+
+Same vendored-canonical model as `blast new`. Use `blast init` when you have already `mkdir`'d into the project directory or want in-place initialization.
+
+## `blast sync-canonical`
+
+Refreshes the vendored Catalyst snapshot at `blast/templates/canonical/` from a live Catalyst checkout. This is a **Blast developer tool** — run it when Catalyst evolves and the vendored copy needs updating.
+
+```
+blast sync-canonical [--catalyst-path PATH] [--check]
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--catalyst-path PATH` | Path to a live Catalyst checkout. Defaults to sibling `../catalyst/` resolved from the Blast crate root. |
+| `--check` | Diff without writing; exits non-zero if any drift is detected. CI mode. |
+
+Path-aware mirror: only paths Catalyst owns are synced (`src/`, `doc/`, `Cargo.toml`, `diesel.toml`, `rustfmt.toml`, `LICENSE`, `public/`, `storage/`). Blast-owned paths inside `templates/canonical/` (e.g. `frontend/`) are never touched.
+
+After syncing, rebuild Blast (`cargo build`) so `include_dir!` picks up the updated snapshot. End-user apps are then updated via the future `blast vendor-update` subcommand (planned, not yet shipped).
 
 ## `blast build`
 

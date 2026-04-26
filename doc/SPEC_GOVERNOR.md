@@ -41,10 +41,10 @@ fe_lint: FeLintConfig(
     max_template_depth: 5,
     max_template_loc: 200,
     hairline_border_rem: "0.0625rem",
-    exempt_color_files: ["src/plugins/primevue.ts"],
+    exempt_color_files: ["src/generated/plugins/primevue.ts"],
     exempt_px_files: [
-        "src/plugins/primevue.ts",
-        "src/styles/tokens.css",
+        "src/generated/plugins/primevue.ts",
+        "src/generated/styles/tokens.css",
         "src/styles/base.css",
     ],
     whitelist_snippets: ["schema.org"],
@@ -99,13 +99,13 @@ Blast reads `storage/blast/state/app.ron` directly and applies the configured ru
 
 **`RawColorOutsidePreset`** — Bans `#[0-9a-fA-F]{3,8}`, `rgb(`, `rgba(`, `hsl(`, `hsla(`, named CSS colors (`red`, `blue`, etc.) outside files in `.exempt_color_files`. Applies in **global CSS, scoped `<style>` blocks, `style=` attributes, `:style` directives, TS string literals assigned to style properties**. The token system (PrimeVue preset → `var(--p-*)`, app tokens → `var(--app-*)`) is the only legal color source.
 
-Default exempt: `src/plugins/primevue.ts`.
+Default exempt: `src/generated/plugins/primevue.ts`.
 
 **`HardcodedPx`** — Bans `\d+(\.\d+)?px` outside files in `.exempt_px_files`. Applies in **global CSS, scoped `<style>` blocks, inline styles, TS literals**. Line-level exceptions: `@media` queries, `rootMargin:` (IntersectionObserver), explicit hairline-border allow (`0.0625rem` is the rem-equivalent).
 
 Rationale: `px` doesn't scale with root font size; breaks responsive scaling on 4K / high-DPI.
 
-Default exempt files: `src/plugins/primevue.ts`, `src/styles/tokens.css`, `src/styles/base.css`.
+Default exempt files: `src/generated/plugins/primevue.ts`, `src/generated/styles/tokens.css`, `src/styles/base.css`.
 
 **`RawRemOutsideTokens`** — Bans literal `\d+(\.\d+)?rem` in files other than `tokens.css`. Forces `var(--app-*)` token use in components and **scoped styles**.
 
@@ -115,7 +115,7 @@ Line-level exceptions: `grid-template-columns: minmax(...)`, `@media` queries, `
 
 Rationale: style belongs in `<style scoped>` blocks bound by class. Inline is the gateway drug to color/px sprinkling.
 
-**`IconClassOutsideIconsFile`** — Icon class names (`pi pi-user`, `ph ph-check`, `fa fa-bell`, etc.) may only appear in `src/icons.ts`. Components consume `IC.user`, `IC.check` from the registry. Class name patterns configured via `.icon_class_patterns([...])` on `FeLintConfig`.
+**`IconClassOutsideIconsFile`** — Icon class names (`pi pi-user`, `ph ph-check`, `fa fa-bell`, etc.) may only appear in `src/generated/icons.ts`. Components consume `IC.user`, `IC.check` from the registry. Class name patterns configured via `.icon_class_patterns([...])` on `FeLintConfig`.
 
 ### TS hygiene
 
@@ -141,9 +141,9 @@ Codegen'd interfaces are compliant by construction; rule catches custom types th
 
 **`LocalStorageOutsidePersistence`** — Bans `localStorage.`, `sessionStorage.`, `indexedDB.` outside `frontend/src/generated/persistence/` and `frontend/src/custom/persistence/` (if present). Mutating browser storage from random components is a war crime.
 
-**`PrimeVueConfigImportOutsidePresetFile`** — Importing `primevue.config.*` or `PrimeVueConfig` types outside `src/plugins/primevue.ts` is banned. Theming config lives in one file.
+**`PrimeVueConfigImportOutsidePresetFile`** — Importing `primevue.config.*` or `PrimeVueConfig` types outside `src/generated/plugins/primevue.ts` is banned. Theming config lives in one file.
 
-**`PiniaImport`** — Bans `import ... from 'pinia'` anywhere. Catablast does not use Pinia. State lives in codegen'd composables (per-resource, scoped) + URL params (view state). Cross-resource event coordination via the singleton bus exposed in `frontend/src/generated/bus.ts`.
+**`PiniaImport`** — Bans `import ... from 'pinia'` anywhere. Catablast does not use Pinia. State lives in codegen'd composables (per-resource, scoped) + URL params (view state). Cross-resource event coordination via the singleton bus exposed in `frontend/src/composables/bus.ts`.
 
 Rationale: Pinia gives AI-written code too much rope. Codegen'd composables IS the store, scoped per-resource, hash-locked.
 
@@ -227,7 +227,7 @@ For genuine external-constant exceptions (schema.org URLs, SVG xmlns constants, 
 ```
 # file-glob : optional snippet substring
 src/components/**/*.vue : schema.org
-src/icons.ts : xmlns
+src/generated/icons.ts : xmlns
 src/custom/widgets/Tooltip.vue : v-model:visible
 ```
 
