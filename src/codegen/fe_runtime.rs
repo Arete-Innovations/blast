@@ -37,6 +37,8 @@ const URL_TS_RELATIVE: &str = "frontend/src/composables/url.ts";
 const DIALOG_TS_RELATIVE: &str = "frontend/src/composables/dialog.ts";
 const DRAWER_TS_RELATIVE: &str = "frontend/src/composables/drawer.ts";
 const CHANNEL_TS_RELATIVE: &str = "frontend/src/composables/channel.ts";
+const ICONS_TS_RELATIVE: &str = "frontend/src/icons.ts";
+const BUS_TS_RELATIVE: &str = "frontend/src/generated/bus.ts";
 
 pub const PAGE_SHELL_VUE: &str = PAGE_SHELL_VUE_BODY;
 pub const GLOBAL_PROGRESS_BAR_VUE: &str = GLOBAL_PROGRESS_BAR_VUE_BODY;
@@ -45,6 +47,7 @@ pub const INSTALL_BLOCKING_NAV_TS: &str = INSTALL_BLOCKING_NAV_TS_BODY;
 pub const ROUTER_INDEX_TS: &str = ROUTER_INDEX_TS_BODY;
 pub const INDEX_HTML_TEMPLATE: &str = INDEX_HTML_BODY;
 pub const MAIN_TS: &str = MAIN_TS_BODY;
+pub use crate::codegen::fe_runtime_extras::{BUS_TS, ICONS_TS};
 
 const PAGE_SHELL_VUE_BODY: &str = r#"<script setup lang="ts">
 // PageShell — every page wraps content in this. Layout is enum-locked;
@@ -481,7 +484,7 @@ pub fn run(project_root: &Path, app_name: &str) -> BlastResult<ScaffoldOutcome> 
     let mut written = Vec::new();
     let mut skipped = Vec::new();
 
-    let static_targets: [(&str, &str); 10] = [
+    let static_targets: [(&str, &str); 12] = [
         (PAGE_SHELL_RELATIVE, PAGE_SHELL_VUE),
         (GLOBAL_PROGRESS_BAR_RELATIVE, GLOBAL_PROGRESS_BAR_VUE),
         (GLOBAL_PROGRESS_TS_RELATIVE, GLOBAL_PROGRESS_TS),
@@ -492,6 +495,8 @@ pub fn run(project_root: &Path, app_name: &str) -> BlastResult<ScaffoldOutcome> 
         (DIALOG_TS_RELATIVE, DIALOG_TS),
         (DRAWER_TS_RELATIVE, DRAWER_TS),
         (CHANNEL_TS_RELATIVE, CHANNEL_TS),
+        (ICONS_TS_RELATIVE, ICONS_TS),
+        (BUS_TS_RELATIVE, BUS_TS),
     ];
     for (rel, body) in static_targets.iter() {
         let target = project_root.join(rel);
@@ -634,7 +639,7 @@ mod tests {
     fn run_writes_all_files_in_empty_project() {
         let (_dir, root) = tempdir_with_app();
         let outcome = run(&root, "acme").expect("run");
-        assert_eq!(outcome.written.len(), 11);
+        assert_eq!(outcome.written.len(), 13);
         assert_eq!(outcome.skipped.len(), 0);
 
         assert!(root.join(PAGE_SHELL_RELATIVE).is_file());
@@ -648,6 +653,8 @@ mod tests {
         assert!(root.join(DIALOG_TS_RELATIVE).is_file());
         assert!(root.join(DRAWER_TS_RELATIVE).is_file());
         assert!(root.join(CHANNEL_TS_RELATIVE).is_file());
+        assert!(root.join(ICONS_TS_RELATIVE).is_file());
+        assert!(root.join(BUS_TS_RELATIVE).is_file());
     }
 
     #[test]
@@ -663,7 +670,7 @@ mod tests {
     fn run_is_idempotent_and_skips_existing_files() {
         let (_dir, root) = tempdir_with_app();
         let first = run(&root, "acme").expect("first");
-        assert_eq!(first.written.len(), 11);
+        assert_eq!(first.written.len(), 13);
 
         // Mutate one file to verify it's not stomped.
         let custom_marker = "/* user-customized */\n";
@@ -672,10 +679,55 @@ mod tests {
 
         let second = run(&root, "acme").expect("second");
         assert_eq!(second.written.len(), 0);
-        assert_eq!(second.skipped.len(), 11);
+        assert_eq!(second.skipped.len(), 13);
 
         let after = fs::read_to_string(&page_shell_path).expect("read");
         assert_eq!(after, custom_marker);
     }
 
+    #[test]
+    fn icons_ts_constant_has_registry_and_type() {
+        assert!(!ICONS_TS.is_empty());
+        assert!(ICONS_TS.contains("export const IC"));
+        assert!(ICONS_TS.contains("export type IconName"));
+        assert!(ICONS_TS.contains("as const"));
+        // Verify a sample of expected entries.
+        assert!(ICONS_TS.contains("'pi pi-home'"));
+        assert!(ICONS_TS.contains("'pi pi-user'"));
+        assert!(ICONS_TS.contains("'pi pi-trash'"));
+        assert!(ICONS_TS.contains("'pi pi-search'"));
+        // No raw console.log or `any`.
+        assert!(!ICONS_TS.contains("console.log"));
+        assert!(!ICONS_TS.contains(": any"));
+    }
+
+    #[test]
+    fn bus_ts_constant_exports_on_off_emit_clearall() {
+        assert!(!BUS_TS.is_empty());
+        assert!(BUS_TS.contains("export function on<T>"));
+        assert!(BUS_TS.contains("export function off<T>"));
+        assert!(BUS_TS.contains("export function emit<T>"));
+        assert!(BUS_TS.contains("export function clearAll"));
+        // Uses module-scoped Map, not a class or Pinia.
+        assert!(BUS_TS.contains("new Map<string, Set<Listener<unknown>>>()"));
+        // No `any` type annotations.
+        assert!(!BUS_TS.contains(": any"));
+        // No console.log.
+        assert!(!BUS_TS.contains("console.log"));
+    }
+
+    #[test]
+    fn run_emits_icons_ts_and_bus_ts_with_correct_content() {
+        let (_dir, root) = tempdir_with_app();
+        run(&root, "acme").expect("run");
+
+        let icons = fs::read_to_string(root.join(ICONS_TS_RELATIVE)).expect("read icons.ts");
+        assert!(icons.contains("export const IC"));
+        assert!(icons.contains("export type IconName"));
+
+        let bus = fs::read_to_string(root.join(BUS_TS_RELATIVE)).expect("read bus.ts");
+        assert!(bus.contains("export function on<T>"));
+        assert!(bus.contains("export function off<T>"));
+        assert!(bus.contains("export function emit<T>"));
+    }
 }
