@@ -36,7 +36,8 @@ pub fn load_app(state_dir: &Path) -> BlastResult<AppState> {
 pub fn load_resource(state_dir: &Path, name: &ResourceName) -> BlastResult<ResourceState> {
     let path = resource_path(state_dir, name);
     let raw = fs::read_to_string(&path)?;
-    let mut value: ResourceState = ron::from_str(&raw)?;
+    let upgraded = upgraders::upgrade_resource_raw(&raw)?;
+    let mut value: ResourceState = ron::from_str(&upgraded)?;
     upgraders::upgrade_resource(&mut value)?;
     value.canonicalize();
     Ok(value)
