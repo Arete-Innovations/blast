@@ -167,8 +167,9 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
             out.push('\n');
         }
     }
+    out.push_str("    let mut conn = ctx.conn().await?;\n");
     out.push_str(&format!(
-        "    let out = models::{table}::{model_call}(ctx.conn(){args_call}).await?;\n"
+        "    let out = models::{table}::{model_call}(&mut conn{args_call}).await?;\n"
     ));
     out.push_str("    Ok(out.into())\n");
     out.push_str("}\n");
