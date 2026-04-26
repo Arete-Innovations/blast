@@ -1,4 +1,5 @@
 pub mod build_rs_template;
+pub mod composables_v2;
 pub mod env_example;
 pub mod fe_runtime;
 pub mod flows;
