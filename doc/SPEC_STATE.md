@@ -87,6 +87,62 @@ AppState(
         ),
     ),
 
+    nav: NavConfig(
+        sections: [
+            Section(
+                key: "main",
+                label: "Main",
+                icon: "home",
+                entries: [
+                    Entry(route: "dashboard"),
+                    Entry(route: "users.list", roles: [Admin]),
+                    Entry(route: "orders.list"),
+                ],
+            ),
+            Section(
+                key: "ops",
+                label: "Operations",
+                icon: "tools",
+                roles: [Admin],
+                entries: [
+                    Entry(route: "fuses.list"),
+                    Entry(route: "audit.list"),
+                ],
+            ),
+        ],
+    ),
+
+    pages: [
+        Page(
+            route: "dashboard",
+            path: "/",
+            component: "custom/pages/DashboardPage.vue",
+            layout: "cards",
+            label: "Dashboard",
+            icon: "dashboard",
+            in_nav: true,
+            roles: [User, Admin],
+        ),
+        Page(
+            route: "settings",
+            path: "/settings",
+            component: "custom/pages/SettingsPage.vue",
+            layout: "cards",
+            label: "Settings",
+            icon: "cog",
+            in_nav: true,
+            roles: [User, Admin],
+        ),
+        Page(
+            route: "debug.thing",
+            path: "/_debug/thing",
+            component: "custom/pages/DebugThing.vue",
+            layout: "bleed",
+            in_nav: false,
+            roles: [Admin],
+        ),
+    ],
+
     env_spec: [
         EnvVar(key: "DATABASE_URL", required: true, description: "Postgres connection string"),
         EnvVar(key: "SESSION_SIGNING_KEY", required: true, description: "32-byte hex secret"),
@@ -98,6 +154,40 @@ AppState(
 ```
 
 All keys under `app.ron` are optional except `schema_version`. Missing keys fall back to defaults baked into Blast.
+
+### `nav` and `pages` (FE routing + navigation)
+
+Both feed the FE routing codegen pass — `frontend/src/generated/router/{routes,route-names,install-router-guards}.ts` and `frontend/src/generated/nav/menu.ts`. See `catalyst/doc/SPEC_FRONTEND_ROUTING.md` for the full philosophy.
+
+**`pages: [Page(...)]`** declares custom (non-CRUD) routes:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `route` | string | Route name. Becomes part of `RouteName` union in `route-names.ts`. Dot-notation convention (`dashboard`, `audit.detail`). |
+| `path` | string | URL path. Supports vue-router param syntax (`/foo/:id`). No trailing slash. |
+| `component` | string | Path to hand-written Vue component, relative to `frontend/src/` (e.g. `custom/pages/DashboardPage.vue`). |
+| `layout` | enum | `cards` / `split` / `table` / `bleed` / `tabbed`. Drives `<PageShell layout="...">` codegen. |
+| `label` | string | Human-readable name (used in nav + breadcrumbs). |
+| `icon` | string | Icon registry key (resolves to `IC.<icon>` from `src/icons.ts`). |
+| `in_nav` | bool | If false, route is reachable but not auto-included in any menu. |
+| `roles` | [Role] | Auth gating. Codegen emits both router-guard check and menu-visibility check. |
+
+CRUD routes for resources are auto-emitted from each Primer file's verbs — they don't need to appear in `pages`.
+
+**`nav: NavConfig(...)`** declares the menu tree:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `sections` | [Section] | Top-level menu groups. |
+| `Section.key` | string | Stable identifier for active-route highlighting. |
+| `Section.label` | string | Group label. |
+| `Section.icon` | string | Icon registry key. |
+| `Section.roles` | [Role] | Hide entire section for unprivileged users. |
+| `Section.entries` | [Entry] | Menu items inside the section. |
+| `Entry.route` | string | Route name. **Must exist** in either auto-emitted CRUD routes or `pages` — codegen fails on dangling reference. |
+| `Entry.roles` | [Role] | Per-entry visibility (must be subset of route's auth requirement; codegen validates). |
+
+**Drift impossibility**: every `Entry.route` is validated against the resolved route set at codegen time. Renamed routes break codegen, not runtime. There is no manual `ROUTE_TO_KEY` table.
 
 ## `resources/<name>.ron` Schema
 
