@@ -12,6 +12,7 @@ use super::inline_style::InlineStyle;
 use super::loading_spinner::LoadingSpinnerAfterFirstLoad;
 use super::local_list_state::LocalListState;
 use super::local_modal_state::LocalModalState;
+use super::local_storage_outside_persistence::LocalStorageOutsidePersistence;
 use super::max_lines_per_fn::MaxLinesPerFn;
 use super::max_lines_per_sfc::MaxLinesPerSfc;
 use super::max_template_depth::MaxTemplateDepth;
@@ -20,10 +21,12 @@ use super::optimistic_update::OptimisticUpdateInCustom;
 use super::page_shell_required::PageShellRequired;
 use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
 use super::raw_color::RawColorOutsidePreset;
+use super::raw_fetch::RawFetchOutsideApi;
 use super::raw_rem::RawRemOutsideTokens;
 use super::silent_fallback::SilentFallback;
 use super::ts_ignore::TsIgnore;
 use super::type_any::TypeAny;
+use super::websocket_outside_relay::WebSocketOutsideRelay;
 
 pub fn run_all(file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
     let line_rules = build_line_rules();
@@ -70,6 +73,9 @@ fn build_line_rules() -> Vec<Box<dyn Rule>> {
         Box::new(HardcodedRoutePath::new()),
         Box::new(LocalListState::new()),
         Box::new(LoadingSpinnerAfterFirstLoad::new()),
+        Box::new(RawFetchOutsideApi::new()),
+        Box::new(WebSocketOutsideRelay::new()),
+        Box::new(LocalStorageOutsidePersistence::new()),
     ]
 }
 
