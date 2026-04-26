@@ -149,10 +149,18 @@ fn run_npm(cwd: &Path, args: &[&str], sink: &mut dyn Sink) -> BlastResult<()> {
     }
 
     if !status.success() {
-        let tail: String = stderr_collected
+        // Some npm-driven tools (vue-tsc, vite) emit diagnostics on
+        // stdout, not stderr. If stderr is empty we fall back to
+        // stdout's tail so the user gets something actionable.
+        let tail_source = if stderr_collected.is_empty() {
+            &stdout_collected
+        } else {
+            &stderr_collected
+        };
+        let tail: String = tail_source
             .iter()
             .rev()
-            .take(20)
+            .take(30)
             .rev()
             .cloned()
             .collect::<Vec<_>>()
@@ -163,10 +171,7 @@ fn run_npm(cwd: &Path, args: &[&str], sink: &mut dyn Sink) -> BlastResult<()> {
         };
         return Err(BlastError::Subprocess {
             cmd: display_cmd,
-            detail: format!(
-                "exit status {}: last stderr lines:\n{}",
-                code_str, tail
-            ),
+            detail: format!("exit status {}: last output lines:\n{}", code_str, tail),
         });
     }
 
