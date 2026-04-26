@@ -15,6 +15,7 @@ pub mod models;
 pub mod pages;
 pub mod router;
 pub mod structs;
+pub mod theme;
 pub mod test_scaffold;
 pub mod ts_validator;
 pub mod vue;
