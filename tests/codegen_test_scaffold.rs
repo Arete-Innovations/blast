@@ -1,54 +1,88 @@
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
 use blast::codegen::test_scaffold::{self, Filter};
+use blast::state;
+use blast::state::app::AppState;
+use blast::state::names::{FieldName, ResourceName, SqlType};
+use blast::state::resource::{
+    AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState,
+};
 
-fn write_fixture_ir(project_root: &Path) {
-    let dir = project_root.join("target").join("primer");
-    fs::create_dir_all(&dir).expect("create primer dir");
+fn write_fixture_state(project_root: &Path) {
+    let state_dir = project_root.join("storage").join("blast").join("state");
 
-    let users_ir = serde_json::json!({
-        "table": "users",
-        "fields": [
-            {"name": "id", "variants": ["DB", "Public"], "validation": {}},
-            {"name": "email", "variants": ["DB", "Insertable", "Public"], "validation": {}}
-        ],
-        "verbs": [
-            {"kind": "List",   "auth": "AuthRequired", "filter": {}},
-            {"kind": "Get",    "auth": "AuthRequired", "filter": {}},
-            {"kind": "Create", "auth": "AuthRequired", "filter": {}},
-            {"kind": "Update", "auth": "AuthRequired", "filter": {}},
-            {"kind": "Delete", "auth": "AuthRequired", "filter": {}}
-        ]
-    });
-    fs::write(
-        dir.join("users.json"),
-        serde_json::to_string_pretty(&users_ir).expect("ser users ir"),
-    )
-    .expect("write users.json");
+    // App-wide state file is required for the `marker_for_app` calls in
+    // `test_scaffold::run` (common/mod.rs and tests/fixtures/mod.rs headers).
+    state::save_app(&state_dir, &AppState::new()).expect("save app.ron");
 
-    let posts_ir = serde_json::json!({
-        "table": "posts",
-        "fields": [
-            {"name": "id", "variants": ["DB", "Public"], "validation": {}}
-        ],
-        "verbs": [
-            {"kind": "Get", "auth": "Public", "filter": {}}
-        ]
-    });
-    fs::write(
-        dir.join("posts.json"),
-        serde_json::to_string_pretty(&posts_ir).expect("ser posts ir"),
-    )
-    .expect("write posts.json");
+    let mut users = ResourceState::new(ResourceName::new("users"));
+    let mut id_variants = BTreeSet::new();
+    id_variants.insert(FieldVariant::Db);
+    id_variants.insert(FieldVariant::Public);
+    users.fields.insert(
+        FieldName::new("id"),
+        FieldState {
+            sql_type: SqlType::new("int8"),
+            variants: id_variants.clone(),
+            nullable: false,
+            primary_key: true,
+            validators: BTreeSet::new(),
+        },
+    );
+    let mut email_variants = BTreeSet::new();
+    email_variants.insert(FieldVariant::Db);
+    email_variants.insert(FieldVariant::Insertable);
+    email_variants.insert(FieldVariant::Public);
+    users.fields.insert(
+        FieldName::new("email"),
+        FieldState {
+            sql_type: SqlType::new("text"),
+            variants: email_variants,
+            nullable: false,
+            primary_key: false,
+            validators: BTreeSet::new(),
+        },
+    );
+    for verb in [Verb::List, Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
+        users.verbs.insert(
+            verb,
+            VerbState {
+                auth: AuthMode::AuthRequired,
+                list_options: None,
+            },
+        );
+    }
+    state::save_resource(&state_dir, &users).expect("save users.ron");
+
+    let mut posts = ResourceState::new(ResourceName::new("posts"));
+    posts.fields.insert(
+        FieldName::new("id"),
+        FieldState {
+            sql_type: SqlType::new("int8"),
+            variants: id_variants,
+            nullable: false,
+            primary_key: true,
+            validators: BTreeSet::new(),
+        },
+    );
+    posts.verbs.insert(
+        Verb::Get,
+        VerbState {
+            auth: AuthMode::Public,
+            list_options: None,
+        },
+    );
+    state::save_resource(&state_dir, &posts).expect("save posts.ron");
 }
 
 #[test]
 fn scaffold_all_emits_full_inventory() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
-    write_fixture_ir(root);
+    write_fixture_state(root);
 
     let report = test_scaffold::run(root, &Filter::All).expect("first run");
 
@@ -116,7 +150,7 @@ fn scaffold_all_emits_full_inventory() {
 fn scaffold_is_idempotent() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
-    write_fixture_ir(root);
+    write_fixture_state(root);
 
     let users_fixture = root.join("tests").join("fixtures").join("users.rs");
 
@@ -141,7 +175,7 @@ fn scaffold_is_idempotent() {
 fn flow_filter_emits_only_matching_resource() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
-    write_fixture_ir(root);
+    write_fixture_state(root);
 
     test_scaffold::run(root, &Filter::Flow("users".to_string())).expect("flow filter run");
 
@@ -177,7 +211,7 @@ fn flow_filter_emits_only_matching_resource() {
 fn route_filter_emits_only_route_smoke() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
-    write_fixture_ir(root);
+    write_fixture_state(root);
 
     test_scaffold::run(root, &Filter::Route("posts".to_string())).expect("route filter run");
 

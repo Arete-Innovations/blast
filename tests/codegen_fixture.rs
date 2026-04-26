@@ -1,57 +1,85 @@
-
+use blast::state;
+use blast::state::app::AppState;
+use blast::state::names::{FieldName, ResourceName, SqlType};
+use blast::state::resource::{
+    AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, ValidatorRule, Verb, VerbState,
+};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+fn write_fixture_state(project_root: &Path) {
+    let state_dir = project_root.join("storage").join("blast").join("state");
 
-fn write_fixture_ir(project_root: &Path) {
-    let dir = project_root.join("target").join("primer");
-    fs::create_dir_all(&dir).expect("create primer dir");
+    // App-wide state file is required by `marker_for_app` calls in
+    // `emit_validators` (index.ts), `emit_list_query_module`, and
+    // `emit_per_resource_list_helpers` (queries/index.ts).
+    state::save_app(&state_dir, &AppState::new()).expect("save app.ron");
 
-    let ir = serde_json::json!({
-        "table": "users",
-        "fields": [
-            {
-                "name": "id",
-                "variants": ["DB", "Public", "Admin"],
-                "validation": {}
-            },
-            {
-                "name": "email",
-                "variants": ["DB", "Insertable", "Public"],
-                "validation": {
-                    "validators": [
-                        {"Required": null},
-                        "Email",
-                        {"MaxLen": 255}
-                    ]
-                }
-            }
-        ],
-        "verbs": [
-            {
-                "kind": "List",
-                "auth": "AuthRequired",
-                "filter": {
-                    "paginated": true,
-                    "filterable_columns": ["role", "created_at"],
-                    "sortable_columns": ["created_at", "email"],
-                    "default_sort": "-created_at",
-                    "max_page_size": 100
-                }
-            }
-        ]
-    });
+    let mut res = ResourceState::new(ResourceName::new("users"));
 
-    let path = dir.join("users.json");
-    fs::write(&path, serde_json::to_string_pretty(&ir).expect("ser ir"))
-        .expect("write users.json");
+    let mut id_variants: BTreeSet<FieldVariant> = BTreeSet::new();
+    id_variants.insert(FieldVariant::Db);
+    id_variants.insert(FieldVariant::Public);
+    id_variants.insert(FieldVariant::Admin);
+    res.fields.insert(
+        FieldName::new("id"),
+        FieldState {
+            sql_type: SqlType::new("int8"),
+            variants: id_variants,
+            nullable: false,
+            primary_key: true,
+            validators: BTreeSet::new(),
+        },
+    );
+
+    let mut email_variants: BTreeSet<FieldVariant> = BTreeSet::new();
+    email_variants.insert(FieldVariant::Db);
+    email_variants.insert(FieldVariant::Insertable);
+    email_variants.insert(FieldVariant::Public);
+    let mut email_validators: BTreeSet<ValidatorRule> = BTreeSet::new();
+    email_validators.insert(ValidatorRule::Required);
+    email_validators.insert(ValidatorRule::Email);
+    email_validators.insert(ValidatorRule::MaxLen(255));
+    res.fields.insert(
+        FieldName::new("email"),
+        FieldState {
+            sql_type: SqlType::new("text"),
+            variants: email_variants,
+            nullable: false,
+            primary_key: false,
+            validators: email_validators,
+        },
+    );
+
+    let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
+    filterable.insert(FieldName::new("role"));
+    filterable.insert(FieldName::new("created_at"));
+    let mut sortable: BTreeSet<FieldName> = BTreeSet::new();
+    sortable.insert(FieldName::new("created_at"));
+    sortable.insert(FieldName::new("email"));
+    res.verbs.insert(
+        Verb::List,
+        VerbState {
+            auth: AuthMode::AuthRequired,
+            list_options: Some(ListOptions {
+                paginated: true,
+                filterable_columns: filterable,
+                sortable_columns: sortable,
+                default_sort: Some(FieldName::new("-created_at")),
+                max_page_size: Some(100),
+            }),
+        },
+    );
+
+    state::save_resource(&state_dir, &res).expect("save users.ron");
 }
 
 #[test]
 fn run_frontend_emits_expected_artifacts() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let project_root = tmp.path();
-    write_fixture_ir(project_root);
+    write_fixture_state(project_root);
 
     blast::codegen::run_frontend(project_root).expect("codegen run");
 
