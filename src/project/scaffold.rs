@@ -14,6 +14,7 @@ use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::project::db_bootstrap::{
     self, BootstrapArgs, BootstrapOutcome, RealDbAdmin,
 };
+use crate::project::preflight;
 use crate::project::templates;
 use crate::state::{
     app::{ICONS_SECTION_KEY, THEME_SECTION_KEY},
@@ -127,6 +128,13 @@ fn create_with_target(
     ));
     sink.info("framework: vendored canonical (no `catalyst` dep)");
 
+    // Preflight FIRST: verify required binaries are on PATH before we do
+    // any disk writes or DB I/O. On any required-missing, this returns
+    // an error immediately and the rest of the pipeline never runs.
+    progress.step_start("preflight: required binaries");
+    preflight::run(sink)?;
+    progress.step_done("preflight: required binaries");
+
     // Bootstrap the database BEFORE writing any files. If this fails, the
     // user gets a clear error and no half-broken project lands on disk.
     progress.step_start("bootstrap database");
@@ -183,7 +191,7 @@ fn pre_create_db(
 ) -> BlastResult<BootstrapOutcome> {
     let db_url = match &opts.db_url {
         Some(u) => u.clone(),
-        None => prompt_for_db_url(project_name)?,
+        None => resolve_db_url_default(project_name, sink)?,
     };
 
     let mut admin = RealDbAdmin;
@@ -196,11 +204,29 @@ fn pre_create_db(
     db_bootstrap::bootstrap(&bargs, &mut admin, sink)
 }
 
-fn prompt_for_db_url(project_name: &str) -> BlastResult<String> {
-    let default = db_bootstrap::default_url_for(project_name);
+/// Derive a sensible Postgres URL when the user didn't pass `--db-url`.
+/// Tries the interactive prompt first (with the derived URL as the
+/// pressable-Enter default); if the prompt fails (e.g. non-TTY stdin),
+/// silently falls back to the derived default and surfaces it via the
+/// sink so the user can override later via `.env`.
+fn resolve_db_url_default(project_name: &str, sink: &mut dyn Sink) -> BlastResult<String> {
+    let derived = db_bootstrap::default_url_for(project_name);
+    match prompt_for_db_url(project_name, &derived) {
+        Ok(url) => Ok(url),
+        Err(_prompt_err) => {
+            sink.info(format!(
+                "no --db-url and no interactive TTY; defaulting to `{}` (override later via .env)",
+                derived
+            ));
+            Ok(derived)
+        }
+    }
+}
+
+fn prompt_for_db_url(_project_name: &str, default: &str) -> BlastResult<String> {
     let url: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Postgres URL")
-        .default(default)
+        .default(default.to_string())
         .interact_text()?;
     Ok(url)
 }

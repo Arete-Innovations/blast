@@ -1,4 +1,5 @@
 pub mod db_bootstrap;
+pub mod preflight;
 pub mod scaffold;
 pub mod templates;
 
