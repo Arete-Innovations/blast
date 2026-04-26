@@ -290,6 +290,48 @@ mod tests {
             "Form should emit Widget* payload type"
         );
 
+        // Polish: Form.vue surfaces loading/error/feedback affordances.
+        assert!(
+            form_body.contains("import Message from 'primevue/message'"),
+            "Form should import Message for inline error banner"
+        );
+        assert!(
+            form_body.contains("from 'primevue/usetoast'"),
+            "Form should pull useToast for validation feedback"
+        );
+        assert!(
+            form_body.contains(":loading=\"submitting\""),
+            "Form submit button should bind loading from props"
+        );
+        assert!(
+            form_body.contains(":disabled=\"submitting\""),
+            "Form submit button should disable while submitting"
+        );
+        assert!(
+            form_body.contains("submitError"),
+            "Form should surface a submit error prop"
+        );
+        assert!(
+            form_body.contains("retry: []"),
+            "Form should declare a retry emit"
+        );
+        assert!(
+            form_body.contains("@click=\"onRetry\""),
+            "Form retry button should be wired"
+        );
+        assert!(
+            form_body.contains(":aria-invalid="),
+            "Form fields should expose aria-invalid for screen readers"
+        );
+        assert!(
+            form_body.contains("class=\"field-error p-error\""),
+            "Form should style field errors via PrimeVue's p-error class"
+        );
+        assert!(
+            form_body.contains("role=\"alert\""),
+            "Form field errors should use role=alert"
+        );
+
         assert!(
             report.written.iter().any(|p| p == &form_path),
             "Form should be in written list"

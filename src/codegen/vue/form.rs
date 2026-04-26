@@ -36,33 +36,86 @@ pub fn build_form_sfc(r: &ResourceState) -> String {
 {imports}\n\
 type FormMode = 'create' | 'update'\n\
 \n\
-const props = defineProps<{{ mode?: FormMode }}>()\n\
+const props = defineProps<{{\n\
+  mode?: FormMode\n\
+  submitting?: boolean\n\
+  submitError?: string\n\
+}}>()\n\
 const emit = defineEmits{emits}()\n\
 \n\
-const mode = props.mode ?? {mode_default}\n\
+const toast = useToast()\n\
+const mode = computed<FormMode>(() => props.mode ?? {mode_default})\n\
 const model = reactive<Record<string, unknown>>({{ {model_init} }})\n\
 const errors = reactive<Record<string, string>>({{}})\n\
+const submitting = computed<boolean>(() => props.submitting === true)\n\
+const submitLabel = computed<string>(() => mode.value === 'create' ? 'Create' : 'Save')\n\
 \n\
-function onSubmit(): void {{\n\
+function clearErrors(): void {{\n\
   for (const key of Object.keys(errors)) {{\n\
     delete errors[key]\n\
   }}\n\
+}}\n\
+\n\
+function onSubmit(): void {{\n\
+  clearErrors()\n\
   const result = validate(model)\n\
   if (result.ok !== true) {{\n\
     for (const issue of result.errors) {{\n\
       errors[issue.field] = issue.message\n\
     }}\n\
+    toast.add({{\n\
+      severity: 'warn',\n\
+      summary: 'Check your input',\n\
+      detail: 'Some fields need attention before saving.',\n\
+      life: 4000,\n\
+    }})\n\
     return\n\
   }}\n\
   emit('submit', model)\n\
 }}\n\
+\n\
+function onRetry(): void {{\n\
+  emit('retry')\n\
+}}\n\
+\n\
+defineExpose({{ clearErrors }})\n\
 </script>\n\
 \n\
 <template>\n\
-  <form class=\"resource-form\" @submit.prevent=\"onSubmit\">\n\
+  <form\n\
+    class=\"resource-form\"\n\
+    novalidate\n\
+    :aria-busy=\"submitting\"\n\
+    @submit.prevent=\"onSubmit\"\n\
+  >\n\
+    <Message\n\
+      v-if=\"submitError !== undefined && submitError !== ''\"\n\
+      severity=\"error\"\n\
+      class=\"form-banner\"\n\
+      :closable=\"false\"\n\
+    >\n\
+      <div class=\"form-banner-row\">\n\
+        <span>{{{{ submitError }}}}</span>\n\
+        <Button\n\
+          type=\"button\"\n\
+          text\n\
+          size=\"small\"\n\
+          icon=\"pi pi-refresh\"\n\
+          label=\"Retry\"\n\
+          aria-label=\"Retry submitting the form\"\n\
+          @click=\"onRetry\"\n\
+        />\n\
+      </div>\n\
+    </Message>\n\
 {inputs}\
     <div class=\"form-actions\">\n\
-      <Button type=\"submit\" :label=\"mode === 'create' ? 'Create' : 'Save'\" />\n\
+      <Button\n\
+        type=\"submit\"\n\
+        :label=\"submitLabel\"\n\
+        :loading=\"submitting\"\n\
+        :disabled=\"submitting\"\n\
+        :aria-label=\"submitLabel\"\n\
+      />\n\
     </div>\n\
   </form>\n\
 </template>\n\
@@ -84,8 +137,17 @@ function onSubmit(): void {{\n\
     justify-content: flex-end;\n\
     gap: var(--app-space-md);\n\
   }}\n\
+  .form-banner {{\n\
+    margin-bottom: var(--app-space-md);\n\
+  }}\n\
+  .form-banner-row {{\n\
+    display: flex;\n\
+    align-items: center;\n\
+    justify-content: space-between;\n\
+    gap: var(--app-space-md);\n\
+  }}\n\
   .field-error {{\n\
-    color: var(--p-red-500);\n\
+    color: var(--p-message-error-color, var(--app-color-danger));\n\
     font-size: var(--app-fs-sm);\n\
   }}\n\
 }}\n\
@@ -100,7 +162,8 @@ function onSubmit(): void {{\n\
 
 fn build_form_imports(fields: &[(&FieldName, &FieldState)], table: &str) -> String {
     let mut out = String::new();
-    out.push_str("import { reactive } from 'vue'\n");
+    out.push_str("import { computed, reactive } from 'vue'\n");
+    out.push_str("import { useToast } from 'primevue/usetoast'\n");
     out.push_str(&primevue_imports_for_fields(fields));
     out.push_str(&format!(
         "import {{ validate }} from '@/generated/validators/{table}'\n",
@@ -116,7 +179,7 @@ fn render_form_emits(has_create: bool, has_update: bool, pascal: &str) -> String
         (false, true) => format!("{}Patch", pascal),
         (false, false) => "unknown".to_string(),
     };
-    format!("<{{ submit: [payload: {}] }}>", payload)
+    format!("<{{ submit: [payload: {}]; retry: [] }}>", payload)
 }
 
 fn render_model_init(fields: &[(&FieldName, &FieldState)]) -> String {
@@ -144,8 +207,20 @@ fn render_form_inputs(fields: &[(&FieldName, &FieldState)]) -> String {
         out.push_str(&format!(
             "    <div class=\"form-row\">\n\
       <label :for=\"'fld-{name}'\">{label}</label>\n\
-      <{tag} input-id=\"fld-{name}\" v-model=\"model.{key}\"{extra} />\n\
-      <span v-if=\"errors['{name}'] !== undefined\" class=\"field-error\">{{{{ errors['{name}'] }}}}</span>\n\
+      <{tag}\n\
+        input-id=\"fld-{name}\"\n\
+        v-model=\"model.{key}\"\n\
+        :invalid=\"errors['{name}'] !== undefined\"\n\
+        :aria-invalid=\"errors['{name}'] !== undefined\"\n\
+        :aria-describedby=\"errors['{name}'] !== undefined ? 'err-{name}' : undefined\"\n\
+        :disabled=\"submitting\"{extra}\n\
+      />\n\
+      <small\n\
+        v-if=\"errors['{name}'] !== undefined\"\n\
+        :id=\"'err-{name}'\"\n\
+        class=\"field-error p-error\"\n\
+        role=\"alert\"\n\
+      >{{{{ errors['{name}'] }}}}</small>\n\
     </div>\n",
             name = name.as_str(),
             label = label,
@@ -167,6 +242,7 @@ fn primevue_imports_for_fields(fields: &[(&FieldName, &FieldState)]) -> String {
     }
     let mut out = String::new();
     out.push_str("import Button from 'primevue/button'\n");
+    out.push_str("import Message from 'primevue/message'\n");
     for comp in seen {
         out.push_str(&format!(
             "import {tag} from '{module}'\n",
