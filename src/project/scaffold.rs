@@ -14,6 +14,7 @@ use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::project::db_bootstrap::{
     self, BootstrapArgs, BootstrapOutcome, RealDbAdmin,
 };
+use crate::project::post_install;
 use crate::project::preflight;
 use crate::project::templates;
 use crate::state::{
@@ -162,8 +163,26 @@ fn create_with_target(
                 out.project_root.display(),
                 out.files_written
             ));
-            print_next_steps(project_name, sink);
-            Ok(out)
+
+            // Post-scaffold pipeline: npm install, npm run build, exec
+            // into the dashboard TUI. On the happy path, exec() replaces
+            // this process and we never return from post_install::run.
+            // If `npm run build` fails the project dir is preserved
+            // (so the user can inspect what broke) — the error is
+            // surfaced but no cleanup runs.
+            match post_install::run(&out.project_root, sink, progress) {
+                Ok(()) => {
+                    // Reached only when BLAST_NO_TUI_FOR_TESTS=1 (skip
+                    // the auto-TUI exec). Print the legacy next-steps
+                    // hint so the user still has a manual path.
+                    print_next_steps(project_name, sink);
+                    Ok(out)
+                }
+                Err(e) => {
+                    sink.error(format!("post-scaffold pipeline failed: {}", e));
+                    Err(e)
+                }
+            }
         }
         Err(e) => {
             sink.error(format!("scaffolding failed: {}", e));
