@@ -8,6 +8,7 @@ use super::hardcoded_px::HardcodedPx;
 use super::hardcoded_route_path::HardcodedRoutePath;
 use super::icon_class::IconClassOutsideIconsFile;
 use super::inline_style::InlineStyle;
+use super::local_modal_state::LocalModalState;
 use super::max_lines_per_fn::MaxLinesPerFn;
 use super::max_lines_per_sfc::MaxLinesPerSfc;
 use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
@@ -67,5 +68,6 @@ fn build_file_rules() -> Vec<Box<dyn FileRule>> {
     vec![
         Box::new(MaxLinesPerSfc::new()),
         Box::new(MaxLinesPerFn::new()),
+        Box::new(LocalModalState::new()),
     ]
 }

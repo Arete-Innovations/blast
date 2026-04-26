@@ -5,6 +5,7 @@ pub mod hardcoded_route_path;
 pub mod helpers;
 pub mod icon_class;
 pub mod inline_style;
+pub mod local_modal_state;
 pub mod max_lines_per_fn;
 pub mod max_lines_per_sfc;
 pub mod primevue_config;
