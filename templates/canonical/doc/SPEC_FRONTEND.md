@@ -265,8 +265,8 @@ All values from design tokens. No hex, no px, no Tailwind, no inline styles, no 
 
 ```ts
 // frontend/src/plugins/primevue.ts (ONLY file with hex; lint-exempt)
-import Aura from '@primevue/themes/aura';
-import { definePreset } from '@primevue/themes';
+import Aura from '@primeuix/themes/aura';
+import { definePreset } from '@primeuix/themes';
 
 export const PRESET_SEMANTIC = definePreset(Aura, {
     semantic: {
