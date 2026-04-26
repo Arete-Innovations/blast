@@ -1,3 +1,4 @@
+pub mod auth_migration;
 pub mod scaffold;
 pub mod templates;
 

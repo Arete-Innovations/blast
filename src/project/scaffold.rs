@@ -1,7 +1,7 @@
 use crate::codegen::{build_rs_template, fe_runtime, frontend_scaffold};
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::project::templates;
+use crate::project::{auth_migration, templates};
 use crate::state::app::AppState;
 use crate::state::io as state_io;
 use std::fs;
@@ -299,11 +299,8 @@ fn scaffold_storage_state(project_root: &Path, count: &mut usize) -> BlastResult
 fn scaffold_migrations(project_root: &Path, count: &mut usize) -> BlastResult<()> {
     let migrations_dir = project_root.join("migrations");
     fs::create_dir_all(&migrations_dir)?;
-    write_file(
-        &migrations_dir.join(".gitkeep"),
-        templates::migrations_keep_marker(),
-        count,
-    )?;
+    let written = auth_migration::emit(&migrations_dir)?;
+    *count += written.len();
     Ok(())
 }
 
@@ -520,11 +517,25 @@ mod tests {
     #[test]
     fn run_creates_migrations_dir() {
         let (_dir, outcome) = run_in_tempdir("acme", &templates::catalyst_git_dep());
-        assert!(outcome
+        let up_sql = outcome
             .project_root
             .join("migrations")
-            .join(".gitkeep")
-            .is_file());
+            .join("0001_users_and_sessions")
+            .join("up.sql");
+        assert!(up_sql.is_file(), "0001_users_and_sessions/up.sql not found");
+        let body = fs::read_to_string(&up_sql).expect("read up.sql");
+        assert!(body.contains("CREATE TABLE users"), "up.sql missing CREATE TABLE users");
+    }
+
+    #[test]
+    fn run_creates_migration_down_sql() {
+        let (_dir, outcome) = run_in_tempdir("acme", &templates::catalyst_git_dep());
+        let down_sql = outcome
+            .project_root
+            .join("migrations")
+            .join("0001_users_and_sessions")
+            .join("down.sql");
+        assert!(down_sql.is_file(), "0001_users_and_sessions/down.sql not found");
     }
 
     #[test]
