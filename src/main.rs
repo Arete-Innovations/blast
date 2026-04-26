@@ -60,7 +60,12 @@ fn main() {
             }
         }
         Err(e) => {
-            if matches!(cmd, commands::Command::New { .. } | commands::Command::Help) {
+            if matches!(
+                cmd,
+                commands::Command::New { .. }
+                    | commands::Command::Init { .. }
+                    | commands::Command::Help
+            ) {
                 let cwd = match std::env::current_dir() {
                     Ok(c) => c,
                     Err(io_err) => {
@@ -70,7 +75,14 @@ fn main() {
                 };
                 let project_name = match &cmd {
                     commands::Command::New { name, .. } => name.clone(),
-                    _other => "unknown".to_string(),
+                    commands::Command::Init { name: Some(n), .. } => n.clone(),
+                    commands::Command::Init { name: None, .. } => {
+                        match cwd.file_name().and_then(|n| n.to_str()) {
+                            Some(n) => n.to_string(),
+                            None => "unknown".to_string(), // allow: bootstrap-mode placeholder when cwd has no leaf name (e.g. `/`); init handler re-derives from cwd anyway
+                        }
+                    }
+                    _other => "unknown".to_string(), // allow: bootstrap config placeholder; non-New/Init commands won't reach this branch under the outer `matches!` guard
                 };
                 let mut default_config = configs::Config {
                     environment: "dev".to_string(),

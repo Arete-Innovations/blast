@@ -2,6 +2,7 @@ use crate::commands::cli::{ArsenalCmd, Cli, Command, FusesCmd, GenCmd, LogCmd};
 use crate::configs::Config;
 use crate::dependencies::DependencyManager;
 use crate::error::{BlastError, BlastResult};
+use crate::io::traits::SinkExt;
 use crate::logger;
 use clap::CommandFactory;
 use std::io::Write;
@@ -54,7 +55,60 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::Init => run_init(config, dep_manager),
+        Command::Init { name, db_url, force, no_test_db } => {
+            let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+            let mut progress = crate::io::cli_progress(None);
+            let opts = crate::project::scaffold::NewOptions {
+                use_dev_branch: false,
+                db_url,
+                force,
+                no_test_db,
+            };
+            match name {
+                Some(n) => {
+                    crate::project::scaffold::create_new_project_with_opts(
+                        &n,
+                        opts,
+                        &mut sink,
+                        &mut progress,
+                    )?;
+                }
+                None => {
+                    let cwd = std::env::current_dir()?;
+                    let project_name = cwd
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .ok_or_else(|| {
+                            BlastError::Invalid(
+                                "could not derive project name from current dir".to_string(),
+                            )
+                        })?
+                        .to_string();
+                    crate::project::scaffold::init_in_place_with_opts(
+                        &project_name,
+                        cwd,
+                        opts,
+                        &mut sink,
+                        &mut progress,
+                    )?;
+                }
+            }
+            // Reload config so subsequent commands see the freshly-scaffolded
+            // project. Best-effort; the freshly-scaffolded project may live in
+            // a different cwd than where blast was invoked from.
+            match config.reload_if_modified() {
+                Ok(_unit) => {} // allow: reload_if_modified returns () on success; nothing to bind
+                Err(reload_err) => {
+                    sink.warn(format!(
+                        "config reload after init failed (non-fatal): {}",
+                        reload_err
+                    ));
+                }
+            }
+            // dep_manager is intentionally unused in this branch — init no
+            // longer runs the legacy codegen pipeline that needed it.
+            Ok(())
+        }
 
         Command::Cli => crate::interactive::run_interactive_loop(config, dep_manager),
 
@@ -121,7 +175,10 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 }
 
 fn is_config_independent(cmd: &Command) -> bool {
-    matches!(cmd, Command::Help | Command::New { .. })
+    matches!(
+        cmd,
+        Command::Help | Command::New { .. } | Command::Init { .. }
+    )
 }
 
 fn dispatch_fuses(sub: Option<FusesCmd>, config: &Config) -> BlastResult<()> {
@@ -340,53 +397,6 @@ fn dispatch_arsenal(sub: Option<ArsenalCmd>, config: &Config) -> BlastResult<()>
             crate::arsenal::mcp::serve(report)
         }
     }
-}
-
-// blast init pipeline (per SPEC_BLAST_COMMANDS.md):
-//   step 1/4: dependency check  — cargo, diesel_cli, node, zellij
-//   step 2/4: database reset    — rollback all then migrate
-//   step 3/4: seed data         — no-op if no seed file
-//   step 4/4: codegen pipeline  — delegates to gen_all
-fn run_init(config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
-    logger::info("initializing project...")?;
-
-    // Step 1/4: dependency check
-    logger::info("init 1/4: checking dependencies")?;
-    dep_manager.ensure_installed(&["cargo", "diesel", "node", "zellij"], false)?;
-
-    // Step 2/4: database reset (rollback then migrate — idempotent)
-    logger::info("init 2/4: resetting database (rollback + migrate)")?;
-    if !crate::database::rollback_all() {
-        logger::warning("rollback had issues — proceeding with migrate")?;
-    }
-    if !crate::database::migrate() {
-        logger::warning("some migration issues occurred — check database configuration")?;
-    }
-
-    // Step 3/4: seed data
-    logger::info("init 3/4: seeding database")?;
-    if !crate::database::seed(None) {
-        logger::warning("some seeding issues occurred — normal for new projects")?;
-    }
-
-    // Step 4/4: full codegen pipeline (schema → structs → models → flows → frontend → …)
-    logger::info("init 4/4: running codegen pipeline")?;
-    let verbose = logger::is_verbose();
-    let mut sink = crate::io::cli_sink(verbose, None);
-    let mut progress = crate::io::cli_progress(None);
-    let args = crate::commands::gen_all::Args {
-        project_root: config.project_dir.clone(),
-    };
-    let outcome = crate::commands::gen_all::run(args, config, &mut sink, &mut progress)?;
-
-    logger::success(&format!(
-        "init complete: {} codegen steps, {} files written, {} files skipped",
-        outcome.steps_run, outcome.files_written, outcome.files_skipped
-    ))?;
-    logger::info("run 'blast run' to start the development server")?;
-    logger::info("run 'blast dashboard' to launch the interactive dashboard")?;
-
-    Ok(())
 }
 
 fn run_schema(config: &Config) -> BlastResult<()> {
