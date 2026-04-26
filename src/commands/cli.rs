@@ -180,21 +180,28 @@ pub enum GenCmd {
         name: Option<String>,
     },
 
-    #[command(about = "Generate frontend artifacts from primer IR")]
-    Frontend,
+    #[command(about = "Emit per-resource TS interface types into frontend/src/generated/types/")]
+    Types {
+        #[arg(value_name = "RESOURCE")]
+        resource: Option<String>,
+    },
+
+    #[command(about = "Emit per-resource TS API client (typed fetch fns) into frontend/src/generated/api/")]
+    Api {
+        #[arg(value_name = "RESOURCE")]
+        resource: Option<String>,
+    },
+
+    #[command(about = "Emit per-resource Vue CRUD page scaffolds into frontend/src/pages/<resource>/")]
+    Pages {
+        #[arg(value_name = "RESOURCE")]
+        resource: Option<String>,
+    },
 
     #[command(name = "governor-plugin", about = "Emit governor Vite plugin shim")]
     GovernorPlugin,
 
-    #[command(about = "Scaffold per-flow + per-route test stubs")]
-    Test {
-        #[arg(long, conflicts_with = "route")]
-        flow: Option<String>,
-        #[arg(long, conflicts_with = "flow")]
-        route: Option<String>,
-    },
-
-    #[command(about = "Run the full codegen pipeline (schema → structs → models → flows → frontend → governor → tests)")]
+    #[command(about = "Run the default codegen pipeline (backend + types + theme + icons + governor)")]
     All,
 
     #[command(about = "TUI wizard to author/edit a resource state file")]

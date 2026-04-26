@@ -295,12 +295,6 @@ fn dispatch_gen(
             })?;
             crate::gen_migration::run_custom(&resolved)
         }
-        GenCmd::Frontend => {
-            logger::info("Generating frontend artifacts from primer IR...")?;
-            crate::codegen::run_frontend(&config.project_dir)?;
-            logger::success("Frontend codegen complete")?;
-            Ok(())
-        }
         GenCmd::GovernorPlugin => {
             logger::info("Emitting governor Vite plugin shim...")?;
             let paths = crate::codegen::governor_plugin::run(&config.project_dir)?;
@@ -310,22 +304,52 @@ fn dispatch_gen(
             Ok(())
         }
         GenCmd::Resource { name } => run_gen_resource(config, name),
-        GenCmd::Test { flow, route } => {
-            let filter = resolve_test_filter(flow, route);
-            logger::info("Scaffolding test files from primer IR...")?;
-            let report = crate::codegen::test_scaffold::run(&config.project_dir, &filter)?;
-            for path in &report.written {
-                logger::success(&format!("wrote {}", path.display()))?;
-            }
-            logger::info(&format!(
-                "test scaffold: {} written, {} skipped (already present)",
-                report.written.len(),
-                report.skipped.len(),
-            ))?;
-            Ok(())
-        }
+        GenCmd::Pages { resource } => run_gen_pages(config, resource),
+        GenCmd::Api { resource } => run_gen_api(config, resource),
+        GenCmd::Types { resource } => run_gen_types(config, resource),
         GenCmd::All => run_gen_all(config),
     }
+}
+
+fn run_gen_pages(config: &Config, resource: Option<String>) -> BlastResult<()> {
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    // Pages depend on api + types — emit those first so the SFCs resolve their imports.
+    crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
+    crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
+    let report = match resource {
+        Some(name) => crate::codegen::pages::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
+        None => crate::codegen::pages::run(&config.project_dir, &mut sink, &mut progress)?,
+    };
+    logger::info(&format!(
+        "pages: {} file(s) written",
+        report.written.len()
+    ))?;
+    Ok(())
+}
+
+fn run_gen_api(config: &Config, _resource: Option<String>) -> BlastResult<()> {
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    let report = crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
+    logger::info(&format!(
+        "api: {} file(s) written, {} skipped",
+        report.written.len(),
+        report.skipped.len()
+    ))?;
+    Ok(())
+}
+
+fn run_gen_types(config: &Config, _resource: Option<String>) -> BlastResult<()> {
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    let report = crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
+    logger::info(&format!(
+        "types: {} file(s) written, {} skipped",
+        report.written.len(),
+        report.skipped.len()
+    ))?;
+    Ok(())
 }
 
 fn run_gen_all(config: &mut Config) -> BlastResult<()> {
@@ -362,19 +386,6 @@ fn run_gen_resource(config: &Config, name: Option<String>) -> BlastResult<()> {
     }
     logger::info("run `blast gen all` to regenerate code from the new state")?;
     Ok(())
-}
-
-fn resolve_test_filter(
-    flow: Option<String>,
-    route: Option<String>,
-) -> crate::codegen::test_scaffold::Filter {
-    match flow {
-        Some(name) => crate::codegen::test_scaffold::Filter::Flow(name),
-        None => match route {
-            Some(name) => crate::codegen::test_scaffold::Filter::Route(name),
-            None => crate::codegen::test_scaffold::Filter::All,
-        },
-    }
 }
 
 fn dispatch_log(sub: LogCmd, config: &Config) -> BlastResult<()> {

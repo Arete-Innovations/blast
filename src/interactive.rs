@@ -136,13 +136,18 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
                 cmd: Some(GenCmd::Migration { custom: true, name: Some(name) }),
             }))
         }
-        "[CODEGEN] Gen Frontend" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Frontend) })),
+        "[CODEGEN] Gen Types" => {
+            Ok(Some(Command::Gen { cmd: Some(GenCmd::Types { resource: None }) }))
+        }
+        "[CODEGEN] Gen API" => {
+            Ok(Some(Command::Gen { cmd: Some(GenCmd::Api { resource: None }) }))
+        }
+        "[CODEGEN] Gen Pages" => {
+            Ok(Some(Command::Gen { cmd: Some(GenCmd::Pages { resource: None }) }))
+        }
         "[CODEGEN] Gen Governor Plugin" => {
             Ok(Some(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) }))
         }
-        "[CODEGEN] Gen Test Scaffolds" => Ok(Some(Command::Gen {
-            cmd: Some(GenCmd::Test { flow: None, route: None }),
-        })),
 
         // ── database ──────────────────────────────────────────────────────────
         "[DB] New Migration" => Ok(Some(Command::Migration)),

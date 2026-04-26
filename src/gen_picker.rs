@@ -39,11 +39,10 @@ pub fn pick_gen_target() -> BlastResult<Command> {
                 cmd: Some(GenCmd::Migration { custom: true, name: Some(name) }),
             })
         }
-        7 => Ok(Command::Gen { cmd: Some(GenCmd::Frontend) }),
-        8 => Ok(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) }),
-        9 => Ok(Command::Gen {
-            cmd: Some(GenCmd::Test { flow: None, route: None }),
-        }),
+        7 => Ok(Command::Gen { cmd: Some(GenCmd::Types { resource: None }) }),
+        8 => Ok(Command::Gen { cmd: Some(GenCmd::Api { resource: None }) }),
+        9 => Ok(Command::Gen { cmd: Some(GenCmd::Pages { resource: None }) }),
+        10 => Ok(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) }),
         other => Err(BlastError::Invalid(format!(
             "unknown gen picker selection: {}",
             other

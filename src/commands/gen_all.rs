@@ -1,13 +1,13 @@
-//! `blast gen all` — sequence every codegen target, surface step-by-step status.
+//! `blast gen all` — default codegen pipeline.
 //!
-//! Pipeline order (per SPEC_BLAST_COMMANDS):
-//!     schema → structs → models → flows → frontend
-//!            → env-example → governor-plugin → test scaffolds
+//! Pipeline order:
+//!     schema → structs → models → flows → http_routes
+//!            → frontend_types
+//!            → theme → icons → env_example → governor_plugin
 //!
-//! Steps that have no underlying generator yet (`env-example`) emit a
-//! `sink.warn` and are skipped without aborting the pipeline. Every other step
-//! is run via its existing handler; on failure the pipeline aborts and the
-//! error propagates to the caller. No retries — that is `blast init`'s job.
+//! FE composables / api clients / Vue components / CRUD pages are opt-in
+//! via `blast gen pages [<resource>]`, `blast gen api [<resource>]`,
+//! `blast gen types [<resource>]`. Default keeps FE side to types only.
 
 use std::path::PathBuf;
 
@@ -35,19 +35,11 @@ const STEP_STRUCTS: &str = "structs generation";
 const STEP_MODELS: &str = "models generation";
 const STEP_FLOWS: &str = "flows generation";
 const STEP_HTTP_ROUTES: &str = "http routes generation";
-const STEP_FRONTEND: &str = "frontend generation";
 const STEP_FRONTEND_TYPES: &str = "frontend types generation";
-const STEP_FRONTEND_API: &str = "frontend api generation";
-const STEP_COMPOSABLES_V2: &str = "fe composables v2 generation";
-const STEP_WS_TOPICS: &str = "ws topics generation";
-const STEP_VUE_COMPONENTS: &str = "vue components generation";
-const STEP_CRUD_PAGES: &str = "crud pages generation";
-const STEP_ROUTER: &str = "router codegen";
 const STEP_THEME: &str = "theme codegen";
 const STEP_ICONS: &str = "icons codegen";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
-const STEP_TEST_SCAFFOLDS: &str = "test scaffold emission";
 
 pub fn run(
     args: Args,
@@ -77,18 +69,12 @@ pub fn run(
 
     let mut outcome = Outcome::default();
 
-    // Default `gen all` pipeline: backend codegen + FE TS types only.
-    // FE composables / api clients / Vue components / CRUD pages / router-from-state
-    // / test scaffolds are opt-in via dedicated `blast gen <target>` subcommands.
-    // Hand-written FE (auth composable, login/register pages, custom router) drives
-    // the default scaffold; user opts into per-resource codegen on demand.
-    let _ = resource_count; // reserved for future opt-in steps
     run_schema_step(sink, progress, &mut outcome)?;
     run_structs_step(&args.project_root, sink, progress, &mut outcome)?;
     run_models_step(&args.project_root, config, sink, progress, &mut outcome)?;
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_frontend_types_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
+    run_http_routes_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_frontend_types_step(&args.project_root, sink, progress, &mut outcome)?;
     run_theme_step(&args.project_root, sink, progress, &mut outcome)?;
     run_icons_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -164,9 +150,6 @@ fn run_models_step(
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
-    // Models v2 — state-driven emitter producing module fns plus auto-conn
-    // wrappers plus the fluent query builder. The legacy schema-driven
-    // generator stays imported but unused until full retirement.
     match codegen::models::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
@@ -213,7 +196,6 @@ fn run_flows_step(
 
 fn run_http_routes_step(
     project_root: &PathBuf,
-    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
@@ -238,32 +220,8 @@ fn run_http_routes_step(
     }
 }
 
-fn run_frontend_step(
-    project_root: &PathBuf,
-    _resource_count: usize,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    progress.step_start(STEP_FRONTEND);
-    match codegen::run_frontend(project_root) {
-        Ok(()) => {
-            progress.step_done(STEP_FRONTEND);
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            progress.step_fail(STEP_FRONTEND, &reason);
-            sink.error(format!("{}: {}", STEP_FRONTEND, reason));
-            Err(err)
-        }
-    }
-}
-
 fn run_frontend_types_step(
     project_root: &PathBuf,
-    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
@@ -283,189 +241,6 @@ fn run_frontend_types_step(
         }
         Err(err) => {
             sink.error(format!("{}: {}", STEP_FRONTEND_TYPES, err));
-            Err(err)
-        }
-    }
-}
-
-fn run_frontend_api_step(
-    project_root: &PathBuf,
-    _resource_count: usize,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    match codegen::frontend_api::run(project_root, sink, progress) {
-        Ok(report) => {
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_FRONTEND_API,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            sink.error(format!("{}: {}", STEP_FRONTEND_API, err));
-            Err(err)
-        }
-    }
-}
-
-fn run_composables_v2_step(
-    project_root: &PathBuf,
-    _resource_count: usize,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    progress.step_start(STEP_COMPOSABLES_V2);
-    match codegen::composables_v2::run(project_root, sink, progress) {
-        Ok(report) => {
-            for path in &report.written {
-                sink.info(format!("wrote {}", path.display()));
-            }
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_COMPOSABLES_V2,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            progress.step_done(STEP_COMPOSABLES_V2);
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            progress.step_fail(STEP_COMPOSABLES_V2, &reason);
-            sink.error(format!("{}: {}", STEP_COMPOSABLES_V2, reason));
-            Err(err)
-        }
-    }
-}
-
-fn run_ws_topics_step(
-    project_root: &PathBuf,
-    _resource_count: usize,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    match codegen::ws_topics::run(project_root, sink, progress) {
-        Ok(report) => {
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_WS_TOPICS,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            sink.error(format!("{}: {}", STEP_WS_TOPICS, err));
-            Err(err)
-        }
-    }
-}
-
-fn run_vue_components_step(
-    project_root: &PathBuf,
-    _resource_count: usize,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    progress.step_start(STEP_VUE_COMPONENTS);
-    match codegen::vue::run(project_root, sink, progress) {
-        Ok(report) => {
-            for path in &report.written {
-                sink.info(format!("wrote {}", path.display()));
-            }
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_VUE_COMPONENTS,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            progress.step_done(STEP_VUE_COMPONENTS);
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            progress.step_fail(STEP_VUE_COMPONENTS, &reason);
-            sink.error(format!("{}: {}", STEP_VUE_COMPONENTS, reason));
-            Err(err)
-        }
-    }
-}
-
-fn run_crud_pages_step(
-    project_root: &PathBuf,
-    _resource_count: usize,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    progress.step_start(STEP_CRUD_PAGES);
-    match codegen::pages::run(project_root, sink, progress) {
-        Ok(report) => {
-            for path in &report.written {
-                sink.info(format!("wrote {}", path.display()));
-            }
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_CRUD_PAGES,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            progress.step_done(STEP_CRUD_PAGES);
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            progress.step_fail(STEP_CRUD_PAGES, &reason);
-            sink.error(format!("{}: {}", STEP_CRUD_PAGES, reason));
-            Err(err)
-        }
-    }
-}
-
-fn run_router_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    match codegen::router::run(project_root, sink, progress) {
-        Ok(report) => {
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_ROUTER,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            sink.error(format!("{}: {}", STEP_ROUTER, reason));
             Err(err)
         }
     }
@@ -561,50 +336,6 @@ fn run_governor_plugin_step(
             let reason = err.to_string();
             progress.step_fail(STEP_GOVERNOR_PLUGIN, &reason);
             sink.error(format!("{}: {}", STEP_GOVERNOR_PLUGIN, reason));
-            Err(err)
-        }
-    }
-}
-
-fn run_test_scaffolds_step(
-    project_root: &PathBuf,
-    resource_count: usize,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    progress.step_start(STEP_TEST_SCAFFOLDS);
-    if resource_count == 0 {
-        sink.info(format!(
-            "{}: no resources declared; skipping",
-            STEP_TEST_SCAFFOLDS
-        ));
-        progress.step_done(STEP_TEST_SCAFFOLDS);
-        outcome.steps_run += 1;
-        return Ok(());
-    }
-    let filter = codegen::test_scaffold::Filter::All;
-    match codegen::test_scaffold::run(project_root, &filter) {
-        Ok(report) => {
-            for path in &report.written {
-                sink.info(format!("wrote {}", path.display()));
-            }
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_TEST_SCAFFOLDS,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            progress.step_done(STEP_TEST_SCAFFOLDS);
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            progress.step_fail(STEP_TEST_SCAFFOLDS, &reason);
-            sink.error(format!("{}: {}", STEP_TEST_SCAFFOLDS, reason));
             Err(err)
         }
     }

@@ -133,7 +133,7 @@ export async function list{plural}(\n\
   params: {{ page?: number; page_size?: number; sort?: string | null; filter?: {{ [key: string]: string | number | boolean | null | undefined }} | null }},\n\
   signal?: AbortSignal,\n\
 ): ApiResult<{singular}Public[]> {{\n\
-  const url = new URL(`/${{window.location.origin}}/${{`{table}/`}}`)\n\
+  const url = new URL(`/api/{table}/`, window.location.origin)\n\
   if (params.page !== undefined) {{\n\
     url.searchParams.set('page', String(params.page))\n\
   }}\n\
@@ -145,9 +145,11 @@ export async function list{plural}(\n\
   }}\n\
   if (params.filter !== null && params.filter !== undefined) {{\n\
     for (const [key, val] of Object.entries(params.filter)) {{\n\
-      if (val !== null && val !== undefined) {{\n\
-        url.searchParams.set(`filter[${{key}}]`, val)\n\
+      if (val === null || val === undefined) {{\n\
+        continue\n\
       }}\n\
+      const serialized = typeof val === 'object' ? JSON.stringify(val) : String(val)\n\
+      url.searchParams.set(`filter[${{key}}]`, serialized)\n\
     }}\n\
   }}\n\
   const path = url.pathname + url.search\n\
@@ -184,7 +186,7 @@ fn render_get_fn(table: &str, singular: &str) -> String {
   signal?: AbortSignal,\n\
 ): ApiResult<{singular}Public> {{\n\
   try {{\n\
-    const res = await fetch(`/{table}/${{id}}`, {{\n\
+    const res = await fetch(`/api/{table}/${{id}}`, {{\n\
       headers: {{ ...auth_header(), Accept: 'application/json' }},\n\
       signal,\n\
     }})\n\
@@ -214,7 +216,7 @@ fn render_create_fn(table: &str, singular: &str) -> String {
   body: {singular}Insertable,\n\
 ): ApiResult<{singular}Public> {{\n\
   try {{\n\
-    const res = await fetch(`/{table}/`, {{\n\
+    const res = await fetch(`/api/{table}/`, {{\n\
       method: 'POST',\n\
       headers: {{ ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\n\
       body: JSON.stringify(body),\n\
@@ -243,7 +245,7 @@ fn render_update_fn(table: &str, singular: &str) -> String {
   patch: {singular}Patch,\n\
 ): ApiResult<{singular}Public> {{\n\
   try {{\n\
-    const res = await fetch(`/{table}/${{id}}`, {{\n\
+    const res = await fetch(`/api/{table}/${{id}}`, {{\n\
       method: 'PATCH',\n\
       headers: {{ ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\n\
       body: JSON.stringify(patch),\n\
@@ -271,7 +273,7 @@ fn render_delete_fn(table: &str, singular: &str) -> String {
   id: number,\n\
 ): ApiResult<{{ id: number }}> {{\n\
   try {{\n\
-    const res = await fetch(`/{table}/${{id}}`, {{\n\
+    const res = await fetch(`/api/{table}/${{id}}`, {{\n\
       method: 'DELETE',\n\
       headers: {{ ...auth_header(), Accept: 'application/json' }},\n\
     }})\n\

@@ -1,8 +1,6 @@
 pub mod build_rs_template;
-pub mod composables_v2;
 pub mod env_example;
 pub mod flows;
-pub mod frontend;
 pub mod frontend_api;
 pub mod frontend_types;
 pub mod governor_plugin;
@@ -12,12 +10,5 @@ pub mod icons;
 pub mod ir_loader;
 pub mod models;
 pub mod pages;
-pub mod router;
 pub mod structs;
 pub mod theme;
-pub mod test_scaffold;
-pub mod ts_validator;
-pub mod vue;
-pub mod ws_topics;
-
-pub use frontend::run_frontend;
