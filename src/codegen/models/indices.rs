@@ -88,7 +88,7 @@ fn indexable_columns(resource: &ResourceState) -> BTreeSet<String> {
         Some(o) => o,
         None => return out,
     };
-    for c in &opts.filterable_columns {
+    for (c, _kind) in &opts.filterable_columns {
         out.insert(c.as_str().to_string());
     }
     for c in &opts.sortable_columns {
