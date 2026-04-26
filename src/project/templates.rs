@@ -40,8 +40,8 @@ layout {
                 focus true
             }
             pane size="40%" split_direction="horizontal" {
-                pane name="Server" command="bash" {
-                    args "-c" "tail -n100 -f storage/logs/server.log 2>/dev/null || (touch storage/logs/server.log && tail -f storage/logs/server.log)"
+                pane name="Server" command="blast" {
+                    args "run"
                 }
                 pane name="Errors" command="bash" {
                     args "-c" "tail -n100 -f storage/logs/error.log 2>/dev/null || (touch storage/logs/error.log && tail -f storage/logs/error.log)"

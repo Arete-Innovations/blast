@@ -19,8 +19,8 @@ pub fn emit_primevue_ts(theme: &ThemeConfig) -> String {
     let mut out = String::new();
     out.push_str("import type { App } from 'vue'\n");
     out.push_str("import PrimeVueConfig from 'primevue/config'\n");
-    out.push_str("import Aura from '@primevue/themes/aura'\n");
-    out.push_str("import { definePreset } from '@primevue/themes'\n");
+    out.push_str("import Aura from '@primeuix/themes/aura'\n");
+    out.push_str("import { definePreset } from '@primeuix/themes'\n");
     out.push('\n');
     out.push_str("const PRESET_SEMANTIC = definePreset(Aura, {\n");
     out.push_str("  semantic: {\n");
@@ -131,8 +131,8 @@ mod tests {
     /// references, same surface-zero hex literals, same import lines).
     const REFERENCE_PRIMEVUE_TS: &str = r#"import type { App } from 'vue'
 import PrimeVueConfig from 'primevue/config'
-import Aura from '@primevue/themes/aura'
-import { definePreset } from '@primevue/themes'
+import Aura from '@primeuix/themes/aura'
+import { definePreset } from '@primeuix/themes'
 
 const PRESET_SEMANTIC = definePreset(Aura, {
   semantic: {
@@ -204,8 +204,8 @@ export default function installPrimeVue(app: App): void {
         // Imports.
         assert!(body.contains("import type { App } from 'vue'"));
         assert!(body.contains("import PrimeVueConfig from 'primevue/config'"));
-        assert!(body.contains("import Aura from '@primevue/themes/aura'"));
-        assert!(body.contains("import { definePreset } from '@primevue/themes'"));
+        assert!(body.contains("import Aura from '@primeuix/themes/aura'"));
+        assert!(body.contains("import { definePreset } from '@primeuix/themes'"));
         // Preset shape.
         assert!(body.contains("definePreset(Aura,"));
         assert!(body.contains("primary:"));
