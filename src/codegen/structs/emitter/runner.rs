@@ -75,11 +75,11 @@ mod tests {
     use super::*;
     use crate::state::names::ResourceName;
     use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, ListOptions, SqlType, Verb,
-        VerbState,
+        AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType,
+        Verb, VerbState,
     };
     use indexmap::IndexMap;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -131,8 +131,8 @@ mod tests {
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
-        let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
-        filterable.insert(FieldName::new("email"));
+        let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+        filterable.insert(FieldName::new("email"), FilterKind::IlikeContains);
         verbs.insert(
             Verb::List,
             VerbState {
@@ -299,6 +299,88 @@ mod tests {
         assert!(filter_section.contains("pub email: Option<String>"));
         assert!(!filter_section.contains("pub id:"));
         assert!(!filter_section.contains("password_hash"));
+    }
+
+    #[test]
+    fn filter_field_types_per_kind() {
+        let mut resource = full_resource("users");
+        resource.fields.insert(
+            FieldName::new("created_at"),
+            field("Timestamptz", &[FieldVariant::Db, FieldVariant::Public], false, false),
+        );
+        resource.fields.insert(
+            FieldName::new("age"),
+            field("Int4", &[FieldVariant::Db, FieldVariant::Public], false, false),
+        );
+        resource.fields.insert(
+            FieldName::new("status"),
+            field("Varchar", &[FieldVariant::Db, FieldVariant::Public], false, false),
+        );
+        resource.fields.insert(
+            FieldName::new("active"),
+            field("Bool", &[FieldVariant::Db, FieldVariant::Public], false, false),
+        );
+
+        let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+        filterable.insert(FieldName::new("email"), FilterKind::IlikeContains);
+        filterable.insert(FieldName::new("created_at"), FilterKind::Range);
+        filterable.insert(FieldName::new("age"), FilterKind::Eq);
+        filterable.insert(FieldName::new("status"), FilterKind::In);
+        filterable.insert(FieldName::new("active"), FilterKind::Bool);
+
+        match resource.verbs.get_mut(&Verb::List) {
+            Some(state) => match state.list_options.as_mut() {
+                Some(opts) => opts.filterable_columns = filterable,
+                None => {}
+            },
+            None => {}
+        }
+        resource.canonicalize();
+        let body = render_resource_body(&resource);
+
+        let filter_section = body
+            .split("pub struct UserFilter {")
+            .nth(1)
+            .expect("filter start");
+        let filter_section = filter_section.split("}\n").next().expect("filter end");
+
+        assert!(filter_section.contains("pub email: Option<String>"));
+        assert!(filter_section.contains(
+            "pub created_at: Option<RangeFilter<chrono::DateTime<chrono::Utc>>>"
+        ));
+        assert!(filter_section.contains("pub age: Option<i32>"));
+        assert!(filter_section.contains("pub status: Option<Vec<String>>"));
+        assert!(filter_section.contains("pub active: Option<bool>"));
+
+        assert!(body.contains("pub struct RangeFilter<T>"));
+        assert!(body.contains("pub from: Option<T>"));
+        assert!(body.contains("pub to: Option<T>"));
+    }
+
+    #[test]
+    fn no_range_filter_struct_when_no_range_kind() {
+        let resource = full_resource("users");
+        let body = render_resource_body(&resource);
+        assert!(
+            !body.contains("pub struct RangeFilter"),
+            "RangeFilter only when a column uses FilterKind::Range",
+        );
+    }
+
+    #[test]
+    fn filter_derives_default_deserialize_debug_clone() {
+        let resource = full_resource("users");
+        let body = render_resource_body(&resource);
+        let head = body.split("pub struct UserFilter").next().expect("head");
+        let derive_line = head
+            .lines()
+            .rev()
+            .find(|l| l.contains("#[derive"))
+            .expect("derive line for UserFilter");
+        assert!(derive_line.contains("Debug"));
+        assert!(derive_line.contains("Default"));
+        assert!(derive_line.contains("Clone"));
+        assert!(derive_line.contains("Deserialize"));
     }
 
     #[test]
