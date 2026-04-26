@@ -279,6 +279,11 @@ fn scaffold_storage_state(project_root: &Path, count: &mut usize) -> BlastResult
         templates::storage_blast_gitignore(),
         count,
     )?;
+    write_file(
+        &blast_dir.join("dashboard.kdl"),
+        templates::dashboard_kdl(),
+        count,
+    )?;
 
     let logs_dir = project_root.join("storage").join("logs");
     fs::create_dir_all(&logs_dir)?;

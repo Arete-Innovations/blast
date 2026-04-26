@@ -250,6 +250,54 @@ pub fn frontend_tsconfig_json() -> &'static str {
 "#
 }
 
+pub fn dashboard_kdl() -> &'static str {
+    r#"// Catablast dashboard zellij layout. Customize freely.
+// Each pane is a normal `blast` subprocess.
+layout {
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="tab-bar"
+        }
+        children
+    }
+
+    tab name="💥 Dashboard" focus=true {
+        pane split_direction="vertical" {
+            pane size="60%" name="🧰 Menu" command="blast" {
+                args "cli"
+                focus true
+            }
+            pane size="40%" split_direction="horizontal" {
+                pane name="Server" command="bash" {
+                    args "-c" "tail -n100 -f storage/logs/server.log 2>/dev/null || (touch storage/logs/server.log && tail -f storage/logs/server.log)"
+                }
+                pane name="Errors" command="bash" {
+                    args "-c" "tail -n100 -f storage/logs/error.log 2>/dev/null || (touch storage/logs/error.log && tail -f storage/logs/error.log)"
+                }
+            }
+        }
+    }
+
+    tab name="⚡ Fuses" {
+        pane name="Fuses" command="blast" {
+            args "fuses" "live-table"
+        }
+    }
+
+    tab name="📜 Logs" {
+        pane split_direction="horizontal" {
+            pane name="Info" command="bash" {
+                args "-c" "tail -n100 -f storage/logs/info.log 2>/dev/null || (touch storage/logs/info.log && tail -f storage/logs/info.log)"
+            }
+            pane name="Debug" command="bash" {
+                args "-c" "tail -n100 -f storage/logs/debug.log 2>/dev/null || (touch storage/logs/debug.log && tail -f storage/logs/debug.log)"
+            }
+        }
+    }
+}
+"#
+}
+
 pub fn storage_blast_gitignore() -> &'static str {
     "logs/\nserver.pid\nrun-locks/\n"
 }
