@@ -1,5 +1,7 @@
+use crate::state::icons::IconConfig;
 use crate::state::names::{FieldName, ResourceName};
 use crate::state::resource::SoftDeleteDefault;
+use crate::state::theme::ThemeConfig;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -218,7 +220,15 @@ fn default_primevue_preset_file() -> String {
     "src/plugins/primevue.ts".to_string()
 }
 
-pub const APP_SCHEMA_VERSION: u32 = 3;
+pub const APP_SCHEMA_VERSION: u32 = 4;
+
+/// Section key under which the design-token + PrimeVue preset config is
+/// stored inside `AppState.sections`.
+pub const THEME_SECTION_KEY: &str = "theme";
+
+/// Section key under which the icon registry is stored inside
+/// `AppState.sections`.
+pub const ICONS_SECTION_KEY: &str = "icons";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppState {
@@ -238,6 +248,11 @@ pub enum AppPolicySection {
     Nav(NavConfig),
     /// Custom (non-CRUD) page routes (`pages` section in `app.ron`).
     Pages(Vec<Page>),
+    /// Design tokens + PrimeVue palette preset. Drives codegen of
+    /// `frontend/src/styles/tokens.css` and `frontend/src/plugins/primevue.ts`.
+    Theme(ThemeConfig),
+    /// Icon registry. Drives codegen of `frontend/src/icons.ts`.
+    Icons(IconConfig),
 }
 
 /// App-wide defaults consumed by Blast's TUI as prefill values when
@@ -393,6 +408,10 @@ impl AppPolicySection {
             Self::Defaults(_) => {}
             Self::Nav(_) => {}
             Self::Pages(_) => {}
+            // Theme + Icons hold BTreeMap-backed registries that are
+            // already canonical-by-construction.
+            Self::Theme(_) => {}
+            Self::Icons(_) => {}
         }
     }
 }
@@ -483,7 +502,10 @@ mod tests {
 
     fn make_v3_state() -> AppState {
         let mut state = AppState::new();
-        // schema_version is already APP_SCHEMA_VERSION (3).
+        // We want a synthetic v3-shaped state for upgrade tests; the
+        // constructor uses the live APP_SCHEMA_VERSION which is now v4,
+        // so override to v3 explicitly.
+        state.schema_version = 3;
         let nav = NavConfig {
             sections: vec![
                 Section {
@@ -585,29 +607,32 @@ mod tests {
         assert_eq!(pages[2].label, None);
     }
 
-    // ── v2 → v3 upgrade via upgrade_app ──────────────────────────────────────
+    // ── Multi-step upgrade: v(N) → v(current) ───────────────────────────────
     //
-    // v2 is purely additive going to v3 (new optional sections).
-    // A v2 AppState deserialized at v2 schema_version should upgrade to v3
-    // with nav absent and pages absent (no section keys added).
+    // Each upgrader is purely additive in this codebase, so a v1 or v2
+    // state walks through every step and ends at APP_SCHEMA_VERSION
+    // with the v4 default theme + icons sections injected (since neither
+    // was present in older revs) and still no nav / pages (those are
+    // user-opt-in additions that v2→v3 does NOT inject).
 
     #[test]
-    fn v2_upgrades_to_v3_with_no_nav_or_pages() {
-        // Construct what a v2 state looks like in memory.
+    fn v2_upgrades_to_current_with_default_theme_and_icons() {
         let mut state = AppState {
             schema_version: 2,
             sections: IndexMap::new(),
         };
         upgrade_app(&mut state).expect("upgrade_app should succeed");
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
-        // Additive upgrade: no nav or pages sections injected — user opts in by
-        // adding them to their app.ron.
+        // v2→v3 is a no-op for sections.
         assert!(!state.sections.contains_key("nav"));
         assert!(!state.sections.contains_key("pages"));
+        // v3→v4 injects theme + icons defaults.
+        assert!(state.sections.contains_key("theme"));
+        assert!(state.sections.contains_key("icons"));
     }
 
     #[test]
-    fn v1_upgrades_to_v3_with_no_nav_or_pages() {
+    fn v1_upgrades_to_current_with_default_theme_and_icons() {
         let mut state = AppState {
             schema_version: 1,
             sections: IndexMap::new(),
@@ -616,13 +641,122 @@ mod tests {
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
         assert!(!state.sections.contains_key("nav"));
         assert!(!state.sections.contains_key("pages"));
+        assert!(state.sections.contains_key("theme"));
+        assert!(state.sections.contains_key("icons"));
+    }
+
+    // ── v3 → v4 upgrade: dedicated coverage ───────────────────────────────────
+
+    #[test]
+    fn v3_upgrades_to_v4_injects_theme_and_icons_defaults() {
+        let mut state = AppState {
+            schema_version: 3,
+            sections: IndexMap::new(),
+        };
+        upgrade_app(&mut state).expect("upgrade_app should succeed");
+        assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+        assert_eq!(APP_SCHEMA_VERSION, 4);
+
+        let theme = match state.sections.get("theme") {
+            Some(AppPolicySection::Theme(t)) => t.clone(),
+            other => panic!("expected Theme section, got {other:?}"),
+        };
+        // Defaults round-trip through ThemeConfig::default — sample a few
+        // load-bearing fields:
+        assert_eq!(theme.primevue.primary.palette.palette, "violet");
+        assert!(theme.tokens.font_sizes.len() >= 10);
+        assert!(theme.tokens.spacing.len() >= 14);
+
+        let icons = match state.sections.get("icons") {
+            Some(AppPolicySection::Icons(i)) => i.clone(),
+            other => panic!("expected Icons section, got {other:?}"),
+        };
+        assert_eq!(icons.registry.len(), 21);
     }
 
     #[test]
-    fn v3_state_upgrade_is_noop() {
-        let mut state = make_v3_state();
+    fn v3_upgrade_preserves_user_supplied_theme() {
+        // If the user has already added a theme section to their v3 file
+        // (e.g. via hand-edit), v3 → v4 must NOT clobber it with defaults.
+        let mut custom_theme = crate::state::theme::ThemeConfig::default();
+        // mutate one observable field so we can detect overwrite
+        custom_theme.primevue.primary.palette =
+            crate::state::theme::PaletteRef::new("emerald");
+
+        let mut state = AppState {
+            schema_version: 3,
+            sections: IndexMap::new(),
+        };
+        state.sections.insert(
+            "theme".to_string(),
+            AppPolicySection::Theme(custom_theme.clone()),
+        );
+
         upgrade_app(&mut state).expect("upgrade_app should succeed");
-        // State is already at v3; no change.
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+
+        let theme = match state.sections.get("theme") {
+            Some(AppPolicySection::Theme(t)) => t.clone(),
+            other => panic!("expected preserved Theme section, got {other:?}"),
+        };
+        assert_eq!(theme.primevue.primary.palette.palette, "emerald");
+        // icons still got the default since it was absent
+        assert!(state.sections.contains_key("icons"));
+    }
+
+    #[test]
+    fn v3_upgrade_preserves_user_supplied_icons() {
+        // Mirror of the above for the icons section.
+        let mut state = AppState {
+            schema_version: 3,
+            sections: IndexMap::new(),
+        };
+        let mut registry = std::collections::BTreeMap::new();
+        let key = crate::state::icons::IconKey::new("custom-key").expect("test key");
+        let class = crate::state::icons::IconClass::new("pi pi-custom").expect("test class");
+        registry.insert(key.clone(), class);
+        state.sections.insert(
+            "icons".to_string(),
+            AppPolicySection::Icons(crate::state::icons::IconConfig { registry }),
+        );
+
+        upgrade_app(&mut state).expect("upgrade_app should succeed");
+        assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+
+        let icons = match state.sections.get("icons") {
+            Some(AppPolicySection::Icons(i)) => i.clone(),
+            other => panic!("expected preserved Icons section, got {other:?}"),
+        };
+        assert_eq!(icons.registry.len(), 1);
+        assert!(icons.registry.contains_key(&key));
+    }
+
+    #[test]
+    fn v4_state_upgrade_is_noop() {
+        // A state already at the current version walks zero upgraders.
+        let mut state = AppState::new();
+        assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+        upgrade_app(&mut state).expect("upgrade_app should succeed");
+        assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn v4_full_roundtrip_with_theme_and_icons() {
+        // Build a v4 state that exercises both new sections and round-trip
+        // through RON twice.
+        let mut state = AppState::new();
+        state.sections.insert(
+            "theme".to_string(),
+            AppPolicySection::Theme(crate::state::theme::ThemeConfig::default()),
+        );
+        state.sections.insert(
+            "icons".to_string(),
+            AppPolicySection::Icons(crate::state::icons::IconConfig::default()),
+        );
+
+        let after_one = ron_roundtrip(&state);
+        assert_eq!(state, after_one);
+        let after_two = ron_roundtrip(&after_one);
+        assert_eq!(state, after_two);
     }
 }
