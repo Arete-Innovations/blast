@@ -59,7 +59,7 @@ pub fn catalyst_path_dep(catalyst_relative: &str) -> String {
 }
 
 pub fn catalyst_git_dep() -> String {
-    r#"catalyst = { git = "https://github.com/Arete-Innovations/catalyst", branch = "main", features = ["testing"] }"#.to_string()
+    r#"catalyst = { git = "https://github.com/Arete-Innovations/catalyst", branch = "master", features = ["testing"] }"#.to_string()
 }
 
 pub fn gitignore() -> &'static str {
