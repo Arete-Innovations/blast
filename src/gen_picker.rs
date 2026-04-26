@@ -15,7 +15,6 @@ pub fn pick_gen_target() -> BlastResult<Command> {
         "[GEN] Generate custom migration (--custom)",
         "[GEN] Generate frontend (validators + list query helpers)",
         "[GEN] Generate governor Vite plugin (frontend/scripts/governor-plugin.js)",
-        "[GEN] Seed frontend scaffold (tokens.css, base.css, primevue.ts)",
         "[GEN] Generate test scaffolds (per-flow + per-route, idempotent)",
     ];
 
@@ -42,8 +41,7 @@ pub fn pick_gen_target() -> BlastResult<Command> {
         }
         7 => Ok(Command::Gen { cmd: Some(GenCmd::Frontend) }),
         8 => Ok(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) }),
-        9 => Ok(Command::Gen { cmd: Some(GenCmd::FeScaffold) }),
-        10 => Ok(Command::Gen {
+        9 => Ok(Command::Gen {
             cmd: Some(GenCmd::Test { flow: None, route: None }),
         }),
         other => Err(BlastError::Invalid(format!(

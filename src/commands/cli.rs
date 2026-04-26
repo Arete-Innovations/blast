@@ -186,9 +186,6 @@ pub enum GenCmd {
     #[command(name = "governor-plugin", about = "Emit governor Vite plugin shim")]
     GovernorPlugin,
 
-    #[command(name = "fe-scaffold", about = "Seed tokens.css, base.css, primevue.ts")]
-    FeScaffold,
-
     #[command(about = "Scaffold per-flow + per-route test stubs")]
     Test {
         #[arg(long, conflicts_with = "route")]

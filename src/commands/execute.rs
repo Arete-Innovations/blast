@@ -307,17 +307,6 @@ fn dispatch_gen(
             }
             Ok(())
         }
-        GenCmd::FeScaffold => {
-            logger::info("Seeding frontend scaffold (tokens.css, base.css, primevue.ts)...")?;
-            let outcome = crate::codegen::frontend_scaffold::run(&config.project_dir)?;
-            for p in &outcome.written {
-                logger::success(&format!("seeded {}", p.display()))?;
-            }
-            for p in &outcome.skipped {
-                logger::info(&format!("skipped {} (already present)", p.display()))?;
-            }
-            Ok(())
-        }
         GenCmd::Resource { name } => run_gen_resource(config, name),
         GenCmd::Test { flow, route } => {
             let filter = resolve_test_filter(flow, route);
