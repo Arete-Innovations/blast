@@ -1,0 +1,109 @@
+// drawer — sibling of useQueryDialog for slide-out panels. Same URL-as-
+// state contract; uses `?drawer=<name>` and `?drawer_id=<id>` so a
+// dialog and a drawer can be open simultaneously without colliding.
+// See SPEC_FRONTEND_ROUTING.md.
+
+import { computed } from 'vue'
+import type { ComputedRef } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { LocationQueryRaw } from 'vue-router'
+
+export type DrawerId = number | string
+
+export type DrawerHistoryMode = 'push' | 'replace'
+
+export interface UseQueryDrawerParams {
+  id?: DrawerId
+}
+
+export interface UseQueryDrawerOptions {
+  history?: DrawerHistoryMode
+}
+
+export interface QueryDrawerHandle {
+  visible: ComputedRef<boolean>
+  id: ComputedRef<DrawerId | null>
+  open: (params?: UseQueryDrawerParams) => void
+  close: () => void
+}
+
+const DRAWER_KEY = 'drawer'
+const DRAWER_ID_KEY = 'drawer_id'
+
+export function useQueryDrawer(
+  name: string,
+  params?: UseQueryDrawerParams,
+  opts?: UseQueryDrawerOptions,
+): QueryDrawerHandle {
+  const route = useRoute()
+  const router = useRouter()
+
+  const history_mode: DrawerHistoryMode = opts !== undefined && opts.history !== undefined ? opts.history : 'push'
+  const initial_id: DrawerId | null = params !== undefined && params.id !== undefined ? params.id : null
+
+  const visible = computed<boolean>(() => {
+    const raw = route.query[DRAWER_KEY]
+    if (raw === undefined || raw === null) {
+      return false
+    }
+    const str = Array.isArray(raw) ? raw[0] : raw
+    return str === name
+  })
+
+  const id = computed<DrawerId | null>(() => {
+    if (!visible.value) {
+      return null
+    }
+    const raw = route.query[DRAWER_ID_KEY]
+    if (raw === undefined || raw === null) {
+      return null
+    }
+    const str = Array.isArray(raw) ? raw[0] : raw
+    if (str === null || str === undefined || str === '') {
+      return null
+    }
+    const as_num = Number(str)
+    if (!Number.isNaN(as_num) && /^-?\d+(\.\d+)?$/.test(str)) {
+      return as_num
+    }
+    return str
+  })
+
+  function open(next_params?: UseQueryDrawerParams): void {
+    const next: LocationQueryRaw = { ...route.query }
+    next[DRAWER_KEY] = name
+    const id_value: DrawerId | null = next_params !== undefined && next_params.id !== undefined
+      ? next_params.id
+      : initial_id
+    if (id_value === null) {
+      delete next[DRAWER_ID_KEY]
+    } else {
+      next[DRAWER_ID_KEY] = String(id_value)
+    }
+    void apply_query(router, next, history_mode)
+  }
+
+  function close(): void {
+    const next: LocationQueryRaw = { ...route.query }
+    if (next[DRAWER_KEY] !== name) {
+      return
+    }
+    delete next[DRAWER_KEY]
+    delete next[DRAWER_ID_KEY]
+    void apply_query(router, next, history_mode)
+  }
+
+  return { visible, id, open, close }
+}
+
+async function apply_query(
+  router: ReturnType<typeof useRouter>,
+  query: LocationQueryRaw,
+  mode: DrawerHistoryMode,
+): Promise<void> {
+  if (mode === 'replace') {
+    await router.replace({ query })
+    return
+  }
+  await router.push({ query })
+}
