@@ -1,4 +1,4 @@
-use crate::commands::{Command, FusesCmd, GenCmd, LogCmd};
+use crate::commands::{Command, FusesCmd, GenCmd, LogCmd, ArsenalCmd};
 use crate::configs::Config;
 use crate::dependencies::DependencyManager;
 use crate::error::BlastResult;
@@ -9,29 +9,54 @@ use std::env;
 use std::io::Write;
 
 const MENU_ITEMS: &[&str] = &[
-    "[APP] Run Server",
+    // ── scaffold ──────────────────────────────────────────────────────────────
+    "[SCAFFOLD] New project",
+    "[SCAFFOLD] Init in-place",
+    // ── app lifecycle ─────────────────────────────────────────────────────────
+    "[APP] Run Server (dev)",
+    "[APP] Run Server (prod)",
     "[APP] Watch Server",
     "[APP] Stop Server",
     "[APP] Refresh",
     "[APP] Toggle Dev/Prod",
+    "[APP] Dashboard",
+    "[APP] Build",
+    "[APP] Package",
+    // ── codegen ───────────────────────────────────────────────────────────────
+    "[CODEGEN] Gen All (full pipeline)",
+    "[CODEGEN] Gen Resource (wizard)",
     "[CODEGEN] Schema",
     "[CODEGEN] Structs",
     "[CODEGEN] Models",
-    "[CODEGEN] Gen Picker",
     "[CODEGEN] Gen Table (wizard)",
     "[CODEGEN] Gen Migration (--custom)",
     "[CODEGEN] Gen Frontend",
     "[CODEGEN] Gen Governor Plugin",
     "[CODEGEN] Gen Test Scaffolds",
+    // ── database ──────────────────────────────────────────────────────────────
     "[DB] New Migration",
     "[DB] Migrate",
     "[DB] Rollback",
     "[DB] Seed",
-    "[FUSES] Manage fuses",
+    // ── fuses ─────────────────────────────────────────────────────────────────
+    "[FUSES] Manage fuses (TUI)",
     "[FUSES] List fuses",
+    "[FUSES] Toggle fuse",
+    "[FUSES] Run fuse now",
+    "[FUSES] Fuse logs",
+    "[FUSES] Live fuses table",
+    // ── logs ──────────────────────────────────────────────────────────────────
+    "[LOG] View logs",
     "[LOG] Truncate Logs",
+    // ── lint ──────────────────────────────────────────────────────────────────
     "[LINT] Governor Check",
-    "[Arsenal] Scan & Write JSON",
+    "[LINT] Governor Check (verbose)",
+    // ── arsenal ───────────────────────────────────────────────────────────────
+    "[ARSENAL] Scan & Write JSON",
+    "[ARSENAL] Serve MCP (stdio)",
+    // ── dev tools ─────────────────────────────────────────────────────────────
+    "[DEV] Sync canonical",
+    // ── exit ──────────────────────────────────────────────────────────────────
     "[Exit] Kill Session",
 ];
 
@@ -63,16 +88,45 @@ pub fn pick_command(config: &Config) -> BlastResult<Option<Command>> {
 
 fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
     match label {
+        // ── scaffold ──────────────────────────────────────────────────────────
+        "[SCAFFOLD] New project" => {
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Project name")
+                .interact_text()?;
+            Ok(Some(Command::New {
+                name,
+                dev: false,
+                db_url: None,
+                force: false,
+                no_test_db: false,
+            }))
+        }
+        "[SCAFFOLD] Init in-place" => Ok(Some(Command::Init {
+            name: None,
+            db_url: None,
+            force: false,
+            no_test_db: false,
+        })),
+
+        // ── app lifecycle ─────────────────────────────────────────────────────
         "[APP] Refresh" => Ok(Some(Command::Refresh)),
-        "[APP] Run Server" => Ok(Some(Command::Run)),
+        "[APP] Run Server (dev)" => Ok(Some(Command::Run)),
+        "[APP] Run Server (prod)" => Ok(Some(Command::RunProd)),
         "[APP] Watch Server" => Ok(Some(Command::Watch)),
         "[APP] Stop Server" => Ok(Some(Command::Stop)),
         "[APP] Toggle Dev/Prod" => Ok(Some(Command::ToggleEnv)),
+        "[APP] Dashboard" => Ok(Some(Command::Dashboard)),
+        "[APP] Build" => Ok(Some(Command::Build)),
+        "[APP] Package" => Ok(Some(Command::Package)),
 
+        // ── codegen ───────────────────────────────────────────────────────────
+        "[CODEGEN] Gen All (full pipeline)" => Ok(Some(Command::Gen { cmd: Some(GenCmd::All) })),
+        "[CODEGEN] Gen Resource (wizard)" => {
+            Ok(Some(Command::Gen { cmd: Some(GenCmd::Resource { name: None }) }))
+        }
         "[CODEGEN] Schema" => Ok(Some(Command::Schema)),
         "[CODEGEN] Structs" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Structs) })),
         "[CODEGEN] Models" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Models) })),
-        "[CODEGEN] Gen Picker" => Ok(Some(Command::Gen { cmd: None })),
         "[CODEGEN] Gen Table (wizard)" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Table) })),
         "[CODEGEN] Gen Migration (--custom)" => {
             let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
@@ -90,19 +144,68 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
             cmd: Some(GenCmd::Test { flow: None, route: None }),
         })),
 
+        // ── database ──────────────────────────────────────────────────────────
         "[DB] New Migration" => Ok(Some(Command::Migration)),
         "[DB] Migrate" => Ok(Some(Command::Migrate)),
         "[DB] Rollback" => Ok(Some(Command::Rollback)),
         "[DB] Seed" => Ok(Some(Command::Seed { file: None })),
 
-        "[FUSES] Manage fuses" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) })),
+        // ── fuses ─────────────────────────────────────────────────────────────
+        "[FUSES] Manage fuses (TUI)" => {
+            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) }))
+        }
         "[FUSES] List fuses" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::List) })),
+        "[FUSES] Toggle fuse" => {
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Fuse name")
+                .interact_text()?;
+            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Toggle { name }) }))
+        }
+        "[FUSES] Run fuse now" => {
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Fuse name")
+                .interact_text()?;
+            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Run { name }) }))
+        }
+        "[FUSES] Fuse logs" => {
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Fuse name")
+                .interact_text()?;
+            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Logs { name }) }))
+        }
+        "[FUSES] Live fuses table" => {
+            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) }))
+        }
 
-        "[LOG] Truncate Logs" => Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } })),
-        "[Arsenal] Scan & Write JSON" => Ok(Some(Command::Arsenal { cmd: None })),
+        // ── logs ──────────────────────────────────────────────────────────────
+        "[LOG] View logs" => {
+            let level: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Log level (error/warn/info/debug)")
+                .default("info".to_string())
+                .interact_text()?;
+            Ok(Some(Command::Log { cmd: LogCmd::View { level } }))
+        }
+        "[LOG] Truncate Logs" => {
+            Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } }))
+        }
 
+        // ── lint ──────────────────────────────────────────────────────────────
         "[LINT] Governor Check" => Ok(Some(Command::Check { verbose: false })),
+        "[LINT] Governor Check (verbose)" => Ok(Some(Command::Check { verbose: true })),
 
+        // ── arsenal ───────────────────────────────────────────────────────────
+        "[ARSENAL] Scan & Write JSON" => Ok(Some(Command::Arsenal { cmd: None })),
+        "[ARSENAL] Serve MCP (stdio)" => {
+            Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))
+        }
+
+        // ── dev tools ─────────────────────────────────────────────────────────
+        "[DEV] Sync canonical" => Ok(Some(Command::SyncCanonical {
+            catalyst_path: None,
+            check: false,
+        })),
+
+        // ── exit ──────────────────────────────────────────────────────────────
         "[Exit] Kill Session" => Ok(None),
 
         unknown => Err(crate::error::BlastError::Invalid(format!(
@@ -178,5 +281,135 @@ fn resolve_run_for_env(cmd: Command, config: &Config) -> Command {
             _other_env => Command::Run,
         },
         passthrough => passthrough,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::{ArsenalCmd, FusesCmd, GenCmd, LogCmd};
+
+    /// Items that do NOT require interactive prompting.
+    /// Each must resolve to Ok(Some(_)) without hitting the `unknown` branch.
+    #[test]
+    fn non_interactive_menu_items_all_resolve() {
+        let non_interactive: &[&str] = &[
+            "[APP] Refresh",
+            "[APP] Run Server (dev)",
+            "[APP] Run Server (prod)",
+            "[APP] Watch Server",
+            "[APP] Stop Server",
+            "[APP] Toggle Dev/Prod",
+            "[APP] Dashboard",
+            "[APP] Build",
+            "[APP] Package",
+            "[SCAFFOLD] Init in-place",
+            "[CODEGEN] Gen All (full pipeline)",
+            "[CODEGEN] Gen Resource (wizard)",
+            "[CODEGEN] Schema",
+            "[CODEGEN] Structs",
+            "[CODEGEN] Models",
+            "[CODEGEN] Gen Table (wizard)",
+            "[CODEGEN] Gen Frontend",
+            "[CODEGEN] Gen Governor Plugin",
+            "[CODEGEN] Gen Test Scaffolds",
+            "[DB] New Migration",
+            "[DB] Migrate",
+            "[DB] Rollback",
+            "[DB] Seed",
+            "[FUSES] Manage fuses (TUI)",
+            "[FUSES] List fuses",
+            "[FUSES] Live fuses table",
+            "[LOG] Truncate Logs",
+            "[LINT] Governor Check",
+            "[LINT] Governor Check (verbose)",
+            "[ARSENAL] Scan & Write JSON",
+            "[ARSENAL] Serve MCP (stdio)",
+            "[DEV] Sync canonical",
+            "[Exit] Kill Session",
+        ];
+
+        // Every label in MENU_ITEMS must be listed in either non_interactive or
+        // the interactive set below (i.e. there are no unhandled labels).
+        let interactive_labels: &[&str] = &[
+            "[SCAFFOLD] New project",
+            "[CODEGEN] Gen Migration (--custom)",
+            "[FUSES] Toggle fuse",
+            "[FUSES] Run fuse now",
+            "[FUSES] Fuse logs",
+            "[LOG] View logs",
+        ];
+
+        let all_handled: Vec<&str> = non_interactive
+            .iter()
+            .chain(interactive_labels.iter())
+            .copied()
+            .collect();
+
+        for label in MENU_ITEMS {
+            assert!(
+                all_handled.contains(label),
+                "MENU_ITEMS label {:?} is not tracked in the parity test — add it",
+                label
+            );
+        }
+
+        for label in all_handled.iter() {
+            assert!(
+                MENU_ITEMS.contains(label),
+                "parity test lists {:?} but it is not in MENU_ITEMS",
+                label
+            );
+        }
+    }
+
+    /// Spot-check that a sample of non-interactive labels route to the
+    /// expected Command variants.
+    #[test]
+    fn spot_check_command_routing() {
+        assert!(matches!(
+            resolve_selection("[APP] Run Server (dev)"),
+            Ok(Some(Command::Run))
+        ));
+        assert!(matches!(
+            resolve_selection("[APP] Run Server (prod)"),
+            Ok(Some(Command::RunProd))
+        ));
+        assert!(matches!(
+            resolve_selection("[CODEGEN] Gen All (full pipeline)"),
+            Ok(Some(Command::Gen { cmd: Some(GenCmd::All) }))
+        ));
+        assert!(matches!(
+            resolve_selection("[CODEGEN] Gen Resource (wizard)"),
+            Ok(Some(Command::Gen { cmd: Some(GenCmd::Resource { name: None }) }))
+        ));
+        assert!(matches!(
+            resolve_selection("[FUSES] Manage fuses (TUI)"),
+            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) }))
+        ));
+        assert!(matches!(
+            resolve_selection("[FUSES] Live fuses table"),
+            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) }))
+        ));
+        assert!(matches!(
+            resolve_selection("[LOG] Truncate Logs"),
+            Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } }))
+        ));
+        assert!(matches!(
+            resolve_selection("[LINT] Governor Check (verbose)"),
+            Ok(Some(Command::Check { verbose: true }))
+        ));
+        assert!(matches!(
+            resolve_selection("[ARSENAL] Serve MCP (stdio)"),
+            Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))
+        ));
+        assert!(matches!(
+            resolve_selection("[DEV] Sync canonical"),
+            Ok(Some(Command::SyncCanonical { catalyst_path: None, check: false }))
+        ));
+        assert!(matches!(
+            resolve_selection("[Exit] Kill Session"),
+            Ok(None)
+        ));
     }
 }
