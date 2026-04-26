@@ -244,7 +244,7 @@ mod tests {
 
     #[allow(unused_imports)]
     use crate::structs::generated::__TABLE__::__TYPE__;
-    use crate::tests_common::test_pool;
+    use crate::common::test_pool;
 
     #[tokio::test]
     async fn __VERB___baseline() {
@@ -293,7 +293,7 @@ mod tests {
     use catalyst::testing::run_in_test;
     use tower::ServiceExt;
 
-    use crate::tests_common::test_pool;
+    use crate::common::test_pool;
     use crate::transport::http::generated::__TABLE__ as route_mod;
 
     #[tokio::test]
