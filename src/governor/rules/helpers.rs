@@ -37,3 +37,35 @@ pub fn extension_is(file: &Path, ext: &str) -> bool {
         None => false,
     }
 }
+
+/// Returns true when the file's normalized path contains the given
+/// directory segment (e.g. `frontend/src/custom/pages/`). The needle
+/// should NOT start with `/` and SHOULD end with `/` to avoid prefix
+/// collisions like `pages` matching `pagesrc`.
+pub fn path_contains(file: &Path, needle: &str) -> bool {
+    rel_path_str(file).contains(needle)
+}
+
+/// Indexes (byte offsets) of the first `<template>` opening tag and the
+/// matching `</template>` closing tag inside an SFC. Naive top-level
+/// only — does not support nested `<template>` elements outside the
+/// outer block correctly, but Vue SFCs cannot have those at the root.
+pub struct TemplateBlock<'a> {
+    pub inner: &'a str,
+    /// 1-based line where the inner content begins.
+    pub start_line: usize,
+}
+
+pub fn extract_template_block(contents: &str) -> Option<TemplateBlock<'_>> {
+    let lower = contents.to_ascii_lowercase();
+    let open_idx = lower.find("<template")?;
+    // Find end of the opening tag's `>`.
+    let after_open_lt = open_idx + "<template".len();
+    let rel_gt = lower[after_open_lt..].find('>')?;
+    let inner_start = after_open_lt + rel_gt + 1;
+    let close_rel = lower[inner_start..].find("</template")?;
+    let inner_end = inner_start + close_rel;
+    let inner = &contents[inner_start..inner_end];
+    let start_line = contents[..inner_start].lines().count();
+    Some(TemplateBlock { inner, start_line })
+}

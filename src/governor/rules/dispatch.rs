@@ -5,16 +5,31 @@ use std::path::Path;
 
 use super::console_log::ConsoleLog;
 use super::hardcoded_px::HardcodedPx;
+use super::hardcoded_route_path::HardcodedRoutePath;
 use super::icon_class::IconClassOutsideIconsFile;
+use super::inline_layout_props::InlineLayoutProps;
 use super::inline_style::InlineStyle;
+use super::loading_spinner::LoadingSpinnerAfterFirstLoad;
+use super::local_list_state::LocalListState;
+use super::local_modal_state::LocalModalState;
+use super::local_storage_outside_persistence::LocalStorageOutsidePersistence;
 use super::max_lines_per_fn::MaxLinesPerFn;
 use super::max_lines_per_sfc::MaxLinesPerSfc;
+use super::max_template_depth::MaxTemplateDepth;
+use super::max_template_loc::MaxTemplateLoc;
+use super::optimistic_update::OptimisticUpdateInCustom;
+use super::page_shell_required::PageShellRequired;
+use super::pinia_import::PiniaImport;
 use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
+use super::primevue_reinvented::PrimeVueReinvented;
 use super::raw_color::RawColorOutsidePreset;
+use super::raw_fetch::RawFetchOutsideApi;
 use super::raw_rem::RawRemOutsideTokens;
 use super::silent_fallback::SilentFallback;
+use super::snake_case_interface_fields::SnakeCaseInterfaceFields;
 use super::ts_ignore::TsIgnore;
 use super::type_any::TypeAny;
+use super::websocket_outside_relay::WebSocketOutsideRelay;
 
 pub fn run_all(file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
     let line_rules = build_line_rules();
@@ -58,6 +73,13 @@ fn build_line_rules() -> Vec<Box<dyn Rule>> {
         Box::new(ConsoleLog::new()),
         Box::new(IconClassOutsideIconsFile::new()),
         Box::new(PrimeVueConfigImportOutsidePresetFile::new()),
+        Box::new(HardcodedRoutePath::new()),
+        Box::new(LocalListState::new()),
+        Box::new(LoadingSpinnerAfterFirstLoad::new()),
+        Box::new(RawFetchOutsideApi::new()),
+        Box::new(WebSocketOutsideRelay::new()),
+        Box::new(LocalStorageOutsidePersistence::new()),
+        Box::new(PiniaImport::new()),
     ]
 }
 
@@ -65,5 +87,13 @@ fn build_file_rules() -> Vec<Box<dyn FileRule>> {
     vec![
         Box::new(MaxLinesPerSfc::new()),
         Box::new(MaxLinesPerFn::new()),
+        Box::new(LocalModalState::new()),
+        Box::new(OptimisticUpdateInCustom::new()),
+        Box::new(PageShellRequired::new()),
+        Box::new(InlineLayoutProps::new()),
+        Box::new(MaxTemplateDepth::new()),
+        Box::new(MaxTemplateLoc::new()),
+        Box::new(PrimeVueReinvented::new()),
+        Box::new(SnakeCaseInterfaceFields::new()),
     ]
 }
