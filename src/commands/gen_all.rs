@@ -77,24 +77,22 @@ pub fn run(
 
     let mut outcome = Outcome::default();
 
+    // Default `gen all` pipeline: backend codegen + FE TS types only.
+    // FE composables / api clients / Vue components / CRUD pages / router-from-state
+    // / test scaffolds are opt-in via dedicated `blast gen <target>` subcommands.
+    // Hand-written FE (auth composable, login/register pages, custom router) drives
+    // the default scaffold; user opts into per-resource codegen on demand.
+    let _ = resource_count; // reserved for future opt-in steps
     run_schema_step(sink, progress, &mut outcome)?;
     run_structs_step(&args.project_root, sink, progress, &mut outcome)?;
     run_models_step(&args.project_root, config, sink, progress, &mut outcome)?;
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_frontend_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_frontend_types_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_frontend_api_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_composables_v2_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_ws_topics_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_vue_components_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_crud_pages_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_router_step(&args.project_root, sink, progress, &mut outcome)?;
     run_theme_step(&args.project_root, sink, progress, &mut outcome)?;
     run_icons_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_test_scaffolds_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
 
     sink.success(format!(
         "blast gen all: {} step(s) ran, {} file(s) written, {} file(s) skipped",
