@@ -21,6 +21,7 @@ use super::optimistic_update::OptimisticUpdateInCustom;
 use super::page_shell_required::PageShellRequired;
 use super::pinia_import::PiniaImport;
 use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
+use super::primevue_reinvented::PrimeVueReinvented;
 use super::raw_color::RawColorOutsidePreset;
 use super::raw_fetch::RawFetchOutsideApi;
 use super::raw_rem::RawRemOutsideTokens;
@@ -91,5 +92,6 @@ fn build_file_rules() -> Vec<Box<dyn FileRule>> {
         Box::new(InlineLayoutProps::new()),
         Box::new(MaxTemplateDepth::new()),
         Box::new(MaxTemplateLoc::new()),
+        Box::new(PrimeVueReinvented::new()),
     ]
 }
