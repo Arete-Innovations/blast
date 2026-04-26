@@ -205,10 +205,10 @@ mod tests {
     use super::*;
     use crate::state::names::{FieldName, ResourceName, SqlType};
     use crate::state::{
-        AuthMode, FieldState, FieldVariant, ListOptions, Verb, VerbState,
+        AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, Verb, VerbState,
     };
     use indexmap::IndexMap;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use tempfile::TempDir;
 
     struct PinnedClock(u64);
@@ -235,9 +235,9 @@ mod tests {
             },
         );
 
-        let mut filterable_set: BTreeSet<FieldName> = BTreeSet::new();
+        let mut filterable_set: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
         for f in filterable {
-            filterable_set.insert(FieldName::new(*f));
+            filterable_set.insert(FieldName::new(*f), FilterKind::Eq);
         }
         let mut sortable_set: BTreeSet<FieldName> = BTreeSet::new();
         for s in sortable {

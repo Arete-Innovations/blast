@@ -61,7 +61,7 @@ mod tests {
         AuthMode, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
     };
     use indexmap::IndexMap;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -127,7 +127,7 @@ mod tests {
                 auth: AuthMode::Public,
                 list_options: Some(ListOptions {
                     paginated: true,
-                    filterable_columns: BTreeSet::new(),
+                    filterable_columns: BTreeMap::new(),
                     sortable_columns: BTreeSet::new(),
                     default_sort: None,
                     max_page_size: None,
