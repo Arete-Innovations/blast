@@ -21,7 +21,6 @@ use crate::state::{
     app::{ICONS_SECTION_KEY, THEME_SECTION_KEY},
     save_app, AppPolicySection, AppState, IconConfig, ThemeConfig,
 };
-use dialoguer::{theme::ColorfulTheme, Input};
 use include_dir::{include_dir, Dir};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -230,24 +229,11 @@ fn pre_create_db(
 /// sink so the user can override later via `.env`.
 fn resolve_db_url_default(project_name: &str, sink: &mut dyn Sink) -> BlastResult<String> {
     let derived = db_bootstrap::default_url_for(project_name);
-    match prompt_for_db_url(project_name, &derived) {
-        Ok(url) => Ok(url),
-        Err(_prompt_err) => {
-            sink.info(format!(
-                "no --db-url and no interactive TTY; defaulting to `{}` (override later via .env)",
-                derived
-            ));
-            Ok(derived)
-        }
-    }
-}
-
-fn prompt_for_db_url(_project_name: &str, default: &str) -> BlastResult<String> {
-    let url: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Postgres URL")
-        .default(default.to_string())
-        .interact_text()?;
-    Ok(url)
+    sink.info(format!(
+        "no --db-url supplied; defaulting to `{}` (override later via .env)",
+        derived
+    ));
+    Ok(derived)
 }
 
 /// File-writing core. Receives fully-resolved Args (no DB I/O, no prompts).
