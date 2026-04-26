@@ -25,7 +25,7 @@ export const router = createRouter({
 router.beforeEach((to) => {
   const requires_auth = to.meta.requires_auth === true
   if (requires_auth && !useAuth().is_authenticated.value) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    return { name: 'auth.login', query: { redirect: to.fullPath } }
   }
 })
 
