@@ -10,9 +10,11 @@
 //! 1. `use` imports
 //! 2. base `<Type>` (when any field has `Db` variant)
 //! 3. `<Type>{Insertable, Patch, Public, Admin}` (when present)
-//! 4. `<Type>Filter` (when `filterable_columns` non-empty)
+//! 4. `From<<Type>>` impls for `Public` / `Admin` (when projection is a
+//!    Db subset and the Db base struct itself is present)
+//! 5. `<Type>Filter` (when `filterable_columns` non-empty)
 
-use super::{db, filter, imports, projection, util};
+use super::{db, filter, from_impl, imports, projection, util};
 use crate::state::{FieldVariant, ResourceState};
 
 pub fn render_resource_body(resource: &ResourceState) -> String {
@@ -39,6 +41,22 @@ pub fn render_resource_body(resource: &ResourceState) -> String {
         }
         out.push_str(&projection::render(resource, variant));
         out.push('\n');
+    }
+
+    // From<Type> impls for projections that are subsets of the Db row.
+    // Only emit when the Db base struct itself is present — without it
+    // there is no source type to convert from.
+    if present_variants.contains(&FieldVariant::Db) {
+        for variant in [FieldVariant::Public, FieldVariant::Admin] {
+            if !present_variants.contains(&variant) {
+                continue;
+            }
+            if !util::projection_is_db_subset(resource, variant) {
+                continue;
+            }
+            out.push_str(&from_impl::render(resource, variant));
+            out.push('\n');
+        }
     }
 
     match util::list_options(resource) {
@@ -198,6 +216,77 @@ mod tests {
     }
 
     #[test]
+    fn from_db_impl_emitted_for_public_and_admin() {
+        let resource = full_resource("users");
+        let body = render_resource_body(&resource);
+        assert!(
+            body.contains("impl From<User> for UserPublic"),
+            "missing From<User> for UserPublic:\n{body}",
+        );
+        assert!(
+            body.contains("impl From<User> for UserAdmin"),
+            "missing From<User> for UserAdmin:\n{body}",
+        );
+    }
+
+    #[test]
+    fn from_db_impl_moves_each_subset_field() {
+        let resource = full_resource("users");
+        let body = render_resource_body(&resource);
+        let pub_impl = body
+            .split("impl From<User> for UserPublic")
+            .nth(1)
+            .expect("pub impl start")
+            .split("}\n}")
+            .next()
+            .expect("pub impl end");
+        assert!(pub_impl.contains("id: row.id"), "missing id move:\n{pub_impl}");
+        assert!(
+            pub_impl.contains("email: row.email"),
+            "missing email move:\n{pub_impl}",
+        );
+        assert!(
+            !pub_impl.contains("password_hash"),
+            "password_hash must not appear in From<User> for UserPublic",
+        );
+    }
+
+    #[test]
+    fn no_from_impl_when_db_variant_absent() {
+        let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
+        fields.insert(
+            FieldName::new("payload"),
+            field("Jsonb", &[FieldVariant::Public], false, false),
+        );
+        let mut resource = ResourceState::new(ResourceName::new("events"));
+        resource.fields = fields;
+        resource.canonicalize();
+        let body = render_resource_body(&resource);
+        assert!(!body.contains("impl From<"), "no Db source -> no From impl:\n{body}");
+    }
+
+    #[test]
+    fn no_from_impl_when_projection_not_db_subset() {
+        let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
+        fields.insert(
+            FieldName::new("id"),
+            field("Int8", &[FieldVariant::Db, FieldVariant::Public], false, true),
+        );
+        fields.insert(
+            FieldName::new("display_name"),
+            field("Varchar", &[FieldVariant::Public], false, false),
+        );
+        let mut resource = ResourceState::new(ResourceName::new("users"));
+        resource.fields = fields;
+        resource.canonicalize();
+        let body = render_resource_body(&resource);
+        assert!(
+            !body.contains("impl From<User> for UserPublic"),
+            "Public is not a Db subset; From impl must be omitted:\n{body}",
+        );
+    }
+
+    #[test]
     fn filter_only_includes_filterable_columns() {
         let resource = full_resource("users");
         let body = render_resource_body(&resource);
@@ -290,5 +379,7 @@ mod tests {
         assert!(body.contains("pub struct DatumInsertable {"));
         assert!(body.contains("pub struct DatumPatch {"));
         assert!(body.contains("pub struct DatumFilter {"));
+        assert!(body.contains("impl From<Datum> for DatumPublic"));
+        assert!(body.contains("impl From<Datum> for DatumAdmin"));
     }
 }

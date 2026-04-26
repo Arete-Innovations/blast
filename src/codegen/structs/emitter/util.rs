@@ -42,6 +42,21 @@ pub fn fields_for_variant<'a>(
         .collect()
 }
 
+/// Returns `true` when every field in `variant` also carries the `Db`
+/// variant — i.e. the projection is a column-by-column subset of the Db
+/// row. Required for the `From<<DbType>>` impl to compile.
+pub fn projection_is_db_subset(resource: &ResourceState, variant: FieldVariant) -> bool {
+    for (_, field) in resource.fields.iter() {
+        if !field.variants.contains(&variant) {
+            continue;
+        }
+        if !field.variants.contains(&FieldVariant::Db) {
+            return false;
+        }
+    }
+    true
+}
+
 /// `#[derive(...)]` list per projection variant. The Db base struct
 /// gets the full Diesel reading set; mutation variants pick up
 /// `Insertable` / `AsChangeset`; `Public` / `Admin` are pure data.
