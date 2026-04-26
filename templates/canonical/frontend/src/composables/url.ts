@@ -15,7 +15,7 @@
 // history).
 
 import { computed, watch } from 'vue'
-import type { ComputedRef, WritableComputedRef } from 'vue'
+import type { WritableComputedRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 

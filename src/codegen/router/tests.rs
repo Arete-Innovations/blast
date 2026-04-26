@@ -343,7 +343,8 @@ fn routes_required_auth_emits_empty_array_const() {
 fn guards_exports_install_function_with_resolve_role_param() {
     let body = guards::render();
     assert!(body.contains("export function installRouterGuards"));
-    assert!(body.contains("resolveRole: ()"));
+    assert!(body.contains("resolveRole?: ()"));
+    assert!(body.contains("opts?: InstallRouterGuardsOptions"));
     assert!(body.contains("router.beforeEach"));
     assert!(!body.contains("console.log"));
     assert!(!body.contains(": any"));

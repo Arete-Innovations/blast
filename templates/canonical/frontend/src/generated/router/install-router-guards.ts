@@ -1,13 +1,4 @@
-//! Render `frontend/src/generated/router/install-router-guards.ts` — a
-//! single guard install function that consumes route meta to enforce auth
-//! + role gating. The role-resolution callback is injected by main.ts so
-//! the guard stays decoupled from the user app's session shape.
-
-pub fn render() -> String {
-    GUARDS_TS_BODY.to_string()
-}
-
-const GUARDS_TS_BODY: &str = r#"// Auto-generated. Do not edit by hand.
+// Auto-generated. Do not edit by hand.
 // Auth + role gating consumed from route.meta.roles.
 //
 // Wire this into your router from `main.ts` (or `router/index.ts` per the
@@ -100,4 +91,3 @@ export function installRouterGuards(
     next(false);
   });
 }
-"#;

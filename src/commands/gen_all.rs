@@ -211,21 +211,11 @@ fn run_flows_step(
 
 fn run_http_routes_step(
     project_root: &PathBuf,
-    resource_count: usize,
+    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
-    if resource_count == 0 {
-        progress.step_start(STEP_HTTP_ROUTES);
-        sink.info(format!(
-            "{}: no resources declared; skipping",
-            STEP_HTTP_ROUTES
-        ));
-        progress.step_done(STEP_HTTP_ROUTES);
-        outcome.steps_run += 1;
-        return Ok(());
-    }
     match codegen::http_routes::run(project_root, sink, progress) {
         Ok(report) => {
             outcome.files_written += report.written.len();
@@ -248,21 +238,12 @@ fn run_http_routes_step(
 
 fn run_frontend_step(
     project_root: &PathBuf,
-    resource_count: usize,
+    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
     progress.step_start(STEP_FRONTEND);
-    if resource_count == 0 {
-        sink.info(format!(
-            "{}: no resources declared; skipping",
-            STEP_FRONTEND
-        ));
-        progress.step_done(STEP_FRONTEND);
-        outcome.steps_run += 1;
-        return Ok(());
-    }
     match codegen::run_frontend(project_root) {
         Ok(()) => {
             progress.step_done(STEP_FRONTEND);
@@ -280,21 +261,12 @@ fn run_frontend_step(
 
 fn run_composables_v2_step(
     project_root: &PathBuf,
-    resource_count: usize,
+    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
     progress.step_start(STEP_COMPOSABLES_V2);
-    if resource_count == 0 {
-        sink.info(format!(
-            "{}: no resources declared; skipping",
-            STEP_COMPOSABLES_V2
-        ));
-        progress.step_done(STEP_COMPOSABLES_V2);
-        outcome.steps_run += 1;
-        return Ok(());
-    }
     match codegen::composables_v2::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
@@ -323,21 +295,11 @@ fn run_composables_v2_step(
 
 fn run_ws_topics_step(
     project_root: &PathBuf,
-    resource_count: usize,
+    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
-    if resource_count == 0 {
-        progress.step_start(STEP_WS_TOPICS);
-        sink.info(format!(
-            "{}: no resources declared; skipping",
-            STEP_WS_TOPICS
-        ));
-        progress.step_done(STEP_WS_TOPICS);
-        outcome.steps_run += 1;
-        return Ok(());
-    }
     match codegen::ws_topics::run(project_root, sink, progress) {
         Ok(report) => {
             outcome.files_written += report.written.len();
@@ -360,21 +322,12 @@ fn run_ws_topics_step(
 
 fn run_vue_components_step(
     project_root: &PathBuf,
-    resource_count: usize,
+    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
     progress.step_start(STEP_VUE_COMPONENTS);
-    if resource_count == 0 {
-        sink.info(format!(
-            "{}: no resources declared; skipping",
-            STEP_VUE_COMPONENTS
-        ));
-        progress.step_done(STEP_VUE_COMPONENTS);
-        outcome.steps_run += 1;
-        return Ok(());
-    }
     match codegen::vue::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
@@ -403,21 +356,12 @@ fn run_vue_components_step(
 
 fn run_crud_pages_step(
     project_root: &PathBuf,
-    resource_count: usize,
+    _resource_count: usize,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
     outcome: &mut Outcome,
 ) -> BlastResult<()> {
     progress.step_start(STEP_CRUD_PAGES);
-    if resource_count == 0 {
-        sink.info(format!(
-            "{}: no resources declared; skipping",
-            STEP_CRUD_PAGES
-        ));
-        progress.step_done(STEP_CRUD_PAGES);
-        outcome.steps_run += 1;
-        return Ok(());
-    }
     match codegen::pages::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
