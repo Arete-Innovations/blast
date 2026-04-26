@@ -235,9 +235,10 @@ mod tests {
             },
         );
 
-        let mut filterable_set: BTreeSet<FieldName> = BTreeSet::new();
+        let mut filterable_set: std::collections::BTreeMap<FieldName, crate::state::FilterKind> =
+            std::collections::BTreeMap::new();
         for f in filterable {
-            filterable_set.insert(FieldName::new(*f));
+            filterable_set.insert(FieldName::new(*f), crate::state::FilterKind::Eq);
         }
         let mut sortable_set: BTreeSet<FieldName> = BTreeSet::new();
         for s in sortable {

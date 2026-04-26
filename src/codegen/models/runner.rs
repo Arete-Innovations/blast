@@ -224,8 +224,9 @@ mod tests {
             },
         );
 
-        let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
-        filterable.insert(FieldName::new("email"));
+        let mut filterable: std::collections::BTreeMap<FieldName, crate::state::FilterKind> =
+            std::collections::BTreeMap::new();
+        filterable.insert(FieldName::new("email"), crate::state::FilterKind::Eq);
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
         verbs.insert(
             Verb::List,

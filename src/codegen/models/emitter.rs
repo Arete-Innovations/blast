@@ -127,7 +127,7 @@ mod tests {
                 auth: AuthMode::Public,
                 list_options: Some(ListOptions {
                     paginated: true,
-                    filterable_columns: BTreeSet::new(),
+                    filterable_columns: std::collections::BTreeMap::new(),
                     sortable_columns: BTreeSet::new(),
                     default_sort: None,
                     max_page_size: None,
