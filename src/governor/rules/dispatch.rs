@@ -7,6 +7,7 @@ use super::console_log::ConsoleLog;
 use super::hardcoded_px::HardcodedPx;
 use super::hardcoded_route_path::HardcodedRoutePath;
 use super::icon_class::IconClassOutsideIconsFile;
+use super::inline_layout_props::InlineLayoutProps;
 use super::inline_style::InlineStyle;
 use super::local_list_state::LocalListState;
 use super::local_modal_state::LocalModalState;
@@ -75,5 +76,6 @@ fn build_file_rules() -> Vec<Box<dyn FileRule>> {
         Box::new(LocalModalState::new()),
         Box::new(OptimisticUpdateInCustom::new()),
         Box::new(PageShellRequired::new()),
+        Box::new(InlineLayoutProps::new()),
     ]
 }

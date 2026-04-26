@@ -4,6 +4,7 @@ pub mod hardcoded_px;
 pub mod hardcoded_route_path;
 pub mod helpers;
 pub mod icon_class;
+pub mod inline_layout_props;
 pub mod inline_style;
 pub mod local_list_state;
 pub mod local_modal_state;
