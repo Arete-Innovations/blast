@@ -151,6 +151,7 @@ pub fn frontend_package_json(project_name: &str) -> String {
   }},
   "dependencies": {{
     "vue": "^3.4.0",
+    "vue-router": "^4.4.0",
     "primevue": "^4.0.0",
     "@primevue/themes": "^4.0.0"
   }},
@@ -166,32 +167,23 @@ pub fn frontend_package_json(project_name: &str) -> String {
     )
 }
 
-pub fn frontend_index_html(project_name: &str) -> String {
-    format!(
-        r#"<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{name}</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
-</html>
-"#,
-        name = project_name,
-    )
-}
+// frontend index.html is owned by codegen::fe_runtime; the runtime
+// scaffold step seeds it (with app-name substitution) on `blast new`
+// and re-asserts it as write-if-absent on `blast gen all`.
 
 pub fn frontend_vite_config_ts() -> &'static str {
-    r#"import { defineConfig } from 'vite'
+    r#"import { fileURLToPath, URL } from 'node:url'
+
+import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   server: {
     port: 5173,
     strictPort: true,
@@ -204,35 +196,27 @@ export default defineConfig({
 "#
 }
 
-pub fn frontend_main_ts() -> &'static str {
-    r#"import { createApp } from 'vue'
-import App from './App.vue'
-import installPrimeVue from './plugins/primevue'
-import './styles/tokens.css'
-import './styles/base.css'
-
-const app = createApp(App)
-installPrimeVue(app)
-app.mount('#app')
-"#
-}
+// frontend src/main.ts is owned by codegen::fe_runtime; it installs
+// vue-router on top of PrimeVue and lives as write-if-absent so the
+// user can extend it after first emission.
 
 pub fn frontend_app_vue() -> &'static str {
-    r#"<template>
-  <main class="app-shell">
-    <h1>It works.</h1>
-    <p>Run `blast gen all` after editing your resource state files.</p>
-  </main>
-</template>
+    r#"<script setup lang="ts">
+import { Suspense } from 'vue'
 
-<script setup lang="ts">
+import GlobalProgressBar from '@/components/GlobalProgressBar.vue'
 </script>
 
+<template>
+  <GlobalProgressBar />
+  <Suspense>
+    <RouterView />
+  </Suspense>
+</template>
+
 <style scoped>
-.app-shell {
-  padding: var(--app-pad-section-sm);
-  max-width: var(--app-container-md);
-  margin-inline: auto;
+@layer app {
+  /* App.vue stays empty — pages own layout via PageShell. */
 }
 </style>
 "#
@@ -255,7 +239,11 @@ pub fn frontend_tsconfig_json() -> &'static str {
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]
 }
