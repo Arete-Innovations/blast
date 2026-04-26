@@ -16,14 +16,26 @@ pub fn build_list_sfc(r: &ResourceState) -> String {
         None => return String::new(),
     };
 
+    let has_update = r.verbs.contains_key(&Verb::Update);
+    let has_delete = r.verbs.contains_key(&Verb::Delete);
+    let has_actions = has_update || has_delete;
+
     let columns_html = render_list_columns(&public_fields, list_options);
-    let imports = build_list_imports(table);
+    let actions_col = render_actions_column(has_update, has_delete);
+    let imports = build_list_imports(table, has_actions, has_delete);
     let paginator = render_paginator(list_options);
     let total_attr = if is_paginated(list_options) {
         " :total-records=\"totalRecords\""
     } else {
         ""
     };
+    let confirm_dialog = if has_delete {
+        "    <ConfirmDialog />\n"
+    } else {
+        ""
+    };
+    let action_handlers = render_action_handlers(has_update, has_delete, &pascal, table);
+    let actions_emits = render_actions_emits(has_update, has_delete, &pascal);
 
     format!(
         "<script setup lang=\"ts\">\n\
@@ -33,14 +45,19 @@ const props = defineProps<{{\n\
   totalRecords?: number\n\
   loading?: boolean\n\
 }}>()\n\
-const emit = defineEmits<{{ requestPage: [query: ListQuery] }}>()\n\
+const emit = defineEmits<{{\n\
+  requestPage: [query: ListQuery]\n\
+{actions_emits}\
+}}>()\n\
 \n\
+{confirm_decl}\
 const page = ref<number>(DEFAULT_PAGE)\n\
 const pageSize = ref<number>(DEFAULT_PAGE_SIZE)\n\
 const sortField = ref<string | undefined>(DEFAULT_SORT)\n\
 const sortOrder = ref<number>(1)\n\
 const filters = ref<Record<string, string>>({{}})\n\
 const totalRecords = computed<number>(() => props.totalRecords ?? props.items.length)\n\
+const isLoading = computed<boolean>(() => props.loading === true)\n\
 \n\
 function buildQuery(): ListQuery {{\n\
   const sort = sortField.value === undefined\n\
@@ -74,21 +91,38 @@ function onFilter(col: string, value: string): void {{\n\
   }}\n\
   emit('requestPage', buildQuery())\n\
 }}\n\
+{action_handlers}\
 </script>\n\
 \n\
 <template>\n\
-  <DataTable\n\
-    :value=\"items\"\n\
-    :loading=\"loading === true\"\n\
-    data-key=\"id\"\n\
-    class=\"resource-list\"\n\
+{confirm_dialog}\
+    <DataTable\n\
+      :value=\"items\"\n\
+      :loading=\"isLoading\"\n\
+      data-key=\"id\"\n\
+      class=\"resource-list\"\n\
+      striped-rows\n\
+      :pt=\"{{ table: {{ role: 'grid', 'aria-label': '{table} list' }} }}\"\n\
 {paginator}\
 {total_attr}\n\
-    @page=\"onPage\"\n\
-    @sort=\"onSort\"\n\
-  >\n\
+      @page=\"onPage\"\n\
+      @sort=\"onSort\"\n\
+    >\n\
+      <template #loading>\n\
+        <div class=\"resource-list-loading\" role=\"status\" aria-live=\"polite\">\n\
+          <ProgressSpinner stroke-width=\"3\" aria-label=\"Loading {table}\" />\n\
+          <span class=\"resource-list-loading-text\">Loading...</span>\n\
+        </div>\n\
+      </template>\n\
+      <template #empty>\n\
+        <div class=\"resource-list-empty\" role=\"status\">\n\
+          <i class=\"pi pi-inbox resource-list-empty-icon\" aria-hidden=\"true\" />\n\
+          <p class=\"resource-list-empty-text\">No {table} to show yet.</p>\n\
+        </div>\n\
+      </template>\n\
 {columns}\
-  </DataTable>\n\
+{actions_col}\
+    </DataTable>\n\
 </template>\n\
 \n\
 <style scoped>\n\
@@ -97,22 +131,73 @@ function onFilter(col: string, value: string): void {{\n\
     display: block;\n\
     width: 100%;\n\
   }}\n\
+  .resource-list-loading {{\n\
+    display: flex;\n\
+    flex-direction: column;\n\
+    align-items: center;\n\
+    justify-content: center;\n\
+    gap: var(--app-space-md);\n\
+    padding: var(--app-space-2xl);\n\
+  }}\n\
+  .resource-list-loading-text {{\n\
+    color: var(--p-text-muted-color, var(--app-color-text-muted));\n\
+    font-size: var(--app-fs-sm);\n\
+  }}\n\
+  .resource-list-empty {{\n\
+    display: flex;\n\
+    flex-direction: column;\n\
+    align-items: center;\n\
+    justify-content: center;\n\
+    gap: var(--app-space-sm);\n\
+    padding: var(--app-space-2xl);\n\
+    color: var(--p-text-muted-color, var(--app-color-text-muted));\n\
+  }}\n\
+  .resource-list-empty-icon {{\n\
+    font-size: var(--app-fs-3xl);\n\
+  }}\n\
+  .resource-list-empty-text {{\n\
+    margin: 0;\n\
+    font-size: var(--app-fs-md);\n\
+  }}\n\
+  .resource-list-actions {{\n\
+    display: flex;\n\
+    gap: var(--app-space-sm);\n\
+  }}\n\
 }}\n\
 </style>\n",
         imports = imports,
         pascal = pascal,
         columns = columns_html,
+        actions_col = actions_col,
+        actions_emits = actions_emits,
+        action_handlers = action_handlers,
         paginator = paginator,
         total_attr = total_attr,
+        table = table,
+        confirm_dialog = confirm_dialog,
+        confirm_decl = if has_delete {
+            "const confirm = useConfirm()\nconst toast = useToast()\n\n"
+        } else {
+            ""
+        },
     )
 }
 
-fn build_list_imports(table: &str) -> String {
+fn build_list_imports(table: &str, has_actions: bool, has_delete: bool) -> String {
     let mut out = String::new();
     out.push_str("import { computed, ref } from 'vue'\n");
     out.push_str("import DataTable from 'primevue/datatable'\n");
     out.push_str("import Column from 'primevue/column'\n");
     out.push_str("import InputText from 'primevue/inputtext'\n");
+    out.push_str("import ProgressSpinner from 'primevue/progressspinner'\n");
+    if has_actions {
+        out.push_str("import Button from 'primevue/button'\n");
+    }
+    if has_delete {
+        out.push_str("import ConfirmDialog from 'primevue/confirmdialog'\n");
+        out.push_str("import { useConfirm } from 'primevue/useconfirm'\n");
+        out.push_str("import { useToast } from 'primevue/usetoast'\n");
+    }
     out.push_str(&format!(
         "import type {{ {pascal}Public }} from '@/generated/types/{table}'\n",
         pascal = pascal_case(&singularize(table)),
@@ -142,7 +227,7 @@ fn render_paginator(opts: Option<&ListOptions>) -> String {
         return String::new();
     }
     String::from(
-        "    :paginator=\"true\"\n    :rows=\"pageSize\"\n    :rows-per-page-options=\"[10, 25, 50, 100]\"\n    lazy\n",
+        "      :paginator=\"true\"\n      :rows=\"pageSize\"\n      :rows-per-page-options=\"[10, 25, 50, 100]\"\n      lazy\n",
     )
 }
 
@@ -158,17 +243,118 @@ fn render_list_columns(
         let sort_attr = if sortable { " :sortable=\"true\"" } else { "" };
         let filter_slot = if filterable {
             format!(
-                "      <template #filter>\n        <InputText placeholder=\"Filter {col}\" @input=\"(e) => onFilter('{col}', (e.target as HTMLInputElement).value)\" />\n      </template>\n",
+                "        <template #filter>\n          <InputText placeholder=\"Filter {col}\" :aria-label=\"'Filter {col}'\" @input=\"(e) => onFilter('{col}', (e.target as HTMLInputElement).value)\" />\n        </template>\n",
                 col = col
             )
         } else {
             String::new()
         };
         out.push_str(&format!(
-            "    <Column field=\"{col}\" header=\"{col}\"{sort_attr}>\n{filter_slot}    </Column>\n",
+            "      <Column field=\"{col}\" header=\"{col}\"{sort_attr}>\n{filter_slot}      </Column>\n",
             col = col,
             sort_attr = sort_attr,
             filter_slot = filter_slot,
+        ));
+    }
+    out
+}
+
+fn render_actions_column(has_update: bool, has_delete: bool) -> String {
+    if !has_update && !has_delete {
+        return String::new();
+    }
+    let mut buttons = String::new();
+    if has_update {
+        buttons.push_str(
+            "          <Button\n\
+            type=\"button\"\n\
+            text\n\
+            rounded\n\
+            size=\"small\"\n\
+            icon=\"pi pi-pencil\"\n\
+            severity=\"secondary\"\n\
+            aria-label=\"Edit row\"\n\
+            @click=\"onEdit(slotProps.data)\"\n\
+          />\n",
+        );
+    }
+    if has_delete {
+        buttons.push_str(
+            "          <Button\n\
+            type=\"button\"\n\
+            text\n\
+            rounded\n\
+            size=\"small\"\n\
+            icon=\"pi pi-trash\"\n\
+            severity=\"danger\"\n\
+            aria-label=\"Delete row\"\n\
+            @click=\"(event) => onDelete(event, slotProps.data)\"\n\
+          />\n",
+        );
+    }
+    format!(
+        "      <Column header=\"Actions\" :exportable=\"false\" header-style=\"width: 8rem\">\n\
+        <template #body=\"slotProps\">\n\
+          <div class=\"resource-list-actions\">\n\
+{buttons}          </div>\n\
+        </template>\n\
+      </Column>\n",
+        buttons = buttons,
+    )
+}
+
+fn render_actions_emits(has_update: bool, has_delete: bool, pascal: &str) -> String {
+    let mut out = String::new();
+    if has_update {
+        out.push_str(&format!("  edit: [row: {}Public]\n", pascal));
+    }
+    if has_delete {
+        out.push_str(&format!("  delete: [row: {}Public]\n", pascal));
+    }
+    out
+}
+
+fn render_action_handlers(
+    has_update: bool,
+    has_delete: bool,
+    pascal: &str,
+    table: &str,
+) -> String {
+    let mut out = String::new();
+    if has_update {
+        out.push_str(&format!(
+            "\n\
+function onEdit(row: {pascal}Public): void {{\n\
+  emit('edit', row)\n\
+}}\n",
+            pascal = pascal,
+        ));
+    }
+    if has_delete {
+        let singular = singularize(table);
+        out.push_str(&format!(
+            "\n\
+function onDelete(event: Event, row: {pascal}Public): void {{\n\
+  confirm.require({{\n\
+    target: event.currentTarget as HTMLElement,\n\
+    message: 'Delete this {singular}? This cannot be undone.',\n\
+    header: 'Confirm delete',\n\
+    icon: 'pi pi-exclamation-triangle',\n\
+    rejectProps: {{ label: 'Cancel', severity: 'secondary', outlined: true }},\n\
+    acceptProps: {{ label: 'Delete', severity: 'danger' }},\n\
+    accept: () => {{\n\
+      emit('delete', row)\n\
+      toast.add({{\n\
+        severity: 'info',\n\
+        summary: 'Delete requested',\n\
+        detail: 'Removing {singular}...',\n\
+        life: 2500,\n\
+      }})\n\
+    }},\n\
+  }})\n\
+}}\n",
+            pascal = pascal,
+            singular = singular,
         ));
     }
     out
