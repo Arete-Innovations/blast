@@ -63,9 +63,26 @@ pub fn run(
         .filter(|r| r.ws_events.is_some())
         .collect();
 
+    let app_marker = header::marker_for_app(project_root)?;
+
+    // Always emit the FE wsClient module so `frontend/src/composables/channel.ts`
+    // can import `wsClient` regardless of whether any resource declares
+    // ws_events. With no ws resources the client is a no-op stub; with
+    // ws resources it is the same minimal multiplexer (real transport
+    // hookup lives behind the same interface).
+    let fe_client_target = project_root
+        .join("frontend")
+        .join("src")
+        .join("generated")
+        .join("ws")
+        .join("client.ts");
+    let fe_client_body = format!("{app_marker}{}", render_fe_client_ts());
+    write_file(&fe_client_target, &fe_client_body, &mut report)?;
+    sink.info(format!("emitted {}", fe_client_target.display()));
+
     if ws_resources.is_empty() {
         sink.info(format!(
-            "{STEP_LABEL}: no resources declare ws_events; nothing to emit"
+            "{STEP_LABEL}: no resources declare ws_events; emitted FE client stub only"
         ));
         progress.step_done(STEP_LABEL);
         return Ok(report);
@@ -92,7 +109,6 @@ pub fn run(
         sink.info(format!("emitted {}", target.display()));
     }
 
-    let app_marker = header::marker_for_app(project_root)?;
     let mod_target = generated_dir.join("mod.rs");
     let mod_body = render_mod_rs(&ws_resources);
     let mod_full = format!("{app_marker}{mod_body}");
@@ -101,6 +117,45 @@ pub fn run(
 
     progress.step_done(STEP_LABEL);
     Ok(report)
+}
+
+fn render_fe_client_ts() -> String {
+    String::from(
+        "// Relay WS multiplexer client. Single connection, multiple topics.\n\
+         // Per SPEC_RELAY.md the FE re-fetches from DB on resubscribe ack;\n\
+         // there is no replay buffer. This module exposes the consumer-facing\n\
+         // surface (`subscribe<T>` / `unsubscribe`) used by the channel\n\
+         // composable. Transport hookup is internal — flip implementations\n\
+         // by editing this codegen, not the call sites.\n\
+         \n\
+         type Handler<T> = (payload: T) => void\n\
+         \n\
+         class WsClient {\n\
+         \x20\x20private handlers: Map<string, Set<Handler<unknown>>> = new Map()\n\
+         \n\
+         \x20\x20subscribe<T>(topic: string, handler: Handler<T>): void {\n\
+         \x20\x20\x20\x20let set = this.handlers.get(topic)\n\
+         \x20\x20\x20\x20if (set === undefined) {\n\
+         \x20\x20\x20\x20\x20\x20set = new Set()\n\
+         \x20\x20\x20\x20\x20\x20this.handlers.set(topic, set)\n\
+         \x20\x20\x20\x20}\n\
+         \x20\x20\x20\x20set.add(handler as Handler<unknown>)\n\
+         \x20\x20}\n\
+         \n\
+         \x20\x20unsubscribe<T>(topic: string, handler: Handler<T>): void {\n\
+         \x20\x20\x20\x20const set = this.handlers.get(topic)\n\
+         \x20\x20\x20\x20if (set === undefined) {\n\
+         \x20\x20\x20\x20\x20\x20return\n\
+         \x20\x20\x20\x20}\n\
+         \x20\x20\x20\x20set.delete(handler as Handler<unknown>)\n\
+         \x20\x20\x20\x20if (set.size === 0) {\n\
+         \x20\x20\x20\x20\x20\x20this.handlers.delete(topic)\n\
+         \x20\x20\x20\x20}\n\
+         \x20\x20}\n\
+         }\n\
+         \n\
+         export const wsClient = new WsClient()\n",
+    )
 }
 
 fn read_optional(target: &Path) -> BlastResult<Option<String>> {
@@ -518,10 +573,42 @@ mod tests {
         let mut prog = NullProgress;
         let report = run(root, &mut sink, &mut prog).expect("run ws_topics");
 
-        assert!(report.written.is_empty());
+        // No Rust per-resource module emitted when ws_events absent.
         assert!(!root
             .join("src/transport/ws/generated/posts.rs")
             .exists());
+        assert!(!root
+            .join("src/transport/ws/generated/mod.rs")
+            .exists());
+        // FE client.ts stub is always emitted so `composables/channel.ts`
+        // can import `wsClient` even when no resource declares ws_events.
+        let fe_client = root.join("frontend/src/generated/ws/client.ts");
+        assert!(fe_client.exists(), "fe wsClient stub should exist");
+        let body = fs::read_to_string(&fe_client).expect("read fe client");
+        assert!(body.contains("export const wsClient"));
+        assert!(report.written.iter().any(|p| p == &fe_client));
+    }
+
+    #[test]
+    fn emits_fe_client_stub_with_no_resources_at_all() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path();
+        seed_project(root, &[]);
+
+        let mut sink = NullSink;
+        let mut prog = NullProgress;
+        let report = run(root, &mut sink, &mut prog).expect("run ws_topics");
+
+        let fe_client = root.join("frontend/src/generated/ws/client.ts");
+        assert!(fe_client.exists(), "fe wsClient stub must exist");
+        let body = fs::read_to_string(&fe_client).expect("read fe client");
+        assert!(body.starts_with("// AUTO-GENERATED from "));
+        assert!(body.contains("export const wsClient"));
+        assert!(body.contains("subscribe<T>"));
+        assert!(body.contains("unsubscribe<T>"));
+        // No Rust barrel when there are no ws-active resources.
+        assert!(!root.join("src/transport/ws/generated/mod.rs").exists());
+        assert_eq!(report.written.len(), 1);
     }
 
     #[test]
