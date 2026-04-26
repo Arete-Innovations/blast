@@ -26,13 +26,31 @@ use regex::Regex;
 type AppUpgrader = fn(&mut AppState) -> BlastResult<()>;
 type ResourceRawUpgrader = fn(&str) -> BlastResult<String>;
 
-const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[];
+const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[
+    (1, upgrade_app_v1_to_v2),
+    (2, upgrade_app_v2_to_v3),
+];
 
 /// Raw-text upgraders, indexed by `from_version`. Each entry takes the
 /// RON text at `from_version` and returns the text at `from_version+1`,
 /// including a bumped `schema_version` field.
 const RESOURCE_RAW_UPGRADERS: &[(u32, ResourceRawUpgrader)] =
     &[(1, upgrade_resource_v1_to_v2)];
+
+/// v1 → v2: purely additive. No fields were added to `AppState` between v1
+/// and v2 that require migration — the bump just advances the version token.
+fn upgrade_app_v1_to_v2(state: &mut AppState) -> BlastResult<()> {
+    state.schema_version = 2;
+    Ok(())
+}
+
+/// v2 → v3: purely additive. Adds optional `nav` (NavConfig) and `pages`
+/// ([Page]) sections to `AppState`. Both default to absent, so existing
+/// v2 files load cleanly with no nav or pages sections.
+fn upgrade_app_v2_to_v3(state: &mut AppState) -> BlastResult<()> {
+    state.schema_version = 3;
+    Ok(())
+}
 
 pub fn upgrade_app(state: &mut AppState) -> BlastResult<()> {
     while state.schema_version < APP_SCHEMA_VERSION {
