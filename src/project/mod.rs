@@ -1,4 +1,6 @@
 pub mod auth_migration;
+pub mod auth_scaffold;
+pub mod auth_scaffold_bodies;
 pub mod db_bootstrap;
 pub mod scaffold;
 pub mod templates;

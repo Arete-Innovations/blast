@@ -30,6 +30,10 @@ chrono = {{ version = "0.4", features = ["serde"] }}
 dotenv = "0.15"
 tracing = "0.1"
 thiserror = "1"
+async-trait = "0.1"
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.21"
 
 [build-dependencies]
 blake3 = "1.5"
