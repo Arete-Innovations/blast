@@ -47,6 +47,7 @@ pub fn build_list_page(r: &ResourceState) -> String {
         r#"<script setup lang="ts">
 import {{ useRouter }} from 'vue-router'
 import Button from 'primevue/button'
+import {{ IC }} from '@/icons'
 import {{ {composable} }} from '@/generated/composables/{table}'
 import {{ {list_component} }} from '@/generated/components/{table}'
 import {{ ROUTE_NAMES }} from '@/generated/router/route-names'
@@ -71,7 +72,7 @@ function on_view(id: number): void {{
   <PageShell layout="table">
     <template #header>
       <span class="page-title">{plural_label}</span>
-      <Button label="New {label}" icon="pi pi-plus" @click="on_create" />
+      <Button label="New {label}" :icon="IC.add" @click="on_create" />
     </template>
     <{list_component}
       :data="list_state.data"
@@ -114,6 +115,7 @@ pub fn build_detail_page(r: &ResourceState) -> String {
 import {{ computed }} from 'vue'
 import {{ useRouter }} from 'vue-router'
 import Button from 'primevue/button'
+import {{ IC }} from '@/icons'
 import type {{ {public_type} }} from '@/generated/types/{table}'
 import {{ {composable} }} from '@/generated/composables/{table}'
 import {{ ROUTE_NAMES }} from '@/generated/router/route-names'
@@ -137,8 +139,8 @@ function on_edit(): void {{
     <template #header>
       <span class="page-title">{label}</span>
       <span class="page-header-actions">
-        <Button label="Back" icon="pi pi-arrow-left" severity="secondary" @click="on_back" />
-        <Button label="Edit" icon="pi pi-pencil" @click="on_edit" />
+        <Button label="Back" :icon="IC.back" severity="secondary" @click="on_back" />
+        <Button label="Edit" :icon="IC.edit" @click="on_edit" />
       </span>
     </template>
     <div v-if="data" class="{table}-detail-card">
@@ -176,6 +178,7 @@ pub fn build_create_page(r: &ResourceState) -> String {
 import {{ ref }} from 'vue'
 import {{ useRouter }} from 'vue-router'
 import Button from 'primevue/button'
+import {{ IC }} from '@/icons'
 import type {{ {insertable_type} }} from '@/generated/types/{table}'
 import {{ {create_composable} }} from '@/generated/composables/{table}'
 import {{ {form_component} }} from '@/generated/components/{table}'
@@ -209,7 +212,7 @@ async function on_submit(payload: {insertable_type}): Promise<void> {{
   <PageShell layout="cards">
     <template #header>
       <span class="page-title">New {label}</span>
-      <Button label="Back" icon="pi pi-arrow-left" severity="secondary" @click="on_back" />
+      <Button label="Back" :icon="IC.back" severity="secondary" @click="on_back" />
     </template>
     <{form_component}
       mode="create"
@@ -250,6 +253,7 @@ pub fn build_edit_page(r: &ResourceState) -> String {
 import {{ computed, ref }} from 'vue'
 import {{ useRouter }} from 'vue-router'
 import Button from 'primevue/button'
+import {{ IC }} from '@/icons'
 import type {{ {patch_type} }} from '@/generated/types/{table}'
 import {{ {get_composable}, {update_composable} }} from '@/generated/composables/{table}'
 import {{ {form_component} }} from '@/generated/components/{table}'
@@ -284,7 +288,7 @@ async function on_submit(payload: {patch_type}): Promise<void> {{
   <PageShell layout="cards">
     <template #header>
       <span class="page-title">Edit {label}</span>
-      <Button label="Back" icon="pi pi-arrow-left" severity="secondary" @click="on_back" />
+      <Button label="Back" :icon="IC.back" severity="secondary" @click="on_back" />
     </template>
     <{form_component}
       v-if="data"
