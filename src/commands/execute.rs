@@ -554,7 +554,10 @@ fn run_check(config: &Config, verbose: bool) -> BlastResult<()> {
     print!("{}", outcome.output);
     std::io::stdout().flush()?;
     if outcome.violation_count > 0 {
-        std::process::exit(1);
+        return Err(BlastError::Invalid(format!(
+            "governor: {} violation(s) — see output above",
+            outcome.violation_count
+        )));
     }
     Ok(())
 }

@@ -9,7 +9,7 @@ use std::path::Path;
 lazy_static! {
     static ref PX_RE: Regex = match Regex::new(r"\b\d+(\.\d+)?px\b") {
         Ok(r) => r,
-        Err(_re_err) => panic!("HardcodedPx regex failed to compile"),
+        Err(_re_err) => panic!("HardcodedPx regex failed to compile"), // allow: const pattern, infallible
     };
 }
 

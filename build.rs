@@ -1,3 +1,41 @@
+// Lint enforcer for the blast crate. Scans `src/**.rs` and panics the build
+// on any rule violation. Forked from buildahead with local patches.
+//
+// CATEGORIES (panic-on-hit):
+//   DECOMPOSITION: file size + lib.rs/mod.rs purity.
+//   ERROR:         honest failure handling (propagate or crash, no silent eat).
+//   TYPE:          named error types only — no anyhow/eyre/Box<dyn>/String.
+//   DEAD:          no #[allow(dead_code)], no commented-out code, no todo!().
+//   DANGER:        unsafe / std::process::exit / non-test panic! sites.
+//
+// ESCAPE VALVE:
+//   Append `// allow: <reason>` to a line to exempt it from ERROR:3/4/5/6 and
+//   DANGER:13. This forces the author to explicitly justify the deviation
+//   instead of either rewriting the code into uglier shapes or silently
+//   bypassing the rule via tricks like `drop(e); false` or `match { ...
+//   Err(_) => panic!(...) }`.
+//
+//   Examples:
+//     let _ = result; // allow: best-effort kill, server may already be dead
+//     Err(_e) => false, // allow: env var read, default is documented elsewhere
+//     panic!("regex compile failed"); // allow: constant pattern, infallible
+//
+//   The marker MUST appear on the same physical line as the offending token.
+//   No bulk allow-files, no #[allow(...)] attributes — both have proven to
+//   accumulate stale exemptions that nobody ever revisits.
+//
+// HISTORY OF LOCAL PATCHES:
+//   - relaxed `while let Some(` / `while let Ok(` — these iterate, they do
+//     not swallow errors; the let-else trick people were forced into was
+//     uglier and longer than the original.
+//   - added `// allow: <reason>` escape valve (was: no escape, leading to
+//     `drop(e); false`, lying default arms, and `match Regex::new(...) {
+//     Ok(r) => r, Err(_) => panic!(...) }` workarounds).
+//   - added DANGER category for `unsafe`, `std::process::exit(`, and
+//     non-test `panic!(` sites. Forward-looking — current codebase has zero
+//     `unsafe` and zero raw `process::exit`; the panics in `governor/rules/*`
+//     all carry the new `// allow:` marker.
+
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -5,6 +43,11 @@ use std::path::Path;
 use std::path::PathBuf;
 
 const MAX_LOC: usize = 800;
+
+// `// allow: <reason>` on a line silences ERROR:3/4/5/6 and DANGER:13 hits
+// for that line. The reason text is mandatory; an empty `// allow:` does NOT
+// match (we require at least one non-whitespace char after the colon).
+const ALLOW_MARKER: &str = "// allow:";
 
 const SILENT_ERROR_PATTERNS: &[&str] = &[
     ".unwrap()",
@@ -21,8 +64,11 @@ const SILENT_ERROR_PATTERNS: &[&str] = &[
     "_ =>",
     "if let Some(",
     "if let Ok(",
-    "while let Some(",
-    "while let Ok(",
+    // NOTE: `while let Some(` / `while let Ok(` are intentionally NOT here.
+    // They are the standard way to drain an iterator/channel/reader. Banning
+    // them forced rewrites into `loop { let Some(x) = it.next() else {
+    // break }; ... }` — strictly more code, identical semantics, no safety
+    // gain.
 ];
 
 const RESULT_OPTION_MATCH_ARMS: &[&str] = &[
@@ -74,6 +120,9 @@ fn category_for(rule: &str) -> &'static str {
     if rule.starts_with("DEAD:") {
         return "DEAD";
     }
+    if rule.starts_with("DANGER:") {
+        return "DANGER";
+    }
     "OTHER"
 }
 
@@ -83,6 +132,7 @@ fn category_spirit(cat: &str) -> &'static str {
         "ERROR" => "propagate or crash. there is no third option. if an operation failed, the caller must know.",
         "TYPE" => "the type signature is the contract. if the error type is erased, the contract is worthless.",
         "DEAD" => "code that isn't serving the program right now is noise. noise misleads. delete it.",
+        "DANGER" => "abort, unsafe, raw exit. each one bypasses the language's safety story. if you really need it, justify it on the line.",
         _ => "",
     }
 }
@@ -94,7 +144,8 @@ fn rule_help(rule: &str) -> &'static str {
         "ERROR:3" => concat!(
             ".unwrap(), .expect(), .ok(), .or(), if let Some/Ok, let _ =, _ => are all banned.\n",
             "    the ONLY legal moves: propagate with ? or return Err() explicitly.\n",
-            "    there are exactly two honest responses to failure: tell the caller, or crash.",
+            "    there are exactly two honest responses to failure: tell the caller, or crash.\n",
+            "    if a single site is genuinely safe, append `// allow: <reason>` to opt out.",
         ),
         "ERROR:4" => concat!(
             "Ok(_), Err(_), Some(_), None => all throw away the value you're matching on.\n",
@@ -102,11 +153,13 @@ fn rule_help(rule: &str) -> &'static str {
         ),
         "ERROR:5" => concat!(
             "returning Vec::new(), 0, None, false, or Default::default() from an error arm is lying.\n",
-            "    the operation failed. say so. return Err and let the caller decide what 'empty' means.",
+            "    the operation failed. say so. return Err and let the caller decide what 'empty' means.\n",
+            "    if the fallback is genuinely the right answer, append `// allow: <reason>` and explain.",
         ),
         "ERROR:6" => concat!(
             "an Err arm that does nothing is the #1 source of 'it silently stopped working' bugs.\n",
-            "    you received an error, inspected it, and chose to pretend it didn't happen.",
+            "    you received an error, inspected it, and chose to pretend it didn't happen.\n",
+            "    if you really want to discard, append `// allow: <reason>` to acknowledge the trade.",
         ),
         "TYPE:7" => concat!(
             "Result<T> with no error type is anyhow in disguise. anyhow/eyre erase what went wrong.\n",
@@ -124,11 +177,24 @@ fn rule_help(rule: &str) -> &'static str {
             "todo!(), unimplemented!(), unreachable!() are runtime panics wearing a trenchcoat.\n",
             "    either implement it now or remove the function. half-built code that compiles is worse than missing code.",
         ),
+        "DANGER:11" => concat!(
+            "unsafe blocks/fns dodge the borrow checker. for blast (a dev-time CLI) we have zero need.\n",
+            "    if you really must, append `// allow: <reason>` and document the invariants you're upholding.",
+        ),
+        "DANGER:12" => concat!(
+            "std::process::exit() bypasses Drop, leaks tempfiles, kills loggers mid-flush.\n",
+            "    return from main with a Result instead. only the bin entry point may exit.",
+        ),
+        "DANGER:13" => concat!(
+            "panic!() in non-test, non-bin code is a crash you didn't write a recovery story for.\n",
+            "    either return Err with a real error variant, or append `// allow: <reason>` to acknowledge\n",
+            "    that this site is genuinely infallible (e.g. compile-time-constant regex).",
+        ),
         _ => "",
     }
 }
 
-const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "ERROR", "TYPE", "DEAD"];
+const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "ERROR", "TYPE", "DEAD", "DANGER"];
 
 fn format_report(hits: &[Hit]) -> String {
     let mut by_rule: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -198,6 +264,17 @@ fn hit(hits: &mut Vec<Hit>, rule: &'static str, file: &Path, line: usize) {
         file: file.to_string_lossy().to_string(),
         line,
     });
+}
+
+// Returns true if `line` carries an `// allow: <non-empty-reason>` marker.
+// Empty reasons (e.g. `// allow:` or `// allow:    `) do NOT match — the
+// rule is "explain or fix", not "incantate to silence".
+fn line_has_allow(line: &str) -> bool {
+    let Some(idx) = line.find(ALLOW_MARKER) else {
+        return false;
+    };
+    let after = &line[idx + ALLOW_MARKER.len()..];
+    after.trim().chars().next().is_some()
 }
 
 fn scan_dir(manifest_dir: &Path, dir: &Path, hits: &mut Vec<Hit>) {
@@ -327,6 +404,9 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
         check_err_default_arms(rel, line_no, trimmed, hits);
         check_dead_code_suppression(rel, line_no, trimmed, hits);
         check_unfinished_markers(rel, line_no, trimmed, is_bin, hits);
+        check_unsafe(rel, line_no, trimmed, hits);
+        check_process_exit(rel, line_no, trimmed, is_bin, hits);
+        check_panic(rel, line_no, trimmed, is_bin, hits);
     }
 
     check_empty_err_arms(rel, &content, hits);
@@ -354,6 +434,9 @@ fn check_switchboard_purity(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
 }
 
 fn check_silent_errors(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
+    if line_has_allow(trimmed) {
+        return;
+    }
     for pattern in SILENT_ERROR_PATTERNS {
         if trimmed.contains(pattern) {
             hit(hits, "ERROR:3", rel, line_no + 1);
@@ -363,6 +446,9 @@ fn check_silent_errors(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec
 }
 
 fn check_wildcard_match_arms(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
+    if line_has_allow(trimmed) {
+        return;
+    }
     for pattern in RESULT_OPTION_MATCH_ARMS {
         if trimmed.starts_with(pattern) {
             hit(hits, "ERROR:4", rel, line_no + 1);
@@ -372,6 +458,9 @@ fn check_wildcard_match_arms(rel: &Path, line_no: usize, trimmed: &str, hits: &m
 }
 
 fn check_err_default_arms(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
+    if line_has_allow(trimmed) {
+        return;
+    }
     if !(trimmed.starts_with("Err(")
         || trimmed.starts_with("Err (")
         || trimmed.starts_with("None =>"))
@@ -386,6 +475,59 @@ fn check_err_default_arms(rel: &Path, line_no: usize, trimmed: &str, hits: &mut 
             hit(hits, "ERROR:5", rel, line_no + 1);
             break;
         }
+    }
+}
+
+// DANGER:11 — `unsafe ` blocks/fns. We allow `unsafe impl Send for ...` etc.
+// to also be caught (any usage). Marker exemption permitted.
+fn check_unsafe(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
+    if line_has_allow(trimmed) {
+        return;
+    }
+    // Match keyword usage, not occurrences inside identifiers like
+    // `unsafely_named_fn` — require trailing space, brace, or impl-keyword.
+    let starts = trimmed.starts_with("unsafe ")
+        || trimmed.starts_with("unsafe{")
+        || trimmed.starts_with("pub unsafe ")
+        || trimmed.starts_with("pub(crate) unsafe ")
+        || trimmed.contains(" unsafe ")
+        || trimmed.contains(" unsafe{")
+        || trimmed.contains("=unsafe ")
+        || trimmed.contains("=unsafe{");
+    if starts {
+        hit(hits, "DANGER:11", rel, line_no + 1);
+    }
+}
+
+// DANGER:12 — raw process exit. Only main.rs is exempt; everywhere else must
+// return errors via the normal channel so Drop runs. No marker exemption —
+// there is no "ok this time" version of bypassing the runtime.
+fn check_process_exit(rel: &Path, line_no: usize, trimmed: &str, is_main: bool, hits: &mut Vec<Hit>) {
+    if is_main {
+        return;
+    }
+    let hits_pat = trimmed.contains("std::process::exit(")
+        || trimmed.contains("process::exit(")
+        || trimmed.contains("libc::exit(")
+        || trimmed.contains("libc::_exit(");
+    if hits_pat {
+        hit(hits, "DANGER:12", rel, line_no + 1);
+    }
+}
+
+// DANGER:13 — non-test, non-bin `panic!(`. We rely on the `in_test_module`
+// guard upstream (callers skip this for cfg(test) blocks) and on the
+// is_bin flag. Marker exemption permitted for genuinely-infallible sites
+// like compile-time-constant regex compilation.
+fn check_panic(rel: &Path, line_no: usize, trimmed: &str, is_bin: bool, hits: &mut Vec<Hit>) {
+    if is_bin {
+        return;
+    }
+    if line_has_allow(trimmed) {
+        return;
+    }
+    if trimmed.contains("panic!(") {
+        hit(hits, "DANGER:13", rel, line_no + 1);
     }
 }
 
@@ -414,6 +556,9 @@ fn check_empty_err_arms(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
         let is_err_arm =
             (trimmed.starts_with("Err(") || trimmed.starts_with("Err (")) && trimmed.contains("=>");
         if !is_err_arm {
+            continue;
+        }
+        if line_has_allow(trimmed) {
             continue;
         }
 

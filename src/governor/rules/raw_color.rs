@@ -11,7 +11,7 @@ lazy_static! {
         r"(#[0-9a-fA-F]{3,8}\b)|(\brgb\s*\()|(\brgba\s*\()|(\bhsl\s*\()|(\bhsla\s*\()"
     ) {
         Ok(r) => r,
-        Err(_re_err) => panic!("RawColorOutsidePreset regex failed to compile"),
+        Err(_re_err) => panic!("RawColorOutsidePreset regex failed to compile"), // allow: const pattern, infallible
     };
 }
 
