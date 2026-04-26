@@ -41,6 +41,18 @@ pub fn create_new_project(
         )));
     }
 
+    // The cargo package name must be the leaf directory name, not the full path
+    // the user typed (`blast new /tmp/foo` → package `foo`, dir `/tmp/foo`).
+    let package_name = match project_root.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n.to_string(),
+        None => {
+            return Err(BlastError::Project(format!(
+                "could not derive a package name from `{}`",
+                project_name
+            )));
+        }
+    };
+
     let (catalyst_dep_line, dep_kind) = match resolve_catalyst_dep(use_dev_branch, &project_root) {
         Some((line, kind)) => (line, kind),
         None => (templates::catalyst_git_dep(), CatalystDepKind::GitDep),
@@ -61,7 +73,7 @@ pub fn create_new_project(
     }
 
     let args = Args {
-        project_name: project_name.to_string(),
+        project_name: package_name,
         project_root: project_root.clone(),
         catalyst_dep_line,
     };
@@ -344,13 +356,14 @@ fn scaffold_frontend(
 }
 
 fn resolve_catalyst_dep(
-    use_dev_branch: bool,
+    _use_dev_branch: bool,
     project_root: &Path,
 ) -> Option<(String, CatalystDepKind)> {
-    if !use_dev_branch {
-        return None;
-    }
-
+    // Always prefer a sibling catalyst checkout when one exists. Git fallback
+    // kicks in only when no local catalyst is reachable. The legacy
+    // `_use_dev_branch` flag is retained for CLI compatibility but no longer
+    // gates the search — there's no scenario where you want to ignore a
+    // local catalyst and pull from git instead.
     let candidate = find_sibling_catalyst()?;
     let relative = path_relative_from(project_root, &candidate)?;
     let line = templates::catalyst_path_dep(&relative.to_string_lossy());
