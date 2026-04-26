@@ -164,7 +164,7 @@ fn build_imports(
         );
     }
 
-    out.push_str("import { emit, on } from '@/generated/bus'\n");
+    out.push_str("import { emit, on } from '@/composables/bus'\n");
 
     out
 }

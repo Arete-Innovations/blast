@@ -40,7 +40,6 @@ const STEP_COMPOSABLES_V2: &str = "fe composables v2 generation";
 const STEP_WS_TOPICS: &str = "ws topics generation";
 const STEP_VUE_COMPONENTS: &str = "vue components generation";
 const STEP_CRUD_PAGES: &str = "crud pages generation";
-const STEP_FE_RUNTIME: &str = "frontend runtime scaffold";
 const STEP_ROUTER: &str = "router codegen";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
@@ -84,7 +83,6 @@ pub fn run(
     run_ws_topics_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_vue_components_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_crud_pages_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
-    run_fe_runtime_step(&args.project_root, &config.project_name, sink, progress, &mut outcome)?;
     run_router_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -437,40 +435,6 @@ fn run_crud_pages_step(
             let reason = err.to_string();
             progress.step_fail(STEP_CRUD_PAGES, &reason);
             sink.error(format!("{}: {}", STEP_CRUD_PAGES, reason));
-            Err(err)
-        }
-    }
-}
-
-fn run_fe_runtime_step(
-    project_root: &PathBuf,
-    project_name: &str,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
-    progress.step_start(STEP_FE_RUNTIME);
-    match codegen::fe_runtime::run(project_root, project_name) {
-        Ok(report) => {
-            for path in &report.written {
-                sink.info(format!("seeded {}", path.display()));
-            }
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_FE_RUNTIME,
-                report.written.len(),
-                report.skipped.len()
-            ));
-            progress.step_done(STEP_FE_RUNTIME);
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            progress.step_fail(STEP_FE_RUNTIME, &reason);
-            sink.error(format!("{}: {}", STEP_FE_RUNTIME, reason));
             Err(err)
         }
     }
