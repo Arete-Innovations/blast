@@ -45,6 +45,9 @@ async-trait = "0.1"
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 
+[build-dependencies]
+blake3 = "1.5"
+
 [profile.dev]
 codegen-units = 12
 opt-level = 0
