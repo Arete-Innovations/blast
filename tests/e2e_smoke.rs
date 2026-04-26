@@ -59,13 +59,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use blast::state::{
     self,
     names::{FieldName, ResourceName, SqlType},
     resource::{
-        AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState,
+        AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb,
+        VerbState,
     },
 };
 
@@ -222,6 +223,9 @@ fn write_minimal_users_resource(state_dir: &Path) {
         fields: IndexMap::new(),
         verbs: IndexMap::new(),
         ws_events: None,
+        singular_override: None,
+        soft_delete: None,
+        relations: BTreeMap::new(),
     };
 
     let mut id_variants = BTreeSet::new();
@@ -253,8 +257,8 @@ fn write_minimal_users_resource(state_dir: &Path) {
         },
     );
 
-    let mut filterable = BTreeSet::new();
-    filterable.insert(FieldName::new("email"));
+    let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+    filterable.insert(FieldName::new("email"), FilterKind::Eq);
     res.verbs.insert(
         Verb::List,
         VerbState {

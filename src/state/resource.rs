@@ -1,9 +1,9 @@
 use crate::state::names::{AuthScopeField, FieldName, ResourceName, SqlType};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-pub const RESOURCE_SCHEMA_VERSION: u32 = 1;
+pub const RESOURCE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceState {
@@ -13,6 +13,62 @@ pub struct ResourceState {
     pub verbs: IndexMap<Verb, VerbState>,
     #[serde(default)]
     pub ws_events: Option<WsEventsState>,
+    /// Optional override for the singular form of `name` used by struct
+    /// codegen (e.g. `data` → `Datum`). When `None`, the inflector picks
+    /// the default singularization.
+    #[serde(default)]
+    pub singular_override: Option<String>,
+    /// Soft-delete policy for this resource. When `Some`, the codegen
+    /// emits delete-marker logic against the named column and respects
+    /// the configured default visibility behavior in list/get queries.
+    #[serde(default)]
+    pub soft_delete: Option<SoftDeleteConfig>,
+    /// Named relations to other tables, consumed by codegen to emit
+    /// loaders/joins. Keyed by relation name (e.g. `"author"`).
+    /// Many-to-many is intentionally not modeled in v2.
+    #[serde(default)]
+    pub relations: BTreeMap<String, Relation>,
+}
+
+/// A typed relation between this resource and another table.
+///
+/// `BelongsTo`: this resource carries the FK in `fk_local_field`,
+/// pointing at `table.id`.
+/// `HasMany`: the other `table` carries the FK in `fk_remote_field`,
+/// pointing back at this resource's id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Relation {
+    BelongsTo {
+        table: String,
+        fk_local_field: FieldName,
+    },
+    HasMany {
+        table: String,
+        fk_remote_field: FieldName,
+    },
+}
+
+/// Soft-delete policy attached to a resource.
+///
+/// When present, generated `delete` flows update `column` (typically
+/// `deleted_at: Timestamptz`) instead of issuing a hard `DELETE`.
+/// Generated read paths consult `default_behavior` to decide whether to
+/// hide soft-deleted rows by default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SoftDeleteConfig {
+    pub column: FieldName,
+    pub default_behavior: SoftDeleteDefault,
+}
+
+/// Whether generated read paths return soft-deleted rows by default.
+///
+/// `ExcludeDeleted`: list/get filter `deleted_at IS NULL` unless the
+/// caller explicitly opts in.
+/// `IncludeDeleted`: list/get return all rows; callers must opt out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SoftDeleteDefault {
+    ExcludeDeleted,
+    IncludeDeleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,13 +133,31 @@ pub enum AuthMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListOptions {
     pub paginated: bool,
-    pub filterable_columns: BTreeSet<FieldName>,
+    /// Map of column name → filter operator. The codegen emits a typed
+    /// `<Type>Filter` struct and matching SQL predicates per `FilterKind`.
+    pub filterable_columns: BTreeMap<FieldName, FilterKind>,
     #[serde(default)]
     pub sortable_columns: BTreeSet<FieldName>,
     #[serde(default)]
     pub default_sort: Option<FieldName>,
     #[serde(default)]
     pub max_page_size: Option<u32>,
+}
+
+/// How a filterable column is matched in generated SQL/TS code.
+///
+/// - `Eq`: exact match (`col = $1`)
+/// - `Range`: inclusive range with `from`/`to` ends
+/// - `IlikeContains`: case-insensitive substring (`col ILIKE '%$1%'`)
+/// - `In`: any-of (`col = ANY($1)`)
+/// - `Bool`: boolean toggle
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum FilterKind {
+    Eq,
+    Range,
+    IlikeContains,
+    In,
+    Bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +189,9 @@ impl ResourceState {
             fields: IndexMap::new(),
             verbs: IndexMap::new(),
             ws_events: None,
+            singular_override: None,
+            soft_delete: None,
+            relations: BTreeMap::new(),
         }
     }
 

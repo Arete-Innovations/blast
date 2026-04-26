@@ -126,14 +126,14 @@ mod tests {
     use crate::io::null::{NullProgress, NullSink};
     use crate::state::names::{FieldName, ResourceName};
     use crate::state::resource::{
-        AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState,
-        RESOURCE_SCHEMA_VERSION,
+        AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb,
+        VerbState, RESOURCE_SCHEMA_VERSION,
     };
     use crate::state::AppState;
     use crate::state::SqlType;
     use crate::state::{save_app, save_resource};
     use indexmap::IndexMap;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn synth_widget_resource() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
@@ -203,8 +203,8 @@ mod tests {
         );
         let mut sortable: BTreeSet<FieldName> = BTreeSet::new();
         sortable.insert(FieldName::new("created_at"));
-        let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
-        filterable.insert(FieldName::new("name"));
+        let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+        filterable.insert(FieldName::new("name"), FilterKind::Eq);
         verbs.insert(
             Verb::List,
             VerbState {
@@ -225,6 +225,9 @@ mod tests {
             fields,
             verbs,
             ws_events: None,
+            singular_override: None,
+            soft_delete: None,
+            relations: BTreeMap::new(),
         }
     }
 

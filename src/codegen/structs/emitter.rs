@@ -17,9 +17,9 @@
 use crate::codegen::structs::naming;
 use crate::codegen::structs::sql_map;
 use crate::state::{
-    FieldName, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState,
+    FieldName, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb, VerbState,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Render the full body of `<table>.rs` (without the codegen marker — the
 /// caller prepends the marker). Returns owned `String`.
@@ -141,14 +141,14 @@ fn projection_struct(
 fn filter_struct(
     table: &str,
     resource: &ResourceState,
-    filterable: &BTreeSet<FieldName>,
+    filterable: &BTreeMap<FieldName, FilterKind>,
 ) -> String {
     let struct_name = naming::filter_struct_name(table);
     let mut out = String::new();
     out.push_str("#[derive(Debug, Default, Clone, Serialize, Deserialize)]\n");
     out.push_str(&format!("pub struct {struct_name} {{\n"));
     for (name, field) in resource.fields.iter() {
-        if !filterable.contains(name) {
+        if !filterable.contains_key(name) {
             continue;
         }
         let ty = sql_map::rust_type_always_optional(&field.sql_type);
@@ -220,11 +220,11 @@ mod tests {
     use super::*;
     use crate::state::names::ResourceName;
     use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, ListOptions, SqlType, Verb,
-        VerbState,
+        AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType,
+        Verb, VerbState,
     };
     use indexmap::IndexMap;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -276,8 +276,8 @@ mod tests {
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
-        let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
-        filterable.insert(FieldName::new("email"));
+        let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+        filterable.insert(FieldName::new("email"), FilterKind::Eq);
         verbs.insert(
             Verb::List,
             VerbState {

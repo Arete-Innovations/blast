@@ -365,5 +365,5 @@ fn column_sortable(opts: Option<&ListOptions>, col: &str) -> bool {
 }
 
 fn column_filterable(opts: Option<&ListOptions>, col: &str) -> bool {
-    opts.is_some_and(|o| o.filterable_columns.iter().any(|c| c.as_str() == col))
+    opts.is_some_and(|o| o.filterable_columns.keys().any(|c| c.as_str() == col))
 }
