@@ -184,7 +184,7 @@ Regenerated from `app.ron` `fe_lint` section via `blast gen governor-plugin` —
 
 ## Implementation Notes (Blast-side)
 
-- Files scanned: `frontend/src/**/*.{ts,vue,css}` (configurable via blueprint)
+- Files scanned: `frontend/src/**/*.{ts,vue,css}` (configurable via `app.ron`'s `fe_lint` section)
 - Scanning is regex-based, line-by-line. No AST parsing for v1. Rust regex crate is fast enough for 10K-LOC repos.
 - Per-file rule batching: read file once, run all applicable rules.
 - Parallel file scan via Rayon.
@@ -198,7 +198,7 @@ Governor lints the FRONTEND. Backend Rust still goes through `cargo clippy`. Dif
 
 - Hardcoding rule behavior into Blast. All thresholds and exempt lists come from `app.ron`'s `fe_lint` section.
 - Writing an AST parser for Vue/TS v1. Regex is adequate; upgrade if rules genuinely need AST.
-- Emitting warnings for rules the user hasn't opted into. If a rule isn't in blueprint's `deny_rule()` list, it doesn't run.
+- Emitting warnings for rules the user hasn't opted into. If a rule isn't in `app.ron`'s `fe_lint.deny_rules` list, it doesn't run.
 - Silent failure modes. Governor always exits non-zero on violation; never "warn and continue."
 
 ## Related Specs
