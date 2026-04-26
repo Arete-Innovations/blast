@@ -1,0 +1,88 @@
+//! Render `frontend/src/generated/router/install-router-guards.ts` — a
+//! single guard install function that consumes route meta to enforce auth
+//! + role gating. The role-resolution callback is injected by main.ts so
+//! the guard stays decoupled from the user app's session shape.
+
+pub fn render() -> String {
+    GUARDS_TS_BODY.to_string()
+}
+
+const GUARDS_TS_BODY: &str = r#"// Auto-generated. Do not edit by hand.
+// Auth + role gating consumed from route.meta.roles.
+//
+// Wire this into your router from `main.ts` (or `router/index.ts` per the
+// fe_runtime scaffold), passing a `resolveRole` callback that returns the
+// current user's role from your session store.  The guard stays generic;
+// the session shape lives in user code.
+//
+// Usage:
+//
+//   import router from '@/router';
+//   import { installRouterGuards } from '@/generated/router/install-router-guards';
+//   import { useSession } from '@/composables/session';
+//
+//   const session = useSession();
+//   installRouterGuards(router, {
+//     resolveRole: () => session.role.value,
+//     redirectName: 'dashboard',
+//   });
+
+import type {
+  NavigationGuardNext,
+  RouteLocationNormalized,
+  Router,
+} from 'vue-router';
+
+export type Role = 'user' | 'admin';
+
+export interface InstallRouterGuardsOptions {
+  /// Returns the current user's role, or `null` when unauthenticated.
+  /// The guard never inspects session state directly — keeps this file
+  /// dependency-free.
+  resolveRole: () => Role | null;
+  /// Route name to redirect to when an unauthenticated user hits a
+  /// guarded route. Default: do not redirect; cancel navigation.
+  redirectName?: string;
+}
+
+export function installRouterGuards(
+  router: Router,
+  opts: InstallRouterGuardsOptions,
+): void {
+  router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
+    const meta = to.meta as { roles?: readonly Role[] | null };
+    const required = meta.roles;
+
+    if (required === undefined || required === null) {
+      next();
+      return;
+    }
+
+    const current = opts.resolveRole();
+    if (current === null) {
+      if (opts.redirectName !== undefined) {
+        next({ name: opts.redirectName });
+        return;
+      }
+      next(false);
+      return;
+    }
+
+    if (required.length === 0) {
+      next();
+      return;
+    }
+
+    if (required.includes(current)) {
+      next();
+      return;
+    }
+
+    if (opts.redirectName !== undefined) {
+      next({ name: opts.redirectName });
+      return;
+    }
+    next(false);
+  });
+}
+"#;

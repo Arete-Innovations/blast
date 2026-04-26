@@ -40,6 +40,7 @@ const STEP_WS_TOPICS: &str = "ws topics generation";
 const STEP_VUE_COMPONENTS: &str = "vue components generation";
 const STEP_CRUD_PAGES: &str = "crud pages generation";
 const STEP_FE_RUNTIME: &str = "frontend runtime scaffold";
+const STEP_ROUTER: &str = "router codegen";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
 const STEP_TEST_SCAFFOLDS: &str = "test scaffold emission";
@@ -82,6 +83,7 @@ pub fn run(
     run_vue_components_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_crud_pages_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
     run_fe_runtime_step(&args.project_root, &config.project_name, sink, progress, &mut outcome)?;
+    run_router_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
     run_test_scaffolds_step(&args.project_root, resource_count, sink, progress, &mut outcome)?;
@@ -424,6 +426,33 @@ fn run_fe_runtime_step(
             let reason = err.to_string();
             progress.step_fail(STEP_FE_RUNTIME, &reason);
             sink.error(format!("{}: {}", STEP_FE_RUNTIME, reason));
+            Err(err)
+        }
+    }
+}
+
+fn run_router_step(
+    project_root: &PathBuf,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    match codegen::router::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!(
+                "{}: {} written, {} skipped",
+                STEP_ROUTER,
+                report.written.len(),
+                report.skipped.len()
+            ));
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            sink.error(format!("{}: {}", STEP_ROUTER, reason));
             Err(err)
         }
     }
