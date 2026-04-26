@@ -27,6 +27,8 @@ pub use resource::FilterKind;
 pub use resource::ListOptions;
 pub use resource::PayloadShape;
 pub use resource::ResourceState;
+pub use resource::SoftDeleteConfig;
+pub use resource::SoftDeleteDefault;
 pub use resource::TopicScope;
 pub use resource::Verb;
 pub use resource::VerbState;

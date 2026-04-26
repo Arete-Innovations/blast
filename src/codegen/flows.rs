@@ -370,6 +370,7 @@ mod tests {
             verbs,
             ws_events: None,
             singular_override: None,
+            soft_delete: None,
         };
         let path = resources_dir.join(format!("{}.ron", name));
         let body = ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default())

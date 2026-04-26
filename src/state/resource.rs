@@ -18,6 +18,34 @@ pub struct ResourceState {
     /// the default singularization.
     #[serde(default)]
     pub singular_override: Option<String>,
+    /// Soft-delete policy for this resource. When `Some`, the codegen
+    /// emits delete-marker logic against the named column and respects
+    /// the configured default visibility behavior in list/get queries.
+    #[serde(default)]
+    pub soft_delete: Option<SoftDeleteConfig>,
+}
+
+/// Soft-delete policy attached to a resource.
+///
+/// When present, generated `delete` flows update `column` (typically
+/// `deleted_at: Timestamptz`) instead of issuing a hard `DELETE`.
+/// Generated read paths consult `default_behavior` to decide whether to
+/// hide soft-deleted rows by default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SoftDeleteConfig {
+    pub column: FieldName,
+    pub default_behavior: SoftDeleteDefault,
+}
+
+/// Whether generated read paths return soft-deleted rows by default.
+///
+/// `ExcludeDeleted`: list/get filter `deleted_at IS NULL` unless the
+/// caller explicitly opts in.
+/// `IncludeDeleted`: list/get return all rows; callers must opt out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SoftDeleteDefault {
+    ExcludeDeleted,
+    IncludeDeleted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,6 +167,7 @@ impl ResourceState {
             verbs: IndexMap::new(),
             ws_events: None,
             singular_override: None,
+            soft_delete: None,
         }
     }
 

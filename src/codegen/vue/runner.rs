@@ -226,6 +226,7 @@ mod tests {
             verbs,
             ws_events: None,
             singular_override: None,
+            soft_delete: None,
         }
     }
 

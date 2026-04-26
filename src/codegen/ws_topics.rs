@@ -430,6 +430,7 @@ mod tests {
                 topic_scope: scope,
             }),
             singular_override: None,
+            soft_delete: None,
         }
     }
 
