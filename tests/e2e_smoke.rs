@@ -70,6 +70,15 @@ use blast::state::{
     },
 };
 
+/// Replace the dbname segment of a Postgres URL. Used by the e2e harness
+/// to scrub the user-supplied admin URL into a per-test sentinel before
+/// `blast new` creates databases.
+fn swap_dbname(template: &str, new_dbname: &str) -> String {
+    let parsed = blast::project::db_bootstrap::parse_url(template)
+        .expect("BLAST_TEST_DB_URL must be a valid Postgres URL");
+    parsed.with_dbname(new_dbname).rebuild()
+}
+
 /// Path to the catalyst checkout we want the scaffolded app to depend on.
 /// Resolved at compile time from `CARGO_MANIFEST_DIR` (the blast crate
 /// root) by walking up to `catablast/` and into `catalyst/`.
@@ -109,13 +118,22 @@ fn full_blast_lifecycle_smokes() {
 
     // 2. blast new <name> --dev (scaffold).
     //
-    // Run with stdin closed so any interactive Confirm/Editor prompts
-    // (`prompt_for_env_edit`, etc.) fail fast and fall through to the
-    // non-interactive default ("no edit").
+    // `blast new` now hard-fails if it can't reach Postgres, so this test
+    // requires `BLAST_TEST_DB_URL` to point at a reachable admin-capable
+    // Postgres instance. The dbname segment is replaced at runtime; pick a
+    // throwaway URL like `postgres://postgres:postgres@localhost:5432/postgres`.
+    let db_template = match std::env::var("BLAST_TEST_DB_URL") {
+        Ok(v) => v,
+        Err(_e) => {
+            eprintln!("skipping e2e_smoke: BLAST_TEST_DB_URL not set");
+            return;
+        }
+    };
+    let db_url = swap_dbname(&db_template, "test_app_e2e");
     let new_out = run_blast(
         blast_bin,
         workspace,
-        &["new", project_name, "--dev"],
+        &["new", project_name, "--dev", "--db-url", &db_url, "--force"],
     );
     assert_step_succeeded("blast new", &new_out);
     assert!(
