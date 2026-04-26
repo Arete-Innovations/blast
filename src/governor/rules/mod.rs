@@ -12,6 +12,7 @@ pub mod local_modal_state;
 pub mod max_lines_per_fn;
 pub mod max_lines_per_sfc;
 pub mod max_template_depth;
+pub mod max_template_loc;
 pub mod optimistic_update;
 pub mod page_shell_required;
 pub mod primevue_config;

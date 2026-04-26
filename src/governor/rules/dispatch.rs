@@ -15,6 +15,7 @@ use super::local_modal_state::LocalModalState;
 use super::max_lines_per_fn::MaxLinesPerFn;
 use super::max_lines_per_sfc::MaxLinesPerSfc;
 use super::max_template_depth::MaxTemplateDepth;
+use super::max_template_loc::MaxTemplateLoc;
 use super::optimistic_update::OptimisticUpdateInCustom;
 use super::page_shell_required::PageShellRequired;
 use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
@@ -81,5 +82,6 @@ fn build_file_rules() -> Vec<Box<dyn FileRule>> {
         Box::new(PageShellRequired::new()),
         Box::new(InlineLayoutProps::new()),
         Box::new(MaxTemplateDepth::new()),
+        Box::new(MaxTemplateLoc::new()),
     ]
 }
