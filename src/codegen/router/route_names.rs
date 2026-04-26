@@ -1,7 +1,9 @@
 //! Render `frontend/src/generated/router/route-names.ts` — a string-union
 //! type that turns `{ name: 'users.list' }` into a compiler-checked
-//! lookup. Plus a `ROUTE_NAMES` const tuple useful for runtime iteration
-//! (e.g. registering breadcrumb labels).
+//! lookup. Plus a `ROUTE_NAMES` const object: `ROUTE_NAMES['users.list']`
+//! returns the matching string literal (typed as `RouteName`). Object
+//! form lets generated CRUD pages do `ROUTE_NAMES[<name>]` lookups
+//! without casting.
 
 use super::resolve::ResolvedRoute;
 use super::ts::ts_string;
@@ -15,7 +17,7 @@ pub fn render(routes: &[ResolvedRoute]) -> String {
     if routes.is_empty() {
         out.push_str("export type RouteName = never;\n");
         out.push('\n');
-        out.push_str("export const ROUTE_NAMES = [] as const;\n");
+        out.push_str("export const ROUTE_NAMES = {} as const;\n");
         return out;
     }
 
@@ -27,10 +29,11 @@ pub fn render(routes: &[ResolvedRoute]) -> String {
     }
     out.push('\n');
 
-    out.push_str("export const ROUTE_NAMES = [\n");
+    out.push_str("export const ROUTE_NAMES = {\n");
     for r in routes {
-        out.push_str(&format!("  {},\n", ts_string(&r.name)));
+        let lit = ts_string(&r.name);
+        out.push_str(&format!("  {}: {},\n", lit, lit));
     }
-    out.push_str("] as const satisfies readonly RouteName[];\n");
+    out.push_str("} as const satisfies Readonly<Record<RouteName, RouteName>>;\n");
     out
 }

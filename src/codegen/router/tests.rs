@@ -261,7 +261,7 @@ fn route_names_emits_union_of_all_resolved() {
 fn route_names_empty_emits_never() {
     let body = route_names::render(&[]);
     assert!(body.contains("RouteName = never"));
-    assert!(body.contains("ROUTE_NAMES = []"));
+    assert!(body.contains("ROUTE_NAMES = {}"));
 }
 
 // ── menu: hierarchy round-trip ─────────────────────────────────────────────
