@@ -449,6 +449,82 @@ fn v1_ron_file_loads_via_upgrader_to_v2() {
     );
 }
 
+/// Pin the canonical default `users.ron` Primer that ships with every
+/// scaffolded project. Asserts the file at
+/// `templates/canonical/storage/blast/state/resources/users.ron` parses
+/// cleanly and matches the in-code spec we expect codegen to consume on
+/// first scaffold.
+#[test]
+fn canonical_template_users_ron_loads_cleanly() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let state_dir = manifest
+        .join("templates")
+        .join("canonical")
+        .join("storage")
+        .join("blast")
+        .join("state");
+
+    let loaded = blast::state::io::load_resource(
+        &state_dir,
+        &ResourceName::new("users"),
+    )
+    .expect("load templates canonical users.ron");
+
+    assert_eq!(loaded.name.as_str(), "users");
+    assert_eq!(loaded.singular_override.as_deref(), Some("User"));
+
+    // Soft-delete configured on the deleted_at column.
+    let sd = loaded.soft_delete.as_ref().expect("soft_delete configured");
+    assert_eq!(sd.column.as_str(), "deleted_at");
+    assert_eq!(sd.default_behavior, SoftDeleteDefault::ExcludeDeleted);
+
+    // Every CRUD verb is admin-only on the canonical resource.
+    for v in [Verb::List, Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
+        let state = loaded.verbs.get(&v).unwrap_or_else(|| panic!("verb {v:?} present"));
+        assert!(
+            matches!(state.auth, AuthMode::AdminOnly),
+            "verb {v:?} should be AdminOnly, got {:?}",
+            state.auth
+        );
+    }
+
+    // password_hash MUST NEVER be in the Public projection.
+    let pwd = loaded
+        .fields
+        .get(&FieldName::new("password_hash"))
+        .expect("password_hash field");
+    assert!(
+        !pwd.variants.contains(&FieldVariant::Public),
+        "password_hash leaked into Public projection: {:?}",
+        pwd.variants
+    );
+    assert!(
+        pwd.variants.contains(&FieldVariant::Admin),
+        "password_hash missing from Admin projection: {:?}",
+        pwd.variants
+    );
+
+    // List verb has paginated + filterable + sortable + max_page_size.
+    let list = loaded.verbs.get(&Verb::List).expect("list verb");
+    let opts = list.list_options.as_ref().expect("list_options");
+    assert!(opts.paginated, "list paginated");
+    assert_eq!(
+        opts.filterable_columns.get(&FieldName::new("email")),
+        Some(&FilterKind::IlikeContains),
+    );
+    assert_eq!(
+        opts.filterable_columns.get(&FieldName::new("role")),
+        Some(&FilterKind::Eq),
+    );
+    assert_eq!(
+        opts.filterable_columns.get(&FieldName::new("created_at")),
+        Some(&FilterKind::Range),
+    );
+    assert!(opts.sortable_columns.contains(&FieldName::new("id")));
+    assert!(opts.sortable_columns.contains(&FieldName::new("email")));
+    assert!(opts.sortable_columns.contains(&FieldName::new("created_at")));
+}
+
 #[test]
 fn defaults_section_round_trips() {
     let dir = tempfile::tempdir().expect("tempdir");

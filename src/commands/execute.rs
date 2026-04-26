@@ -45,6 +45,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 db_url,
                 force,
                 no_test_db,
+                post_seed: Some(std::sync::Arc::new(crate::commands::scaffold_post_seed::run)),
             };
             crate::project::scaffold::create_new_project_with_opts(
                 &name,
@@ -63,6 +64,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 db_url,
                 force,
                 no_test_db,
+                post_seed: Some(std::sync::Arc::new(crate::commands::scaffold_post_seed::run)),
             };
             match name {
                 Some(n) => {

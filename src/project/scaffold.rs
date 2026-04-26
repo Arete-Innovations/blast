@@ -42,7 +42,14 @@ pub struct Args {
     pub env_test_body: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+/// Optional callback signature for the post-seed pipeline. Receives the
+/// fully-vendored project root, returns the count of additional files it
+/// wrote (so the running tally in `Outcome` stays accurate). Lives behind
+/// a function pointer so the lib-side scaffold module doesn't take a hard
+/// dep on bin-private modules — gen_all, database, configs.
+pub type PostSeedHook = dyn Fn(&Path, &mut dyn Sink, &mut dyn Progress) -> BlastResult<usize>;
+
+#[derive(Default)]
 pub struct NewOptions {
     /// Legacy flag retained for CLI compatibility — no longer affects
     /// dep resolution (which doesn't exist anymore). Vendored canonical
@@ -51,6 +58,11 @@ pub struct NewOptions {
     pub db_url: Option<String>,
     pub force: bool,
     pub no_test_db: bool,
+    /// Optional callback invoked after `run()` lays files but before
+    /// `post_install` does npm install + dashboard exec. Used by the
+    /// binary path to plug in the codegen pipeline + `cargo build`
+    /// pre-compile. `None` from tests / lib consumers — no-op.
+    pub post_seed: Option<std::sync::Arc<PostSeedHook>>,
 }
 
 pub struct Outcome {
@@ -155,13 +167,32 @@ fn create_with_target(
     };
 
     match run(args, sink, progress) {
-        Ok(out) => {
+        Ok(mut out) => {
             sink.success(format!(
                 "project `{}` created at {} ({} files written)",
                 project_name,
                 out.project_root.display(),
                 out.files_written
             ));
+
+            // Phase 12: optional post-seed pipeline (codegen + cargo
+            // pre-compile) injected from the binary layer. Lives outside
+            // the lib because it depends on bin-private modules
+            // (`commands`, `database`, `configs`). Skipped (no-op) when
+            // the caller passes `None` — preserves the lib-only test
+            // path that has no live DB.
+            match opts.post_seed.as_deref() {
+                Some(hook) => match hook(&out.project_root, sink, progress) {
+                    Ok(extra_written) => {
+                        out.files_written += extra_written;
+                    }
+                    Err(e) => {
+                        sink.error(format!("post-seed pipeline failed: {}", e));
+                        return Err(e);
+                    }
+                },
+                None => {}
+            }
 
             // Post-scaffold pipeline: npm install, npm run build, exec
             // into the dashboard TUI. On the happy path, exec() replaces
@@ -546,6 +577,7 @@ mod tests {
             db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
             force: false,
             no_test_db: true,
+            post_seed: None,
         };
         let result = create_new_project_with_opts("dup", opts, &mut sink, &mut progress);
 
@@ -567,6 +599,7 @@ mod tests {
             db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
             force: false,
             no_test_db: true,
+            post_seed: None,
         };
         let result =
             init_in_place_with_opts("workspace", target, opts, &mut sink, &mut progress);
