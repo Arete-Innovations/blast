@@ -125,6 +125,20 @@ pub enum Command {
         #[command(subcommand)]
         cmd: Option<ArsenalCmd>,
     },
+
+    #[command(
+        name = "sync-canonical",
+        about = "Refresh vendored Catalyst snapshot in blast/templates/canonical/ (dev tool)"
+    )]
+    SyncCanonical {
+        /// Path to a live catalyst checkout. Defaults to sibling
+        /// `../catalyst/` resolved from the blast crate root.
+        #[arg(long = "catalyst-path")]
+        catalyst_path: Option<std::path::PathBuf>,
+        /// Diff without writing; non-zero exit if drift detected. CI mode.
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]

@@ -171,13 +171,39 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Watch => run_watch(config, dep_manager),
 
         Command::Check { verbose } => run_check(config, verbose),
+
+        Command::SyncCanonical { catalyst_path, check } => {
+            let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+            let args = crate::commands::sync_canonical::Args {
+                catalyst_path,
+                destination: crate::commands::sync_canonical::default_destination(),
+                check,
+            };
+            let outcome = crate::commands::sync_canonical::run(args, &mut sink)?;
+            if check && !outcome.drift_paths.is_empty() {
+                return Err(BlastError::Invalid(format!(
+                    "canonical snapshot drift: {} file(s) need re-sync",
+                    outcome.drift_paths.len()
+                )));
+            }
+            logger::info(&format!(
+                "sync-canonical: copied {}, skipped {}, drift {}",
+                outcome.files_copied,
+                outcome.files_skipped,
+                outcome.drift_paths.len()
+            ))?;
+            Ok(())
+        }
     }
 }
 
 fn is_config_independent(cmd: &Command) -> bool {
     matches!(
         cmd,
-        Command::Help | Command::New { .. } | Command::Init { .. }
+        Command::Help
+            | Command::New { .. }
+            | Command::Init { .. }
+            | Command::SyncCanonical { .. }
     )
 }
 
