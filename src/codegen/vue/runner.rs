@@ -290,6 +290,74 @@ mod tests {
             "Form should emit Widget* payload type"
         );
 
+        // Polish: Form.vue surfaces loading/error/feedback affordances.
+        assert!(
+            form_body.contains("import Message from 'primevue/message'"),
+            "Form should import Message for inline error banner"
+        );
+        assert!(
+            form_body.contains("from 'primevue/usetoast'"),
+            "Form should pull useToast for validation feedback"
+        );
+        assert!(
+            form_body.contains(":loading=\"submitting\""),
+            "Form submit button should bind loading from props"
+        );
+        assert!(
+            form_body.contains(":disabled=\"submitting\""),
+            "Form submit button should disable while submitting"
+        );
+        assert!(
+            form_body.contains("submitError"),
+            "Form should surface a submit error prop"
+        );
+        assert!(
+            form_body.contains("retry: []"),
+            "Form should declare a retry emit"
+        );
+        assert!(
+            form_body.contains("@click=\"onRetry\""),
+            "Form retry button should be wired"
+        );
+        assert!(
+            form_body.contains(":aria-invalid="),
+            "Form fields should expose aria-invalid for screen readers"
+        );
+        assert!(
+            form_body.contains("class=\"field-error p-error\""),
+            "Form should style field errors via PrimeVue's p-error class"
+        );
+        assert!(
+            form_body.contains("role=\"alert\""),
+            "Form field errors should use role=alert"
+        );
+
+        // Polish: List.vue carries loading + empty states + a11y hints.
+        assert!(
+            list_body.contains("import ProgressSpinner from 'primevue/progressspinner'"),
+            "List should import ProgressSpinner for loading state"
+        );
+        assert!(
+            list_body.contains("<template #loading>"),
+            "List should render a loading slot"
+        );
+        assert!(
+            list_body.contains("<template #empty>"),
+            "List should render an empty-state slot"
+        );
+        assert!(
+            list_body.contains("<ProgressSpinner"),
+            "List loading slot should render the spinner"
+        );
+        assert!(
+            list_body.contains("No widgets to show yet."),
+            "List empty state should mention the resource"
+        );
+        assert!(
+            list_body.contains("'aria-label': 'widgets list'"),
+            "List should label the table for a11y"
+        );
+
         assert!(
             report.written.iter().any(|p| p == &form_path),
             "Form should be in written list"
@@ -297,6 +365,90 @@ mod tests {
         assert!(
             report.written.iter().any(|p| p == &list_path),
             "List should be in written list"
+        );
+    }
+
+    fn synth_widget_resource_with_delete() -> ResourceState {
+        let mut r = synth_widget_resource();
+        r.verbs.insert(
+            Verb::Delete,
+            VerbState {
+                auth: AuthMode::AuthRequired,
+                list_options: None,
+            },
+        );
+        r.verbs.insert(
+            Verb::Update,
+            VerbState {
+                auth: AuthMode::AuthRequired,
+                list_options: None,
+            },
+        );
+        r
+    }
+
+    fn write_synth_project_with_delete(root: &Path) {
+        let state_dir = root.join("storage").join("blast").join("state");
+        fs::create_dir_all(state_dir.join("resources")).expect("mk state dir");
+        let mut app = AppState::default();
+        app.canonicalize();
+        save_app(&state_dir, &app).expect("save app");
+        let res = synth_widget_resource_with_delete();
+        save_resource(&state_dir, &res).expect("save resource");
+    }
+
+    #[test]
+    fn list_renders_actions_and_confirm_dialog_when_delete_verb_present() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_synth_project_with_delete(root);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        let _report = run(root, &mut sink, &mut progress).expect("vue codegen runs");
+
+        let list_path = root.join("frontend/src/generated/components/widgets/List.vue");
+        let list_body = fs::read_to_string(&list_path).expect("read list");
+
+        assert!(
+            list_body.contains("import ConfirmDialog from 'primevue/confirmdialog'"),
+            "List with Delete verb should import ConfirmDialog"
+        );
+        assert!(
+            list_body.contains("from 'primevue/useconfirm'"),
+            "List with Delete verb should pull useConfirm"
+        );
+        assert!(
+            list_body.contains("from 'primevue/usetoast'"),
+            "List with Delete verb should pull useToast for feedback"
+        );
+        assert!(
+            list_body.contains("<ConfirmDialog />"),
+            "List should mount the ConfirmDialog component"
+        );
+        assert!(
+            list_body.contains("header: 'Confirm delete'"),
+            "List delete handler should configure confirm header"
+        );
+        assert!(
+            list_body.contains("delete: [row: WidgetPublic]"),
+            "List should declare a typed delete emit"
+        );
+        assert!(
+            list_body.contains("edit: [row: WidgetPublic]"),
+            "List should declare a typed edit emit when Update verb present"
+        );
+        assert!(
+            list_body.contains("aria-label=\"Delete row\""),
+            "List delete button should be labelled for a11y"
+        );
+        assert!(
+            list_body.contains("aria-label=\"Edit row\""),
+            "List edit button should be labelled for a11y"
+        );
+        assert!(
+            list_body.contains("header=\"Actions\""),
+            "List should render an Actions column when mutating verbs exist"
         );
     }
 
