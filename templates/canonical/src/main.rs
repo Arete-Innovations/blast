@@ -18,7 +18,6 @@ mod logger;
 
 use bootstrap::bootstrap;
 use middleware::*;
-use routes::*;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/database/migrations");
 
@@ -39,12 +38,9 @@ async fn main() {
 }
 
 async fn create_app() -> Router {
-    let api_routes = Router::new()
-        .merge(auth::routes())         
-        .merge(home::routes())         
-        .merge(user_api::routes())     
-        .merge(protected::routes())    
-        .merge(error_demo::routes());  
+    // Canonical API surface: /api/auth/{register,login,logout,me}.
+    // User apps mount additional resource routers on top of this.
+    let api_routes = routes::auth::router();
 
     // SPA fallback: serve frontend/dist/ as static assets; any unmatched path
     // (vue-router history-mode deep links) falls through to index.html.

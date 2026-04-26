@@ -1,227 +1,167 @@
+//! HTTP routes for the canonical auth surface — register / login / logout / me.
+//!
+//! Mounted at `/api/auth/*` from `main::create_app()`. `register` + `login`
+//! are public; `logout` + `me` require a valid session token (the
+//! `session_auth_middleware` injects `SessionContext` into request
+//! extensions).
+//!
+//! Bearer token discipline: the client passes the token via
+//! `Authorization: Bearer <token>`. Cookies are not used. This keeps
+//! the contract identical for SPA + native clients.
+
+use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::Argon2;
 use axum::{
     extract::{Extension, Json},
-    http::{header::SET_COOKIE, HeaderValue},
-    response::{IntoResponse, Response},
-    routing::post,
+    http::StatusCode,
+    middleware::from_fn,
+    routing::{get, post},
     Router,
 };
-use axum_extra::extract::CookieJar;
-use chrono::{TimeZone, Utc};
-use diesel::sql_types::{Bool, Integer, Nullable, Text, Varchar};
-use diesel_async::RunQueryDsl;
+use base64::Engine as _;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     cata_log,
     database::db::establish_connection,
     meltdown::*,
-    middleware::auth_middleware::{SessionContext, SESSION_COOKIE},
-    models::sessions,
+    middleware::auth_middleware::session_auth_middleware,
+    models::auth::{sessions, users},
+    sessions::SessionContext,
+    structs::UserPublic,
 };
 
-#[derive(Debug, Deserialize)]
-pub struct LoginRequest {
-    pub username: String,
-    pub password: String,
-    #[serde(default)]
-    pub remember: Option<bool>,
-}
+const SESSION_TTL_SECS: i64 = 60 * 60 * 24 * 7; // 7 days
 
-#[derive(Debug, Serialize)]
-pub struct LoginResponse {
-    pub success: bool,
-    pub message: String,
-    pub token: String,
-    pub expires_at: String,
-    pub user: UserInfo,
-}
-
-#[derive(Debug, Serialize)]
-pub struct UserInfo {
-    pub id: i32,
-    pub username: String,
+#[derive(Debug, Clone, Deserialize)]
+pub struct RegisterInput {
     pub email: String,
-    pub role: String,
-    pub active: bool,
+    pub password: String,
 }
 
-#[derive(Debug, Serialize)]
-pub struct AuthResponse {
-    pub success: bool,
-    pub message: String,
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoginInput {
+    pub email: String,
+    pub password: String,
 }
 
-/// Minimal user row for login — fetched without depending on a concrete Users struct.
-#[derive(diesel::QueryableByName, Debug)]
-struct LoginUserRow {
-    #[diesel(sql_type = Integer)]
-    id: i32,
-    #[diesel(sql_type = Text)]
-    username: String,
-    #[diesel(sql_type = Nullable<Text>)]
-    email: Option<String>,
-    #[diesel(sql_type = Text)]
-    role: String,
-    #[diesel(sql_type = Bool)]
-    active: bool,
-    #[diesel(sql_type = Varchar)]
-    password_hash: String,
+#[derive(Debug, Clone, Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: UserPublic,
 }
 
-fn secure_cookie() -> bool {
-    !matches!(
-        std::env::var("SESSION_COOKIE_SECURE").unwrap_or_else(|_| "true".to_string()).to_ascii_lowercase().as_str(),
-        "0" | "false" | "no" | "off"
-    )
+// ── Password helpers (argon2id) ───────────────────────────────────────────
+
+fn hash_password(plain: &str) -> Result<String, MeltDown> {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon = Argon2::default();
+    let phc = argon
+        .hash_password(plain.as_bytes(), &salt)
+        .map_err(|e| MeltDown::new(MeltType::Unexpected("argon2_hash".into()), format!("argon2 hash: {e}")))?;
+    Ok(phc.to_string())
 }
 
-fn build_session_cookie(token: &str, max_age_seconds: i64) -> String {
-    let flags = if secure_cookie() {
-        "HttpOnly; Secure; SameSite=Lax"
-    } else {
-        "HttpOnly; SameSite=Lax"
-    };
-    format!(
-        "{name}={value}; {flags}; Path=/; Max-Age={max_age}",
-        name = SESSION_COOKIE,
-        value = token,
-        flags = flags,
-        max_age = max_age_seconds.max(0),
-    )
+fn verify_password(plain: &str, phc: &str) -> Result<bool, MeltDown> {
+    let parsed = PasswordHash::new(phc)
+        .map_err(|e| MeltDown::new(MeltType::Unexpected("argon2_parse".into()), format!("argon2 parse: {e}")))?;
+    let argon = Argon2::default();
+    Ok(argon.verify_password(plain.as_bytes(), &parsed).is_ok())
 }
 
-fn build_cleared_cookie() -> String {
-    let flags = if secure_cookie() {
-        "HttpOnly; Secure; SameSite=Lax"
-    } else {
-        "HttpOnly; SameSite=Lax"
-    };
-    format!("{name}=; {flags}; Path=/; Max-Age=0", name = SESSION_COOKIE, flags = flags)
+fn mint_session_token() -> String {
+    let mut buf = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut buf);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(buf)
 }
 
-async fn login(jar: CookieJar, Json(request): Json<LoginRequest>) -> Result<Response, MeltDown> {
+fn now_unix() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
 
-    cata_log!(Info, format!("Login attempt for username: {}", request.username));
+// ── Handlers ──────────────────────────────────────────────────────────────
+
+async fn register_handler(Json(body): Json<RegisterInput>) -> Result<Json<UserPublic>, MeltDown> {
+    cata_log!(Info, format!("Register attempt for email: {}", body.email));
+
+    if body.email.trim().is_empty() {
+        return Err(MeltDown::validation_failed("email is required"));
+    }
+    if body.password.len() < 8 {
+        return Err(MeltDown::validation_failed("password must be at least 8 characters"));
+    }
 
     let mut conn = establish_connection().await?;
-    let rows: Vec<LoginUserRow> = diesel::sql_query(
-        "SELECT id, username, email, role, active, password_hash FROM users WHERE username = $1 AND active = true LIMIT 1"
-    )
-    .bind::<Text, _>(&request.username)
-    .load(&mut conn)
-    .await
-    .map_err(|e| MeltDown::from(e).with_context("operation", "login_fetch_user"))?;
 
-    let user = rows.into_iter().next().ok_or_else(|| {
-        cata_log!(Warning, format!("Login failed: no active user with username {}", request.username));
-        MeltDown::auth_rejected()
-    })?;
+    if users::find_by_email(&mut conn, &body.email).await?.is_some() {
+        return Err(MeltDown::validation_failed("email already registered"));
+    }
 
-    let password_hash = user.password_hash.clone();
-    let password = request.password.clone();
-    let password_ok = tokio::task::spawn_blocking(move || {
-        bcrypt::verify(&password, &password_hash).unwrap_or(false)
-    })
-    .await
-    .map_err(|e| MeltDown::new(MeltType::Unexpected("tokio_task_join".to_string()), format!("Task join error: {}", e)))?;
+    let hash = hash_password(&body.password)?;
+    let user = users::insert_new(&mut conn, &body.email, &hash).await?;
 
-    if !password_ok {
-        cata_log!(Warning, format!("Invalid password for user: {}", request.username));
+    cata_log!(Info, format!("Registered user id={} email={}", user.id, user.email));
+    Ok(Json(UserPublic::from(user)))
+}
+
+async fn login_handler(Json(body): Json<LoginInput>) -> Result<Json<LoginResponse>, MeltDown> {
+    cata_log!(Info, format!("Login attempt for email: {}", body.email));
+
+    let mut conn = establish_connection().await?;
+    let user = users::find_by_email(&mut conn, &body.email)
+        .await?
+        .ok_or_else(MeltDown::auth_rejected)?;
+
+    if !verify_password(&body.password, &user.password_hash)? {
+        cata_log!(Warning, format!("Invalid password for email: {}", body.email));
         return Err(MeltDown::auth_rejected());
     }
 
-    let (session, raw_token) = sessions::create_session(user.id, None, None).await?;
+    let token = mint_session_token();
+    let expires_at = now_unix() + SESSION_TTL_SECS;
+    let _session = sessions::insert_session(&mut conn, user.id, &token, expires_at).await?;
 
-    cata_log!(Info, format!("Issued session {} for user {} (ID: {})", session.id, user.username, user.id));
-
-    let max_age = (session.expires_at - Utc::now().timestamp()).max(0);
-    let cookie = build_session_cookie(&raw_token, max_age);
-
-    let expires_at_iso = Utc
-        .timestamp_opt(session.expires_at, 0)
-        .single()
-        .map(|dt| dt.to_rfc3339())
-        .unwrap_or_default();
-
-    let body = LoginResponse {
-        success: true,
-        message: "Login successful".to_string(),
-        token: raw_token,
-        expires_at: expires_at_iso,
-        user: UserInfo {
-            id: user.id,
-            username: user.username,
-            email: user.email.unwrap_or_default(),
-            role: user.role,
-            active: user.active,
-        },
-    };
-
-    let _ = jar;
-    let mut response = Json(body).into_response();
-    response
-        .headers_mut()
-        .append(SET_COOKIE, HeaderValue::from_str(&cookie).map_err(|e| MeltDown::new(MeltType::Unexpected("set_cookie".into()), format!("invalid Set-Cookie header: {}", e)))?);
-
-    Ok(response)
-}
-
-async fn logout(ctx: Option<Extension<SessionContext>>) -> Result<Response, MeltDown> {
-    cata_log!(Debug, "Logout request");
-
-    if let Some(Extension(ctx)) = ctx {
-        if let Err(e) = sessions::revoke(ctx.session_id).await {
-            cata_log!(Warning, format!("Failed to revoke session {}: {}", ctx.session_id, e.log_message()));
-        }
-    }
-
-    let clear_cookie = build_cleared_cookie();
-
-    let body = AuthResponse {
-        success: true,
-        message: "Logged out successfully".to_string(),
-    };
-
-    let mut response = Json(body).into_response();
-    response
-        .headers_mut()
-        .append(SET_COOKIE, HeaderValue::from_str(&clear_cookie).map_err(|e| MeltDown::new(MeltType::Unexpected("set_cookie".into()), format!("invalid Set-Cookie header: {}", e)))?);
-
-    Ok(response)
-}
-
-async fn me(Extension(ctx): Extension<SessionContext>) -> Result<Json<UserInfo>, MeltDown> {
-
-    let mut conn = establish_connection().await?;
-    let rows: Vec<LoginUserRow> = diesel::sql_query(
-        "SELECT id, username, email, role, active, password_hash FROM users WHERE id = $1 LIMIT 1"
-    )
-    .bind::<Integer, _>(ctx.user_id)
-    .load(&mut conn)
-    .await
-    .map_err(|e| MeltDown::from(e).with_context("operation", "me_fetch_user"))?;
-
-    let user = rows.into_iter().next().ok_or_else(|| MeltDown::session_invalid("User not found"))?;
-
-    Ok(Json(UserInfo {
-        id: user.id,
-        username: user.username,
-        email: user.email.unwrap_or_default(),
-        role: user.role,
-        active: user.active,
+    cata_log!(Info, format!("Issued session for user id={}", user.id));
+    Ok(Json(LoginResponse {
+        token,
+        user: UserPublic::from(user),
     }))
 }
 
-pub fn routes() -> Router {
-    use axum::middleware::from_fn;
+async fn logout_handler(
+    Extension(ctx): Extension<SessionContext>,
+) -> Result<StatusCode, MeltDown> {
+    let mut conn = establish_connection().await?;
+    sessions::delete_by_token(&mut conn, &ctx.token).await?;
+    cata_log!(Info, format!("Revoked session for user id={}", ctx.user_id));
+    Ok(StatusCode::NO_CONTENT)
+}
 
-    use crate::middleware::auth_middleware::session_auth_middleware;
+async fn me_handler(
+    Extension(ctx): Extension<SessionContext>,
+) -> Result<Json<UserPublic>, MeltDown> {
+    let mut conn = establish_connection().await?;
+    let user = users::find_by_id(&mut conn, ctx.user_id)
+        .await?
+        .ok_or_else(|| MeltDown::session_invalid("Session user no longer exists"))?;
+    Ok(Json(UserPublic::from(user)))
+}
 
-    let public = Router::new().route("/auth/login", post(login));
+/// Build the `/auth/*` router. The user app's transport bootstrap nests
+/// this under `/api`.
+pub fn router() -> Router {
+    let public = Router::new()
+        .route("/auth/register", post(register_handler))
+        .route("/auth/login", post(login_handler));
 
     let protected = Router::new()
-        .route("/auth/logout", post(logout))
-        .route("/auth/me", post(me))
+        .route("/auth/logout", post(logout_handler))
+        .route("/auth/me", get(me_handler))
         .layer(from_fn(session_auth_middleware));
 
     public.merge(protected)

@@ -79,7 +79,7 @@ impl Ctx {
         }
     }
 
-    pub fn session_user_id(&self) -> Option<i32> {
+    pub fn session_user_id(&self) -> Option<i64> {
         self.session.as_ref().map(|s| s.user_id)
     }
 

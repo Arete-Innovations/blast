@@ -3,54 +3,53 @@ use serde::{Deserialize, Serialize};
 
 use crate::database::schema::users;
 
-#[derive(Queryable, QueryableByName, Debug, Clone, Identifiable, Serialize, Deserialize, Default)]
+/// Full users row as stored in Postgres. Includes the password hash —
+/// never serialize this directly to the client; project to `UserPublic`.
+#[derive(Queryable, QueryableByName, Selectable, Debug, Clone, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = users)]
-pub struct Users {
-    pub id: i32,
-    pub username: String,
-    pub email: Option<String>,
-    pub first_name: String,
-    pub last_name: String,
+pub struct User {
+    pub id: i64,
+    pub email: String,
     pub password_hash: String,
     pub role: String,
-    pub active: bool,
-    pub should_change_password: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    pub deleted_at: Option<i64>,
 }
 
-#[derive(Insertable)]
+/// Insert payload for `users`. The `role`/`created_at`/`updated_at` columns
+/// fall back to their DB defaults when omitted.
+#[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = users)]
 pub struct NewUser {
-    pub username: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: Option<String>,
+    pub email: String,
     pub password_hash: String,
+}
+
+/// Public projection of a user row — safe to send over the wire.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPublic {
+    pub id: i64,
+    pub email: String,
     pub role: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct LoginForm {
-    pub username: String,
-    pub password: String,
-    pub authenticity_token: String,
-    pub remember_me: Option<bool>,
+impl From<&User> for UserPublic {
+    fn from(u: &User) -> Self {
+        Self {
+            id: u.id,
+            email: u.email.clone(),
+            role: u.role.clone(),
+        }
+    }
 }
 
-#[derive(Deserialize, Serialize, Clone)]
-pub struct RegisterForm {
-    pub username: String,
-    pub email: String,
-    pub first_name: String,
-    pub last_name: String,
-    pub password: String,
-    pub confirm_password: String,
-    pub authenticity_token: String,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct UpdatePassword<'a> {
-    pub password: &'a str,
-    pub confirm_password: &'a str,
+impl From<User> for UserPublic {
+    fn from(u: User) -> Self {
+        Self {
+            id: u.id,
+            email: u.email,
+            role: u.role,
+        }
+    }
 }

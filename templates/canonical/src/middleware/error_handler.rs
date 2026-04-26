@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use axum::{
     extract::Request,
-    http::{StatusCode, HeaderMap},
+    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
     Json,

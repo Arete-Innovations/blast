@@ -5,7 +5,7 @@ use std::{
 
 use diesel_async::{
     pooled_connection::{
-        deadpool::{Object, Pool},
+        deadpool::Pool,
         AsyncDieselConnectionManager,
     },
     AsyncConnection, AsyncPgConnection,

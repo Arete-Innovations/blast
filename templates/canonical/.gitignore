@@ -2,9 +2,8 @@
 /target
 Cargo.lock
 
-# Frontend build artifacts
-/frontend/node_modules
-/frontend/dist
+# Generated files
+/public
 
 # Log files
 /storage/logs/*.log
@@ -12,9 +11,9 @@ Cargo.lock
 /storage/blast/blast.log
 /storage/blast/server.pid
 
-# Env (secrets)
-.env
-.env.test
+# Claude.ai/code documentation
+CLAUDE.md
+**/.claude/settings.local.json
 
 # IDE files
 .idea/
@@ -30,5 +29,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
-</content>
-</invoke>
+
+# Development files
+check_errors.sh
+.env

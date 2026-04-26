@@ -311,13 +311,6 @@ impl MeltDown {
     }
 }
 
-impl From<bcrypt::BcryptError> for MeltDown {
-    fn from(err: bcrypt::BcryptError) -> Self {
-        MeltDown::new(MeltType::ConfigurationError, "Password hashing error")
-            .with_source(err)
-    }
-}
-
 impl From<std::env::VarError> for MeltDown {
     fn from(err: std::env::VarError) -> Self {
         MeltDown::new(MeltType::EnvironmentError, "Environment variable error")
@@ -331,12 +324,10 @@ impl From<DieselError> for MeltDown {
             DieselError::DatabaseError(kind, ref info) => match kind {
                 DatabaseErrorKind::UniqueViolation => {
                     let field = if let Some(constraint) = info.constraint_name() {
-                        if constraint.contains("username") || constraint.contains("users_username_key") {
-                            "Username"
-                        } else if constraint.contains("email") || constraint.contains("users_email_key") {
+                        if constraint.contains("email") || constraint.contains("users_email_key") {
                             "Email"
-                        } else if constraint.contains("api_key") || constraint.contains("api_keys_key_key") {
-                            "API Key"
+                        } else if constraint.contains("token") || constraint.contains("sessions_token_key") {
+                            "Session token"
                         } else {
                             "This value"
                         }

@@ -1,103 +1,72 @@
-use chrono::{Duration, Utc};
 use diesel::prelude::*;
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 
 use crate::{
-    database::{db::establish_connection, schema::sessions::dsl as session_dsl},
+    database::schema::sessions::dsl as sessions_dsl,
     meltdown::*,
-    services::crypto,
-    structs::{NewSession, Session},
+    structs::{NewSession, Session, User},
 };
 
-pub const DEFAULT_SESSION_DAYS: i64 = 30;
-
-pub async fn create_session(
-    user_id: i32,
-    user_agent: Option<String>,
-    ip: Option<String>,
-) -> Result<(Session, String), MeltDown> {
-    let mut conn = establish_connection().await?;
-
-    let raw_token = crypto::generate_session_token();
-    let token_hash = crypto::sha256(&raw_token);
-    let expires_at = (Utc::now() + Duration::days(DEFAULT_SESSION_DAYS)).timestamp();
-
+/// Insert a new session row binding `token` -> `user_id` with the given
+/// expiry (unix epoch seconds).
+pub async fn insert_session(
+    conn: &mut AsyncPgConnection,
+    user_id: i64,
+    token: &str,
+    expires_at: i64,
+) -> Result<Session, MeltDown> {
     let new_session = NewSession {
         user_id,
-        token_hash,
-        user_agent,
-        ip,
+        token: token.to_string(),
         expires_at,
     };
 
-    let session = diesel::insert_into(session_dsl::sessions)
+    diesel::insert_into(sessions_dsl::sessions)
         .values(&new_session)
-        .get_result::<Session>(&mut conn)
+        .get_result::<Session>(conn)
         .await
-        .map_err(|e| MeltDown::from(e).with_context("operation", "create_session"))?;
-
-    Ok((session, raw_token))
+        .map_err(|e| MeltDown::from(e).with_context("operation", "insert_session"))
 }
 
-pub async fn find_by_token(raw_token: &str) -> Result<Option<Session>, MeltDown> {
-    let mut conn = establish_connection().await?;
-    let token_hash = crypto::sha256(raw_token);
+/// Resolve a session token to the joined `(Session, User)` pair, returning
+/// `Ok(None)` when the token is unknown, expired, or the user is soft-deleted.
+pub async fn find_by_token(
+    conn: &mut AsyncPgConnection,
+    token: &str,
+) -> Result<Option<(Session, User)>, MeltDown> {
+    use crate::database::schema::{sessions, users};
 
-    session_dsl::sessions
-        .filter(session_dsl::token_hash.eq(token_hash))
-        .filter(session_dsl::revoked.eq(false))
-        .first::<Session>(&mut conn)
+    let now = now_unix();
+
+    sessions::table
+        .inner_join(users::table)
+        .filter(sessions::token.eq(token))
+        .filter(sessions::expires_at.gt(now))
+        .filter(users::deleted_at.is_null())
+        .select((Session::as_select(), User::as_select()))
+        .first::<(Session, User)>(conn)
         .await
         .optional()
         .map_err(|e| MeltDown::from(e).with_context("operation", "find_session_by_token"))
 }
 
-pub async fn revoke(id: i32) -> Result<(), MeltDown> {
-    let mut conn = establish_connection().await?;
-
-    diesel::update(session_dsl::sessions.filter(session_dsl::id.eq(id)))
-        .set(session_dsl::revoked.eq(true))
-        .execute(&mut conn)
+/// Delete a session row by its bearer token. Idempotent — missing rows
+/// are not an error.
+pub async fn delete_by_token(
+    conn: &mut AsyncPgConnection,
+    token: &str,
+) -> Result<(), MeltDown> {
+    diesel::delete(sessions_dsl::sessions.filter(sessions_dsl::token.eq(token)))
+        .execute(conn)
         .await
-        .map_err(|e| {
-            MeltDown::from(e)
-                .with_context("operation", "revoke_session")
-                .with_context("session_id", id.to_string())
-        })?;
+        .map_err(|e| MeltDown::from(e).with_context("operation", "delete_session_by_token"))?;
     Ok(())
 }
 
-pub async fn revoke_all_for_user(user_id: i32) -> Result<(), MeltDown> {
-    let mut conn = establish_connection().await?;
-
-    diesel::update(
-        session_dsl::sessions
-            .filter(session_dsl::user_id.eq(user_id))
-            .filter(session_dsl::revoked.eq(false)),
-    )
-    .set(session_dsl::revoked.eq(true))
-    .execute(&mut conn)
-    .await
-    .map_err(|e| {
-        MeltDown::from(e)
-            .with_context("operation", "revoke_all_sessions_for_user")
-            .with_context("user_id", user_id.to_string())
-    })?;
-    Ok(())
-}
-
-pub async fn touch_last_seen(id: i32) -> Result<(), MeltDown> {
-    let mut conn = establish_connection().await?;
-    let now = Utc::now().timestamp();
-
-    diesel::update(session_dsl::sessions.filter(session_dsl::id.eq(id)))
-        .set(session_dsl::last_seen_at.eq(now))
-        .execute(&mut conn)
-        .await
-        .map_err(|e| {
-            MeltDown::from(e)
-                .with_context("operation", "touch_last_seen")
-                .with_context("session_id", id.to_string())
-        })?;
-    Ok(())
+fn now_unix() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }

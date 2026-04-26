@@ -7,7 +7,8 @@ edition = "2021"
 testing = []
 
 [dependencies]
-bcrypt = "0.17.0"
+argon2 = "0.5"
+base64 = "0.22"
 chrono = { version = "0.4.39", features = ["serde"] }
 diesel-async = { version = "0.5.2", features = ["postgres", "r2d2", "tokio", "deadpool"] }
 diesel = { version = "2.2.7", features = ["postgres", "64-column-tables", "chrono", "serde_json", "r2d2"] }

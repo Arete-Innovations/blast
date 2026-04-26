@@ -152,11 +152,12 @@ mod tests {
         use crate::sessions::SessionContext;
 
         let user = DummyUser { id: 7, role: "editor".to_string() };
-        let ctx = SessionContext::from_user(99, &user);
+        let ctx = SessionContext::from_user(99, &user, "tok-xyz");
 
         assert_eq!(ctx.session_id, 99);
         assert_eq!(ctx.user_id, 7);
         assert_eq!(ctx.role, "editor");
+        assert_eq!(ctx.token, "tok-xyz");
         assert!(ctx.has_role("editor"));
         assert!(!ctx.is_admin());
     }

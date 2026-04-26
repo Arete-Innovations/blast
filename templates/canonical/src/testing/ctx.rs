@@ -5,7 +5,7 @@ use crate::meltdown::MeltDown;
 
 use super::harness::{with_test_transaction, TestPool};
 
-pub type UserId = i32;
+pub type UserId = i64;
 
 pub struct TestCtx<'a> {
     pub conn: &'a mut AsyncPgConnection,
