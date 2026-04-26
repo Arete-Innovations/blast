@@ -51,6 +51,8 @@ ron = "0.8"
 indexmap = { version = "2", features = ["serde"] }
 blake3 = "1.5"
 Inflector = "0.11"
+argon2 = "0.5"
+rand_core06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
 
 [dev-dependencies]
 tempfile = "3"
