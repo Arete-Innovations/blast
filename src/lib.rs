@@ -4,5 +4,7 @@ pub mod error;
 pub mod codegen;
 #[path = "io/mod.rs"]
 pub mod io;
+#[path = "project/mod.rs"]
+pub mod project;
 #[path = "state/mod.rs"]
 pub mod state;

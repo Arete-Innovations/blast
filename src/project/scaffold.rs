@@ -1,9 +1,13 @@
 use crate::codegen::{build_rs_template, fe_runtime, frontend_scaffold};
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
+use crate::project::db_bootstrap::{
+    self, BootstrapArgs, BootstrapOutcome, RealDbAdmin,
+};
 use crate::project::templates;
 use crate::state::app::AppState;
 use crate::state::io as state_io;
+use dialoguer::{theme::ColorfulTheme, Input};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,6 +15,20 @@ pub struct Args {
     pub project_name: String,
     pub project_root: PathBuf,
     pub catalyst_dep_line: String,
+    /// `.env` body to write. If `None`, falls back to the legacy default
+    /// (so the existing scaffold tests that don't go through DB bootstrap
+    /// keep working).
+    pub env_body: Option<String>,
+    /// `.env.test` body. If `None`, no `.env.test` file is written.
+    pub env_test_body: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NewOptions {
+    pub use_dev_branch: bool,
+    pub db_url: Option<String>,
+    pub force: bool,
+    pub no_test_db: bool,
 }
 
 pub struct Outcome {
@@ -25,9 +43,9 @@ pub enum CatalystDepKind {
     GitDep,
 }
 
-pub fn create_new_project(
+pub fn create_new_project_with_opts(
     project_name: &str,
-    use_dev_branch: bool,
+    opts: NewOptions,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
 ) -> BlastResult<Outcome> {
@@ -53,10 +71,11 @@ pub fn create_new_project(
         }
     };
 
-    let (catalyst_dep_line, dep_kind) = match resolve_catalyst_dep(use_dev_branch, &project_root) {
-        Some((line, kind)) => (line, kind),
-        None => (templates::catalyst_git_dep(), CatalystDepKind::GitDep),
-    };
+    let (catalyst_dep_line, dep_kind) =
+        match resolve_catalyst_dep(opts.use_dev_branch, &project_root) {
+            Some((line, kind)) => (line, kind),
+            None => (templates::catalyst_git_dep(), CatalystDepKind::GitDep),
+        };
 
     sink.info(format!(
         "scaffolding `{}` at {}",
@@ -72,10 +91,24 @@ pub fn create_new_project(
         }
     }
 
+    // Bootstrap the database BEFORE writing any files. If this fails, the
+    // user gets a clear error and no half-broken project lands on disk.
+    progress.step_start("bootstrap database");
+    let bootstrap = pre_create_db(&package_name, &opts, sink)?;
+    progress.step_done("bootstrap database");
+
+    let env_body = templates::env_example(&bootstrap.primary_url);
+    let env_test_body = bootstrap
+        .test_url
+        .as_deref()
+        .map(templates::env_test_example);
+
     let args = Args {
         project_name: package_name,
         project_root: project_root.clone(),
         catalyst_dep_line,
+        env_body: Some(env_body),
+        env_test_body,
     };
 
     let outcome = run(args, sink, progress);
@@ -107,6 +140,38 @@ pub fn create_new_project(
     }
 }
 
+/// Resolve the DB URL (CLI arg or interactive prompt), then run the DB
+/// bootstrap orchestrator. This is split out from `create_new_project_with_opts`
+/// so the file-writing `run()` path stays testable without a live Postgres.
+fn pre_create_db(
+    project_name: &str,
+    opts: &NewOptions,
+    sink: &mut dyn Sink,
+) -> BlastResult<BootstrapOutcome> {
+    let db_url = match &opts.db_url {
+        Some(u) => u.clone(),
+        None => prompt_for_db_url(project_name)?,
+    };
+
+    let mut admin = RealDbAdmin;
+    let bargs = BootstrapArgs {
+        project_name: project_name.to_string(),
+        db_url,
+        force: opts.force,
+        no_test_db: opts.no_test_db,
+    };
+    db_bootstrap::bootstrap(&bargs, &mut admin, sink)
+}
+
+fn prompt_for_db_url(project_name: &str) -> BlastResult<String> {
+    let default = db_bootstrap::default_url_for(project_name);
+    let url: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Postgres URL")
+        .default(default)
+        .interact_text()?;
+    Ok(url)
+}
+
 pub fn run(
     args: Args,
     sink: &mut dyn Sink,
@@ -132,13 +197,29 @@ pub fn run(
         templates::gitignore(),
         &mut count,
     )?;
-    let env_body = templates::env_example(&args.project_name);
+    let env_body = match &args.env_body {
+        Some(body) => body.clone(),
+        None => templates::env_example(&format!(
+            "postgres://postgres:postgres@localhost/{}",
+            args.project_name
+        )),
+    };
     write_file(
         &args.project_root.join(".env.example"),
         &env_body,
         &mut count,
     )?;
     write_file(&args.project_root.join(".env"), &env_body, &mut count)?;
+    match &args.env_test_body {
+        Some(test_body) => {
+            write_file(
+                &args.project_root.join(".env.test"),
+                test_body,
+                &mut count,
+            )?;
+        }
+        None => {} // allow: no test DB requested, skip writing .env.test
+    }
     progress.step_done("write top-level files");
 
     progress.step_start("scaffold src/ layer tree");
@@ -423,8 +504,8 @@ fn path_relative_from(from_dir: &Path, target: &Path) -> Option<PathBuf> {
 fn print_next_steps(project_name: &str, sink: &mut dyn Sink) {
     sink.info("next steps:");
     sink.info(format!("  cd {}", project_name));
-    sink.info("  blast init    # run migrations + codegen pipeline");
-    sink.info("  blast run     # start dev server");
+    sink.info("  cargo run     # boot will run migrations + seed admin user");
+    sink.info("  blast run     # (alternative) start dev server via blast");
 }
 
 #[cfg(test)]
@@ -439,6 +520,8 @@ mod tests {
             project_name: name.to_string(),
             project_root,
             catalyst_dep_line: dep_line.to_string(),
+            env_body: None,
+            env_test_body: None,
         };
         let mut sink = NullSink;
         let mut progress = NullProgress;
@@ -575,7 +658,16 @@ mod tests {
 
         let mut sink = NullSink;
         let mut progress = NullProgress;
-        let result = create_new_project("dup", false, &mut sink, &mut progress);
+        // We pass --no-test-db and an unreachable URL; the existing-dir check
+        // fires BEFORE bootstrap, so the test still asserts the right thing
+        // without needing a live Postgres.
+        let opts = NewOptions {
+            use_dev_branch: false,
+            db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
+            force: false,
+            no_test_db: true,
+        };
+        let result = create_new_project_with_opts("dup", opts, &mut sink, &mut progress);
 
         std::env::set_current_dir(original).expect("restore cwd");
         assert!(result.is_err());
