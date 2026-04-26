@@ -223,6 +223,7 @@ fn write_minimal_users_resource(state_dir: &Path) {
         fields: IndexMap::new(),
         verbs: IndexMap::new(),
         ws_events: None,
+        singular_override: None,
     };
 
     let mut id_variants = BTreeSet::new();

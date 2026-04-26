@@ -13,6 +13,11 @@ pub struct ResourceState {
     pub verbs: IndexMap<Verb, VerbState>,
     #[serde(default)]
     pub ws_events: Option<WsEventsState>,
+    /// Optional override for the singular form of `name` used by struct
+    /// codegen (e.g. `data` → `Datum`). When `None`, the inflector picks
+    /// the default singularization.
+    #[serde(default)]
+    pub singular_override: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,6 +138,7 @@ impl ResourceState {
             fields: IndexMap::new(),
             verbs: IndexMap::new(),
             ws_events: None,
+            singular_override: None,
         }
     }
 

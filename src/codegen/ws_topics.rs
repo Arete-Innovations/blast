@@ -429,6 +429,7 @@ mod tests {
                 payload_shape: shape,
                 topic_scope: scope,
             }),
+            singular_override: None,
         }
     }
 
