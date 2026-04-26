@@ -52,17 +52,41 @@ blast help                       # top-level help
 blast gen schema                  # diesel migration run + print-schema
 blast gen structs                 # schema.rs + resource state → src/structs/generated/
 blast gen models                  # schema.rs + resource state → src/models/generated/
-blast gen flows                   # resource state → src/flows/generated/ + transport/http/generated/ + transport/ws/generated/
+blast gen flows                   # resource state → src/flows/generated/
 blast gen frontend                # resource state + app state → frontend/src/generated/
 blast gen env-example             # app state env spec → .env.example
 blast gen governor-plugin         # app state fe_lint section → frontend/scripts/governor-plugin.js + .rule_violations_whitelist
+blast gen fe-scaffold             # seed tokens.css, base.css, primevue.ts (idempotent — first-run seed)
 blast gen table [name]            # interactive migration wizard; emits up.sql / down.sql in migrations/
+blast gen migration [--custom] <name>  # empty migration scaffold (custom = hand-written SQL: views/triggers/etc.)
 blast gen resource [name]         # TUI wizard to author/edit storage/blast/state/resources/<name>.ron
-blast gen test                    # resource state → *.test.rs scaffolds per flow + per route (idempotent on existing files)
-blast gen all                     # full pipeline: schema → structs → models → flows → frontend → env-example → governor-plugin → test scaffolds
+blast gen test [--flow|--route]   # resource state → *.test.rs scaffolds per flow + per route (idempotent on existing files)
+blast gen all                     # full pipeline (see below)
 ```
 
 All `blast gen` targets read from `storage/blast/state/` (see `SPEC_STATE.md`). There is no `blast gen primer` or `blast gen blueprint` — the DSL sub-crates are gone.
+
+### `blast gen all` pipeline
+
+`blast gen all` runs **eleven** ordered steps. Each step calls a dedicated codegen module and reports `{written, skipped}` counts back to the sink. On any step's failure the pipeline aborts; no retries (that's `blast init`'s job).
+
+```
+1. schema generation           (diesel print-schema → src/database/schema.rs)
+2. structs generation          (codegen::structs::run)
+3. models generation           (legacy models::generate — to be replaced by codegen::models::run)
+4. flows generation            (codegen::flows::run)
+5. http routes generation      (codegen::http_routes::run)
+6. frontend generation         (codegen::run_frontend — types + api + composables + validators)
+7. ws topics generation        (codegen::ws_topics::run)
+8. vue components generation   (codegen::vue::run — Form.vue + List.vue per resource)
+9. .env.example generation     (codegen::env_example::run)
+10. governor plugin emission    (codegen::governor_plugin::run)
+11. test scaffold emission      (codegen::test_scaffold::run, Filter::All)
+```
+
+Steps 5/7/8/11 short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping"). Step 3 is the only step that warns instead of aborting on failure (legacy models generator, expected to misbehave on empty schemas — slated for replacement).
+
+Implementation lives in `src/commands/gen_all.rs` as `pub fn run(args, config, sink, progress) -> BlastResult<Outcome>`. `Outcome` carries cumulative `steps_run`, `files_written`, `files_skipped`.
 
 ## TUI Flows
 
@@ -70,34 +94,45 @@ All `blast gen` targets read from `storage/blast/state/` (see `SPEC_STATE.md`). 
 
 Interactive resource state authoring, powered by dialoguer (`FuzzySelect`, `MultiSelect`, `Input`, `Confirm`). Produces or updates `storage/blast/state/resources/<name>.ron`. Does not run codegen — user runs `blast gen all` after.
 
-Steps:
+The wizard is implemented as **a wizard, not a command**: it lives under `src/wizards/gen_resource/` and produces a fully-resolved `Args` struct that gets handed to the same `run` fn as the CLI. Wizards never execute work themselves — they only resolve arguments.
 
-1. **Pick table** — if `[name]` not provided, list tables from `schema.rs`, user picks via `FuzzySelect`. If the resource already has a state file, pre-selections are loaded.
+Steps (each step is a sub-module in `src/wizards/gen_resource/`):
 
-2. **Per field:** multi-select which variants it belongs to (`DB`, `Insertable`, `Patch`, `Public`, `Admin`). Defaults are smart:
-   - Primary keys: `DB + Public`
-   - `password_hash`, `*_secret`: `DB` only
-   - `created_at`, `updated_at`: `DB + Public` (readonly)
+1. **`pick`** — if `[name]` not provided, list tables from `schema.rs`, user picks via `FuzzySelect`. If the resource already has a state file, it's loaded as the seed.
+
+2. **`schema_diff`** (only when editing an existing resource) — compares the on-disk `schema.rs` columns against the resource's stored fields and renders a three-section drift report:
+   - `+` columns present in `schema.rs` but missing from state (added)
+   - `-` columns present in state but missing from `schema.rs` (removed)
+   - `~` columns whose `sql_type` differs (type-changed)
+
+   When **added** columns are present, the wizard prompts to apply them automatically with smart-default variants. Removed/type-changed are surfaced as warnings only — the user resolves them by re-running the wizard's field/verb steps or by editing the state file directly. No silent migrations.
+
+3. **`fields`** — per field: multi-select which variants it belongs to (`Db`, `Insertable`, `Patch`, `Public`, `Admin`). Defaults are smart:
+   - Primary keys: `Db + Public`
+   - `password_hash`, `*_secret`: `Db` only
+   - `created_at`, `updated_at`: `Db + Public` (readonly)
    - Everything else: all variants
 
-3. **Per verb (list/get/create/update/delete):** toggle on/off. For each enabled verb, pick auth mode:
+4. **`verbs`** — per verb (list/get/create/update/delete): toggle on/off. For each enabled verb, pick auth mode:
    - `public`
    - `auth_required`
    - `admin_only`
    - `scoped_to:<field>` — dialoguer shows available field names
    - `roles:[...]` — multi-select from known role enum variants
 
-4. **List-specific:** toggle `.paginated()`, multi-select filterable columns.
+5. **`list`** — list-specific: toggle `.paginated()`, multi-select filterable columns.
 
-5. **WebSocket events:** toggle, pick trigger columns, pick payload shape (`FullPublicRow` or `IdOnly`), pick topic scope.
+6. **`ws`** — WebSocket events: toggle, pick trigger columns, pick payload shape (`FullPublicRow` or `IdOnly`), pick topic scope.
 
-6. **Confirm:** show state file preview, confirm → write `storage/blast/state/resources/<name>.ron`.
+7. **`confirm`** — show state file preview, confirm → return `WriteAction::{Created,Updated,Cancelled}`.
 
-There is no `raw_rust` field in state files. If TUI can't express it, user writes Rust in `src/<layer>/custom/`. The layer split is the escape hatch.
+8. **Atomic write** — on confirm, `state::save_resource` writes `storage/blast/state/resources/<name>.ron` via the atomic `.tmp` + rename pattern (see `SPEC_STATE.md`).
+
+There is no `raw_rust` field in state files. If the TUI can't express something, the user writes Rust in `src/<layer>/custom/`. The layer split is the escape hatch.
 
 ### `blast gen` (no args)
 
-Launches the dialoguer menu with all codegen targets as selectable items. User picks → runs that target (which may itself have a TUI, like `gen resource`).
+Launches a dialoguer `Select` menu (`src/gen_picker.rs`) listing every `GenCmd` variant. User picks → the matched variant runs through the same `commands::execute` dispatch as the CLI. `gen resource` and `gen table` then enter their own dialoguer wizards.
 
 ## Dashboard (`blast dashboard`)
 
@@ -155,23 +190,37 @@ Retries critical steps (schema, codegen) up to 3 times on failure before exiting
 
 Progress shown via `indicatif` progress bars. File log at `storage/blast/init.log`.
 
-## `blast new <name>`
+## `blast new <name> [--dev]`
 
-Scaffolds a fresh Catablast app:
+Scaffolds a fresh Catablast app from **in-Blast templates**. Does not clone a remote repo. All template content lives in `src/project/templates.rs` and `src/codegen/{build_rs_template, frontend_scaffold}.rs`.
 
 ```
-Step 1/6: Clone template repo (GitHub/GitLab/Bitbucket fallback)
-Step 2/6: Rename temp dir to <name>
-Step 3/6: Set Cargo.toml package name
-Step 4/6: Write .env from .env.example template with generated SESSION_SIGNING_KEY
-Step 5/6: Write initial storage/blast/state/app.ron + resources/ stub
-Step 6/6: Write initial schema.rs stub + CLAUDE.md scaffold
+Step 1: create project root
+Step 2: write Cargo.toml                     (catalyst dep auto-detected — see below)
+Step 3: write top-level files                (.gitignore, .env.example, .env)
+Step 4: scaffold src/ layer tree             (mod.rs + generated/custom split per layer + transport sublayers)
+Step 5: scaffold storage/blast/state/        (initial app.ron + resources/.gitkeep + .gitignore)
+Step 6: scaffold migrations/
+Step 7: emit build.rs                        (codegen::build_rs_template — hash-mismatch hard-fail)
+Step 8: scaffold frontend/                   (vite + vue + ts + primevue)
+Step 9: seed frontend tokens/base/primevue   (codegen::frontend_scaffold — first-run seed only)
 ```
+
+Total emit: ~52 files. Full implementation in `src/project/{mod, scaffold, templates}.rs`.
+
+### Catalyst dep auto-detection
+
+Blast auto-resolves the `catalyst` Cargo dep based on its own location:
+
+- If a sibling `catalyst/` directory is found relative to where `blast` was built from (parent of `blast/`'s git worktree root), Blast emits a **path dep** with `features = ["testing"]`.
+- Otherwise Blast falls back to a **git dep** pointing at the canonical GitHub remote with `branch = "main"`.
+
+The `--dev` flag forces sibling-path detection (errors out if no sibling `catalyst/` exists). Useful for hacking on Catablast itself.
 
 NOT done by `blast new`:
-- Create database (user does it; template has DATABASE_URL to point at)
+- Create database (user does it; template's `.env` has DATABASE_URL to point at)
 - Run initial migrations (`blast init` does that as a second step)
-- Install node deps (user runs `npm install`)
+- Install node deps (user runs `npm install` in `frontend/`)
 
 ## `blast build`
 
