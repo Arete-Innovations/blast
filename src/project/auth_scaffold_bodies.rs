@@ -148,16 +148,14 @@ use crate::flows::custom::auth::{
 };
 
 /// Build the `/api/auth` router. Mount this under `/api` from the
-/// transport bootstrap with `.nest("/auth", auth_router())`.
-pub fn router<S>() -> Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
+/// transport bootstrap with `.nest("/auth", auth::router(ctx))`.
+pub fn router(ctx: Ctx) -> Router {
     Router::new()
         .route("/register", post(register_handler))
         .route("/login", post(login_handler))
         .route("/logout", post(logout_handler))
         .route("/me", get(me_handler))
+        .with_state(ctx)
 }
 
 async fn register_handler(

@@ -25,6 +25,7 @@ tokio = {{ version = "1", features = ["full"] }}
 serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 diesel = {{ version = "2.2", features = ["postgres", "64-column-tables", "chrono", "serde_json", "r2d2"] }}
+diesel-async = {{ version = "0.5", features = ["postgres", "deadpool"] }}
 diesel_migrations = {{ version = "2.2", features = ["postgres"] }}
 chrono = {{ version = "0.4", features = ["serde"] }}
 dotenv = "0.15"
