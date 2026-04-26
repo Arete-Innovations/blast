@@ -1,4 +1,4 @@
-use crate::codegen::{build_rs_template, frontend_scaffold};
+use crate::codegen::{build_rs_template, fe_runtime, frontend_scaffold};
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::project::templates;
@@ -161,6 +161,14 @@ pub fn run(
     }
     progress.step_done("seed frontend tokens/base/primevue");
 
+    progress.step_start("seed frontend runtime (page shell, router, progress)");
+    let runtime_outcome = fe_runtime::run(&args.project_root, &args.project_name)?;
+    for path in &runtime_outcome.written {
+        sink.debug(format!("seeded {}", path.display()));
+        count += 1;
+    }
+    progress.step_done("seed frontend runtime (page shell, router, progress)");
+
     Ok(Outcome {
         project_root: args.project_root,
         files_written: count,
@@ -295,11 +303,8 @@ fn scaffold_frontend(
         &templates::frontend_package_json(project_name),
         count,
     )?;
-    write_file(
-        &frontend_root.join("index.html"),
-        &templates::frontend_index_html(project_name),
-        count,
-    )?;
+    // index.html and src/main.ts are owned by codegen::fe_runtime; the
+    // runtime-scaffold step seeds them after this fn returns.
     write_file(
         &frontend_root.join("vite.config.ts"),
         templates::frontend_vite_config_ts(),
@@ -313,11 +318,6 @@ fn scaffold_frontend(
 
     let fe_src = frontend_root.join("src");
     fs::create_dir_all(&fe_src)?;
-    write_file(
-        &fe_src.join("main.ts"),
-        templates::frontend_main_ts(),
-        count,
-    )?;
     write_file(
         &fe_src.join("App.vue"),
         templates::frontend_app_vue(),
