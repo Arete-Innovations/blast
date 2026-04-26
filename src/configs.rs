@@ -46,7 +46,7 @@ impl Config {
     }
 }
 
-fn build_config(project_dir: &Path) -> BlastResult<Config> {
+pub fn build_config(project_dir: &Path) -> BlastResult<Config> {
     let cargo_toml_path = project_dir.join("Cargo.toml");
     let cargo_str = fs::read_to_string(&cargo_toml_path)?;
     let cargo: Value = toml::from_str(&cargo_str)?;
