@@ -12,6 +12,7 @@ use super::local_list_state::LocalListState;
 use super::local_modal_state::LocalModalState;
 use super::max_lines_per_fn::MaxLinesPerFn;
 use super::max_lines_per_sfc::MaxLinesPerSfc;
+use super::optimistic_update::OptimisticUpdateInCustom;
 use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
 use super::raw_color::RawColorOutsidePreset;
 use super::raw_rem::RawRemOutsideTokens;
@@ -71,5 +72,6 @@ fn build_file_rules() -> Vec<Box<dyn FileRule>> {
         Box::new(MaxLinesPerSfc::new()),
         Box::new(MaxLinesPerFn::new()),
         Box::new(LocalModalState::new()),
+        Box::new(OptimisticUpdateInCustom::new()),
     ]
 }
