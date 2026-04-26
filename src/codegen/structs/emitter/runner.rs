@@ -13,8 +13,9 @@
 //! 4. `From<<Type>>` impls for `Public` / `Admin` (when projection is a
 //!    Db subset and the Db base struct itself is present)
 //! 5. `<Type>Filter` (when `filterable_columns` non-empty)
+//! 6. `<Type>Sort` (when `sortable_columns` non-empty)
 
-use super::{db, filter, from_impl, imports, projection, util};
+use super::{db, filter, from_impl, imports, projection, sort, util};
 use crate::state::{FieldVariant, ResourceState};
 
 pub fn render_resource_body(resource: &ResourceState) -> String {
@@ -62,6 +63,14 @@ pub fn render_resource_body(resource: &ResourceState) -> String {
     match util::list_options(resource) {
         Some(opts) if !opts.filterable_columns.is_empty() => {
             out.push_str(&filter::render(resource, &opts.filterable_columns));
+            out.push('\n');
+        }
+        _absent_or_empty => {}
+    }
+
+    match util::list_options(resource) {
+        Some(opts) if !opts.sortable_columns.is_empty() => {
+            out.push_str(&sort::render(resource, &opts.sortable_columns));
             out.push('\n');
         }
         _absent_or_empty => {}
@@ -463,5 +472,88 @@ mod tests {
         assert!(body.contains("pub struct DatumFilter {"));
         assert!(body.contains("impl From<Datum> for DatumPublic"));
         assert!(body.contains("impl From<Datum> for DatumAdmin"));
+    }
+
+    fn sortable_resource() -> ResourceState {
+        let mut resource = full_resource("users");
+        resource.fields.insert(
+            FieldName::new("created_at"),
+            field(
+                "Timestamptz",
+                &[FieldVariant::Db, FieldVariant::Public],
+                false,
+                false,
+            ),
+        );
+
+        let mut sortable: BTreeSet<FieldName> = BTreeSet::new();
+        sortable.insert(FieldName::new("id"));
+        sortable.insert(FieldName::new("created_at"));
+
+        match resource.verbs.get_mut(&Verb::List) {
+            Some(state) => match state.list_options.as_mut() {
+                Some(opts) => opts.sortable_columns = sortable,
+                None => {}
+            },
+            None => {}
+        }
+        resource.canonicalize();
+        resource
+    }
+
+    #[test]
+    fn sort_enum_emitted_with_asc_desc_per_column() {
+        let resource = sortable_resource();
+        let body = render_resource_body(&resource);
+        assert!(body.contains("pub enum UserSort {"));
+        let sort_section = body.split("pub enum UserSort {").nth(1).expect("sort start");
+        let sort_section = sort_section.split('}').next().expect("sort end");
+        assert!(sort_section.contains("IdAsc"));
+        assert!(sort_section.contains("IdDesc"));
+        assert!(sort_section.contains("CreatedAtAsc"));
+        assert!(sort_section.contains("CreatedAtDesc"));
+    }
+
+    #[test]
+    fn sort_enum_default_picks_pk_asc() {
+        let resource = sortable_resource();
+        let body = render_resource_body(&resource);
+        assert!(body.contains("Self::IdAsc"));
+    }
+
+    #[test]
+    fn sort_enum_emits_fromstr_for_signed_prefix() {
+        let resource = sortable_resource();
+        let body = render_resource_body(&resource);
+        assert!(body.contains("impl FromStr for UserSort"));
+        assert!(body.contains("(\"id\", false) => Ok(Self::IdAsc)"));
+        assert!(body.contains("(\"id\", true) => Ok(Self::IdDesc)"));
+        assert!(body.contains("(\"created_at\", true) => Ok(Self::CreatedAtDesc)"));
+    }
+
+    #[test]
+    fn no_sort_enum_when_sortable_columns_empty() {
+        let resource = full_resource("users");
+        let body = render_resource_body(&resource);
+        assert!(!body.contains("pub enum UserSort"));
+    }
+
+    #[test]
+    fn no_sort_enum_when_no_list_verb() {
+        let mut resource = sortable_resource();
+        resource.verbs.shift_remove(&Verb::List);
+        let body = render_resource_body(&resource);
+        assert!(!body.contains("pub enum UserSort"));
+    }
+
+    #[test]
+    fn fromstr_use_only_emitted_when_sort_enum_emitted() {
+        let plain = full_resource("users");
+        let plain_body = render_resource_body(&plain);
+        assert!(!plain_body.contains("use std::str::FromStr"));
+
+        let with_sort = sortable_resource();
+        let sort_body = render_resource_body(&with_sort);
+        assert!(sort_body.contains("use std::str::FromStr"));
     }
 }

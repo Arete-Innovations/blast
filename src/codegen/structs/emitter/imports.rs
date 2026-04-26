@@ -46,5 +46,17 @@ pub fn render(resource: &ResourceState) -> String {
         ));
     }
 
+    // Sort enum needs FromStr; only emit the use when we actually emit
+    // a sort enum to keep unused-import warnings out of the user app.
+    // The `None` arm here is not an error: a resource without a List
+    // verb has no sort enum, full stop — no caller misled.
+    let sort_present = match util::list_options(resource) {
+        Some(opts) => !opts.sortable_columns.is_empty(),
+        None => false, // allow: absence of List verb means no sort enum, by spec
+    };
+    if sort_present {
+        out.push_str("use std::str::FromStr;\n");
+    }
+
     out
 }
