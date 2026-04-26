@@ -37,7 +37,22 @@ fn default_rules() -> BTreeSet<String> {
         "IconClassOutsideIconsFile",
         "MaxLinesPerSfc",
         "MaxLinesPerFn",
+        "MaxTemplateDepth",
+        "MaxTemplateLoc",
         "PrimeVueConfigImportOutsidePresetFile",
+        "HardcodedRoutePath",
+        "LocalModalState",
+        "LocalListState",
+        "OptimisticUpdateInCustom",
+        "PageShellRequired",
+        "InlineLayoutProps",
+        "LoadingSpinnerAfterFirstLoad",
+        "RawFetchOutsideApi",
+        "WebSocketOutsideRelay",
+        "LocalStorageOutsidePersistence",
+        "PiniaImport",
+        "PrimeVueReinvented",
+        "SnakeCaseInterfaceFields",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -68,6 +83,14 @@ fn default_max_lines_per_sfc() -> usize {
 
 fn default_max_lines_per_fn() -> usize {
     120
+}
+
+fn default_max_template_depth() -> u32 {
+    5
+}
+
+fn default_max_template_loc() -> u32 {
+    200
 }
 
 fn default_icon_class_patterns() -> BTreeSet<String> {
@@ -144,6 +167,10 @@ pub struct FeLintState {
     pub exempt_px_files: BTreeSet<String>,
     pub max_lines_per_sfc: usize,
     pub max_lines_per_fn: usize,
+    #[serde(default = "default_max_template_depth")]
+    pub max_template_depth: u32,
+    #[serde(default = "default_max_template_loc")]
+    pub max_template_loc: u32,
     pub whitelist_snippets: BTreeSet<String>,
     pub icon_class_patterns: BTreeSet<String>,
     pub scan_globs: BTreeSet<String>,
@@ -208,6 +235,8 @@ impl Default for FeLintState {
             exempt_px_files: default_exempt_px_files(),
             max_lines_per_sfc: default_max_lines_per_sfc(),
             max_lines_per_fn: default_max_lines_per_fn(),
+            max_template_depth: default_max_template_depth(),
+            max_template_loc: default_max_template_loc(),
             whitelist_snippets: BTreeSet::new(),
             icon_class_patterns: default_icon_class_patterns(),
             scan_globs: default_scan_globs(),

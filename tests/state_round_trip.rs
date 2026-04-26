@@ -88,6 +88,8 @@ fn sample_app() -> AppState {
         exempt_px_files: BTreeSet::new(),
         max_lines_per_sfc: 600,
         max_lines_per_fn: 120,
+        max_template_depth: 5,
+        max_template_loc: 200,
         whitelist_snippets: BTreeSet::new(),
         icon_class_patterns: BTreeSet::new(),
         scan_globs: BTreeSet::new(),
