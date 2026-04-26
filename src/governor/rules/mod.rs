@@ -6,6 +6,7 @@ pub mod helpers;
 pub mod icon_class;
 pub mod inline_layout_props;
 pub mod inline_style;
+pub mod loading_spinner;
 pub mod local_list_state;
 pub mod local_modal_state;
 pub mod max_lines_per_fn;

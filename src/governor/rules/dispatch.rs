@@ -9,6 +9,7 @@ use super::hardcoded_route_path::HardcodedRoutePath;
 use super::icon_class::IconClassOutsideIconsFile;
 use super::inline_layout_props::InlineLayoutProps;
 use super::inline_style::InlineStyle;
+use super::loading_spinner::LoadingSpinnerAfterFirstLoad;
 use super::local_list_state::LocalListState;
 use super::local_modal_state::LocalModalState;
 use super::max_lines_per_fn::MaxLinesPerFn;
@@ -66,6 +67,7 @@ fn build_line_rules() -> Vec<Box<dyn Rule>> {
         Box::new(PrimeVueConfigImportOutsidePresetFile::new()),
         Box::new(HardcodedRoutePath::new()),
         Box::new(LocalListState::new()),
+        Box::new(LoadingSpinnerAfterFirstLoad::new()),
     ]
 }
 
