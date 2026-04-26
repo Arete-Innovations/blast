@@ -1,5 +1,6 @@
 pub mod app;
 pub mod hash;
+pub mod icons;
 pub mod io;
 pub mod names;
 pub mod resource;
@@ -18,6 +19,9 @@ pub use app::Page;
 pub use app::PageLayout;
 pub use app::Role;
 pub use app::Section;
+pub use icons::IconClass;
+pub use icons::IconConfig;
+pub use icons::IconKey;
 pub use theme::ClampValue;
 pub use theme::ColorScaleRef;
 pub use theme::DimValue;
