@@ -617,4 +617,166 @@ mod tests {
         assert!(!should_skip(Path::new("src/lib.rs")));
     }
 
+    // --- path-aware sync tests ---
+
+    /// Sync preserves blast-owned paths (e.g. `frontend/`) that are NOT in
+    /// CANONICAL_SOURCE_PATHS, even though catalyst has no such directory.
+    #[test]
+    fn sync_preserves_blast_owned_paths() {
+        let tmp_src = tempdir().unwrap();
+        let tmp_dst = tempdir().unwrap();
+
+        // catalyst has src/foo.rs and Cargo.toml only.
+        fs::create_dir_all(tmp_src.path().join("src")).unwrap();
+        fs::write(tmp_src.path().join("src").join("foo.rs"), "// foo\n").unwrap();
+        fs::write(
+            tmp_src.path().join("Cargo.toml"),
+            "[package]\nname = \"catalyst\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // templates/canonical/ pre-exists with src/foo.rs AND frontend/index.html.
+        let dest = tmp_dst.path().join("canonical");
+        fs::create_dir_all(dest.join("src")).unwrap();
+        fs::write(dest.join("src").join("foo.rs"), "// foo\n").unwrap();
+        fs::create_dir_all(dest.join("frontend")).unwrap();
+        fs::write(dest.join("frontend").join("index.html"), "<html/>\n").unwrap();
+
+        let args = Args {
+            catalyst_path: Some(tmp_src.path().to_path_buf()),
+            destination: dest.clone(),
+            check: false,
+        };
+        let mut sink = NullSink;
+        run(args, &mut sink).expect("sync");
+
+        // src/foo.rs should be present (catalyst owns it).
+        assert!(dest.join("src").join("foo.rs").is_file(), "src/foo.rs missing");
+        // frontend/index.html must survive — blast-owned, not catalyst-owned.
+        assert!(
+            dest.join("frontend").join("index.html").is_file(),
+            "frontend/index.html was nuked by sync but should be preserved"
+        );
+    }
+
+    /// Sync removes catalyst-owned files that catalyst deleted (stale files
+    /// under catalyst-owned paths are cleaned up).
+    #[test]
+    fn sync_removes_stale_catalyst_owned_files() {
+        let tmp_src = tempdir().unwrap();
+        let tmp_dst = tempdir().unwrap();
+
+        // catalyst has src/foo.rs only — src/bar.rs was deleted.
+        fs::create_dir_all(tmp_src.path().join("src")).unwrap();
+        fs::write(tmp_src.path().join("src").join("foo.rs"), "// foo\n").unwrap();
+        fs::write(
+            tmp_src.path().join("Cargo.toml"),
+            "[package]\nname = \"catalyst\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // dest has src/foo.rs AND the stale src/bar.rs.
+        let dest = tmp_dst.path().join("canonical");
+        fs::create_dir_all(dest.join("src")).unwrap();
+        fs::write(dest.join("src").join("foo.rs"), "// foo\n").unwrap();
+        fs::write(dest.join("src").join("bar.rs"), "// bar (stale)\n").unwrap();
+
+        let args = Args {
+            catalyst_path: Some(tmp_src.path().to_path_buf()),
+            destination: dest.clone(),
+            check: false,
+        };
+        let mut sink = NullSink;
+        run(args, &mut sink).expect("sync");
+
+        assert!(dest.join("src").join("foo.rs").is_file(), "foo.rs should remain");
+        assert!(
+            !dest.join("src").join("bar.rs").exists(),
+            "bar.rs should have been removed (catalyst deleted it)"
+        );
+    }
+
+    /// --check ignores blast-owned paths. Even if templates/canonical/ has
+    /// files under frontend/ that catalyst doesn't have, it reports no drift.
+    #[test]
+    fn check_ignores_blast_owned_paths() {
+        let tmp_src = tempdir().unwrap();
+        let tmp_dst = tempdir().unwrap();
+
+        let cargo_content =
+            "[package]\nname = \"catalyst\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
+
+        // catalyst has src/foo.rs and Cargo.toml — no frontend/ at all.
+        fs::create_dir_all(tmp_src.path().join("src")).unwrap();
+        fs::write(tmp_src.path().join("src").join("foo.rs"), "// foo\n").unwrap();
+        fs::write(tmp_src.path().join("Cargo.toml"), cargo_content).unwrap();
+
+        // templates/canonical/ has matching src/foo.rs + Cargo.toml (in sync)
+        // PLUS blast-owned frontend/page.vue that catalyst will never have.
+        let dest = tmp_dst.path().join("canonical");
+        fs::create_dir_all(dest.join("src")).unwrap();
+        fs::write(dest.join("src").join("foo.rs"), "// foo\n").unwrap();
+        // Cargo.toml in dest must match the patched version check would expect.
+        // patch_body_if_cargo_toml rewrites name = "catalyst" -> {{project_name}}.
+        fs::write(
+            dest.join("Cargo.toml"),
+            "[package]\nname = \"{{project_name}}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dest.join("frontend")).unwrap();
+        fs::write(dest.join("frontend").join("page.vue"), "<template/>\n").unwrap();
+
+        let check_args = Args {
+            catalyst_path: Some(tmp_src.path().to_path_buf()),
+            destination: dest.clone(),
+            check: true,
+        };
+        let mut sink = NullSink;
+        let outcome = run(check_args, &mut sink).expect("check");
+        assert!(
+            outcome.drift_paths.is_empty(),
+            "frontend/ is blast-owned, must not count as drift; got: {:?}",
+            outcome.drift_paths
+        );
+    }
+
+    /// --check still detects drift in catalyst-owned paths (content mismatch).
+    #[test]
+    fn check_detects_drift_in_catalyst_owned_paths() {
+        let tmp_src = tempdir().unwrap();
+        let tmp_dst = tempdir().unwrap();
+
+        // catalyst has src/foo.rs with content "A".
+        fs::create_dir_all(tmp_src.path().join("src")).unwrap();
+        fs::write(tmp_src.path().join("src").join("foo.rs"), "// A\n").unwrap();
+        fs::write(
+            tmp_src.path().join("Cargo.toml"),
+            "[package]\nname = \"catalyst\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        // templates/canonical/ has src/foo.rs with content "B" (stale).
+        let dest = tmp_dst.path().join("canonical");
+        fs::create_dir_all(dest.join("src")).unwrap();
+        fs::write(dest.join("src").join("foo.rs"), "// B\n").unwrap();
+
+        let check_args = Args {
+            catalyst_path: Some(tmp_src.path().to_path_buf()),
+            destination: dest.clone(),
+            check: true,
+        };
+        let mut sink = NullSink;
+        let outcome = run(check_args, &mut sink).expect("check");
+        assert!(
+            !outcome.drift_paths.is_empty(),
+            "expected drift on src/foo.rs content mismatch"
+        );
+        let drift_strs: Vec<String> =
+            outcome.drift_paths.iter().map(|p| p.display().to_string()).collect();
+        assert!(
+            drift_strs.iter().any(|s| s.contains("foo.rs")),
+            "drift should include foo.rs, got: {:?}",
+            drift_strs
+        );
+    }
 }
