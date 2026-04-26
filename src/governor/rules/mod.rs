@@ -16,6 +16,7 @@ pub mod max_template_depth;
 pub mod max_template_loc;
 pub mod optimistic_update;
 pub mod page_shell_required;
+pub mod pinia_import;
 pub mod primevue_config;
 pub mod raw_color;
 pub mod raw_fetch;

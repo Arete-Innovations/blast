@@ -19,6 +19,7 @@ use super::max_template_depth::MaxTemplateDepth;
 use super::max_template_loc::MaxTemplateLoc;
 use super::optimistic_update::OptimisticUpdateInCustom;
 use super::page_shell_required::PageShellRequired;
+use super::pinia_import::PiniaImport;
 use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
 use super::raw_color::RawColorOutsidePreset;
 use super::raw_fetch::RawFetchOutsideApi;
@@ -76,6 +77,7 @@ fn build_line_rules() -> Vec<Box<dyn Rule>> {
         Box::new(RawFetchOutsideApi::new()),
         Box::new(WebSocketOutsideRelay::new()),
         Box::new(LocalStorageOutsidePersistence::new()),
+        Box::new(PiniaImport::new()),
     ]
 }
 
