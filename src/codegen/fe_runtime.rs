@@ -21,6 +21,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::codegen::fe_runtime_composables::{CHANNEL_TS, DIALOG_TS, DRAWER_TS, URL_TS};
 use crate::error::{BlastError, BlastResult};
 
 const APP_NAME_TOKEN: &str = "{{APP_NAME}}";
@@ -32,6 +33,10 @@ const INSTALL_BLOCKING_NAV_RELATIVE: &str = "frontend/src/router/install-blockin
 const ROUTER_INDEX_RELATIVE: &str = "frontend/src/router/index.ts";
 const INDEX_HTML_RELATIVE: &str = "frontend/index.html";
 const MAIN_TS_RELATIVE: &str = "frontend/src/main.ts";
+const URL_TS_RELATIVE: &str = "frontend/src/composables/url.ts";
+const DIALOG_TS_RELATIVE: &str = "frontend/src/composables/dialog.ts";
+const DRAWER_TS_RELATIVE: &str = "frontend/src/composables/drawer.ts";
+const CHANNEL_TS_RELATIVE: &str = "frontend/src/composables/channel.ts";
 
 pub const PAGE_SHELL_VUE: &str = PAGE_SHELL_VUE_BODY;
 pub const GLOBAL_PROGRESS_BAR_VUE: &str = GLOBAL_PROGRESS_BAR_VUE_BODY;
@@ -476,13 +481,17 @@ pub fn run(project_root: &Path, app_name: &str) -> BlastResult<ScaffoldOutcome> 
     let mut written = Vec::new();
     let mut skipped = Vec::new();
 
-    let static_targets: [(&str, &str); 6] = [
+    let static_targets: [(&str, &str); 10] = [
         (PAGE_SHELL_RELATIVE, PAGE_SHELL_VUE),
         (GLOBAL_PROGRESS_BAR_RELATIVE, GLOBAL_PROGRESS_BAR_VUE),
         (GLOBAL_PROGRESS_TS_RELATIVE, GLOBAL_PROGRESS_TS),
         (INSTALL_BLOCKING_NAV_RELATIVE, INSTALL_BLOCKING_NAV_TS),
         (ROUTER_INDEX_RELATIVE, ROUTER_INDEX_TS),
         (MAIN_TS_RELATIVE, MAIN_TS),
+        (URL_TS_RELATIVE, URL_TS),
+        (DIALOG_TS_RELATIVE, DIALOG_TS),
+        (DRAWER_TS_RELATIVE, DRAWER_TS),
+        (CHANNEL_TS_RELATIVE, CHANNEL_TS),
     ];
     for (rel, body) in static_targets.iter() {
         let target = project_root.join(rel);
@@ -622,10 +631,10 @@ mod tests {
     }
 
     #[test]
-    fn run_writes_all_seven_files_in_empty_project() {
+    fn run_writes_all_files_in_empty_project() {
         let (_dir, root) = tempdir_with_app();
         let outcome = run(&root, "acme").expect("run");
-        assert_eq!(outcome.written.len(), 7);
+        assert_eq!(outcome.written.len(), 11);
         assert_eq!(outcome.skipped.len(), 0);
 
         assert!(root.join(PAGE_SHELL_RELATIVE).is_file());
@@ -635,6 +644,10 @@ mod tests {
         assert!(root.join(ROUTER_INDEX_RELATIVE).is_file());
         assert!(root.join(MAIN_TS_RELATIVE).is_file());
         assert!(root.join(INDEX_HTML_RELATIVE).is_file());
+        assert!(root.join(URL_TS_RELATIVE).is_file());
+        assert!(root.join(DIALOG_TS_RELATIVE).is_file());
+        assert!(root.join(DRAWER_TS_RELATIVE).is_file());
+        assert!(root.join(CHANNEL_TS_RELATIVE).is_file());
     }
 
     #[test]
@@ -650,7 +663,7 @@ mod tests {
     fn run_is_idempotent_and_skips_existing_files() {
         let (_dir, root) = tempdir_with_app();
         let first = run(&root, "acme").expect("first");
-        assert_eq!(first.written.len(), 7);
+        assert_eq!(first.written.len(), 11);
 
         // Mutate one file to verify it's not stomped.
         let custom_marker = "/* user-customized */\n";
@@ -659,9 +672,10 @@ mod tests {
 
         let second = run(&root, "acme").expect("second");
         assert_eq!(second.written.len(), 0);
-        assert_eq!(second.skipped.len(), 7);
+        assert_eq!(second.skipped.len(), 11);
 
         let after = fs::read_to_string(&page_shell_path).expect("read");
         assert_eq!(after, custom_marker);
     }
+
 }
