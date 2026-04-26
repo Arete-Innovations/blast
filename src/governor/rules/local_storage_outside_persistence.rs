@@ -24,7 +24,9 @@ impl LocalStorageOutsidePersistence {
 }
 
 fn is_persistence_dir(file: &Path) -> bool {
-    path_contains(file, "/generated/persistence/") || path_contains(file, "/custom/persistence/")
+    path_contains(file, "/generated/persistence/")
+        || path_contains(file, "/custom/persistence/")
+        || path_contains(file, "composables/auth.ts")
 }
 
 impl Rule for LocalStorageOutsidePersistence {
@@ -101,6 +103,15 @@ mod tests {
         let v = run(
             "frontend/src/generated/persistence/store.ts",
             "indexedDB.open('db')",
+        );
+        assert!(v.is_none());
+    }
+
+    #[test]
+    fn allows_in_auth_composable() {
+        let v = run(
+            "frontend/src/composables/auth.ts",
+            "localStorage.setItem('auth_token', token)",
         );
         assert!(v.is_none());
     }
