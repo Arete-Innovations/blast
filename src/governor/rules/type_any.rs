@@ -9,7 +9,7 @@ use std::path::Path;
 lazy_static! {
     static ref ANY_RE: Regex = match Regex::new(r":\s*any\b") {
         Ok(r) => r,
-        Err(_re_err) => panic!("TypeAny regex failed to compile"),
+        Err(_re_err) => panic!("TypeAny regex failed to compile"), // allow: const pattern, infallible
     };
 }
 

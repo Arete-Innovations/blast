@@ -11,13 +11,13 @@ lazy_static! {
         r"^\s*(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\("
     ) {
         Ok(r) => r,
-        Err(_re_err) => panic!("MaxLinesPerFn fn-start regex failed to compile"),
+        Err(_re_err) => panic!("MaxLinesPerFn fn-start regex failed to compile"), // allow: const pattern, infallible
     };
     static ref ARROW_FN_RE: Regex = match Regex::new(
         r"^\s*(?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*(?:async\s*)?\(?[^=]*=>\s*\{"
     ) {
         Ok(r) => r,
-        Err(_re_err) => panic!("MaxLinesPerFn arrow regex failed to compile"),
+        Err(_re_err) => panic!("MaxLinesPerFn arrow regex failed to compile"), // allow: const pattern, infallible
     };
 }
 

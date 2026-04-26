@@ -9,11 +9,11 @@ use std::path::Path;
 lazy_static! {
     static ref FALLBACK_OR_RE: Regex = match Regex::new(r#"\|\|\s*(['"][^'"]*['"]|\d+|true|false)"#) {
         Ok(r) => r,
-        Err(_re_err) => panic!("SilentFallback || regex failed to compile"),
+        Err(_re_err) => panic!("SilentFallback || regex failed to compile"), // allow: const pattern, infallible
     };
     static ref FALLBACK_NULLISH_RE: Regex = match Regex::new(r"\?\?\s*(\{\s*\}|\[\s*\])") {
         Ok(r) => r,
-        Err(_re_err) => panic!("SilentFallback ?? regex failed to compile"),
+        Err(_re_err) => panic!("SilentFallback ?? regex failed to compile"), // allow: const pattern, infallible
     };
 }
 

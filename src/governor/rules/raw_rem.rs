@@ -9,7 +9,7 @@ use std::path::Path;
 lazy_static! {
     static ref REM_RE: Regex = match Regex::new(r"\b\d+(\.\d+)?rem\b") {
         Ok(r) => r,
-        Err(_re_err) => panic!("RawRemOutsideTokens regex failed to compile"),
+        Err(_re_err) => panic!("RawRemOutsideTokens regex failed to compile"), // allow: const pattern, infallible
     };
 }
 

@@ -9,7 +9,7 @@ use std::path::Path;
 lazy_static! {
     static ref CONSOLE_RE: Regex = match Regex::new(r"\bconsole\.(log|warn|error)\s*\(") {
         Ok(r) => r,
-        Err(_re_err) => panic!("ConsoleLog regex failed to compile"),
+        Err(_re_err) => panic!("ConsoleLog regex failed to compile"), // allow: const pattern, infallible
     };
 }
 
