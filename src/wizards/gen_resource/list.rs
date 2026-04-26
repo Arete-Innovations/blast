@@ -1,9 +1,9 @@
 use crate::error::BlastResult;
 use crate::schema_parser::ParsedTable;
 use crate::state::names::FieldName;
-use crate::state::resource::{ListOptions, ResourceState, Verb};
+use crate::state::resource::{FilterKind, ListOptions, ResourceState, Verb};
 use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn collect_list_options(
     table: &ParsedTable,
@@ -35,7 +35,7 @@ pub fn collect_list_options(
         .defaults(&pre_filterable)
         .interact()?;
 
-    let filterable_columns = collect_field_names(&column_names, &filter_picks);
+    let filterable_columns = collect_filterable_map(&column_names, &filter_picks);
 
     let prev_sortable = previous_sortable(prev.as_ref());
     let pre_sortable: Vec<bool> = column_names
@@ -82,6 +82,27 @@ fn collect_field_names(column_names: &[&str], picks: &[usize]) -> BTreeSet<Field
     out
 }
 
+/// Collect filterable picks into the v2 `BTreeMap<FieldName, FilterKind>`
+/// shape, defaulting every entry to `FilterKind::Eq`. The TUI does not yet
+/// prompt for per-column FilterKind — operators get tuned by hand or via a
+/// later wizard pass.
+fn collect_filterable_map(
+    column_names: &[&str],
+    picks: &[usize],
+) -> BTreeMap<FieldName, FilterKind> {
+    let mut out: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+    for idx in picks {
+        let name = column_names.get(*idx);
+        match name {
+            Some(n) => {
+                out.insert(FieldName::new(n.to_string()), FilterKind::Eq);
+            }
+            None => {}
+        }
+    }
+    out
+}
+
 fn pagination_default(prev: Option<&ListOptions>) -> bool {
     let Some(opts) = prev else {
         return true;
@@ -94,7 +115,7 @@ fn previous_filterable(prev: Option<&ListOptions>) -> BTreeSet<String> {
         return BTreeSet::new();
     };
     opts.filterable_columns
-        .iter()
+        .keys()
         .map(|f| f.as_str().to_string())
         .collect()
 }

@@ -1,11 +1,11 @@
 use blast::state::app::{AppState, ServiceBackend, ServicesState};
 use blast::state::names::{AuthScopeField, FieldName, ResourceName, SqlType};
 use blast::state::resource::{
-    AuthMode, FieldState, FieldVariant, ListOptions, PayloadShape, ResourceState, TopicScope, Verb,
-    VerbState, WsEventsState,
+    AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, PayloadShape, ResourceState,
+    TopicScope, Verb, VerbState, WsEventsState,
 };
 use blast::state::{AppPolicySection, FeLintState};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn sample_resource() -> ResourceState {
     let mut res = ResourceState::new(ResourceName::new("users"));
@@ -39,8 +39,8 @@ fn sample_resource() -> ResourceState {
         },
     );
 
-    let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
-    filterable.insert(FieldName::new("email"));
+    let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+    filterable.insert(FieldName::new("email"), FilterKind::Eq);
     res.verbs.insert(
         Verb::List,
         VerbState {

@@ -175,8 +175,8 @@ fn emit_per_resource_list_helpers(
 fn build_resource_list_ts(verb: &VerbState) -> String {
     let (sortable, filterable, default_sort, max_page) = match &verb.list_options {
         Some(opts) => {
-            let sortable = ts_field_name_set(&opts.sortable_columns);
-            let filterable = ts_field_name_set(&opts.filterable_columns);
+            let sortable = ts_field_name_set(opts.sortable_columns.iter());
+            let filterable = ts_field_name_set(opts.filterable_columns.keys());
             let default_sort = match &opts.default_sort {
                 Some(s) => {
                     let raw: &str = s.as_str();
@@ -217,13 +217,16 @@ export function isFilterable(col: string): col is FilterableColumn {{\n\
     )
 }
 
-fn ts_field_name_set(values: &std::collections::BTreeSet<FieldName>) -> String {
-    if values.is_empty() {
-        return "[]".to_string();
-    }
+fn ts_field_name_set<'a, I>(values: I) -> String
+where
+    I: IntoIterator<Item = &'a FieldName>,
+{
     let parts: Vec<String> = values
-        .iter()
+        .into_iter()
         .map(|s: &FieldName| format!("'{}'", s.as_str().replace('\\', "\\\\").replace('\'', "\\'")))
         .collect();
+    if parts.is_empty() {
+        return "[]".to_string();
+    }
     format!("[{}]", parts.join(", "))
 }

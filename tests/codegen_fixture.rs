@@ -2,9 +2,10 @@ use blast::state;
 use blast::state::app::AppState;
 use blast::state::names::{FieldName, ResourceName, SqlType};
 use blast::state::resource::{
-    AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, ValidatorRule, Verb, VerbState,
+    AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, ValidatorRule,
+    Verb, VerbState,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -52,9 +53,9 @@ fn write_fixture_state(project_root: &Path) {
         },
     );
 
-    let mut filterable: BTreeSet<FieldName> = BTreeSet::new();
-    filterable.insert(FieldName::new("role"));
-    filterable.insert(FieldName::new("created_at"));
+    let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
+    filterable.insert(FieldName::new("role"), FilterKind::Eq);
+    filterable.insert(FieldName::new("created_at"), FilterKind::Range);
     let mut sortable: BTreeSet<FieldName> = BTreeSet::new();
     sortable.insert(FieldName::new("created_at"));
     sortable.insert(FieldName::new("email"));

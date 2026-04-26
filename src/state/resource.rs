@@ -1,9 +1,9 @@
 use crate::state::names::{AuthScopeField, FieldName, ResourceName, SqlType};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-pub const RESOURCE_SCHEMA_VERSION: u32 = 1;
+pub const RESOURCE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceState {
@@ -77,13 +77,31 @@ pub enum AuthMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListOptions {
     pub paginated: bool,
-    pub filterable_columns: BTreeSet<FieldName>,
+    /// Map of column name → filter operator. The codegen emits a typed
+    /// `<Type>Filter` struct and matching SQL predicates per `FilterKind`.
+    pub filterable_columns: BTreeMap<FieldName, FilterKind>,
     #[serde(default)]
     pub sortable_columns: BTreeSet<FieldName>,
     #[serde(default)]
     pub default_sort: Option<FieldName>,
     #[serde(default)]
     pub max_page_size: Option<u32>,
+}
+
+/// How a filterable column is matched in generated SQL/TS code.
+///
+/// - `Eq`: exact match (`col = $1`)
+/// - `Range`: inclusive range with `from`/`to` ends
+/// - `IlikeContains`: case-insensitive substring (`col ILIKE '%$1%'`)
+/// - `In`: any-of (`col = ANY($1)`)
+/// - `Bool`: boolean toggle
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum FilterKind {
+    Eq,
+    Range,
+    IlikeContains,
+    In,
+    Bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
