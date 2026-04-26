@@ -14,6 +14,8 @@ use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::project::db_bootstrap::{
     self, BootstrapArgs, BootstrapOutcome, RealDbAdmin,
 };
+use crate::project::post_install;
+use crate::project::preflight;
 use crate::project::templates;
 use crate::state::{
     app::{ICONS_SECTION_KEY, THEME_SECTION_KEY},
@@ -127,6 +129,13 @@ fn create_with_target(
     ));
     sink.info("framework: vendored canonical (no `catalyst` dep)");
 
+    // Preflight FIRST: verify required binaries are on PATH before we do
+    // any disk writes or DB I/O. On any required-missing, this returns
+    // an error immediately and the rest of the pipeline never runs.
+    progress.step_start("preflight: required binaries");
+    preflight::run(sink)?;
+    progress.step_done("preflight: required binaries");
+
     // Bootstrap the database BEFORE writing any files. If this fails, the
     // user gets a clear error and no half-broken project lands on disk.
     progress.step_start("bootstrap database");
@@ -154,8 +163,26 @@ fn create_with_target(
                 out.project_root.display(),
                 out.files_written
             ));
-            print_next_steps(project_name, sink);
-            Ok(out)
+
+            // Post-scaffold pipeline: npm install, npm run build, exec
+            // into the dashboard TUI. On the happy path, exec() replaces
+            // this process and we never return from post_install::run.
+            // If `npm run build` fails the project dir is preserved
+            // (so the user can inspect what broke) — the error is
+            // surfaced but no cleanup runs.
+            match post_install::run(&out.project_root, sink, progress) {
+                Ok(()) => {
+                    // Reached only when BLAST_NO_TUI_FOR_TESTS=1 (skip
+                    // the auto-TUI exec). Print the legacy next-steps
+                    // hint so the user still has a manual path.
+                    print_next_steps(project_name, sink);
+                    Ok(out)
+                }
+                Err(e) => {
+                    sink.error(format!("post-scaffold pipeline failed: {}", e));
+                    Err(e)
+                }
+            }
         }
         Err(e) => {
             sink.error(format!("scaffolding failed: {}", e));
@@ -183,7 +210,7 @@ fn pre_create_db(
 ) -> BlastResult<BootstrapOutcome> {
     let db_url = match &opts.db_url {
         Some(u) => u.clone(),
-        None => prompt_for_db_url(project_name)?,
+        None => resolve_db_url_default(project_name, sink)?,
     };
 
     let mut admin = RealDbAdmin;
@@ -196,11 +223,29 @@ fn pre_create_db(
     db_bootstrap::bootstrap(&bargs, &mut admin, sink)
 }
 
-fn prompt_for_db_url(project_name: &str) -> BlastResult<String> {
-    let default = db_bootstrap::default_url_for(project_name);
+/// Derive a sensible Postgres URL when the user didn't pass `--db-url`.
+/// Tries the interactive prompt first (with the derived URL as the
+/// pressable-Enter default); if the prompt fails (e.g. non-TTY stdin),
+/// silently falls back to the derived default and surfaces it via the
+/// sink so the user can override later via `.env`.
+fn resolve_db_url_default(project_name: &str, sink: &mut dyn Sink) -> BlastResult<String> {
+    let derived = db_bootstrap::default_url_for(project_name);
+    match prompt_for_db_url(project_name, &derived) {
+        Ok(url) => Ok(url),
+        Err(_prompt_err) => {
+            sink.info(format!(
+                "no --db-url and no interactive TTY; defaulting to `{}` (override later via .env)",
+                derived
+            ));
+            Ok(derived)
+        }
+    }
+}
+
+fn prompt_for_db_url(_project_name: &str, default: &str) -> BlastResult<String> {
     let url: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt("Postgres URL")
-        .default(default)
+        .default(default.to_string())
         .interact_text()?;
     Ok(url)
 }
