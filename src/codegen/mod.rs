@@ -10,6 +10,7 @@ pub mod frontend_scaffold;
 pub mod governor_plugin;
 pub mod header;
 pub mod http_routes;
+pub mod icons;
 pub mod ir_loader;
 pub mod models;
 pub mod pages;
