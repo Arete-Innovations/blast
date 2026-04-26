@@ -122,7 +122,9 @@ fn extract_nav(app: &AppState) -> Option<NavConfig> {
             | AppPolicySection::Services(_)
             | AppPolicySection::EnvSpec(_)
             | AppPolicySection::Defaults(_)
-            | AppPolicySection::Pages(_) => continue,
+            | AppPolicySection::Pages(_)
+            | AppPolicySection::Theme(_)
+            | AppPolicySection::Icons(_) => continue,
         }
     }
     None
@@ -138,7 +140,9 @@ fn extract_pages(app: &AppState) -> Vec<Page> {
             | AppPolicySection::Services(_)
             | AppPolicySection::EnvSpec(_)
             | AppPolicySection::Defaults(_)
-            | AppPolicySection::Nav(_) => continue,
+            | AppPolicySection::Nav(_)
+            | AppPolicySection::Theme(_)
+            | AppPolicySection::Icons(_) => continue,
         }
     }
     Vec::new()

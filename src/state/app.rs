@@ -1,5 +1,7 @@
+use crate::state::icons::IconConfig;
 use crate::state::names::{FieldName, ResourceName};
 use crate::state::resource::SoftDeleteDefault;
+use crate::state::theme::ThemeConfig;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -218,7 +220,15 @@ fn default_primevue_preset_file() -> String {
     "src/plugins/primevue.ts".to_string()
 }
 
-pub const APP_SCHEMA_VERSION: u32 = 3;
+pub const APP_SCHEMA_VERSION: u32 = 4;
+
+/// Section key under which the design-token + PrimeVue preset config is
+/// stored inside `AppState.sections`.
+pub const THEME_SECTION_KEY: &str = "theme";
+
+/// Section key under which the icon registry is stored inside
+/// `AppState.sections`.
+pub const ICONS_SECTION_KEY: &str = "icons";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppState {
@@ -238,6 +248,11 @@ pub enum AppPolicySection {
     Nav(NavConfig),
     /// Custom (non-CRUD) page routes (`pages` section in `app.ron`).
     Pages(Vec<Page>),
+    /// Design tokens + PrimeVue palette preset. Drives codegen of
+    /// `frontend/src/styles/tokens.css` and `frontend/src/plugins/primevue.ts`.
+    Theme(ThemeConfig),
+    /// Icon registry. Drives codegen of `frontend/src/icons.ts`.
+    Icons(IconConfig),
 }
 
 /// App-wide defaults consumed by Blast's TUI as prefill values when
@@ -393,6 +408,10 @@ impl AppPolicySection {
             Self::Defaults(_) => {}
             Self::Nav(_) => {}
             Self::Pages(_) => {}
+            // Theme + Icons hold BTreeMap-backed registries that are
+            // already canonical-by-construction.
+            Self::Theme(_) => {}
+            Self::Icons(_) => {}
         }
     }
 }
@@ -483,7 +502,10 @@ mod tests {
 
     fn make_v3_state() -> AppState {
         let mut state = AppState::new();
-        // schema_version is already APP_SCHEMA_VERSION (3).
+        // We want a synthetic v3-shaped state for upgrade tests; the
+        // constructor uses the live APP_SCHEMA_VERSION which is now v4,
+        // so override to v3 explicitly.
+        state.schema_version = 3;
         let nav = NavConfig {
             sections: vec![
                 Section {
@@ -585,29 +607,32 @@ mod tests {
         assert_eq!(pages[2].label, None);
     }
 
-    // ── v2 → v3 upgrade via upgrade_app ──────────────────────────────────────
+    // ── Multi-step upgrade: v(N) → v(current) ───────────────────────────────
     //
-    // v2 is purely additive going to v3 (new optional sections).
-    // A v2 AppState deserialized at v2 schema_version should upgrade to v3
-    // with nav absent and pages absent (no section keys added).
+    // Each upgrader is purely additive in this codebase, so a v1 or v2
+    // state walks through every step and ends at APP_SCHEMA_VERSION
+    // with the v4 default theme + icons sections injected (since neither
+    // was present in older revs) and still no nav / pages (those are
+    // user-opt-in additions that v2→v3 does NOT inject).
 
     #[test]
-    fn v2_upgrades_to_v3_with_no_nav_or_pages() {
-        // Construct what a v2 state looks like in memory.
+    fn v2_upgrades_to_current_with_default_theme_and_icons() {
         let mut state = AppState {
             schema_version: 2,
             sections: IndexMap::new(),
         };
         upgrade_app(&mut state).expect("upgrade_app should succeed");
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
-        // Additive upgrade: no nav or pages sections injected — user opts in by
-        // adding them to their app.ron.
+        // v2→v3 is a no-op for sections.
         assert!(!state.sections.contains_key("nav"));
         assert!(!state.sections.contains_key("pages"));
+        // v3→v4 injects theme + icons defaults.
+        assert!(state.sections.contains_key("theme"));
+        assert!(state.sections.contains_key("icons"));
     }
 
     #[test]
-    fn v1_upgrades_to_v3_with_no_nav_or_pages() {
+    fn v1_upgrades_to_current_with_default_theme_and_icons() {
         let mut state = AppState {
             schema_version: 1,
             sections: IndexMap::new(),
@@ -616,13 +641,7 @@ mod tests {
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
         assert!(!state.sections.contains_key("nav"));
         assert!(!state.sections.contains_key("pages"));
-    }
-
-    #[test]
-    fn v3_state_upgrade_is_noop() {
-        let mut state = make_v3_state();
-        upgrade_app(&mut state).expect("upgrade_app should succeed");
-        // State is already at v3; no change.
-        assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+        assert!(state.sections.contains_key("theme"));
+        assert!(state.sections.contains_key("icons"));
     }
 }
