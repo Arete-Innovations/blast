@@ -106,6 +106,7 @@ pub fn env_test_example(database_url: &str) -> String {
 pub fn main_rs() -> &'static str {
     r#"use catalyst::bootstrap::bootstrap;
 use catalyst::cata_log;
+use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 
 mod structs;
 mod models;
@@ -116,10 +117,12 @@ mod routes;
 mod transport;
 mod database;
 
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+
 #[tokio::main]
 async fn main() {
     catalyst::logger::init_tracing();
-    bootstrap().await;
+    bootstrap(MIGRATIONS).await;
     cata_log!(Info, "App entrypoint reached. Wire your routes/flows here.");
 }
 "#
