@@ -96,7 +96,8 @@ src/transport/http/generated/users.rs
   - pub fn router() -> Router
   - Route handlers: list_users, get_user, create_user, update_user, delete_user
   - List handlers extract `catalyst::transport::http::list_query::ListQuery`
-    and return `catalyst::transport::http::list_query::ListResponse<UserPublic>`.
+    (page, page_size, `Sort` with `SortDirection`, filter map) and return
+    `catalyst::transport::http::list_query::ListResponse<UserPublic>`.
   - Each handler calls one flow only.
 
 src/transport/ws/generated/users.rs
