@@ -61,7 +61,7 @@ Wired in `src/main.rs` via `ServiceBuilder`:
 ```rust
 ServiceBuilder::new()
     .layer(TraceLayer::new_for_http())
-    // ...
+
 ```
 
 All `cata_log!` calls inside a request's async task are automatically associated with this span, so structured log backends (JSON, OTLP) can correlate them by request.
@@ -108,14 +108,14 @@ Fine-grained per-crate filtering (`RUST_LOG=catalyst=debug,tower_http=warn`) is 
 For app code beyond plain text:
 
 ```rust
-// prefer this for important domain events:
+
 tracing::info!(
     user_id = %ctx.session.user_id,
     flow    = "orders::create",
     "order created"
 );
 
-// prefer cata_log! for internal / plumbing messages:
+
 cata_log!(Debug, format!("schema_parser: {} tables found", tables.len()));
 ```
 

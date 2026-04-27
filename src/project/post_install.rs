@@ -32,8 +32,13 @@ const SKIP_TUI_ENV: &str = "BLAST_NO_TUI_FOR_TESTS";
 /// Run the full post-scaffold pipeline. Returns Ok on success; the
 /// auto-TUI step replaces this process via exec, so on the happy path
 /// the function never actually returns.
+///
+/// When `no_warmup` is true, ALL heavy steps are skipped: npm install,
+/// npm run build, and the auto-TUI exec. The function returns Ok
+/// immediately so the caller can print next-steps and exit.
 pub fn run(
     project_root: &Path,
+    no_warmup: bool,
     sink: &mut dyn Sink,
     progress: &mut dyn Progress,
 ) -> BlastResult<()> {
@@ -43,6 +48,11 @@ pub fn run(
             "post-install: expected frontend dir at {} but none found",
             frontend_dir.display()
         )));
+    }
+
+    if no_warmup {
+        sink.info("--no-warmup set; skipping npm install, npm run build, and TUI exec".to_string());
+        return Ok(());
     }
 
     progress.step_start("frontend: npm install");
@@ -240,9 +250,18 @@ mod tests {
         // No frontend/ subdir exists.
         let mut sink = NullSink;
         let mut progress = NullProgress;
-        let err = run(dir.path(), &mut sink, &mut progress).expect_err("must fail");
+        let err = run(dir.path(), false, &mut sink, &mut progress).expect_err("must fail");
         let msg = format!("{}", err);
         assert!(msg.contains("frontend dir"), "msg = {}", msg);
+    }
+
+    #[test]
+    fn run_no_warmup_skips_pipeline() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("frontend")).expect("frontend dir");
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(dir.path(), true, &mut sink, &mut progress).expect("no-warmup short-circuits Ok");
     }
 
     #[test]

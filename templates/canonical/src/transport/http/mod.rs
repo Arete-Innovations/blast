@@ -1,4 +1,14 @@
-//! HTTP transport primitives shared by codegen output and hand-written routes.
+use axum::Router;
 
+use crate::Ctx;
+
+pub mod custom;
+pub mod generated;
 pub mod list_query;
-pub mod spa_fallback;
+pub mod middleware;
+
+pub fn router(ctx: Ctx) -> Router {
+    custom::router()
+        .merge(generated::router())
+        .with_state(ctx)
+}

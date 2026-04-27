@@ -52,7 +52,7 @@ Local disk only. Files live under a configurable root directory. All paths are i
 ### API
 
 ```rust
-pub struct Storage { /* root: PathBuf */ }
+pub struct Storage {  }
 
 impl Storage {
     pub fn from_env() -> Result<Storage, MeltDown>;
@@ -84,7 +84,7 @@ Allowed:
 
 ### Streaming
 
-Out of scope for the v1. `put`/`get` take/return `Vec<u8>`. If you need multi-GB blobs you've outgrown one VPS — fork or wire S3 at the flow layer.
+Out of scope for the v1. `put`/`get` take/return `Vec<u8>`. If you need multi-GB blobs you've outgrown one VPS — fork or wire S3 at the routine layer.
 
 ## Email
 
@@ -106,7 +106,7 @@ SMTP via [`lettre`](https://docs.rs/lettre). Async transport with rustls.
 ### API
 
 ```rust
-pub struct Email { /* transport, from */ }
+pub struct Email {  }
 
 impl Email {
     pub fn from_env() -> Result<Email, MeltDown>;
@@ -129,7 +129,7 @@ impl Email {
 - Transport failure (network, bad TLS handshake, server reject) → `ExternalServiceError` with `mark_transient(true)`
 - Auth failure → `ExternalServiceError` with `mark_transient(false)` (a bad password won't fix itself by retrying)
 
-Pair with `Crank` at the flow layer for retries:
+Pair with `Crank` at the routine layer for retries:
 
 ```rust
 Crank::new(policy)
@@ -140,7 +140,7 @@ Crank::new(policy)
 
 ### Templating
 
-Out of scope for `services::email`. Render bodies in routines/flows; pass raw strings to `send`. Catalyst doesn't ship a template engine.
+Out of scope for `services::email`. Render bodies in routines; pass raw strings to `send`. Catalyst doesn't ship a template engine.
 
 ## Rate Limit
 
@@ -153,13 +153,13 @@ None. Limits are passed per-call by the caller.
 ### API
 
 ```rust
-pub struct RateLimit { /* DashMap<String, TokenBucket> */ }
+pub struct RateLimit {  }
 
 impl RateLimit {
     pub fn new() -> RateLimit;
 
-    /// Returns true if the request is allowed (and consumes one token).
-    /// Returns false if the bucket is empty (rate-limited).
+
+
     pub fn check_and_consume(&self, key: &str, max: u32, window: Duration) -> bool;
 }
 
@@ -209,7 +209,7 @@ let state = AppState {
 };
 ```
 
-Flows take `&AppState` and reach for whichever services they need.
+Routines take `&AppState` and reach for whichever services they need.
 
 ## Fork-To-Swap
 
@@ -227,4 +227,4 @@ Catalyst's contract with the rest of the stack is the **shape** of the service s
 - `SPEC_ARCHITECTURE.md` — services layer in the dep graph
 - `SPEC_MELTDOWN.md` — error variants used here
 - `SPEC_CRANK.md` — retry combinator paired with transient email failures
-- `SPEC_FLOWS.md` — services are called from flows, never from transport
+- `SPEC_FLOWS.md` — services are called from routines, never from flows or transport

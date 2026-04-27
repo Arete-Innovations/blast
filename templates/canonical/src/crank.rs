@@ -222,3 +222,15 @@ where
         }
     }
 }
+
+impl Crank<Immediate, crate::meltdown::MeltDown> {
+    pub fn none() -> Self {
+        Self {
+            policy: Immediate::new(1),
+            classifier: Some(Box::new(|_| false)),
+            deadline: None,
+            on_attempt: None,
+            on_giveup: None,
+        }
+    }
+}

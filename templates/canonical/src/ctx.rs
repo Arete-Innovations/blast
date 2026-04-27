@@ -4,7 +4,7 @@ use diesel_async::scoped_futures::ScopedBoxFuture;
 use diesel_async::{AsyncConnection, AsyncPgConnection};
 
 use crate::meltdown::*;
-use crate::sessions::SessionContext;
+use crate::structs::auth::{Role, SessionContext};
 
 pub type CtxPool = Pool<AsyncPgConnection>;
 
@@ -61,18 +61,29 @@ impl Ctx {
             .ok_or_else(MeltDown::session_missing)
     }
 
-    pub fn require_admin(&self) -> Result<(), MeltDown> {
-        let session = self.require_session()?;
-        if session.is_admin() {
+    pub fn role(&self) -> Option<Role> {
+        self.session.as_ref().map(|s| s.role)
+    }
+
+    pub fn is_admin(&self) -> bool {
+        self.role() == Some(Role::Admin)
+    }
+
+    pub fn require_role(&self, required: Role) -> Result<(), MeltDown> {
+        if self.role() == Some(required) {
             Ok(())
         } else {
             Err(MeltDown::insufficient_permissions())
         }
     }
 
-    pub fn require_roles(&self, allowed: &[&str]) -> Result<(), MeltDown> {
-        let session = self.require_session()?;
-        if allowed.iter().any(|r| session.has_role(r)) {
+    pub fn require_admin(&self) -> Result<(), MeltDown> {
+        self.require_role(Role::Admin)
+    }
+
+    pub fn require_any(&self, allowed: &[Role]) -> Result<(), MeltDown> {
+        let role = self.role().ok_or_else(MeltDown::session_missing)?;
+        if allowed.contains(&role) {
             Ok(())
         } else {
             Err(MeltDown::insufficient_permissions())

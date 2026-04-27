@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// GlobalProgressBar — top-of-viewport indeterminate bar for blocking nav
-// transitions. Listens to the global-progress composable. Visible from
-// the FIRST nav (cold load) so users see "the app is loading" with no
-// blank screen. See SPEC_FRONTEND_ROUTING.md for the blocking-nav model.
-
 import { useGlobalProgress } from '@/composables/global-progress'
 
 const { isActive } = useGlobalProgress()

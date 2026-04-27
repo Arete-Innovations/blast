@@ -2,28 +2,30 @@ use axum::{extract::DefaultBodyLimit, middleware::from_fn, Router};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 use std::net::SocketAddr;
 use tower::ServiceBuilder;
-use tower_http::{cors::CorsLayer, services::{ServeDir, ServeFile}, trace::TraceLayer};
+use tower_http::cors::CorsLayer;
 
 mod bootstrap;
+mod ctx;
 mod database;
+mod flows;
 mod meltdown;
-mod middleware;
 mod models;
-mod routes;
+mod routines;
 mod services;
-mod sessions;
 mod structs;
+mod transport;
 
-mod logger;
+mod cata_log;
 
 use bootstrap::bootstrap;
-use middleware::*;
+use ctx::Ctx;
+use transport::http::middleware::*;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/database/migrations");
 
 #[tokio::main]
 async fn main() {
-    logger::init_tracing();
+    cata_log::init_tracing();
 
     bootstrap(MIGRATIONS).await;
     cata_log!(Info, "Starting Axum server...");
@@ -38,30 +40,17 @@ async fn main() {
 }
 
 async fn create_app() -> Router {
-    // Canonical API surface: /api/auth/{register,login,logout,me}.
-    // User apps mount additional resource routers on top of this.
-    let api_routes = routes::auth::router();
+    let ctx = Ctx::anonymous(database::db::pool().clone());
+    let api_routes = transport::http::router(ctx);
 
-    // SPA fallback: serve frontend/dist/ as static assets; any unmatched path
-    // (vue-router history-mode deep links) falls through to index.html.
-    // API and WS routes registered above take precedence — they never reach here.
-    let spa_service = ServeDir::new("frontend/dist")
-        .fallback(ServeFile::new("frontend/dist/index.html"));
-
-    let mut app = Router::new()
-        .nest("/api", api_routes)
-        .fallback_service(spa_service);
-
-    app = app.layer(
+    let app = Router::new().nest("/api", api_routes).layer(
         ServiceBuilder::new()
-            .layer(TraceLayer::new_for_http())
+            .layer(transport::http::middleware::trace::make_trace_layer())
             .layer(CorsLayer::permissive())
             .layer(DefaultBodyLimit::max(1024 * 1024))
             .layer(from_fn(error_handling_middleware))
             .layer(from_fn(api_logger_middleware)),
     );
-
-    cata_log!(Info, "Development mode: cache control disabled");
 
     app
 }

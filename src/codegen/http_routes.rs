@@ -98,9 +98,9 @@ fn build_resource_file(r: &ResourceState) -> String {
     out.push_str("use axum::http::StatusCode;\n");
     out.push_str("use axum::routing::{delete, get, patch, post};\n");
     out.push_str("use axum::{Json, Router};\n");
-    out.push_str("use catalyst::Ctx;\n");
-    out.push_str("use catalyst::meltdown::MeltDown;\n");
-    out.push_str("use catalyst::transport::http::list_query::{ListQuery, ListResponse};\n");
+    out.push_str("use crate::Ctx;\n");
+    out.push_str("use crate::meltdown::MeltDown;\n");
+    out.push_str("use crate::transport::http::list_query::{ListQuery, ListResponse};\n");
     out.push('\n');
     out.push_str(&format!(
         "use crate::flows::generated::{table} as flow;\n",
@@ -261,7 +261,7 @@ fn build_barrel(resources: &[ResourceState]) -> String {
     }
     out.push('\n');
     out.push_str("use axum::Router;\n");
-    out.push_str("use catalyst::Ctx;\n");
+    out.push_str("use crate::Ctx;\n");
     out.push('\n');
     out.push_str("pub fn router() -> Router<Ctx> {\n");
     out.push_str("    let mut router = Router::new();\n");

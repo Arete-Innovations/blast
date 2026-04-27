@@ -1,29 +1,20 @@
-//! `CREATE INDEX` migration emitter.
-//!
-//! For every filterable + sortable column declared on a resource we emit
-//! a standalone migration file. Idempotent: skip when an existing
-//! migration already declares the same index for the (table, column)
-//! pair.
-
 use crate::error::BlastResult;
 use crate::state::{ListOptions, ResourceState, Verb};
+use chrono::{TimeZone, Utc};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// One emission report per (table, column) pair we processed.
 #[derive(Debug, Default, Clone)]
 pub struct IndexReport {
     pub written: Vec<PathBuf>,
     pub skipped: Vec<PathBuf>,
 }
 
-/// Caller injects the timestamp source so deterministic tests can pin it.
 pub trait Clock {
     fn now_unix(&self) -> u64;
 }
 
-/// Default real-clock impl.
 pub struct SystemClock;
 
 impl Clock for SystemClock {
@@ -35,13 +26,12 @@ impl Clock for SystemClock {
     }
 }
 
-/// Walk every resource and emit any missing index migrations.
 pub fn run(
     project_root: &Path,
     resources: &[ResourceState],
     clock: &dyn Clock,
 ) -> BlastResult<IndexReport> {
-    let migrations_dir = project_root.join("migrations");
+    let migrations_dir = canonical_migrations_dir(project_root);
     fs::create_dir_all(&migrations_dir)?;
 
     let existing = collect_existing_indices(&migrations_dir)?;
@@ -58,17 +48,22 @@ pub fn run(
     pairs.sort();
     pairs.dedup();
 
+    let stamp = format_stamp(clock.now_unix());
+    let mut counter: u32 = 0;
+
     for (table, col) in pairs {
         let key = (table.clone(), col.clone());
         match existing.contains(&key) {
             true => {
-                report.skipped.push(migration_path_stub(&migrations_dir, &table, &col));
+                report.skipped.push(migration_dir_stub(&migrations_dir, &table, &col));
             }
             false => {
-                let target = migration_path(&migrations_dir, clock.now_unix(), &table, &col);
-                let body = render_migration_body(&table, &col);
-                fs::write(&target, body)?;
-                report.written.push(target);
+                let dir = migration_dir(&migrations_dir, &stamp, counter, &table, &col);
+                fs::create_dir_all(&dir)?;
+                fs::write(dir.join("up.sql"), render_up_sql(&table, &col))?;
+                fs::write(dir.join("down.sql"), render_down_sql(&table, &col))?;
+                report.written.push(dir);
+                counter += 1;
             }
         }
     }
@@ -76,8 +71,10 @@ pub fn run(
     Ok(report)
 }
 
-/// Yield every column that should carry an index — union of filterable
-/// and sortable declared in the List verb's ListOptions.
+fn canonical_migrations_dir(project_root: &Path) -> PathBuf {
+    project_root.join("src").join("database").join("migrations")
+}
+
 fn indexable_columns(resource: &ResourceState) -> BTreeSet<String> {
     let mut out: BTreeSet<String> = BTreeSet::new();
     let verb_state = match resource.verbs.get(&Verb::List) {
@@ -97,7 +94,6 @@ fn indexable_columns(resource: &ResourceState) -> BTreeSet<String> {
     out
 }
 
-/// Scan migrations dir for `CREATE INDEX ... ON <table> (<col>)` patterns.
 fn collect_existing_indices(migrations_dir: &Path) -> BlastResult<BTreeSet<(String, String)>> {
     let mut out: BTreeSet<(String, String)> = BTreeSet::new();
     match migrations_dir.is_dir() {
@@ -107,38 +103,34 @@ fn collect_existing_indices(migrations_dir: &Path) -> BlastResult<BTreeSet<(Stri
 
     let walker = match fs::read_dir(migrations_dir) {
         Ok(it) => it,
-        Err(_read_err) => return Ok(out), // allow: best-effort scan; missing dir => no existing indices
+        Err(_read_err) => return Ok(out),
     };
 
     for entry in walker {
         let entry = match entry {
             Ok(e) => e,
-            Err(_entry_err) => continue, // allow: skip entries we can't stat; one bad dirent shouldn't fail emission
+            Err(_entry_err) => continue,
         };
         let path = entry.path();
-        let ext = match path.extension() {
-            Some(e) => e,
-            None => continue,
-        };
-        match ext == "sql" {
-            false => continue,
-            true => match fs::read_to_string(&path) {
-                Ok(body) => {
-                    for (table, col) in parse_indices(&body) {
-                        out.insert((table, col));
+        match path.is_dir() {
+            true => {
+                let up_sql = path.join("up.sql");
+                match fs::read_to_string(&up_sql) {
+                    Ok(body) => {
+                        for (table, col) in parse_indices(&body) {
+                            out.insert((table, col));
+                        }
                     }
+                    Err(_read_err) => continue,
                 }
-                Err(_read_err) => continue, // allow: unreadable file => treat as no indices declared
-            },
+            }
+            false => continue,
         }
     }
 
     Ok(out)
 }
 
-/// Tiny grep for `CREATE INDEX <name> ON <table> (<col>)` — case-insensitive
-/// keyword match. Multi-column composites and partial WHERE clauses are
-/// deliberately ignored.
 fn parse_indices(body: &str) -> Vec<(String, String)> {
     let lowered = body.to_ascii_lowercase();
     let mut pairs: Vec<(String, String)> = Vec::new();
@@ -185,19 +177,28 @@ fn capture_table_col(after: &str) -> Option<(String, String)> {
     }
 }
 
-fn migration_path_stub(dir: &Path, table: &str, col: &str) -> PathBuf {
-    dir.join(format!("0_idx_{table}_{col}.sql"))
+fn format_stamp(now_unix: u64) -> String {
+    let secs = now_unix as i64;
+    match Utc.timestamp_opt(secs, 0).single() {
+        Some(dt) => dt.format("%Y-%m-%d-%H%M%S").to_string(),
+        None => "1970-01-01-000000".to_string(),
+    }
 }
 
-fn migration_path(dir: &Path, now_unix: u64, table: &str, col: &str) -> PathBuf {
-    dir.join(format!("{now_unix}_idx_{table}_{col}.sql"))
+fn migration_dir_stub(dir: &Path, table: &str, col: &str) -> PathBuf {
+    dir.join(format!("0_idx_{table}_{col}"))
 }
 
-fn render_migration_body(table: &str, col: &str) -> String {
-    format!(
-        "-- Auto-generated by Blast: index for filterable/sortable column.\n\
-         CREATE INDEX IF NOT EXISTS idx_{table}_{col} ON {table} ({col});\n",
-    )
+fn migration_dir(dir: &Path, stamp: &str, counter: u32, table: &str, col: &str) -> PathBuf {
+    dir.join(format!("{stamp}{counter:03}_idx_{table}_{col}"))
+}
+
+fn render_up_sql(table: &str, col: &str) -> String {
+    format!("CREATE INDEX IF NOT EXISTS idx_{table}_{col} ON {table} ({col});\n")
+}
+
+fn render_down_sql(table: &str, col: &str) -> String {
+    format!("DROP INDEX IF EXISTS idx_{table}_{col};\n")
 }
 
 #[cfg(test)]
@@ -264,11 +265,17 @@ mod tests {
     }
 
     #[test]
-    fn emits_one_migration_per_filterable_column() {
+    fn emits_one_migration_dir_per_filterable_column() {
         let tmp = TempDir::new().expect("tempdir");
         let r = sample("users", &["email", "active"], &[]);
         let report = run(tmp.path(), &[r], &PinnedClock(1234567890)).expect("emit");
         assert_eq!(report.written.len(), 2);
+
+        for dir in &report.written {
+            assert!(dir.is_dir(), "{} should be a directory", dir.display());
+            assert!(dir.join("up.sql").is_file(), "missing up.sql in {}", dir.display());
+            assert!(dir.join("down.sql").is_file(), "missing down.sql in {}", dir.display());
+        }
 
         let names: Vec<String> = report
             .written
@@ -277,6 +284,15 @@ mod tests {
             .collect();
         assert!(names.iter().any(|n| n.contains("idx_users_email")));
         assert!(names.iter().any(|n| n.contains("idx_users_active")));
+    }
+
+    #[test]
+    fn emits_into_canonical_migrations_dir() {
+        let tmp = TempDir::new().expect("tempdir");
+        let r = sample("users", &["email"], &[]);
+        let report = run(tmp.path(), &[r], &PinnedClock(1234567890)).expect("emit");
+        let written = &report.written[0];
+        assert!(written.starts_with(tmp.path().join("src").join("database").join("migrations")));
     }
 
     #[test]
@@ -298,13 +314,11 @@ mod tests {
     #[test]
     fn skips_when_existing_migration_already_indexes_pair() {
         let tmp = TempDir::new().expect("tempdir");
-        let migrations_dir = tmp.path().join("migrations");
-        fs::create_dir_all(&migrations_dir).unwrap();
-        fs::write(
-            migrations_dir.join("0001_seed.sql"),
-            "CREATE INDEX foo ON users (email);\n",
-        )
-        .unwrap();
+        let migrations_dir = canonical_migrations_dir(tmp.path());
+        let existing = migrations_dir.join("2026-01-01-000000_seed");
+        fs::create_dir_all(&existing).unwrap();
+        fs::write(existing.join("up.sql"), "CREATE INDEX foo ON users (email);\n").unwrap();
+        fs::write(existing.join("down.sql"), "DROP INDEX foo;\n").unwrap();
 
         let r = sample("users", &["email"], &[]);
         let report = run(tmp.path(), &[r], &PinnedClock(1234567890)).expect("emit");
@@ -313,10 +327,16 @@ mod tests {
     }
 
     #[test]
-    fn rendered_body_contains_create_index_statement() {
-        let body = render_migration_body("users", "email");
+    fn rendered_up_sql_creates_index() {
+        let body = render_up_sql("users", "email");
         assert!(body.contains("CREATE INDEX IF NOT EXISTS idx_users_email"));
         assert!(body.contains("ON users (email)"));
+    }
+
+    #[test]
+    fn rendered_down_sql_drops_index() {
+        let body = render_down_sql("users", "email");
+        assert!(body.contains("DROP INDEX IF EXISTS idx_users_email"));
     }
 
     #[test]
@@ -331,5 +351,11 @@ mod tests {
         let body = "CREATE INDEX idx ON foo (a, b);";
         let parsed = parse_indices(body);
         assert!(parsed.is_empty(), "composites are user-authored");
+    }
+
+    #[test]
+    fn stamp_format_matches_diesel_convention() {
+        let stamp = format_stamp(1234567890);
+        assert_eq!(stamp, "2009-02-13-233130");
     }
 }

@@ -2,13 +2,13 @@
 
 How Blast generates code. Inputs, outputs, state-hash markers, regeneration rules, and the generated/custom boundary.
 
-## Vendoring Model (locked Wave 9, 2026-04-26)
+## Source-of-truth Model
 
-Apps DO NOT depend on `catalyst` as a Cargo dep. There is no `catalyst = { path = ... }` or `catalyst = { git = ... }` line anywhere. Blast vendors catalyst's entire source tree into the binary at compile time via `include_dir!()` from `blast/templates/canonical/`. When `blast new` scaffolds a project it walks that vendored tree, substitutes `{{project_name}}` placeholders, and writes a complete framework checkout to the project root. Every scaffolded app is its own fork-by-default copy of the framework.
+Apps DO NOT depend on `catalyst` as a Cargo dep. There is no `catalyst = { path = ... }` or `catalyst = { git = ... }` line anywhere. The framework source tree lives in `blast/templates/canonical/` and gets baked into the blast binary at compile time via `include_dir!()`. When `blast new` scaffolds a project it walks that baked tree, substitutes `{{project_name}}` placeholders, and writes a complete framework checkout to the project root. Every scaffolded app is its own fork-by-default copy of the framework.
 
-**Dev-time sync:** `blast sync-canonical [--catalyst-path PATH]` copies a local catalyst checkout into `blast/templates/canonical/`. `--check` exits non-zero on drift. Run this whenever catalyst evolves before publishing a new Blast binary.
+`templates/canonical/` is the single source of truth. The published `catalyst/` repo is an OUTPUT artifact regenerated from `blast new` at publish time; never edit it by hand.
 
-**Update model (end-user-time):** `blast vendor-update` (planned) re-walks the vendored tree into an existing project, preserving `**/custom/` dirs and `storage/`, warning when framework files it would stomp have local edits. Because every project is a local copy, edits stick on the user's checkout unless they explicitly ask for an update.
+**Update model (end-user-time):** `blast vendor-update` (planned) re-walks the baked tree into an existing project, preserving `**/custom/` dirs and `storage/`, warning when framework files it would stomp have local edits. Because every project is a local copy, edits stick on the user's checkout unless they explicitly ask for an update.
 
 ## Inputs
 

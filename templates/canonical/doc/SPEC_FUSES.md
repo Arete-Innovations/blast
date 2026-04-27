@@ -13,13 +13,13 @@ Our scheduler is tightly coupled to flows (typed dispatch, single capability inv
 ```sql
 CREATE TABLE fuses (
     id              BIGSERIAL PRIMARY KEY,
-    name            TEXT NOT NULL UNIQUE,       -- e.g. "cleanup_expired_sessions"
-    flow_name       TEXT NOT NULL,              -- e.g. "flows::custom::cleanup_expired_sessions"
-    schedule_kind   TEXT NOT NULL,              -- 'interval' | 'cron'
-    schedule_spec   TEXT NOT NULL,              -- duration string OR cron expression
+    name            TEXT NOT NULL UNIQUE,
+    flow_name       TEXT NOT NULL,
+    schedule_kind   TEXT NOT NULL,
+    schedule_spec   TEXT NOT NULL,
     enabled         BOOLEAN NOT NULL DEFAULT true,
     last_run_at     TIMESTAMPTZ,
-    last_run_status TEXT,                       -- 'ok' | 'error' | 'running'
+    last_run_status TEXT,
     last_error      TEXT,
     next_run_at     TIMESTAMPTZ NOT NULL,
     run_count       BIGINT NOT NULL DEFAULT 0,
@@ -35,7 +35,7 @@ The table name is `fuses`, reserved for Catalyst. User apps don't create a diffe
 ## Registration (code)
 
 ```rust
-// src/transport/fuses/custom/cleanup_expired_sessions.rs
+
 use catalyst::fuses::*;
 use std::time::Duration;
 
@@ -49,21 +49,21 @@ pub fn register(registry: &mut FuseRegistry) {
 ```
 
 ```rust
-// src/transport/fuses/mod.rs
+
 pub mod custom;
 
 pub fn register_all(registry: &mut FuseRegistry) {
     custom::cleanup_expired_sessions::register(registry);
     custom::rotate_api_keys::register(registry);
     custom::send_daily_digest::register(registry);
-    // ...
+
 }
 ```
 
 Registry is called at app boot (in `bootstrap.rs`):
 
 ```rust
-// src/bootstrap.rs
+
 let mut fuse_registry = FuseRegistry::new();
 transport::fuses::register_all(&mut fuse_registry);
 catalyst::fuses::launch(pool.clone(), fuse_registry).await;
@@ -72,9 +72,9 @@ catalyst::fuses::launch(pool.clone(), fuse_registry).await;
 ## Schedule Kinds
 
 ```rust
-Schedule::every(Duration)              // interval-based: every 5m, every 1h
-Schedule::cron("0 2 * * *")            // cron-based: at 02:00 daily
-Schedule::at(chrono::NaiveTime::...)   // daily at specific time
+Schedule::every(Duration)
+Schedule::cron("0 2 * * *")
+Schedule::at(chrono::NaiveTime::...)
 ```
 
 All resolve to `next_run_at` timestamps in the DB row.
@@ -113,7 +113,7 @@ loop:
 2. Lookup flow by `flow_name` in a registry (populated at boot)
 3. Invoke `flow.run(&ctx)`
 4. On success: mark `last_run_status = 'ok'`, bump `run_count`, compute new `next_run_at`
-5. On `MeltDown`: mark `last_run_status = 'error'`, persist `last_error`, compute `next_run_at` (same schedule — Fuses don't retry within a run; retries live inside the flow if desired)
+5. On `MeltDown`: mark `last_run_status = 'error'`, persist `last_error`, compute `next_run_at` (same schedule — Fuses don't retry within a run; retries live inside the flow via its declared `Crank` policy)
 
 ## Lifecycle Semantics
 
@@ -133,7 +133,7 @@ pub async fn run(ctx: &Ctx) -> Result<(), MeltDown>;
 
 Fuses don't take input. They're triggered by time, not request data. The flow itself reads whatever state it needs (via `ctx.conn()`).
 
-Long retries are acceptable (Fuses aren't user-facing). Set `Crank` deadlines generously inside the flow if retrying external calls.
+Long retries are acceptable (Fuses aren't user-facing). Every flow dispatched by a Fuse must declare a `Crank` retry policy explicitly — set deadlines generously for background work.
 
 ## TUI
 
@@ -168,7 +168,7 @@ Per `SPEC_MELTDOWN.md` logging rules, errors bubble through middleware-equivalen
 
 **Business logic inline in a Fuse handler:**
 ```rust
-// BAD — Fuse running code directly
+
 Fuse::every(...)
     .run_inline(|ctx| async move {
         sqlx::query("DELETE FROM ...").execute(ctx.conn()).await?;

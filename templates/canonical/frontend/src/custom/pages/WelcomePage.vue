@@ -80,7 +80,6 @@ function go_dashboard(): void {
     min-height: 100vh;
   }
 
-  /* Hero */
   .welcome-hero {
     display: flex;
     align-items: center;
@@ -123,7 +122,6 @@ function go_dashboard(): void {
     justify-content: center;
   }
 
-  /* Features */
   .welcome-features {
     padding-block: var(--app-pad-section-sm);
     padding-inline: var(--app-space-xl);

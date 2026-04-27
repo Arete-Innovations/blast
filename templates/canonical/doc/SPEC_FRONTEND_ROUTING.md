@@ -81,7 +81,7 @@ pages: [
         path: "/_debug/thing",
         component: "custom/pages/DebugThing.vue",
         layout: "bleed",
-        in_nav: false,                  // routable but not in menu
+        in_nav: false,
     ),
 ]
 ```
@@ -167,13 +167,13 @@ Click a second link mid-nav: in-flight `AbortController` aborts the pending fetc
 Every modal/dialog/drawer/sidebar overlay reflects in the URL. No exceptions.
 
 ```ts
-// BANNED
+
 const showEdit = ref(false)
 function openEdit() { showEdit.value = true }
 
 <Dialog v-model:visible="showEdit">
 
-// REQUIRED
+
 const dialog = useQueryDialog('user-edit', { id: 42 })
 
 <Dialog v-model:visible="dialog.visible">
@@ -206,17 +206,17 @@ const { data, error, refetch, page, sort, filter } = useUsersList(opts)
 Triggers configured per-call:
 
 ```ts
-// Tier 1: load once on mount; manual refetch only
+
 useUsersList()
 
-// Tier 2: load + interval polling
+
 useUsersList({ poll: 5000 })
 
-// Tier 3: load + WS-driven refetch
+
 useUsersList({ live: true })
 
-// Combinations are legal
-useUsersList({ poll: 30000, live: true })   // poll fallback if WS drops
+
+useUsersList({ poll: 30000, live: true })
 ```
 
 | Tier | Trigger | Use case |
@@ -232,7 +232,7 @@ Action handlers go: action → pending state → await server → reconcile from
 ```ts
 const updateUser = useUpdateUser()
 const { error } = await updateUser(42, { email: 'new@x.com' })
-// list/detail composables auto-refetch via WS event or manual invalidate
+
 ```
 
 Custom code that mutates local state pre-server is flagged by `OptimisticUpdateInCustom` Governor rule.

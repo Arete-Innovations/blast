@@ -7,7 +7,6 @@ use crate::{
     structs::{NewUser, User},
 };
 
-/// Look up an active (non soft-deleted) user by their unique email address.
 pub async fn find_by_email(
     conn: &mut AsyncPgConnection,
     email: &str,
@@ -21,7 +20,6 @@ pub async fn find_by_email(
         .map_err(|e| MeltDown::from(e).with_context("operation", "find_user_by_email"))
 }
 
-/// Look up an active (non soft-deleted) user by primary key.
 pub async fn find_by_id(
     conn: &mut AsyncPgConnection,
     id: i64,
@@ -35,8 +33,6 @@ pub async fn find_by_id(
         .map_err(|e| MeltDown::from(e).with_context("operation", "find_user_by_id"))
 }
 
-/// Insert a brand-new user with the given email + password hash. The DB
-/// fills in `role` (default `'user'`), `created_at`, `updated_at`.
 pub async fn insert_new(
     conn: &mut AsyncPgConnection,
     email: &str,

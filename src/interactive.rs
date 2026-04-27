@@ -54,8 +54,6 @@ const MENU_ITEMS: &[&str] = &[
     // ── arsenal ───────────────────────────────────────────────────────────────
     "[ARSENAL] Scan & Write JSON",
     "[ARSENAL] Serve MCP (stdio)",
-    // ── dev tools ─────────────────────────────────────────────────────────────
-    "[DEV] Sync canonical",
     // ── exit ──────────────────────────────────────────────────────────────────
     "[Exit] Kill Session",
 ];
@@ -99,6 +97,7 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
                 db_url: None,
                 force: false,
                 no_test_db: false,
+                no_warmup: false,
             }))
         }
         "[SCAFFOLD] Init in-place" => Ok(Some(Command::Init {
@@ -106,6 +105,7 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
             db_url: None,
             force: false,
             no_test_db: false,
+            no_warmup: false,
         })),
 
         // ── app lifecycle ─────────────────────────────────────────────────────
@@ -203,12 +203,6 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
         "[ARSENAL] Serve MCP (stdio)" => {
             Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))
         }
-
-        // ── dev tools ─────────────────────────────────────────────────────────
-        "[DEV] Sync canonical" => Ok(Some(Command::SyncCanonical {
-            catalyst_path: None,
-            check: false,
-        })),
 
         // ── exit ──────────────────────────────────────────────────────────────
         "[Exit] Kill Session" => Ok(None),
@@ -330,7 +324,6 @@ mod tests {
             "[LINT] Governor Check (verbose)",
             "[ARSENAL] Scan & Write JSON",
             "[ARSENAL] Serve MCP (stdio)",
-            "[DEV] Sync canonical",
             "[Exit] Kill Session",
         ];
 
@@ -407,10 +400,6 @@ mod tests {
         assert!(matches!(
             resolve_selection("[ARSENAL] Serve MCP (stdio)"),
             Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))
-        ));
-        assert!(matches!(
-            resolve_selection("[DEV] Sync canonical"),
-            Ok(Some(Command::SyncCanonical { catalyst_path: None, check: false }))
         ));
         assert!(matches!(
             resolve_selection("[Exit] Kill Session"),

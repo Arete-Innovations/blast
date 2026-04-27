@@ -37,7 +37,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::New { name, dev, db_url, force, no_test_db } => {
+        Command::New { name, dev, db_url, force, no_test_db, no_warmup } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
             let opts = crate::project::scaffold::NewOptions {
@@ -45,7 +45,10 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 db_url,
                 force,
                 no_test_db,
-                post_seed: Some(std::sync::Arc::new(crate::commands::scaffold_post_seed::run)),
+                no_warmup,
+                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| {
+                    crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress)
+                })),
             };
             crate::project::scaffold::create_new_project_with_opts(
                 &name,
@@ -56,7 +59,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::Init { name, db_url, force, no_test_db } => {
+        Command::Init { name, db_url, force, no_test_db, no_warmup } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
             let opts = crate::project::scaffold::NewOptions {
@@ -64,7 +67,10 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 db_url,
                 force,
                 no_test_db,
-                post_seed: Some(std::sync::Arc::new(crate::commands::scaffold_post_seed::run)),
+                no_warmup,
+                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| {
+                    crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress)
+                })),
             };
             match name {
                 Some(n) => {
@@ -174,28 +180,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
         Command::Check { verbose } => run_check(config, verbose),
 
-        Command::SyncCanonical { catalyst_path, check } => {
-            let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-            let args = crate::commands::sync_canonical::Args {
-                catalyst_path,
-                destination: crate::commands::sync_canonical::default_destination(),
-                check,
-            };
-            let outcome = crate::commands::sync_canonical::run(args, &mut sink)?;
-            if check && !outcome.drift_paths.is_empty() {
-                return Err(BlastError::Invalid(format!(
-                    "canonical snapshot drift: {} file(s) need re-sync",
-                    outcome.drift_paths.len()
-                )));
-            }
-            logger::info(&format!(
-                "sync-canonical: copied {}, skipped {}, drift {}",
-                outcome.files_copied,
-                outcome.files_skipped,
-                outcome.drift_paths.len()
-            ))?;
-            Ok(())
-        }
     }
 }
 
@@ -205,7 +189,6 @@ fn is_config_independent(cmd: &Command) -> bool {
         Command::Help
             | Command::New { .. }
             | Command::Init { .. }
-            | Command::SyncCanonical { .. }
     )
 }
 

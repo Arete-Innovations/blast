@@ -1,28 +1,3 @@
-//! Locked wire schema for list endpoints:
-//!
-//! ```text
-//! ?page=<u32>&page_size=<u32>&sort=[-]<col>[,[-]<col>]*&filter[<col>]=<val>...
-//! ```
-//!
-//! # Design notes (alt — Builder/explicit-parser flavour)
-//!
-//! This module deliberately avoids `serde_qs` / `serde_urlencoded` derive magic.
-//! The query parser walks the raw query string by hand and dispatches per
-//! known key, so:
-//!
-//! 1. Every parse failure produces a `MeltDown::bad_request` with structured
-//!    `with_context` entries (key, raw value, reason). No opaque
-//!    "missing field `foo`" serde errors.
-//! 2. Sort directions are turned into a typed [`SortDirection`] enum at parse
-//!    time — downstream code never re-parses the `-` prefix.
-//! 3. Filter values keep their wire order in a `Vec<(String, String)>`,
-//!    duplicates allowed (lets the consumer treat repeats as OR-semantics).
-//! 4. Strict mode (default) rejects unknown query keys — typos in dev fail
-//!    loud rather than silently no-op. Solo-dev framework opinion: typos
-//!    are bugs, not features.
-//! 5. `page_size > MAX_PAGE_SIZE` clamps silently to MAX. `page_size = 0`
-//!    is a hard error. `page = 0` is a hard error.
-
 use std::fmt;
 
 use axum::{
@@ -36,19 +11,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::meltdown::MeltDown;
 
-/// Default `page` when the client omits it.
 pub const DEFAULT_PAGE: u32 = 1;
 
-/// Default `page_size` when the client omits it.
 pub const DEFAULT_PAGE_SIZE: u32 = 25;
 
-/// Hard ceiling on `page_size`. Larger values are silently clamped.
 pub const MAX_PAGE_SIZE: u32 = 200;
 
-/// Parsed `sort=[-]<col>` segment.
-///
-/// `direction` is decided once at parse time; consumers never re-inspect a `-`
-/// prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sort {
     pub column: String,
@@ -71,7 +39,6 @@ impl fmt::Display for SortDirection {
 }
 
 impl Sort {
-    /// `-col` -> `Sort{ col, Desc }`, otherwise Asc.
     fn parse_segment(seg: &str) -> Result<Self, ParseError> {
         let trimmed = seg.trim();
         if trimmed.is_empty() {
@@ -96,7 +63,6 @@ impl Sort {
         Ok(())
     }
 
-    /// Re-emit the canonical wire form (`col` or `-col`).
     pub fn as_wire(&self) -> String {
         match self.direction {
             SortDirection::Asc => self.column.clone(),
@@ -105,17 +71,11 @@ impl Sort {
     }
 }
 
-/// Parsed `?page&page_size&sort&filter[col]=val` query string.
-///
-/// Build via the axum extractor, [`ListQuery::from_query_str`], or the
-/// `Default` impl. Field access is plain — no getters — because the wire
-/// contract IS the public contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListQuery {
     pub page: u32,
     pub page_size: u32,
     pub sort: Vec<Sort>,
-    /// `(column, value)` pairs, wire order preserved, duplicates kept.
     pub filter: Vec<(String, String)>,
 }
 
@@ -131,8 +91,6 @@ impl Default for ListQuery {
 }
 
 impl ListQuery {
-    /// Parse a raw query string (no leading `?`). Hand-rolled so error
-    /// messages can carry structured context.
     pub fn from_query_str(raw: &str) -> Result<Self, MeltDown> {
         let mut builder = ListQueryBuilder::default();
         for (key, value) in iter_pairs(raw) {
@@ -141,12 +99,10 @@ impl ListQuery {
         builder.build()
     }
 
-    /// First filter value for `column`, if any.
     pub fn filter_first(&self, column: &str) -> Option<&str> {
         self.filter.iter().find_map(|(k, v)| (k == column).then_some(v.as_str()))
     }
 
-    /// All filter values for `column` in wire order.
     pub fn filter_all<'a>(&'a self, column: &'a str) -> impl Iterator<Item = &'a str> + 'a {
         self.filter.iter().filter_map(move |(k, v)| (k == column).then_some(v.as_str()))
     }
@@ -164,10 +120,6 @@ where
         ListQuery::from_query_str(raw)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Builder — explicit per-key dispatch, accumulates structured errors.
-// ---------------------------------------------------------------------------
 
 #[derive(Default)]
 struct ListQueryBuilder {
@@ -202,7 +154,6 @@ impl ListQueryBuilder {
                 self.page_size = Some(n.min(MAX_PAGE_SIZE));
             }
             "sort" => {
-                // Either repeated `sort=` params or one comma-separated value.
                 for seg in value.split(',') {
                     let s = Sort::parse_segment(seg).map_err(bad_request)?;
                     self.sort.push(s);
@@ -212,7 +163,6 @@ impl ListQueryBuilder {
                 if let Some(col) = parse_filter_key(other)? {
                     self.filter.push((col, value.to_string()));
                 } else {
-                    // Strict mode: unknown keys are bugs.
                     return Err(bad_request(ParseError::UnknownKey(other.to_string())));
                 }
             }
@@ -230,8 +180,6 @@ impl ListQueryBuilder {
     }
 }
 
-/// Parses `filter[col]` -> Some("col"); anything else -> Ok(None);
-/// malformed brackets -> Err.
 fn parse_filter_key(key: &str) -> Result<Option<String>, MeltDown> {
     let Some(rest) = key.strip_prefix("filter[") else {
         return Ok(None);
@@ -247,11 +195,6 @@ fn parse_filter_key(key: &str) -> Result<Option<String>, MeltDown> {
     }
     Ok(Some(col.to_string()))
 }
-
-// ---------------------------------------------------------------------------
-// Tiny URL-pair iterator. Avoids pulling `url`/`form_urlencoded` as deps.
-// Handles `+` -> ` ` and `%xx` decoding for both keys and values.
-// ---------------------------------------------------------------------------
 
 fn iter_pairs(raw: &str) -> impl Iterator<Item = (String, String)> + '_ {
     raw.split('&')
@@ -281,7 +224,6 @@ fn decode(s: &str) -> String {
                     out.push(b as char);
                     i += 3;
                 } else {
-                    // Malformed escape — pass the `%` through verbatim.
                     out.push('%');
                     i += 1;
                 }
@@ -294,10 +236,6 @@ fn decode(s: &str) -> String {
     }
     out
 }
-
-// ---------------------------------------------------------------------------
-// Parse error -> MeltDown::bad_request with structured context.
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, PartialEq, Eq)]
 enum ParseError {
@@ -352,10 +290,6 @@ fn bad_request(e: ParseError) -> MeltDown {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ListResponse<T> — paginated wire envelope.
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListResponse<T> {
     pub items: Vec<T>,
@@ -366,9 +300,6 @@ pub struct ListResponse<T> {
 }
 
 impl<T> ListResponse<T> {
-    /// Auto-computes `total_pages = ceil(total / page_size)`.
-    /// `page_size == 0` would be a div-by-zero, but `ListQuery` rejects that
-    /// at parse time. We still defend here: 0 -> 0 pages.
     pub fn new(items: Vec<T>, page: u32, page_size: u32, total: u64) -> Self {
         let total_pages = if page_size == 0 {
             0
@@ -379,7 +310,6 @@ impl<T> ListResponse<T> {
         Self { items, page, page_size, total, total_pages }
     }
 
-    /// Convenience: build from the original `ListQuery`.
     pub fn from_query(items: Vec<T>, query: &ListQuery, total: u64) -> Self {
         Self::new(items, query.page, query.page_size, total)
     }
@@ -393,10 +323,6 @@ where
         Json(self).into_response()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -466,7 +392,6 @@ mod tests {
 
     #[test]
     fn parses_filters_with_url_encoding_and_keeps_order() {
-        // `filter[name]=Jo%20hn&filter[role]=admin&filter[name]=Jane`
         let q = ListQuery::from_query_str(
             "filter%5Bname%5D=Jo%20hn&filter%5Brole%5D=admin&filter%5Bname%5D=Jane",
         )
@@ -481,7 +406,6 @@ mod tests {
 
     #[test]
     fn malformed_filter_bracket_is_rejected() {
-        // `filter[foo` (no closing bracket).
         let err = ListQuery::from_query_str("filter%5Bfoo=x").unwrap_err();
         assert!(err.is(MeltType::BadRequest));
     }

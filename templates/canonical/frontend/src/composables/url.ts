@@ -1,19 +1,3 @@
-// url — URL-state binding helpers. SPAs broke the web's URL contract;
-// these put view state back where it belongs (the URL) so refresh,
-// share-link, back/forward all behave like a respectable MPA. See
-// SPEC_FRONTEND_ROUTING.md (`useUrlListState`) and SPEC_FRONTEND.md
-// (list wire schema) for the contract this enforces.
-//
-// Two exports:
-//   useQueryParam<T>(name, opts?) — bind a single query param to a ref.
-//   useUrlListState(opts?)        — page/page_size/sort/filter bound to
-//                                   the canonical list-endpoint contract.
-//
-// History mode is configurable per-call: `push` adds a history entry
-// (default — back button reverses the change); `replace` swaps in
-// place (use for transient/auto-driven updates that shouldn't pollute
-// history).
-
 import { computed, watch } from 'vue'
 import type { WritableComputedRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -272,7 +256,4 @@ async function apply_query(
   await router.push({ query })
 }
 
-// Re-export `watch` so consumers needing to react to URL state changes
-// don't have to re-import from 'vue' alongside this module. Keeps the
-// composable surface a single import target.
 export { watch }

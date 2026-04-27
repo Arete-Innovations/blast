@@ -1,8 +1,3 @@
-// drawer — sibling of useQueryDialog for slide-out panels. Same URL-as-
-// state contract; uses `?drawer=<name>` and `?drawer_id=<id>` so a
-// dialog and a drawer can be open simultaneously without colliding.
-// See SPEC_FRONTEND_ROUTING.md.
-
 import { computed } from 'vue'
 import type { ComputedRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

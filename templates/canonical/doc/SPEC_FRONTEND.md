@@ -103,7 +103,7 @@ Every page wraps its content in `<PageShell layout="...">`. Layout is enum-locke
 | `tabbed` | Zero top, child tab content picks its own layout | Tab container; each tab can declare its own nested layout. Tab routes live as path segments (`/users/42/profile`, `/users/42/posts`), not query params. |
 
 ```vue
-<!-- frontend/src/custom/pages/DashboardPage.vue -->
+
 <script setup lang="ts">
 import { useDashboardStats } from '@/generated/composables/dashboard';
 
@@ -190,7 +190,7 @@ Only columns declared in the `Admin` or `Public` variant of the resource state f
 ### Anti-pattern
 
 ```ts
-// BAD — hand-constructing query params
+
 const url = `/api/orders?page=${page}&sort=${sortField}`;
 ```
 
@@ -201,26 +201,26 @@ Use `@/generated/api/orders.ts`: `listOrders({ page, page_size, sort, filter })`
 For resource state file `orders` with `list`/`get`/`update`/`delete` verbs and WS on `status`:
 
 ```ts
-// frontend/src/generated/composables/orders.ts (excerpt)
+
 
 export function useOrdersList(opts?: UseListOpts<OrderListFilters>) {
     const data = ref<OrderPublic[] | null>(null);
     const error = ref<MeltDownResponse | null>(null);
     const { page, sort, filter } = useUrlListState();
-    // ... fetch + optional polling + optional WS subscription + AbortSignal plumbing
+
     return { data, error, refetch, page, sort, filter };
 }
 
-export function useOrder(id: Ref<number>) { /* ... */ }
+export function useOrder(id: Ref<number>) {  }
 
 export function useUpdateOrder() {
     return async (id: number, patch: OrderPatch) => {
-        // calls PATCH /api/orders/:id, returns Result-style { data, error }
-        // emits 'orders:updated' on bus for sibling composable invalidation
+
+
     };
 }
 
-export function useDeleteOrder() { /* ... */ }
+export function useDeleteOrder() {  }
 ```
 
 User doesn't hand-write these. Edit the resource state file via `blast gen resource`, run `blast gen all`, composables regenerate.
@@ -230,7 +230,7 @@ User doesn't hand-write these. Edit the resource state file via `blast gen resou
 Pages, components, hand-written composables, and custom WS handlers live in `frontend/src/custom/` and consume the generated composables.
 
 ```vue
-<!-- frontend/src/custom/pages/OrdersPage.vue -->
+
 <script setup lang="ts">
 import { useOrdersList } from '@/generated/composables/orders';
 import OrderCard from '@/custom/components/OrderCard.vue';
@@ -264,18 +264,18 @@ All values from design tokens. No hex, no px, no Tailwind, no inline styles, no 
 ## PrimeVue Preset
 
 ```ts
-// frontend/src/plugins/primevue.ts (ONLY file with hex; lint-exempt)
+
 import Aura from '@primeuix/themes/aura';
 import { definePreset } from '@primeuix/themes';
 
 export const PRESET_SEMANTIC = definePreset(Aura, {
     semantic: {
-        primary: { 500: '#7c3aed', /* ... */ },
-        // maps to app tokens in the app layer
+        primary: { 500: '#7c3aed',  },
+
     },
     colorScheme: {
-        light: { /* ... */ },
-        dark:  { /* ... */ },
+        light: {  },
+        dark:  {  },
     },
 });
 ```
@@ -295,7 +295,7 @@ import { MeltType } from '@/generated/types/meltdown';
 
 const { error } = await api.orders.create(input);
 if (error?.error.type === MeltType.UniqueViolation) {
-    // handle
+
 }
 ```
 
@@ -321,18 +321,18 @@ Typed on both sides. No stringly-typed error matching.
 
 **FE owning canonical state:**
 ```ts
-// BAD
+
 const orders = ref<Order[]>([]);
-orders.value.push(newOrder);   // local mutation; diverges from DB
+orders.value.push(newOrder);
 ```
 
 Always use generated composables. They reconcile from DB.
 
 **Partial WS payloads for state diffs:**
 ```ts
-// BAD
+
 ws.on('order.deleted', ({ id }) => {
-    orders.value = orders.value.filter(o => o.id !== id);   // FE infers state
+    orders.value = orders.value.filter(o => o.id !== id);
 });
 ```
 
@@ -340,10 +340,10 @@ Generated composables handle this via re-fetch or full-row replacement. Don't ha
 
 **Hand-coding API clients:**
 ```ts
-// BAD
+
 async function fetchUsers() {
     const r = await fetch('/api/users');
-    return r.json();   // untyped
+    return r.json();
 }
 ```
 

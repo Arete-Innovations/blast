@@ -7,8 +7,6 @@ use crate::{
     structs::{NewSession, Session, User},
 };
 
-/// Insert a new session row binding `token` -> `user_id` with the given
-/// expiry (unix epoch seconds).
 pub async fn insert_session(
     conn: &mut AsyncPgConnection,
     user_id: i64,
@@ -28,8 +26,6 @@ pub async fn insert_session(
         .map_err(|e| MeltDown::from(e).with_context("operation", "insert_session"))
 }
 
-/// Resolve a session token to the joined `(Session, User)` pair, returning
-/// `Ok(None)` when the token is unknown, expired, or the user is soft-deleted.
 pub async fn find_by_token(
     conn: &mut AsyncPgConnection,
     token: &str,
@@ -50,8 +46,6 @@ pub async fn find_by_token(
         .map_err(|e| MeltDown::from(e).with_context("operation", "find_session_by_token"))
 }
 
-/// Delete a session row by its bearer token. Idempotent — missing rows
-/// are not an error.
 pub async fn delete_by_token(
     conn: &mut AsyncPgConnection,
     token: &str,

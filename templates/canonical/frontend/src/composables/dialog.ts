@@ -1,15 +1,3 @@
-// dialog — modal-as-URL-state composable. Per SPEC_FRONTEND_ROUTING.md
-// (Modals are URL state), every dialog reflects in `?dialog=<name>` plus
-// optional `?dialog_id=<id>`. Refresh-survival, share-link, back-button-
-// closes-modal — all free.
-//
-// Default `history: 'push'` — opening/closing the dialog adds a history
-// entry. Override with `history: 'replace'` for transient overlays where
-// the back-button-closes-modal behaviour is undesirable.
-//
-// Mirrors `useQueryDrawer` (separate `?drawer=` key) so a dialog and a
-// drawer can be open simultaneously without colliding.
-
 import { computed } from 'vue'
 import type { ComputedRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -93,7 +81,6 @@ export function useQueryDialog(
   function close(): void {
     const next: LocationQueryRaw = { ...route.query }
     if (next[DIALOG_KEY] !== name) {
-      // Another dialog is open; do not stomp it.
       return
     }
     delete next[DIALOG_KEY]

@@ -17,7 +17,7 @@ let result = Crank::new(ExpBackoff::new(3, Duration::from_millis(200)).with_jitt
     .deadline(Duration::from_secs(10))
     .on_attempt(|n, e| tracing::warn!(attempt = n, error = ?e, "retrying"))
     .on_giveup(|n, e| tracing::error!(attempts = n, final_error = ?e, "gave up"))
-    .run(|| services::payments::charge(&card, amount))
+    .run(|| routines::payments::charge(ctx, &card, amount))
     .await?;
 ```
 
@@ -46,33 +46,33 @@ pub trait RetryPolicy {
 **Provided implementations:**
 
 ```rust
-// Exponential backoff
-ExpBackoff::new(max_attempts: 3, base: Duration::from_millis(200))
-    .with_jitter()                 // adds ±25% jitter (default off)
-    .with_cap(Duration::from_secs(10))  // caps max delay
-// Delay for attempt n: base * 2^(n-1), clamped to cap, ±jitter
 
-// Fixed delay
+ExpBackoff::new(max_attempts: 3, base: Duration::from_millis(200))
+    .with_jitter()
+    .with_cap(Duration::from_secs(10))
+
+
+
 FixedDelay::new(max_attempts: 5, delay: Duration::from_secs(1))
 
-// No delay (immediate retry)
+
 Immediate::new(max_attempts: 3)
 
-// Custom
-impl RetryPolicy for MyPolicy { /* ... */ }
+
+impl RetryPolicy for MyPolicy {  }
 ```
 
 ## Classifier Pattern
 
 ```rust
-// Standard: retry transient errors
+
 .classify(MeltDown::is_transient)
 
-// Custom: retry only on specific variants
+
 .classify(|err: &MeltDown| matches!(err.melt_type,
     MeltType::DatabaseConnection | MeltType::ExternalServiceError))
 
-// Honor Retry-After hints (for 429)
+
 .classify(|err: &MeltDown|
     err.is_transient()
     || matches!(err.melt_type, MeltType::TooManyRequests))
@@ -84,7 +84,7 @@ The classifier is called on every error. True → retry (if attempts left). Fals
 
 ```rust
 Crank::new(ExpBackoff::new(10, Duration::from_millis(200)))
-    .deadline(Duration::from_secs(5))    // at most 5s total
+    .deadline(Duration::from_secs(5))
     .classify(...)
     .run(|| ...)
     .await?;
@@ -104,13 +104,13 @@ Hooks are synchronous to keep the combinator simple. Use them for logging, metri
 Retries are **operation-level** decisions, not implementation-level. The same service call should retry aggressively in one flow and not at all in another.
 
 - **Flow:** wraps specific calls in `Crank`. Knows the business tolerance for failure.
-- **Routine:** may expose reusable retry patterns (e.g. `routines::infra::with_db_retry`), but doesn't decide the policy.
+- **Routine:** executes the actual work (calls models + services). Doesn't decide retry policy — that's the flow's job.
 - **Service:** single-shot attempt. No retries internally.
 
 ## Example: Payment Flow
 
 ```rust
-// flows/custom/charge_card.rs
+
 use catalyst::crank::{Crank, ExpBackoff};
 
 pub async fn run(ctx: &Ctx, input: ChargeInput) -> Result<Receipt, MeltDown> {
@@ -124,10 +124,9 @@ pub async fn run(ctx: &Ctx, input: ChargeInput) -> Result<Receipt, MeltDown> {
         .on_attempt(|n, e| {
             tracing::warn!(attempt = n, ?e, "retrying charge");
         })
-        .run(|| services::payments::charge(&input.card, input.amount))
+        .run(|| routines::payments::charge(ctx, &input.card, input.amount))
         .await?;
 
-    models::receipts::insert(ctx.conn(), &receipt).await?;
     Ok(receipt)
 }
 ```
@@ -135,7 +134,7 @@ pub async fn run(ctx: &Ctx, input: ChargeInput) -> Result<Receipt, MeltDown> {
 ## Example: Reusable Helper (still used from flow)
 
 ```rust
-// routines/infra/with_db_retry.rs
+
 pub async fn with_db_retry<T, F, Fut>(f: F) -> Result<T, MeltDown>
 where
     F: FnMut() -> Fut,
@@ -149,7 +148,7 @@ where
 }
 ```
 
-Flow calls the routine: `with_db_retry(|| models::orders::insert(...)).await?`
+Flow calls the routine: `routines::orders::insert(ctx, &data).await?` — the routine internally wraps the models call in `with_db_retry`.
 
 ## Implementation Notes
 
@@ -162,7 +161,7 @@ Flow calls the routine: `with_db_retry(|| models::orders::insert(...)).await?`
 
 **Retrying in a service:**
 ```rust
-// BAD
+
 pub async fn charge(card: &Card, amount: u64) -> Result<Receipt, MeltDown> {
     for attempt in 0..3 {
         match stripe_api_call(card, amount).await {
@@ -178,7 +177,7 @@ Service should single-shot. Caller (flow) wraps in `Crank`.
 
 **Retrying validation errors:**
 ```rust
-// BAD
+
 .classify(|_| true)
 ```
 
@@ -186,7 +185,7 @@ Always check what's actually retryable. Retrying a 400/422 wastes time and may d
 
 **Long retry loops in hot paths:**
 ```rust
-// BAD — 30s retry in a user-facing HTTP request
+
 Crank::new(ExpBackoff::new(10, Duration::from_secs(1)))
     .run(...)
 ```

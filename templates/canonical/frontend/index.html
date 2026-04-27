@@ -6,14 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{project_name}}</title>
     <style>
-      /*
-        Inline styles below are the ONLY exception to the no-inline-style
-        rule (Governor InlineStyle / RawColor / HardcodedPx skip this file
-        because it lives outside src/). Everything before /src/main.ts has
-        loaded must paint without an external stylesheet — hence the px
-        values and explicit colors here. Once main.ts mounts, tokens.css
-        + base.css take over and these styles become irrelevant.
-      */
       html, body { margin: 0; padding: 0; min-height: 100vh; }
       body {
         font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;

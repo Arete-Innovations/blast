@@ -1,11 +1,3 @@
-// auth — singleton auth composable. Wraps /api/auth/{register,login,logout,me}.
-// This is the ONLY place in the app that reads/writes localStorage for auth.
-// The Governor LocalStorageOutsidePersistence rule exempts this file by path.
-//
-// Module-level refs are intentional singletons — every call to useAuth()
-// returns the same reactive state. Token is loaded from localStorage once
-// at module init; subsequent reads/writes are in-memory.
-
 import { computed, ref } from 'vue'
 import type { ComputedRef, Ref } from 'vue'
 
@@ -26,9 +18,8 @@ export interface UseAuth {
   refresh: () => Promise<void>
 }
 
-// Module-level singletons — shared across all useAuth() callers.
 const current_user = ref<AuthUser | null>(null)
-const token = ref<string | null>(localStorage.getItem(AUTH_TOKEN_KEY)) // allow: auth persistence layer
+const token = ref<string | null>(localStorage.getItem(AUTH_TOKEN_KEY))
 
 function auth_headers(): HeadersInit {
   if (token.value === null) {
@@ -42,12 +33,12 @@ function auth_headers(): HeadersInit {
 
 function store_token(raw: string): void {
   token.value = raw
-  localStorage.setItem(AUTH_TOKEN_KEY, raw) // allow: auth persistence layer
+  localStorage.setItem(AUTH_TOKEN_KEY, raw)
 }
 
 function clear_token(): void {
   token.value = null
-  localStorage.removeItem(AUTH_TOKEN_KEY) // allow: auth persistence layer
+  localStorage.removeItem(AUTH_TOKEN_KEY)
 }
 
 async function login(email: string, password: string): Promise<{ ok: boolean; error?: string }> {

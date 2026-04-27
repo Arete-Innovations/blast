@@ -1,16 +1,16 @@
 # SPEC_ARCHITECTURE
 
-Strict, compiler-enforced layered architecture. Dep direction is law.
+Strict, compiler-enforced layered architecture. Calls go strictly downward. The chain: `transport → flow → routine → {models, services, database}`.
 
 ## Layer Graph
 
 ```
-structs/       ← data definitions
+structs/       ← inert data definitions
 database/      ← pool, migrations (stateful)
-models/        ← persistence (per-resource + cross-resource reads)
 services/      ← stateless adapters (no DB, no HTTP)
-routines/      ← reusable procedures shared across ≥2 flows
-flows/         ← named business operations (capability inventory)
+models/        ← persistence (per-resource + cross-resource reads)
+routines/      ← atomic capabilities (compose models + services within ONE op)
+flows/         ← capability inventory: routine(s) under a Crank policy + auth boundary
 transport/     ← thin external entry points (http / ws / fuses)
 frontend/      ← Vue, typed from contracts
 ```
@@ -21,161 +21,152 @@ frontend/      ← Vue, typed from contracts
 |-------|-----------------|
 | `structs/` | (none) |
 | `database/` | `structs` |
-| `models/` | `structs`, `database` |
 | `services/` | `structs` |
-| `routines/` | `structs`, `models`, `services`, `database` |
-| `flows/` | `structs`, `models`, `services`, `routines`, `database` |
-| `transport/` | **`structs`, `flows` ONLY** — cannot import routines/models/services |
-| `frontend/` | Generated TS + hand-written Vue |
+| `models/` | `structs`, `database` |
+| `routines/` | `structs`, `models`, `services` |
+| `flows/` | **`structs`, `routines`, `crank` ONLY** |
+| `transport/` | **`structs`, `flows` ONLY** |
+| `frontend/` | generated TS + custom Vue |
 
-**Transport's constraint is the strictest.** It physically cannot bypass flows to reach models. Enforced via Cargo workspace crate boundaries or `mod` visibility where feasible.
-
-## Layer Semantics
-
-### `structs/`
-
-- Inert data definitions: DB row shapes, DTOs, request/response structs, newtypes
-- No business logic beyond trait impls and trivial conversions
-- Subdirs: `generated/` (Blast emits) + `custom/` (hand-written)
-
-### `database/`
-
-- Connection pool, pool accessor
-- Migration runner, bootstrap helpers
-- Diesel schema file (`schema.rs`) regenerated from migrations
-- **Stateful layer** — holds the pool
-
-### `models/`
-
-- Per-resource CRUD (`generated/{resource}.rs`)
-- Cross-resource reads, report aggregates, raw `sql_query` (`custom/*.rs`)
-- Functions take `&mut Connection` or `&PgPool` as parameters
-- No HTTP, no business flow, no frontend logic
-- Stateless — receives pool, returns Results
-
-### `services/`
-
-- Stateless no-DB adapters
-- Subdirs by capability: `crypto/`, `email/`, `storage/`, `external/` (etc.)
-- One public fn per file where possible; ugly private helpers underneath are fine
-- Common pattern: take inputs, return Result, single-shot attempt (retry is for flows, not services)
-- **No DB access.** If a service needs data, caller reads it and passes in.
-
-### `routines/`
-
-- Mid-level glue procedures **shared across 2+ flows**
-- Subdirs by intent: `act/` (mutations), `collect/` (reads), `derive/` (pure transforms)
-- Stateless — accept all dependencies as params
-- Sequential, `?`-heavy, readable
-- **Do NOT own retry policy** (flows own retries). Routines may expose reusable retry helpers.
-- Reuse threshold: used once = inline in the flow file (private fn). Promote to `routines/` only on second use.
-
-### `flows/`
-
-- **Named business operations. The app's capability inventory.**
-- One file per named op (`flows/custom/signup.rs`, `flows/generated/users/list.rs`).
-- Trivial flows are legal — a flow wrapping one model call is still the canonical entry point for that operation.
-- Subdirs: `generated/` (Blast emits for declared CRUD verbs) + `custom/` (user-written business ops).
-- **Custom flows compose via models/routines/services directly.** They do NOT wrap generated flows.
-- Flow owns retry policy for its operation.
-- Flow owns auth enforcement.
-- Elegance gradient peaks here: flows should read close to English.
-
-### `transport/`
-
-- Thin external entry points. Three sub-layers:
-  - `transport/http/` — Axum route handlers
-  - `transport/ws/` — WebSocket handlers (stateful per-connection)
-  - `transport/fuses/` — scheduled task runners (stateful, long-running loops)
-- Each transport handler extracts+validates input, calls **exactly one flow**, maps the Result to a response.
-- Transport cannot import `routines`, `models`, `services`. Period.
-- `transport/http/generated/` + `transport/http/custom/`. Same for WS and fuses.
-
-### `frontend/`
-
-- Vue 3 + TypeScript + Vite + PrimeVue
-- `generated/` — types, API clients, composables emitted by Blast from contracts
-- `custom/` — hand-written Vue SFCs, pages, composables
+The strictness anchors at `transport/` and `flows/` — both are physically prevented from bypassing into lower layers. Enforced via crate boundaries or `mod` visibility where feasible.
 
 ## Hard Rules
 
 ### Transport calls flows only
 
-One HTTP route handler → one flow call. Done. No branching business logic in routes. No multi-flow sequencing in transport.
+One HTTP / WS / Fuses handler → one flow call. No branching business logic. No multi-flow sequencing. Auth-or-no-auth gating is at transport middleware.
 
-### Flow == named operation, not "glue"
+### Flows call routines only
 
-Don't worry if a flow is thin. `flows/custom/list_users.rs = models::users::list(conn).await.map(Into::into)` is a legitimate flow. Its value is being the named operation in the capability inventory, not its complexity.
+Every flow body is a composition of routine calls under a `Crank` retry policy. No `models::*`, no `services::*`, no `database::*` allowed in `flows/`.
 
-### Routines exist for ≥2-flow reuse
+### Flows do not call flows
 
-Used once → inline. Promote to `routines/` only when shared. Keeps routine namespace meaningful.
+`flows/foo` MAY NOT call `flows/bar`. Shared logic is a routine, not a flow.
 
-### Retries live in flows
+### Routines are leaves
 
-The flow owns retry policy for its operation. Services do single-shot attempts. Routines may expose reusable retry helpers (e.g. `routines::infra::with_db_retry`) but don't decide the policy.
+A routine composes models, services, and database access for ONE atomic capability. Routines do NOT call other routines. If composition of routines is needed, that's a flow.
 
-See `SPEC_CRANK.md` for the retry combinator.
+### Every flow declares a Crank policy
 
-### State rule
+Even when no retry is desired, a flow declares `Crank::none()` explicitly. Retry policy is a first-class, audit-able fact per capability. The policy IS part of the flow's contract — `Arsenal` and operators read it directly off the flow source.
 
-Long-lived mutable state is confined to:
-- `database/` (pool)
-- `transport/ws/` (per-connection state)
-- `transport/fuses/` (long-running loops)
+### Flows are the capability inventory
 
-Everything else: pure functions. All dependencies passed as parameters. No implicit global state.
+The set of files in `flows/` is the answer to "what can this app do?". `Arsenal` walks `flows/` to emit the capability listing.
 
-### Error rule
+## Layer Semantics
 
-Single app-wide `MeltDown` error enum (`thiserror` + `#[from]`). `IntoResponse` impl lives only in `transport/http/`. Every flow returns `Result<T, MeltDown>`.
+### `Ctx` (universal handle, not a layer)
 
-See `SPEC_MELTDOWN.md`.
+`Ctx` is the request-scoped handle threaded into every layer above `database/`. Lives at crate root (`src/ctx.rs`). Owns the pool reference and the session state. Exposes:
 
-### Ugliness gradient
+- `ctx.conn()` — acquire a pooled connection (used by routines, passed to models)
+- `ctx.transaction(|tx| async move { ... })` — atomic multi-model wrapper. Auto-commits on `Ok`, auto-rolls-back on `Err`. **Routines only.** Returns `Result<T, MeltDown>`.
+- `ctx.require_anonymous()`, `ctx.require_role(...)` — auth gates (used by flows)
 
-```
-flows/      ← elegant, English-readable, 5-30 lines typical
-routines/   ← sequential, ?-heavy, 30-100 lines typical
-services/   ← can have ugly private helpers, one public fn per file
-models/     ← SQL-heavy, can be ugly
-```
+`Ctx` is not a layer; it's a parameter type. Its presence in a fn signature does not break the dep graph.
 
-The higher in the stack, the more readable the code. The lower, the more implementation-detail work hides. Reviewable rule.
+### `structs/`
 
-### Generated vs custom split is in-layer
+Inert data definitions: DB rows, DTOs, request/response, newtypes. Trait impls and trivial conversions only. Subdirs: `generated/` + `custom/`.
 
-Every layer with codegen has `layer/generated/` and `layer/custom/` subdirs. `mod.rs` re-exports both.
+### `database/`
 
-- Blast NEVER touches `custom/`
-- Hand-editing `generated/` is a footgun — changes will be overwritten on regen
-- User flows, routes, SFCs go in `custom/`
+Connection pool + accessor, migration runner, Diesel `schema.rs`. Stateful — holds the pool.
 
-## Example: user signup with welcome email
+### `services/`
 
-This demonstrates the composition pattern.
+Stateless, no-DB adapters. Subdirs by capability (`crypto/`, `email/`, `storage/`, `external/`). One public fn per file. **Single-shot** — no retry policy here. If a service needs data, the caller passes it in.
+
+### `models/`
+
+Per-resource CRUD and cross-resource reads. Functions take `&mut Connection` or `&PgPool`. SQL-heavy. Stateless.
+
+### `routines/`
+
+Atomic capabilities. Each routine is one named operation that may compose multiple model + service calls internally — but constitutes ONE business action. **Cannot call other routines. Cannot import `database` directly** — if a DB op is needed, the corresponding model must expose it. Routines acquire a connection via `&Ctx` and hand it to a model; they never see Diesel, never see the pool primitive.
+
+When a routine needs ≥2 model calls to be atomic, it wraps them in `ctx.transaction(|tx| async move { ... })` and hands `tx` to each model in place of `ctx.conn()`. Single-call routines need no wrapper — Postgres autocommits each statement.
+
+Generated/custom split: `generated/` (Blast emits CRUD leaves) + `custom/` (hand-written).
+
+Org convention: by resource (`routines/custom/users/...`) — one project-wide rule.
+
+### `flows/`
+
+The capability inventory. Each flow is:
+
+- one or more routine calls,
+- each wrapped in a `Crank` policy (use `Crank::none()` if no retry),
+- preceded by an auth/role check on `&Ctx`,
+- returning `Result<T, MeltDown>`.
+
+Flow body is formulaic by design. The value is registration + policy + auth, not orchestration complexity.
+
+Subdirs: `generated/` (Blast emits — typically `Crank::none()` around a single generated routine) + `custom/` (multi-routine business ops).
+
+### `transport/`
+
+Thin external entry points. Three sub-layers:
+
+- `transport/http/` — Axum route handlers
+- `transport/ws/` — WebSocket handlers (stateful per-connection)
+- `transport/fuses/` — scheduled task runners (stateful, long-running)
+
+Each handler: extract input → call exactly one flow → map `Result` to response. Cannot import routines / models / services / database.
+
+### `frontend/`
+
+Vue 3 + TS + Vite + PrimeVue. `generated/` + `custom/` split inside `frontend/src/`.
+
+## Routine vs Flow Heuristic
+
+| Question | Routine | Flow |
+|----------|---------|------|
+| Atomic single-purpose? | yes | no |
+| Multiple steps that may need independent retry? | no | yes |
+| Has a retry policy? | no — single-shot | yes — even if `Crank::none()` |
+| Listed in the capability inventory? | no | yes |
+| Callable from transport? | no | yes |
+
+If you want to call a routine from another routine, you actually want a flow.
+
+## Example: signup with welcome email
 
 ```rust
-// flows/custom/signup.rs
-use catalyst::meltdown::*;
-use catalyst::prelude::*;
-use crate::{models, services, structs::users::*};
-
-pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> {
-    let password_hash = services::crypto::hash_password(&input.password)?;
-    let insertable = NewUser {
-        email: input.email,
-        password_hash,
+pub async fn create(ctx: &Ctx, input: &SignupInput) -> Result<User, MeltDown> {
+    let hash = services::crypto::hash_password(&input.password)?;
+    let new = NewUser {
+        email: input.email.clone(),
+        password_hash: hash,
         role: UserRole::Member,
     };
-    let user = models::users::create(ctx.conn(), &insertable).await?;
-    services::email::send_welcome(&user.email).await?;
+    models::users::create(ctx.conn(), &new).await
+}
+```
+
+```rust
+pub async fn send(addr: &str) -> Result<(), MeltDown> {
+    services::email::send_welcome(addr).await
+}
+```
+
+```rust
+pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> {
+    ctx.require_anonymous()?;
+    let user = Crank::none()
+        .run(|| routines::custom::users::create(ctx, &input))
+        .await?;
+    Crank::backoff(3, Duration::from_millis(500))
+        .run(|| routines::custom::email::welcome::send(&user.email))
+        .await?;
     Ok(user.into_public())
 }
 ```
 
 ```rust
-// transport/http/custom/signup.rs
 pub async fn signup(
     State(ctx): State<Ctx>,
     Json(input): Json<SignupInput>,
@@ -185,14 +176,45 @@ pub async fn signup(
 }
 ```
 
-The flow composes models + services directly. No orchestrator-on-top-of-routine nonsense. Route is thin.
+The flow declares two distinct retry policies: zero retries on user creation, three on email send. Routines stay pure capability units, reusable across other flows.
 
-## What This Replaces
+## Generated vs Custom split
 
-Earlier spec (in legacy `/catalyst/AGENTS.md`) had:
+Every layer with codegen has `layer/generated/` and `layer/custom/` subdirs. `mod.rs` re-exports both.
+
+- Blast NEVER touches `custom/`.
+- Hand-editing `generated/` is a footgun — overwritten on regen.
+- User-written ops live in `custom/` at every layer.
+
+For default CRUD per resource, Blast emits:
+
+- one routine per verb in `routines/generated/<r>/{list,get,create,update,delete}.rs`
+- one flow per verb in `flows/generated/<r>/...` — each flow is `Crank::none()` around the matching routine, with the resource's declared auth check
+- one route per verb in `transport/http/generated/<r>/...`
+
+Custom multi-step business ops are user-written flows in `flows/custom/`.
+
+## State rule
+
+Long-lived mutable state confined to:
+
+- `database/` (pool)
+- `transport/ws/` (per-connection state)
+- `transport/fuses/` (long-running loops)
+
+Everything else: pure functions, deps as parameters.
+
+## Error rule
+
+Single app-wide `MeltDown` error enum (`thiserror` + `#[from]`). `IntoResponse` impl lives only in `transport/http/`. Every routine and every flow returns `Result<T, MeltDown>`. See `SPEC_MELTDOWN.md`.
+
+## Ugliness gradient
 
 ```
-structs → database → models → services → routines → orchestrators → routes → frontend
+flows/      ← formulaic, English-readable, 5-20 lines per flow
+routines/   ← sequential, ?-heavy, 20-80 lines per routine
+services/   ← can have ugly private helpers, one public fn per file
+models/     ← SQL-heavy, can be ugly
 ```
 
-With "orchestrators" as a distinct middle layer. Empirical review of the ophanim and upnumbers layer experiments showed ~40-80% of orchestrators were thin wrappers adding indirection with no value. That layer is reframed here as `flows` — no "glue" semantics, just "named operation." Transport cannot bypass to inner layers, which recovers the strictness that the orchestrator layer was meant to provide.
+The higher in the stack, the more readable the code. The lower, the more impl detail hides.

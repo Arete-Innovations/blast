@@ -34,8 +34,6 @@ blast fuses toggle <name>        # flip enabled flag
 blast fuses run <name>           # trigger immediate run (bypass schedule)
 blast fuses logs <name>          # show recent run logs
 
-blast sync-canonical [--catalyst-path PATH] [--check]  # refresh vendored canonical snapshot
-
 blast log [truncate|view LEVEL]  # tail/manage blast logs
 
 blast build                      # lint frontend + vite build + cargo build --release
@@ -234,24 +232,7 @@ blast init [<name>] [--db-url <url>] [--no-test-db] [--force]
 | `--no-test-db` | Skip creation of the test database and `.env.test` file. |
 | `--force` | Allow scaffolding into a non-empty directory; recreate existing databases. |
 
-Same vendored-canonical model as `blast new`. Use `blast init` when you have already `mkdir`'d into the project directory or want in-place initialization.
-
-## `blast sync-canonical`
-
-Refreshes the vendored Catalyst snapshot at `blast/templates/canonical/` from a live Catalyst checkout. This is a **Blast developer tool** — run it when Catalyst evolves and the vendored copy needs updating.
-
-```
-blast sync-canonical [--catalyst-path PATH] [--check]
-```
-
-| Flag | Meaning |
-|------|---------|
-| `--catalyst-path PATH` | Path to a live Catalyst checkout. Defaults to sibling `../catalyst/` resolved from the Blast crate root. |
-| `--check` | Diff without writing; exits non-zero if any drift is detected. CI mode. |
-
-Path-aware mirror: only paths Catalyst owns are synced (`src/`, `doc/`, `Cargo.toml`, `diesel.toml`, `rustfmt.toml`, `LICENSE`, `public/`, `storage/`). Blast-owned paths inside `templates/canonical/` (e.g. `frontend/`) are never touched.
-
-After syncing, rebuild Blast (`cargo build`) so `include_dir!` picks up the updated snapshot. End-user apps are then updated via the future `blast vendor-update` subcommand (planned, not yet shipped).
+Same baked-canonical model as `blast new`. Use `blast init` when you have already `mkdir`'d into the project directory or want in-place initialization.
 
 ## `blast build`
 

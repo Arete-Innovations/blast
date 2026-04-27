@@ -65,7 +65,6 @@ fn main() {
                 commands::Command::New { .. }
                     | commands::Command::Init { .. }
                     | commands::Command::Help
-                    | commands::Command::SyncCanonical { .. }
             ) {
                 let cwd = match std::env::current_dir() {
                     Ok(c) => c,

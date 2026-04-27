@@ -26,6 +26,9 @@ pub enum Command {
         /// Skip creation of the `<dbname>_test` database and `.env.test` file.
         #[arg(long = "no-test-db")]
         no_test_db: bool,
+        /// Skip cargo build, npm install, npm build, and TUI launch. For tight iteration loops.
+        #[arg(long = "no-warmup")]
+        no_warmup: bool,
     },
 
     #[command(
@@ -46,6 +49,9 @@ pub enum Command {
         /// Skip creation of the `<dbname>_test` database and `.env.test` file.
         #[arg(long = "no-test-db")]
         no_test_db: bool,
+        /// Skip cargo build, npm install, npm build, and TUI launch. For tight iteration loops.
+        #[arg(long = "no-warmup")]
+        no_warmup: bool,
     },
 
     #[command(about = "Create a new Diesel migration skeleton")]
@@ -124,20 +130,6 @@ pub enum Command {
     Arsenal {
         #[command(subcommand)]
         cmd: Option<ArsenalCmd>,
-    },
-
-    #[command(
-        name = "sync-canonical",
-        about = "Refresh vendored Catalyst snapshot in blast/templates/canonical/ (dev tool)"
-    )]
-    SyncCanonical {
-        /// Path to a live catalyst checkout. Defaults to sibling
-        /// `../catalyst/` resolved from the blast crate root.
-        #[arg(long = "catalyst-path")]
-        catalyst_path: Option<std::path::PathBuf>,
-        /// Diff without writing; non-zero exit if drift detected. CI mode.
-        #[arg(long)]
-        check: bool,
     },
 }
 
@@ -232,12 +224,13 @@ mod tests {
     fn new_command_accepts_minimum_args() {
         let cli = Cli::try_parse_from(["blast", "new", "myapp"]).expect("parse");
         match cli.cmd {
-            Some(Command::New { name, dev, db_url, force, no_test_db }) => {
+            Some(Command::New { name, dev, db_url, force, no_test_db, no_warmup }) => {
                 assert_eq!(name, "myapp");
                 assert!(!dev);
                 assert!(db_url.is_none());
                 assert!(!force);
                 assert!(!no_test_db);
+                assert!(!no_warmup);
             }
             other => panic!("expected New, got {:?}", other),
         }
@@ -253,15 +246,17 @@ mod tests {
             "postgres://u:p@h/x",
             "--force",
             "--no-test-db",
+            "--no-warmup",
         ])
         .expect("parse");
         match cli.cmd {
-            Some(Command::New { name, dev, db_url, force, no_test_db }) => {
+            Some(Command::New { name, dev, db_url, force, no_test_db, no_warmup }) => {
                 assert_eq!(name, "myapp");
                 assert!(!dev);
                 assert_eq!(db_url.as_deref(), Some("postgres://u:p@h/x"));
                 assert!(force);
                 assert!(no_test_db);
+                assert!(no_warmup);
             }
             other => panic!("expected New, got {:?}", other),
         }
@@ -280,11 +275,12 @@ mod tests {
     fn init_command_no_name_uses_cwd() {
         let cli = Cli::try_parse_from(["blast", "init"]).expect("parse");
         match cli.cmd {
-            Some(Command::Init { name, db_url, force, no_test_db }) => {
+            Some(Command::Init { name, db_url, force, no_test_db, no_warmup }) => {
                 assert!(name.is_none(), "expected no name, got {:?}", name);
                 assert!(db_url.is_none());
                 assert!(!force);
                 assert!(!no_test_db);
+                assert!(!no_warmup);
             }
             other => panic!("expected Init, got {:?}", other),
         }
@@ -300,14 +296,16 @@ mod tests {
             "postgres://u:p@h/x",
             "--force",
             "--no-test-db",
+            "--no-warmup",
         ])
         .expect("parse");
         match cli.cmd {
-            Some(Command::Init { name, db_url, force, no_test_db }) => {
+            Some(Command::Init { name, db_url, force, no_test_db, no_warmup }) => {
                 assert_eq!(name.as_deref(), Some("myapp"));
                 assert_eq!(db_url.as_deref(), Some("postgres://u:p@h/x"));
                 assert!(force);
                 assert!(no_test_db);
+                assert!(no_warmup);
             }
             other => panic!("expected Init, got {:?}", other),
         }

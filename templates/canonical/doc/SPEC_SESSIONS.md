@@ -16,7 +16,7 @@ NOT JWT. Chosen explicitly over JWT because:
 CREATE TABLE sessions (
     id              BIGSERIAL PRIMARY KEY,
     user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash      BYTEA NOT NULL UNIQUE,     -- SHA-256 of the raw token
+    token_hash      BYTEA NOT NULL UNIQUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at      TIMESTAMPTZ NOT NULL,
@@ -34,33 +34,48 @@ Token shape: `cb_<32 random base58 chars>` (or similar). The raw token is shown 
 
 ## Token Issuance Flow
 
-```rust
-// flows/custom/login.rs
-pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutcome, MeltDown> {
-    let user = models::users::find_by_email(ctx.conn(), &input.email).await?
-        .ok_or_else(MeltDown::auth_rejected)?;
+Flows call routines only. The login flow delegates credential verification and session
+creation to routines; it never touches models or services directly.
 
-    if !services::crypto::verify_password(&input.password, &user.password_hash)? {
+```rust
+
+pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutcome, MeltDown> {
+    ctx.require_anonymous()?;
+
+    let user = routines::users::find_by_credentials(ctx, &input.email, &input.password).await?;
+
+    let outcome = routines::sessions::create(ctx, &user, &input.meta).await?;
+
+    Ok(outcome)
+}
+```
+
+The routines handle the model + service calls:
+
+```rust
+// routines/users.rs
+pub async fn find_by_credentials(ctx: &Ctx, email: &str, password: &str) -> Result<User, MeltDown> {
+    let user = models::users::find_by_email(ctx.conn(), email).await?
+        .ok_or_else(MeltDown::auth_rejected)?;
+    if !services::crypto::verify_password(password, &user.password_hash)? {
         return Err(MeltDown::auth_rejected());
     }
+    Ok(user)
+}
 
-    let raw_token = services::crypto::generate_session_token();   // cb_abc...
+// routines/sessions.rs
+pub async fn create(ctx: &Ctx, user: &User, meta: &RequestMeta) -> Result<LoginOutcome, MeltDown> {
+    let raw_token = services::crypto::generate_session_token();
     let token_hash = services::crypto::sha256(&raw_token);
     let expires_at = Utc::now() + Duration::from_days(30);
-
     models::sessions::insert(ctx.conn(), &NewSession {
         user_id: user.id,
         token_hash,
         expires_at,
-        user_agent: ctx.request.user_agent.clone(),
-        ip: ctx.request.ip,
+        user_agent: meta.user_agent.clone(),
+        ip: meta.ip,
     }).await?;
-
-    Ok(LoginOutcome {
-        token: raw_token,       // shown to client ONCE
-        user: user.into_public(),
-        expires_at,
-    })
+    Ok(LoginOutcome { token: raw_token, user: user.into_public(), expires_at })
 }
 ```
 
@@ -71,7 +86,7 @@ pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutcome, MeltDown>
 After login, transport sets an httpOnly secure cookie:
 
 ```rust
-// transport/http/custom/login.rs
+
 pub async fn login(State(ctx), Json(input)) -> Result<impl IntoResponse, MeltDown> {
     let outcome = flows::custom::login::run(&ctx, input).await?;
     let cookie = Cookie::build(("cb_session", outcome.token))
@@ -105,16 +120,30 @@ Authorization: Bearer cb_abc...
 
 ## Middleware
 
-```rust
-// catalyst::middleware::sessions
+Middleware loads the bearer token (if present) and constructs a `Ctx`. It does NOT enforce
+authorization — that is the flow's responsibility via `ctx.require_anonymous()` /
+`ctx.require_role(...)`.
 
-pub async fn require_session<B>(
+- No token → anonymous `Ctx` (no session, no user).
+- Valid token → session-loaded `Ctx` with `ctx.session` populated.
+- Invalid / expired / revoked token → `MeltDown::session_invalid` / `session_expired` (hard
+  reject at the boundary — malformed credential is not an anonymous request).
+
+```rust
+
+
+pub async fn session_ctx<B>(
     State(pool): State<PgPool>,
-    req: Request<B>,
+    mut req: Request<B>,
     next: Next<B>,
 ) -> Result<Response, MeltDown> {
-    let raw_token = extract_token(&req.headers(), req.cookies())
-        .ok_or_else(MeltDown::session_missing)?;
+    let raw_token = match extract_token(req.headers(), req.cookies()) {
+        None => {
+            req.extensions_mut().insert(Ctx::anonymous(pool));
+            return Ok(next.run(req).await);
+        }
+        Some(t) => t,
+    };
 
     let token_hash = crypto::sha256(&raw_token);
     let session = models::sessions::find_by_hash(&pool, &token_hash).await?
@@ -127,18 +156,17 @@ pub async fn require_session<B>(
         return Err(MeltDown::session_expired());
     }
 
-    // Refresh last_seen (fire-and-forget or batched)
     models::sessions::touch(&pool, session.id).await.ok();
 
     let user = models::users::find(&pool, session.user_id).await?
         .ok_or_else(MeltDown::session_invalid)?;
 
-    req.extensions_mut().insert(Session { id: session.id, user });
+    req.extensions_mut().insert(Ctx::authenticated(pool, Session { id: session.id, user }));
     Ok(next.run(req).await)
 }
 ```
 
-Routes that need auth: `.layer(middleware::from_fn(require_session))`. Flow receives a `Ctx` with `ctx.session` populated.
+Apply globally (not per-route). Every handler receives a `Ctx`; flows decide what auth is required.
 
 `extract_token` checks:
 1. `Authorization: Bearer <token>` header
@@ -149,9 +177,12 @@ First match wins. Supports both transports uniformly.
 ## Revocation
 
 ### Single session
+
+Flows call a routine; the routine owns the model call:
+
 ```rust
-// flows/custom/logout.rs
-models::sessions::revoke_by_id(ctx.conn(), ctx.session.id).await?;
+// inside flows/custom/logout.rs
+routines::sessions::revoke(ctx, ctx.session().id).await?;
 ```
 
 Transport clears the cookie:
@@ -163,8 +194,10 @@ let jar = jar.add(Cookie::build(("cb_session", ""))
 ```
 
 ### All sessions for a user
+
 ```rust
-models::sessions::revoke_all_for_user(ctx.conn(), user_id).await?;
+// inside a flow (e.g. flows/custom/revoke_all_sessions.rs)
+routines::sessions::revoke_all_for_user(ctx, user_id).await?;
 ```
 
 Use case: password changed, user reports device lost, role revoked.
@@ -196,10 +229,10 @@ Rotation (new token issued): less important since tokens are opaque + DB-validat
 Same middleware on WS upgrade:
 
 ```rust
-// transport/ws/mod.rs
+
 let app = Router::new()
     .route("/ws", get(ws_upgrade_handler))
-    .layer(middleware::from_fn(require_session));
+    .layer(middleware::from_fn(session_ctx));
 ```
 
 Session attached to `WsSession.ctx`. Used by `Relay` subscription auth (`can_subscribe`).
@@ -215,7 +248,7 @@ Killed explicitly. Don't reintroduce.
 
 **Storing raw tokens in DB:**
 ```sql
--- BAD
+
 CREATE TABLE sessions (token TEXT ...);
 ```
 

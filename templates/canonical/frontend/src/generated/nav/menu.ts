@@ -1,8 +1,3 @@
-// Auto-generated. Do not edit by hand.
-// Typed menu tree emitted by `blast gen all`. This stub ships with
-// `blast new` so the FE compiles before any resources or pages are
-// declared; regen overwrites it with the populated tree.
-
 import type { RouteName } from '@/generated/router/route-names';
 
 export type Role = 'user' | 'admin';

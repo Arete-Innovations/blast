@@ -1,7 +1,3 @@
-// Catablast event bus. Singleton, typed, no Pinia.
-// Per-resource typed channels live in @/generated/composables/<resource>.ts
-// (emitted alongside mutation hooks).
-
 type Listener<T> = (payload: T) => void;
 
 const channels = new Map<string, Set<Listener<unknown>>>();

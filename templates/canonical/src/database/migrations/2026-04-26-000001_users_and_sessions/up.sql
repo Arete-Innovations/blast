@@ -1,10 +1,3 @@
--- 0001 baseline auth schema
--- Creates users + sessions tables and seeds the default admin account.
---
--- The seeded admin row uses argon2id(password="admin") with a fixed salt
--- so the migration is reproducible across catalyst clones. Operators MUST
--- change the admin password (or replace the row) before any deployment.
-
 CREATE TABLE users (
     id            BIGSERIAL PRIMARY KEY,
     email         TEXT      NOT NULL UNIQUE,

@@ -1,15 +1,4 @@
 <script setup lang="ts">
-// PageShell — every page wraps content in this. Layout is enum-locked;
-// the layout chosen owns the spacing. No padding/margin/gap props are
-// accepted — pick a layout, layout owns the spacing (per SPEC_FRONTEND).
-//
-// Layouts:
-//   cards   — default; padded; gap between sections
-//   split   — master-detail; rail attaches to sidebar; right-padded only
-//   table   — zero padding; full viewport height; child table scrolls
-//   bleed   — zero everything; full viewport; component owns chrome
-//   tabbed  — tab container; child <RouterView> renders inside
-
 export type PageLayout = 'cards' | 'split' | 'table' | 'bleed' | 'tabbed'
 
 defineProps<{ layout: PageLayout }>()
@@ -53,13 +42,11 @@ defineProps<{ layout: PageLayout }>()
     min-height: 0;
   }
 
-  /* cards — default. padding all around, gap between stacked sections */
   .page-shell[data-layout='cards'] .page-shell-body {
     gap: var(--app-space-md);
     padding: var(--app-space-md);
   }
 
-  /* split — master-detail. flex row that stacks on narrow viewport */
   .page-shell[data-layout='split'] .page-shell-body {
     display: flex;
     flex-direction: row;
@@ -76,7 +63,6 @@ defineProps<{ layout: PageLayout }>()
     }
   }
 
-  /* table — full viewport, zero padding, child owns scroll */
   .page-shell[data-layout='table'] {
     height: 100vh;
     overflow: hidden;
@@ -88,7 +74,6 @@ defineProps<{ layout: PageLayout }>()
     overflow: hidden;
   }
 
-  /* bleed — zero everything, full viewport */
   .page-shell[data-layout='bleed'] {
     height: 100vh;
     overflow: hidden;
@@ -102,7 +87,6 @@ defineProps<{ layout: PageLayout }>()
     flex: 1 1 auto;
   }
 
-  /* tabbed — tab container; child <RouterView> picks its own layout */
   .page-shell[data-layout='tabbed'] .page-shell-body {
     padding-block-start: 0;
     padding-block-end: var(--app-space-md);

@@ -408,7 +408,7 @@ fn write_model_file(_config: &Config, table: &TableInfo, relationships: &[Relati
     let relationship_methods = generate_relationship_methods(table, table_name, &singular_name, relationships);
 
     let model_template = format!(
-        r#"use catalyst::database::db::acquire_conn;
+        r#"use crate::database::db::acquire_conn;
 use crate::database::schema::{0}::dsl::{{self as {2}_dsl}};
 use crate::structs::*;
 use crate::meltdown::*;

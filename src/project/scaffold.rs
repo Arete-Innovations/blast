@@ -25,10 +25,8 @@ use include_dir::{include_dir, Dir};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Vendored Catalyst tree, baked into the blast binary at compile time.
-///
-/// Refresh this snapshot from the live catalyst checkout via
-/// `blast sync-canonical` whenever catalyst evolves.
+/// Framework source tree, baked into the blast binary at compile time.
+/// `templates/canonical/` is the source of truth — edit there directly.
 static CANONICAL: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/templates/canonical");
 
 pub struct Args {
@@ -58,6 +56,7 @@ pub struct NewOptions {
     pub db_url: Option<String>,
     pub force: bool,
     pub no_test_db: bool,
+    pub no_warmup: bool,
     /// Optional callback invoked after `run()` lays files but before
     /// `post_install` does npm install + dashboard exec. Used by the
     /// binary path to plug in the codegen pipeline + `cargo build`
@@ -200,7 +199,7 @@ fn create_with_target(
             // If `npm run build` fails the project dir is preserved
             // (so the user can inspect what broke) — the error is
             // surfaced but no cleanup runs.
-            match post_install::run(&out.project_root, sink, progress) {
+            match post_install::run(&out.project_root, opts.no_warmup, sink, progress) {
                 Ok(()) => {
                     // Reached only when BLAST_NO_TUI_FOR_TESTS=1 (skip
                     // the auto-TUI exec). Print the legacy next-steps
@@ -385,11 +384,25 @@ fn substitute_path_component(rel: &Path, project_name: &str) -> PathBuf {
 fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
     // Substitute as bytes if the contents are utf-8; otherwise pass through
     // (binary asset). Most vendored files are utf-8 source / config.
+    //
+    // Two substitutions:
+    //   1. `{{project_name}}` placeholders (legacy, may exist in non-Cargo files).
+    //   2. `name = "canonical"` → `name = "<project>"`. Templates use the literal
+    //      `canonical` package name so `cd templates/canonical && cargo check`
+    //      works in-place during iteration; on scaffold, this gets rewritten to
+    //      the user's chosen name.
     match std::str::from_utf8(raw) {
-        Ok(s) if s.contains("{{project_name}}") => {
-            s.replace("{{project_name}}", project_name).into_bytes()
+        Ok(s) => {
+            let mut out = s.to_string();
+            if out.contains("{{project_name}}") {
+                out = out.replace("{{project_name}}", project_name);
+            }
+            if out.contains("name = \"canonical\"") {
+                out = out.replace("name = \"canonical\"", &format!("name = \"{}\"", project_name));
+            }
+            out.into_bytes()
         }
-        Ok(_) | Err(_) => raw.to_vec(),
+        Err(_not_utf8) => raw.to_vec(), // allow: binary asset, no substitution possible
     }
 }
 
@@ -577,6 +590,7 @@ mod tests {
             db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
             force: false,
             no_test_db: true,
+            no_warmup: false,
             post_seed: None,
         };
         let result = create_new_project_with_opts("dup", opts, &mut sink, &mut progress);
@@ -599,6 +613,7 @@ mod tests {
             db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
             force: false,
             no_test_db: true,
+            no_warmup: false,
             post_seed: None,
         };
         let result =

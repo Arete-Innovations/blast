@@ -36,7 +36,7 @@ frontend/src/generated/admin/
 User mounts once:
 
 ```vue
-<!-- frontend/src/custom/AdminEntry.vue -->
+
 <script setup lang="ts">
 import AdminShell from '@/generated/admin/AdminShell.vue';
 </script>
@@ -87,7 +87,7 @@ Blast emits `registry.ts`:
 
 ```ts
 import { useAdminUsers, useAdminUser, useAdminUpdateUser, useAdminDeleteUser } from '../composables/admin/users';
-/* ...other imports... */
+
 
 export const adminResources: AdminResourceEntry[] = [
   {
@@ -95,15 +95,15 @@ export const adminResources: AdminResourceEntry[] = [
     label: "Users",
     listEndpoint: "/api/admin/users",
     detailEndpoint: (id) => `/api/admin/users/${id}`,
-    columns: [ /* derived from Admin-variant fields + admin_hints.columns */ ],
-    widgets: { email: "TextWidget", description: "MarkdownWidget", /* ... */ },
+    columns: [  ],
+    widgets: { email: "TextWidget", description: "MarkdownWidget",  },
     labels: { email: "Email Address" },
     searchable: ["email", "name"],
     defaultSort: { field: "created_at", dir: "desc" },
     composables: { list: useAdminUsers, get: useAdminUser, update: useAdminUpdateUser, delete: useAdminDeleteUser },
     hiddenActions: ["Delete"]
   }
-  /* ... */
+  
 ];
 ```
 
@@ -120,7 +120,7 @@ No opt-out knob beyond not declaring admin-related things in the state file.
 
 ## Admin Flows (API layer)
 
-Blast emits admin-specific flow scaffolds (gated by `.admin_only()`):
+Blast emits admin-specific flow scaffolds under the standard layer chain (`transport → flow → routine → {models, services} → database`):
 
 ```
 src/flows/generated/admin/<resource>/list.rs
@@ -129,14 +129,14 @@ src/flows/generated/admin/<resource>/update.rs
 src/flows/generated/admin/<resource>/delete.rs
 ```
 
-These use the `Admin` response variant (more fields than `Public`). Routes mount under `/api/admin/<resource>`.
+Each flow opens with `ctx.require_role(Role::Admin)?` and declares a `Crank` retry policy. Flows call routines; routines call models and services. Transport handlers call flows only — no layer skipping. These flows use the `Admin` response variant (more fields than `Public`). Routes mount under `/api/admin/<resource>`.
 
 ## Customization Escape Hatch
 
 For admin actions that aren't generic CRUD (e.g. "rerun failed job", "issue refund"):
 
 ```vue
-<!-- frontend/src/custom/admin/actions/OrderActions.vue -->
+
 <script setup lang="ts">
 import { useAdminRefundOrder } from '@/generated/composables/admin/orders';
 import { Button } from 'primevue';
@@ -174,7 +174,7 @@ Heavy customization (wildly different admin view per-resource) = fork the shell 
 
 ## Auth Note
 
-FE admin route gate (`/admin`) is cosmetic. API enforces via `.admin_only()` middleware — session must have admin role. FE hides what the API would refuse anyway.
+FE admin route gate (`/admin`) is cosmetic. API enforces at the flow level — every admin flow calls `ctx.require_role(Role::Admin)?` as its first statement. Session must carry the admin role; the flow rejects the request before any work is done. FE hides what the API would refuse anyway.
 
 ## Related Specs
 

@@ -1,17 +1,3 @@
-// install-blocking-nav — wires the blocking navigation guard onto a
-// vue-router instance. Per SPEC_FRONTEND_ROUTING.md:
-//
-//   - Each nav grabs an AbortController exposed via getNavAbortSignal()
-//     so route component setup() can plumb cancellation into its fetches.
-//   - beforeEach: start global progress, mint a fresh AbortController;
-//     if a previous nav is still in flight, abort it first.
-//   - beforeResolve: race the destination's resolution against the
-//     budgetMs timer (default 500ms). On timer expiry, navigate anyway —
-//     the destination renders with per-section "still loading" markers.
-//     vue-router awaits async setup() inside <Suspense> automatically;
-//     this hook ensures we never hang the UI past the budget.
-//   - afterEach / onError: finish progress, abort any leftover signal.
-
 import type { NavigationGuardNext, RouteLocationNormalized, Router } from 'vue-router'
 
 import { useGlobalProgress } from '@/composables/global-progress'

@@ -4,13 +4,19 @@ Flows are the capability inventory. `ls src/flows/` is the answer to "what can t
 
 ## Core Definition
 
-**A flow is a named business operation.** One flow file == one named op. CLI, tests, HTTP, WebSockets, and scheduled Fuses all call into the same flow namespace.
+A flow is a **named business operation registered with a retry policy**. One flow file == one named op. CLI, tests, HTTP, WebSockets, and scheduled Fuses all dispatch through the same flow namespace.
 
-Flows are NOT:
-- "Glue that orchestrates routines" (reframe rejected)
-- Tied 1:1 to HTTP routes (can be called from cron, CLI, etc.)
-- Service-like utilities (those are `services/`)
-- Inline helpers (those are private fns in the flow file, or routines when shared)
+Concretely, every flow is built from:
+
+1. an auth/role check on `&Ctx`,
+2. one or more **routine** calls,
+3. each wrapped in a `Crank` retry policy (`Crank::none()` if no retry),
+4. returning `Result<T, MeltDown>`.
+
+A flow is NOT:
+- a wrapper around models or services (those are routine territory)
+- a chain of other flows (banned — see hard rules)
+- inline glue (private helpers belong in the routine, not the flow)
 
 ## Directory Layout
 
@@ -23,6 +29,7 @@ src/flows/
 │   │   ├── mod.rs
 │   │   ├── list.rs
 │   │   ├── get.rs
+│   │   ├── create.rs
 │   │   ├── update.rs
 │   │   └── delete.rs
 │   └── orders/
@@ -34,14 +41,13 @@ src/flows/
     └── cancel_subscription.rs
 ```
 
-Generated flows: one subdir per resource (derived from resource state file), one file per verb. Custom flows: flat, one file per op. Both live side by side.
+Generated flows: one subdir per resource, one file per declared verb. Custom flows: flat, one file per op. Both live side by side.
 
 ## Hard Rules
 
 ### 1. Transport calls flows only
 
 ```rust
-// transport/http/custom/signup.rs
 pub async fn signup(
     State(ctx): State<Ctx>,
     Json(input): Json<SignupInput>,
@@ -51,58 +57,43 @@ pub async fn signup(
 }
 ```
 
-Route calls one flow. That's the whole handler. No branching, no secondary calls, no "while we're at it, log an event."
+One handler → one flow call. No branching, no secondary calls.
 
-### 2. One transport call == one flow call
+### 2. Flows call routines ONLY
 
-No multi-flow sequencing in transport. If a use case needs multiple flows composed, **build a composite flow** — don't call two flows from the route handler.
+No `models::*`, no `services::*`, no `database::*` imports inside `flows/`. Every external operation goes through a routine. If the routine doesn't exist yet, **write the routine first**.
 
-### 3. Flow IS the named operation
+### 3. Flows do not call flows
 
-Even if the flow body is one line, it's still the canonical entry point for that operation. It earns its existence by naming the operation in the capability inventory.
+`flows/foo` MAY NOT call `flows/bar`. If two flows need the same logic, that logic is a routine.
 
-```rust
-// flows/custom/list_users.rs
-pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
-    let users = models::users::list(ctx.conn()).await?;
-    Ok(users.into_iter().map(Into::into).collect())
-}
-```
+### 4. Every flow declares a `Crank` policy
 
-This IS a flow. Stop apologizing for it being short.
+Even when no retry is desired, the flow declares `Crank::none()` explicitly. This makes retry policy a first-class, audit-able fact per capability — `Arsenal` reads it directly off the flow source. There is no implicit "no retry" — write it.
 
-### 4. Routines exist for ≥2-flow reuse only
+### 5. Flow owns auth enforcement
 
-If a procedure is used in one flow, keep it inline in the flow file (private `fn`). Promote to `routines/` only when a second flow needs it.
+Transport middleware delivers a session (or anonymous `Ctx`); the flow decides "can THIS session do THIS op?". Generated flows enforce per-verb auth from the resource state file. Custom flows hand-write the check at the top of `run()`.
 
-This prevents routine bloat. Every routine should be reused; one-off routines don't exist.
+### 6. One transport call == one flow call
 
-### 5. Flow owns retry policy
+If a use case needs multiple ops composed, **build a composite custom flow that chains routines** — never sequence flows from transport.
 
-Retries are an operation-level concern, not a routine-level one. Same service call retries aggressively in one flow, not at all in another.
+### 7. Trivial flows are legal
 
-See `SPEC_CRANK.md` for the `Crank` combinator.
-
-### 6. Flow owns auth enforcement
-
-Routes don't auth-check (middleware gives them a session; that's it). Flows enforce "can this session do this operation?" based on the auth policy declared in the resource state file (for generated flows) or hand-written logic (for custom flows).
-
-### 7. Ugliness gradient
-
-Flows are the elegant top. They read close to English. Anything gnarly gets pushed down (into a private helper, a routine, a service, or a model). If a flow is >30 lines, consider extraction.
+A flow that does `Crank::none() → one routine call → map result` is still a real flow. Its value is registration + policy + auth, not body complexity. Stop apologizing for short flows.
 
 ## Generated Flow Shape
 
-For a resource state file declaring `list` with `auth_required`, `paginated`, `filtered_by: ["role"]`:
+For a resource declaring `list` with `auth_required`, `paginated`, `filtered_by: ["role"]`, Blast emits:
 
 ```rust
-// flows/generated/users/list.rs
-// GENERATED BY BLAST. Regenerated on primer changes. Do not edit.
-
 use crate::{
-    meltdown::*,
+    crank::Crank,
+    meltdown::MeltDown,
+    routines,
     structs::{generated::users::*, common::Pagination},
-    models, Ctx,
+    Ctx,
 };
 
 pub async fn run(
@@ -111,26 +102,28 @@ pub async fn run(
     filters: UserListFilters,
 ) -> Result<PaginatedList<UserPublic>, MeltDown> {
     ctx.require_session()?;
-    let rows = models::users::list(ctx.conn(), &pagination, &filters).await?;
-    Ok(PaginatedList::from(rows))
+    Crank::none()
+        .run(|| routines::generated::users::list(ctx, &pagination, &filters))
+        .await
 }
 ```
 
-Generated flows are predictable, ~10-20 lines, regeneration-safe. They do exactly what the resource state file declared and nothing else.
+Generated flows are predictable, ~10-15 lines, regeneration-safe. They wrap exactly one generated routine under `Crank::none()` plus the resource's declared auth check.
 
 ## Custom Flow Shape
 
-Custom flows go in `flows/custom/`. They compose `models`, `services`, `routines`, `database` — NEVER other flows.
+Custom flows live in `flows/custom/`. They compose routines (never models/services/database) and may declare per-routine retry policies.
 
 ```rust
-// flows/custom/signup.rs
 use crate::{
-    meltdown::*,
-    models,
-    services,
+    crank::Crank,
+    meltdown::MeltDown,
+    routines,
     structs::users::*,
     Ctx,
 };
+
+use std::time::Duration;
 
 pub struct SignupInput {
     pub email: String,
@@ -138,55 +131,57 @@ pub struct SignupInput {
 }
 
 pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> {
-    let password_hash = services::crypto::hash_password(&input.password)?;
+    ctx.require_anonymous()?;
 
-    let insertable = NewUser {
-        email: input.email,
-        password_hash,
-        role: UserRole::Member,
-    };
+    let user = Crank::none()
+        .run(|| routines::custom::users::create(ctx, &input))
+        .await?;
 
-    let user = models::users::create(ctx.conn(), &insertable).await?;
-    services::email::send_welcome(&user.email).await?;
+    Crank::backoff(3, Duration::from_millis(500))
+        .run(|| routines::custom::email::welcome::send(&user.email))
+        .await?;
 
     Ok(user.into_public())
 }
 ```
 
-Sequential. English-readable. `?`-propagates errors. 15 lines.
+Sequential. English-readable. `?`-propagates errors. Each step has its own visible Crank policy.
 
-## Composing Flows
+## Composing Flows (DON'T)
 
-If you need to compose multiple operations, build a **composite custom flow** — don't sequence flows from transport.
+If you find yourself wanting two flows to fire in one route, build a **composite custom flow** that chains routines instead.
 
 ```rust
-// flows/custom/checkout_subscription.rs
 pub async fn run(ctx: &Ctx, input: CheckoutInput) -> Result<Receipt, MeltDown> {
-    // Charge card (with retry on transient)
-    let charge = Crank::new(exp_backoff(3, Duration::from_millis(200)).with_jitter())
-        .classify(MeltDown::is_transient)
-        .run(|| services::payments::charge(&input.card, input.amount))
+    ctx.require_session()?;
+
+    let charge = Crank::backoff(3, Duration::from_millis(200))
+        .run(|| routines::custom::payments::charge(&input.card, input.amount))
         .await?;
 
-    // Create subscription row
-    let sub = models::subscriptions::create(ctx.conn(), &input.into_insertable(charge.id)).await?;
+    let sub = Crank::none()
+        .run(|| routines::custom::subscriptions::create(ctx, &input, &charge))
+        .await?;
 
-    // Compose — call a routine shared with other flows
-    routines::act::send_receipt_email(ctx, &sub, &charge).await?;
-    routines::collect::update_user_tier(ctx, sub.user_id).await?;
+    Crank::backoff(2, Duration::from_millis(500))
+        .run(|| routines::custom::email::send_receipt(&sub.email, &charge))
+        .await?;
+
+    Crank::none()
+        .run(|| routines::custom::users::update_tier(ctx, sub.user_id))
+        .await?;
 
     Ok(Receipt::from((charge, sub)))
 }
 ```
 
-One route, one flow. The flow itself composes inside.
+One route, one flow. The flow itself composes routines internally, each under its own retry policy.
 
 ## Fuses Dispatch a Flow
 
 Scheduled tasks dispatch to exactly one flow per tick.
 
 ```rust
-// transport/fuses/custom/cleanup_expired_sessions.rs
 Fuse::every(Duration::from_minutes(5))
     .run(flows::custom::cleanup_expired_sessions::run)
     .register();
@@ -199,7 +194,6 @@ See `SPEC_FUSES.md`.
 Per WS message, one flow.
 
 ```rust
-// transport/ws/custom/chat.rs
 pub async fn on_message(ws: &WsCtx, msg: ChatSend) -> Result<(), MeltDown> {
     flows::custom::post_chat_message::run(&ws.ctx, msg).await?;
     Ok(())
@@ -210,20 +204,30 @@ See `SPEC_RELAY.md`.
 
 ## Anti-Patterns
 
-**Flow wrapping a flow:**
+**Flow calling models/services/database directly:**
+
 ```rust
-// BAD
-pub async fn signup(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> {
-    flows::generated::users::create::run(ctx, input.into()).await
-    // Then send welcome email? Where?
+pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<User, MeltDown> {
+    let hash = services::crypto::hash_password(&input.password)?;
+    models::users::create(ctx.conn(), &NewUser { ... }).await
 }
 ```
 
-Don't wrap generated flows in custom flows. Custom flows call models/routines/services directly. Generated flows are their own named operations, callable from their own routes.
+Banned. Both calls belong in a routine. The flow calls the routine under a `Crank` policy.
+
+**Flow wrapping a flow:**
+
+```rust
+pub async fn signup(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> {
+    flows::generated::users::create::run(ctx, input.into()).await
+}
+```
+
+Banned. Custom flows compose routines, not other flows.
 
 **Multi-flow in a route:**
+
 ```rust
-// BAD
 pub async fn signup_route(State(ctx), Json(input)) -> Result<...> {
     let user = flows::custom::create_user::run(...).await?;
     flows::custom::send_welcome::run(...).await?;
@@ -232,38 +236,44 @@ pub async fn signup_route(State(ctx), Json(input)) -> Result<...> {
 }
 ```
 
-Build one `flows::custom::signup` that composes internally.
+Build one `flows::custom::signup` that chains routines.
+
+**Implicit no-retry (omitted Crank):**
+
+```rust
+pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
+    routines::custom::users::list(ctx).await
+}
+```
+
+Banned. Wrap in `Crank::none()` so the policy is visible:
+
+```rust
+pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
+    Crank::none()
+        .run(|| routines::custom::users::list(ctx))
+        .await
+}
+```
 
 **Business logic in transport:**
+
 ```rust
-// BAD
 pub async fn get_user(State(ctx), Path(id)) -> Result<...> {
     let user = models::users::get(&ctx.conn(), id).await?;
     if user.role == UserRole::Admin {
-        // ... special handling in the route
+        ...
     }
 }
 ```
 
-Routes don't branch on business logic. Push into a flow.
-
-## Anti-Anti-Pattern (Yes, We Allow Thin Flows)
-
-```rust
-// GOOD (even though it's one line)
-// flows/custom/list_users.rs
-pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
-    Ok(models::users::list(ctx.conn()).await?.into_iter().map(Into::into).collect())
-}
-```
-
-This flow exists to put "list_users" in the capability inventory. It has named identity. Resist the urge to skip it "because it's too simple."
+Banned twice over: transport touched models, AND branched on business state. Push into a flow, which calls a routine.
 
 ## Related Specs
 
-- `SPEC_ARCHITECTURE.md` — the strict dep graph
+- `SPEC_ARCHITECTURE.md` — the strict dep graph + Ctx/transaction API
 - `SPEC_MELTDOWN.md` — return type
-- `SPEC_CRANK.md` — retry inside flows
+- `SPEC_CRANK.md` — retry combinator inside flows
 - `SPEC_RELAY.md` — WS handlers that call flows
 - `SPEC_FUSES.md` — scheduled triggers that call flows
 - `blast/doc/SPEC_CODEGEN.md` — how Blast generates flows from resource state files

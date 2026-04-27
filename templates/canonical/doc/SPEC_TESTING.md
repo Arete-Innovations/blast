@@ -18,7 +18,7 @@ Mocking the DB tests nothing useful. DB is the canonical state store — tests m
 Each test runs inside a Postgres transaction that rolls back on completion. ~10× faster than schema-per-test; isolation without teardown SQL.
 
 ```rust
-// Generated test setup wrapper (scaffold; not hand-written)
+
 async fn with_test_tx<F, Fut>(f: F)
 where
     F: FnOnce(TestConn) -> Fut,
@@ -27,7 +27,7 @@ where
     let mut conn = test_pool().await.get().await.unwrap();
     conn.begin_test_transaction().await.unwrap();
     f(conn).await;
-    // rolls back on drop
+
 }
 ```
 
@@ -57,7 +57,7 @@ Each baseline test:
 3. Asserts the return value shape and DB state post-call.
 
 ```rust
-// flows/generated/users/get.test.rs (scaffold)
+
 #[tokio::test]
 async fn test_get_user_baseline() {
     with_test_tx(|conn| async move {
@@ -80,7 +80,7 @@ transport/http/generated/users.test.rs
 Fires a request through the full middleware → handler → flow chain via `axum::ServiceExt::oneshot`. No mocked handler; real flow execution, real DB write, real response.
 
 ```rust
-// transport/http/generated/users.test.rs (scaffold)
+
 #[tokio::test]
 async fn test_get_user_route_baseline() {
     with_test_tx(|conn| async move {
@@ -104,7 +104,7 @@ async fn test_get_user_route_baseline() {
 Test setup calls the generated `create` flow (or helper fns in `tests/fixtures/` that call flows). Raw `INSERT INTO` is banned in test setup.
 
 ```rust
-// tests/fixtures/users.rs
+
 pub async fn create_user(conn: &TestConn, overrides: UserOverrides) -> Result<User, MeltDown> {
     users::create::run(conn, NewUser {
         email: overrides.email.unwrap_or_else(|| format!("test-{}@example.com", Uuid::new_v4())),
@@ -121,6 +121,8 @@ Fixtures live in `tests/fixtures/<resource>.rs`. Blast scaffolds a stub fixture 
 ## Unit Tests
 
 Pure functions in `routines/derive/` use `#[cfg(test)]` in-module unit tests. No DB, no async.
+
+Routines in `routines/act/` and `routines/collect/` call models and services — they need a test conn and run as integration tests inside `with_test_tx`, same as flow tests. Blast scaffolds a `routines/generated/<resource>.test.rs` baseline alongside each generated routine module.
 
 Services:
 - **Crypto / hashing (pure):** unit tests in-module.
@@ -164,7 +166,7 @@ No schema import needed — `blast test` runs all migrations fresh before the su
 
 **Mocking the DB layer:**
 ```rust
-// BAD
+
 let mock_repo = MockUserRepo::new();
 mock_repo.expect_get().returning(|_| Ok(fake_user()));
 ```
@@ -172,7 +174,7 @@ Mock passes, Postgres fails. Use real DB in transaction.
 
 **`INSERT INTO` in fixtures:**
 ```rust
-// BAD
+
 diesel::insert_into(users::table).values(&test_row).execute(&conn)?;
 ```
 Bypasses flows, skips validation, doesn't fire WS events. Use `fixtures::create_user(...)`.
@@ -182,7 +184,8 @@ Each test gets its own transaction. Never share a transaction across tests; the 
 
 ## Related Specs
 
-- `SPEC_FLOWS.md` — flow shape; tests call flows directly
+- `SPEC_FLOWS.md` — flow shape; flows call routines (not models/services directly); tests call flows directly
+- `SPEC_ROUTINES.md` — routine shape; routines call models + services; routine integration tests use `with_test_tx`
 - `SPEC_MELTDOWN.md` — error type returned by flows; assert on `MeltDown` variants
 - `SPEC_SERVICES.md` — service test-double implementations
 - `blast/doc/SPEC_CODEGEN.md` — `.test.rs` scaffold generation pass

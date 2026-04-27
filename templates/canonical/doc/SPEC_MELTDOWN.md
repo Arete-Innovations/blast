@@ -1,6 +1,6 @@
 # SPEC_MELTDOWN
 
-Unified error type. Lives in `catalyst::meltdown`. Every fallible Catalyst function returns `Result<T, MeltDown>`.
+Unified error type. Lives in `catalyst::meltdown`. Returned by flows, routines, models, and services — `Result<T, MeltDown>` everywhere in those layers. `IntoResponse` is implemented in `transport/http/` only; inner layers return `MeltDown` values and never touch HTTP concerns.
 
 ## Shape
 
@@ -23,7 +23,7 @@ pub struct MeltDown {
 
 ```rust
 pub enum MeltType {
-    // Database
+
     DatabaseConnection,
     DatabaseError,
     RecordNotFound,
@@ -32,40 +32,40 @@ pub enum MeltType {
     CheckViolation,
     NotNullViolation,
 
-    // Auth (opaque bearer tokens, NOT JWT)
+
     AuthRejected,
     SessionExpired,
     SessionInvalid,
     SessionMissing,
     InsufficientPermissions,
 
-    // Validation / request shape
-    ValidationFailed,       // 422, field-level issues
-    BadRequest,             // 400, malformed request shape
 
-    // Transport
+    ValidationFailed,
+    BadRequest,
+
+
     Unauthorized,
     Forbidden,
     NotFound,
     MethodNotAllowed,
-    TooManyRequests,        // 429, pairs with retry_after
+    TooManyRequests,
 
-    // Storage / files
+
     FileNotFound,
     FilePermissionDenied,
     FileOperationFailed,
 
-    // Serde / config
+
     SerializationFailed,
     DeserializationFailed,
     ConfigurationError,
     EnvironmentError,
 
-    // External
+
     ExternalServiceError,
 
-    // Catastrophic fallback
-    Unexpected(String),     // renamed from Unknown; treat as TODO marker
+
+    Unexpected(String),
 }
 ```
 
@@ -87,17 +87,17 @@ pub enum MeltType {
 ## Builder API
 
 ```rust
-// Constructor
+
 MeltDown::new(MeltType::ValidationFailed, "email must not be empty")
 
-// Fluent extensions
+
 MeltDown::new(MeltType::RecordNotFound, "user")
     .with_context("table", "users")
     .with_context("id", user_id.to_string())
     .with_source(diesel_err)
     .with_user_message("That user was deleted.")
-    .retry_after(Duration::from_secs(5))    // for 429/503
-    .mark_transient(true)                    // override default transient-ness
+    .retry_after(Duration::from_secs(5))
+    .mark_transient(true)
 ```
 
 ## Named Constructors
@@ -120,14 +120,14 @@ MeltDown::too_many_requests(Duration::from_secs(60))
 
 ```rust
 impl MeltDown {
-    /// True if this error is a transient failure worth retrying.
-    /// Default derived from melt_type; overridable via .mark_transient(bool).
+
+
     pub fn is_transient(&self) -> bool;
 
-    /// Category: Client | Server | Transient
+
     pub fn category(&self) -> MeltCategory;
 
-    /// Ergonomic test helper
+
     pub fn is(&self, t: MeltType) -> bool;
 }
 ```
@@ -138,23 +138,24 @@ impl MeltDown {
 - `TooManyRequests` → true (respects `retry_after`)
 - Everything else → false
 
-Used by `Crank` retry combinator to classify errors:
+Used by `Crank` retry combinator to classify errors. Crank is called from flows wrapping routine calls — never from services (which are single-shot) or transport (which calls flows directly):
 
 ```rust
+// inside a flow
 let result = Crank::new(policy)
     .classify(MeltDown::is_transient)
-    .run(|| services::payments::charge(&card, amount))
+    .run(|| routines::payments::attempt_charge(&ctx, &card, amount))
     .await?;
 ```
 
 ## `From` Impls (conversion)
 
 ```rust
-impl From<diesel::result::Error> for MeltDown { ... }    // maps DB errors to DB variants
-impl From<std::io::Error> for MeltDown { ... }           // FS errors
-impl From<std::env::VarError> for MeltDown { ... }       // env reads
-impl From<bcrypt::BcryptError> for MeltDown { ... }      // password hashing
-// (Add impls for other external error types as they appear.)
+impl From<diesel::result::Error> for MeltDown { ... }
+impl From<std::io::Error> for MeltDown { ... }
+impl From<std::env::VarError> for MeltDown { ... }
+impl From<bcrypt::BcryptError> for MeltDown { ... }
+
 ```
 
 **NOT present:**
@@ -163,6 +164,8 @@ impl From<bcrypt::BcryptError> for MeltDown { ... }      // password hashing
 - `impl From<anyhow::Error>` — forces the user to opt into a specific variant
 
 ## `IntoResponse` (HTTP)
+
+Lives in `transport/http/` only. Inner layers (flows, routines, models, services) return `MeltDown` values — they have no dependency on Axum response types.
 
 ```rust
 impl IntoResponse for MeltDown {
@@ -223,7 +226,7 @@ export const MeltType = {
   DatabaseConnection: "DatabaseConnection",
   ValidationFailed: "ValidationFailed",
   UniqueViolation: "UniqueViolation",
-  // ... all variants
+
 } as const;
 export type MeltType = (typeof MeltType)[keyof typeof MeltType];
 
@@ -242,7 +245,7 @@ Used in FE composables:
 ```ts
 const { error } = await api.users.create(input);
 if (error?.error.type === MeltType.UniqueViolation) {
-  if (error.error.context?.field === "email") { /* highlight email input */ }
+  if (error.error.context?.field === "email") {  }
 }
 ```
 

@@ -19,7 +19,7 @@ Monolithic design-token file + scoped SFC styles. No Tailwind. No utility-class 
 ## Root Font Scaling
 
 ```css
-/* src/styles/base.css */
+
 html {
     font-size: clamp(14px, calc(100vw / 120), 32px);
 }
@@ -32,10 +32,10 @@ On a 4K monitor at 100% browser zoom, root hits 32px; UI reads comfortably witho
 ## Token Categories
 
 ```css
-/* src/styles/tokens.css */
+
 @layer app {
     :root {
-        /* FONT SIZES (fixed rem) */
+        
         --app-fs-2xs: 0.75rem;
         --app-fs-xs:  0.875rem;
         --app-fs-sm:  0.9375rem;
@@ -47,13 +47,13 @@ On a 4K monitor at 100% browser zoom, root hits 32px; UI reads comfortably witho
         --app-fs-4xl: 2.25rem;
         --app-fs-5xl: 3rem;
 
-        /* FONT SIZES (responsive via clamp) */
+        
         --app-fs-body-resp:    clamp(0.9375rem, 1.5vw, 1.125rem);
         --app-fs-h1-resp:      clamp(1.5rem, 3vw, 2.25rem);
         --app-fs-h2-resp:      clamp(1.25rem, 2.5vw, 1.875rem);
         --app-fs-display-lg:   clamp(2rem, 5vw, 3.5rem);
 
-        /* SPACING */
+        
         --app-space-0:   0;
         --app-space-xs:  0.25rem;
         --app-space-sm:  0.5rem;
@@ -65,25 +65,25 @@ On a 4K monitor at 100% browser zoom, root hits 32px; UI reads comfortably witho
         --app-space-4xl: 4rem;
         --app-space-5xl: 5rem;
 
-        /* ICONS */
+        
         --app-icon-xs: 0.875rem;
         --app-icon-sm: 1rem;
         --app-icon-md: 1.25rem;
         --app-icon-lg: 1.5rem;
         --app-icon-xl: 2rem;
 
-        /* CONTAINERS (max widths) */
+        
         --app-container-xs: 26rem;
         --app-container-sm: 40rem;
         --app-container-md: 56rem;
         --app-container-lg: 72rem;
         --app-container-xl: 90rem;
 
-        /* RESPONSIVE PADDING */
+        
         --app-pad-section-sm: clamp(2rem, 5vw, 4rem);
         --app-pad-section-md: clamp(4rem, 10vw, 7.5rem);
 
-        /* Z-INDEX */
+        
         --app-z-content:   1;
         --app-z-nav:       10;
         --app-z-dropdown:  50;
@@ -91,20 +91,20 @@ On a 4K monitor at 100% browser zoom, root hits 32px; UI reads comfortably witho
         --app-z-overlay:   100;
         --app-z-toast:     120;
 
-        /* TRANSITIONS */
+        
         --app-transition-fast:   120ms ease;
         --app-transition-normal: 200ms ease;
         --app-transition-slow:   320ms ease;
 
-        /* BORDER RADIUS */
+        
         --app-radius-sm: 0.25rem;
         --app-radius-md: 0.5rem;
         --app-radius-lg: 0.75rem;
         --app-radius-xl: 1rem;
         --app-radius-full: 9999px;
 
-        /* SEMANTIC COLORS — defined via PrimeVue preset mapping */
-        /* --app-color-primary, --app-color-accent, etc. mapped from PrimeVue tokens */
+        
+        
     }
 }
 ```
@@ -116,7 +116,7 @@ Edit this file directly — it's the source of truth. Never inline a value in an
 Colors live in the PrimeVue preset (`src/plugins/primevue.ts`). That file is the only location allowed to contain hex values; Governor exempts it explicitly. App tokens map onto PrimeVue tokens:
 
 ```ts
-// src/plugins/primevue.ts (excerpt)
+
 export const PRESET_SEMANTIC = definePreset(Aura, {
     semantic: {
         primary: {
@@ -133,7 +133,7 @@ export const PRESET_SEMANTIC = definePreset(Aura, {
                 text: { color: '{surface.950}' },
                 content: { background: '{surface.0}', borderColor: '{surface.200}' },
             },
-            dark: { /* ... */ },
+            dark: {  },
         },
     },
 });
@@ -146,7 +146,7 @@ For colors NOT provided by PrimeVue (app-specific e.g. per-platform chart colors
 ## CSS Layer Order
 
 ```ts
-// src/main.ts
+
 import PrimeVue from 'primevue/config';
 app.use(PrimeVue, {
     theme: {
@@ -214,15 +214,15 @@ All values from tokens. Semantic class names (`.card`, `.status`), not color-nam
 Use `clamp()` + `vw` tokens instead of media queries where possible:
 
 ```css
-/* GOOD */
-font-size: var(--app-fs-h1-resp);    /* clamp(1.5rem, 3vw, 2.25rem) */
-padding: var(--app-pad-section-md);  /* clamp(4rem, 10vw, 7.5rem) */
+
+font-size: var(--app-fs-h1-resp);    
+padding: var(--app-pad-section-md);  
 ```
 
 Media queries allowed but rare:
 
 ```css
-/* acceptable for layout-swap-at-breakpoint cases */
+
 @media (min-width: 768px) {
     .grid { grid-template-columns: 1fr 1fr; }
 }
@@ -242,7 +242,7 @@ A `.rule_violations_whitelist` file allows additional per-pattern exceptions (e.
 
 **Inline style attribute:**
 ```vue
-<!-- BAD -->
+
 <div :style="{ padding: '16px', color: '#333' }">
 ```
 
@@ -250,7 +250,7 @@ Banned entirely. Use classes.
 
 **Hex in SFC:**
 ```css
-/* BAD */
+
 .button { background: #7c3aed; }
 ```
 
@@ -258,7 +258,7 @@ Use token.
 
 **Px outside niches:**
 ```css
-/* BAD */
+
 .box { margin: 16px; }
 ```
 
@@ -266,7 +266,7 @@ Use `var(--app-space-lg)`.
 
 **Raw rem outside tokens.css:**
 ```css
-/* BAD */
+
 .box { padding: 1rem; }
 ```
 
@@ -274,7 +274,7 @@ Even rem is disallowed outside `tokens.css`. Use `var(--app-space-lg)`. Governor
 
 **Color-named classes:**
 ```css
-/* BAD */
+
 .red-text { color: red; }
 ```
 
@@ -282,7 +282,7 @@ Use semantic names: `.error-text { color: var(--app-color-danger); }`.
 
 **Utility class sprinkling:**
 ```vue
-<!-- BAD — Tailwind-style -->
+
 <div class="p-4 m-2 text-sm text-gray-700">
 ```
 

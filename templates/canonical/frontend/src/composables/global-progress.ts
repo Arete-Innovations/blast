@@ -1,9 +1,3 @@
-// global-progress — module-scoped active-task counter backing the
-// GlobalProgressBar. Multiple concurrent navs/fetches each call start();
-// finish() decrements; isActive is true when count > 0. cancel() force-
-// clears (used on hard router error). No external state library — this
-// IS the state. See SPEC_FRONTEND_ROUTING.md.
-
 import { computed, ref } from 'vue'
 import type { ComputedRef } from 'vue'
 

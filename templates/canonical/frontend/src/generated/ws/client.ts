@@ -1,11 +1,3 @@
-// Auto-generated. Do not edit by hand.
-// Relay WS multiplexer client. Single connection, multiple topics.
-// Per SPEC_RELAY.md the FE re-fetches from DB on resubscribe ack;
-// there is no replay buffer. This module exposes the consumer-facing
-// surface (`subscribe<T>` / `unsubscribe`) used by the channel
-// composable. Transport hookup is internal — flip implementations
-// by editing this codegen, not the call sites.
-
 type Handler<T> = (payload: T) => void
 
 class WsClient {
