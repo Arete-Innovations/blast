@@ -199,7 +199,7 @@ fn rule_help(rule: &str) -> &'static str {
         "STRUCTS:22" => concat!(
             "data definitions (`struct`, `enum`) live in src/structs/.\n",
             "    declaring `struct` or `enum` inside a layer dir scatters the data model. move the type to src/structs/<resource>/<file>.rs and import it where needed.\n",
-            "    exempt: src/structs/, src/meltdown.rs, src/ctx.rs, src/crank.rs, src/cata_log.rs, src/bootstrap.rs, src/lib.rs, src/main.rs.",
+            "    exempt: src/structs/, src/meltdown.rs, src/ctx.rs, src/crank.rs, src/cata_log.rs, src/bootstrap.rs, src/lib.rs, src/main.rs, src/database/schema.rs.",
         ),
         _ => "",
     }
@@ -1477,6 +1477,7 @@ fn is_data_definition_allowed_file(rel: &Path) -> bool {
         | "bootstrap.rs"
         | "lib.rs"
         | "main.rs"
+        | "database/schema.rs"
     )
 }
 
