@@ -37,7 +37,14 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::New { name, dev, db_url, force, no_test_db, no_warmup } => {
+        Command::New {
+            name,
+            dev,
+            db_url,
+            force,
+            no_test_db,
+            no_warmup,
+        } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
             let opts = crate::project::scaffold::NewOptions {
@@ -46,20 +53,19 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 force,
                 no_test_db,
                 no_warmup,
-                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| {
-                    crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress)
-                })),
+                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress))),
             };
-            crate::project::scaffold::create_new_project_with_opts(
-                &name,
-                opts,
-                &mut sink,
-                &mut progress,
-            )?;
+            crate::project::scaffold::create_new_project_with_opts(&name, opts, &mut sink, &mut progress)?;
             Ok(())
         }
 
-        Command::Init { name, db_url, force, no_test_db, no_warmup } => {
+        Command::Init {
+            name,
+            db_url,
+            force,
+            no_test_db,
+            no_warmup,
+        } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
             let opts = crate::project::scaffold::NewOptions {
@@ -68,37 +74,20 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 force,
                 no_test_db,
                 no_warmup,
-                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| {
-                    crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress)
-                })),
+                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress))),
             };
             match name {
                 Some(n) => {
-                    crate::project::scaffold::create_new_project_with_opts(
-                        &n,
-                        opts,
-                        &mut sink,
-                        &mut progress,
-                    )?;
+                    crate::project::scaffold::create_new_project_with_opts(&n, opts, &mut sink, &mut progress)?;
                 }
                 None => {
                     let cwd = std::env::current_dir()?;
                     let project_name = cwd
                         .file_name()
                         .and_then(|n| n.to_str())
-                        .ok_or_else(|| {
-                            BlastError::Invalid(
-                                "could not derive project name from current dir".to_string(),
-                            )
-                        })?
+                        .ok_or_else(|| BlastError::Invalid("could not derive project name from current dir".to_string()))?
                         .to_string();
-                    crate::project::scaffold::init_in_place_with_opts(
-                        &project_name,
-                        cwd,
-                        opts,
-                        &mut sink,
-                        &mut progress,
-                    )?;
+                    crate::project::scaffold::init_in_place_with_opts(&project_name, cwd, opts, &mut sink, &mut progress)?;
                 }
             }
             // Reload config so subsequent commands see the freshly-scaffolded
@@ -107,10 +96,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             match config.reload_if_modified() {
                 Ok(_unit) => {} // allow: reload_if_modified returns () on success; nothing to bind
                 Err(reload_err) => {
-                    sink.warn(format!(
-                        "config reload after init failed (non-fatal): {}",
-                        reload_err
-                    ));
+                    sink.warn(format!("config reload after init failed (non-fatal): {}", reload_err));
                 }
             }
             // dep_manager is intentionally unused in this branch — init no
@@ -179,17 +165,11 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Watch => run_watch(config, dep_manager),
 
         Command::Check { verbose } => run_check(config, verbose),
-
     }
 }
 
 fn is_config_independent(cmd: &Command) -> bool {
-    matches!(
-        cmd,
-        Command::Help
-            | Command::New { .. }
-            | Command::Init { .. }
-    )
+    matches!(cmd, Command::Help | Command::New { .. } | Command::Init { .. })
 }
 
 fn dispatch_fuses(sub: Option<FusesCmd>, config: &Config) -> BlastResult<()> {
@@ -219,11 +199,7 @@ fn dispatch_fuses(sub: Option<FusesCmd>, config: &Config) -> BlastResult<()> {
     }
 }
 
-fn dispatch_gen(
-    sub: Option<GenCmd>,
-    config: &mut Config,
-    dep_manager: &mut DependencyManager,
-) -> BlastResult<()> {
+fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
     let Some(target) = sub else {
         let chosen = crate::gen_picker::pick_gen_target()?;
         return execute(chosen, config, dep_manager);
@@ -237,11 +213,7 @@ fn dispatch_gen(
             for p in &report.written {
                 logger::success(&format!("wrote {}", p.display()))?;
             }
-            logger::info(&format!(
-                "structs: {} written, {} skipped",
-                report.written.len(),
-                report.skipped.len(),
-            ))?;
+            logger::info(&format!("structs: {} written, {} skipped", report.written.len(), report.skipped.len(),))?;
             Ok(())
         }
         GenCmd::Models => {
@@ -269,13 +241,9 @@ fn dispatch_gen(
         }
         GenCmd::Migration { custom, name } => {
             if !custom {
-                return Err(BlastError::Invalid(
-                    "blast gen migration requires --custom <name>".to_string(),
-                ));
+                return Err(BlastError::Invalid("blast gen migration requires --custom <name>".to_string()));
             }
-            let resolved = name.ok_or_else(|| {
-                BlastError::Invalid("blast gen migration --custom requires a name".to_string())
-            })?;
+            let resolved = name.ok_or_else(|| BlastError::Invalid("blast gen migration --custom requires a name".to_string()))?;
             crate::gen_migration::run_custom(&resolved)
         }
         GenCmd::GovernorPlugin => {
@@ -288,6 +256,7 @@ fn dispatch_gen(
         }
         GenCmd::Resource { name } => run_gen_resource(config, name),
         GenCmd::Pages { resource } => run_gen_pages(config, resource),
+        GenCmd::Components { resource } => run_gen_components(config, resource),
         GenCmd::Api { resource } => run_gen_api(config, resource),
         GenCmd::Types { resource } => run_gen_types(config, resource),
         GenCmd::All => run_gen_all(config),
@@ -297,17 +266,29 @@ fn dispatch_gen(
 fn run_gen_pages(config: &Config, resource: Option<String>) -> BlastResult<()> {
     let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
     let mut progress = crate::io::cli_progress(None);
-    // Pages depend on api + types — emit those first so the SFCs resolve their imports.
+    // Pages depend on types + api + components — emit those first so the SFCs resolve their imports.
     crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
     crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
+    crate::codegen::components::run(&config.project_dir, &mut sink, &mut progress)?;
     let report = match resource {
         Some(name) => crate::codegen::pages::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
         None => crate::codegen::pages::run(&config.project_dir, &mut sink, &mut progress)?,
     };
-    logger::info(&format!(
-        "pages: {} file(s) written",
-        report.written.len()
-    ))?;
+    logger::info(&format!("pages: {} file(s) written", report.written.len()))?;
+    Ok(())
+}
+
+fn run_gen_components(config: &Config, resource: Option<String>) -> BlastResult<()> {
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    // Components depend on types + api — emit those first so the SFCs resolve their imports.
+    crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
+    crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
+    let report = match resource {
+        Some(name) => crate::codegen::components::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
+        None => crate::codegen::components::run(&config.project_dir, &mut sink, &mut progress)?,
+    };
+    logger::info(&format!("components: {} file(s) written", report.written.len()))?;
     Ok(())
 }
 
@@ -315,11 +296,7 @@ fn run_gen_api(config: &Config, _resource: Option<String>) -> BlastResult<()> {
     let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
     let mut progress = crate::io::cli_progress(None);
     let report = crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
-    logger::info(&format!(
-        "api: {} file(s) written, {} skipped",
-        report.written.len(),
-        report.skipped.len()
-    ))?;
+    logger::info(&format!("api: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
     Ok(())
 }
 
@@ -327,11 +304,7 @@ fn run_gen_types(config: &Config, _resource: Option<String>) -> BlastResult<()> 
     let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
     let mut progress = crate::io::cli_progress(None);
     let report = crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
-    logger::info(&format!(
-        "types: {} file(s) written, {} skipped",
-        report.written.len(),
-        report.skipped.len()
-    ))?;
+    logger::info(&format!("types: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
     Ok(())
 }
 
@@ -339,9 +312,7 @@ fn run_gen_all(config: &mut Config) -> BlastResult<()> {
     let verbose = logger::is_verbose();
     let mut sink = crate::io::cli_sink(verbose, None);
     let mut progress = crate::io::cli_progress(None);
-    let args = crate::commands::gen_all::Args {
-        project_root: config.project_dir.clone(),
-    };
+    let args = crate::commands::gen_all::Args { project_root: config.project_dir.clone() };
     let outcome = crate::commands::gen_all::run(args, config, &mut sink, &mut progress)?;
     logger::info(&format!(
         "gen all complete: {} steps, {} files written, {} files skipped",
@@ -418,21 +389,13 @@ fn run_schema(config: &Config) -> BlastResult<()> {
     match crate::schema_parser::parse_schema(&schema_path) {
         Ok(tables) => {
             let col_count: usize = tables.iter().map(|t| t.columns.len()).sum();
-            let nullable_count: usize = tables
-                .iter()
-                .flat_map(|t| t.columns.iter())
-                .filter(|c| c.nullable)
-                .count();
+            let nullable_count: usize = tables.iter().flat_map(|t| t.columns.iter()).filter(|c| c.nullable).count();
             logger::info(&format!(
                 "schema: {} tables, {} columns ({} nullable) — pk fields: {}",
                 tables.len(),
                 col_count,
                 nullable_count,
-                tables
-                    .iter()
-                    .map(|t| format!("{}({})", t.name, t.primary_key.join(",")))
-                    .collect::<Vec<_>>()
-                    .join(", "),
+                tables.iter().map(|t| format!("{}({})", t.name, t.primary_key.join(","))).collect::<Vec<_>>().join(", "),
             ))?;
             for t in &tables {
                 logger::debug(&format!(
@@ -440,12 +403,7 @@ fn run_schema(config: &Config) -> BlastResult<()> {
                     t.name,
                     t.columns
                         .iter()
-                        .map(|c| format!(
-                            "{}:{}{}",
-                            c.name,
-                            c.diesel_type,
-                            if c.nullable { "?" } else { "" }
-                        ))
+                        .map(|c| format!("{}:{}{}", c.name, c.diesel_type, if c.nullable { "?" } else { "" }))
                         .collect::<Vec<_>>()
                         .join(", "),
                 ))?;
@@ -497,9 +455,7 @@ fn run_dev_server(config: &Config) -> BlastResult<()> {
         }
         Err(_started) => {
             let cmd = format!("cargo run --bin {}", &config.project_name);
-            std::process::Command::new("script")
-                .args(["-q", "-c", &cmd, "storage/logs/server.log"])
-                .spawn()?;
+            std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn()?;
             logger::success("Development server started with cargo run")?;
         }
     }
@@ -514,15 +470,11 @@ fn run_prod_server(config: &Config) -> BlastResult<()> {
         Err(_started) => {
             let binary_path = format!("target/release/{}", &config.project_name);
             if std::path::Path::new(&binary_path).exists() {
-                std::process::Command::new("script")
-                    .args(["-q", "-c", &binary_path, "storage/logs/server.log"])
-                    .spawn()?;
+                std::process::Command::new("script").args(["-q", "-c", &binary_path, "storage/logs/server.log"]).spawn()?;
                 logger::success(&format!("Production server started using compiled binary: {}", binary_path))?;
             } else {
                 let cmd = format!("cargo run --release --bin {}", &config.project_name);
-                std::process::Command::new("script")
-                    .args(["-q", "-c", &cmd, "storage/logs/server.log"])
-                    .spawn()?;
+                std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn()?;
                 logger::success("Production server started with cargo run --release")?;
                 logger::info("Tip: Build with 'cargo build --release' for faster startup next time")?;
             }
@@ -546,10 +498,7 @@ fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResul
 
     let server_log_path = logs_dir.join("server.log");
 
-    let _touch = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&server_log_path)?;
+    let _touch = std::fs::OpenOptions::new().create(true).append(true).open(&server_log_path)?;
     drop(_touch);
 
     let watch_cmd = format!(
@@ -557,9 +506,7 @@ fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResul
         &config.project_name
     );
 
-    let output = std::process::Command::new("bash")
-        .args(["-c", &watch_cmd])
-        .output()?;
+    let output = std::process::Command::new("bash").args(["-c", &watch_cmd]).output()?;
 
     let pid_str = String::from_utf8_lossy(&output.stdout);
     let pid = pid_str.trim().parse::<u32>().map_err(|e| BlastError::Invalid(e.to_string()))?;
@@ -568,10 +515,7 @@ fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResul
     std::fs::write(&pid_file_path, pid.to_string())?;
 
     let timestamp = chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]");
-    let mut server_log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&server_log_path)?;
+    let mut server_log = std::fs::OpenOptions::new().create(true).append(true).open(&server_log_path)?;
 
     writeln!(server_log, "{} Using development configuration", timestamp)?;
     writeln!(server_log, "{} Watch mode started with PID: {}", timestamp, pid)?;
@@ -586,10 +530,7 @@ fn run_check(config: &Config, verbose: bool) -> BlastResult<()> {
     print!("{}", outcome.output);
     std::io::stdout().flush()?;
     if outcome.violation_count > 0 {
-        return Err(BlastError::Invalid(format!(
-            "governor: {} violation(s) — see output above",
-            outcome.violation_count
-        )));
+        return Err(BlastError::Invalid(format!("governor: {} violation(s) — see output above", outcome.violation_count)));
     }
     Ok(())
 }

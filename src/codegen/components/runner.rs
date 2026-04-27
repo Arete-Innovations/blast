@@ -1,17 +1,12 @@
-//! Driver for `blast gen pages` — emits per-resource Vue page SFCs into
-//! `frontend/src/pages/generated/<resource>/`.
-//!
-//! The page-shell layout convention: `ListPage.vue`, `DetailPage.vue`,
-//! `CreatePage.vue`, `EditPage.vue`. Pages depend on the form components
-//! emitted by the `components` codegen pass — callers are expected to
-//! run components emission before pages.
+//! Driver for `blast gen components` — emits per-resource Vue form SFCs
+//! into `frontend/src/components/generated/forms/<resource>/`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::codegen::components::render::forms_for_resource;
 use crate::codegen::header;
 use crate::codegen::ir_loader;
-use crate::codegen::pages::render::pages_for_resource;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::state::ResourceState;
@@ -22,7 +17,7 @@ pub struct EmitReport {
     pub skipped: Vec<PathBuf>,
 }
 
-const STEP_LABEL: &str = "frontend pages emission";
+const STEP_LABEL: &str = "frontend components emission";
 
 pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     let resources = match ir_loader::load_resource_states(project_root) {
@@ -50,15 +45,15 @@ pub fn run_for_resource(project_root: &Path, resource_name: &str, sink: &mut dyn
 fn emit_for(project_root: &Path, resources: &[ResourceState], sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
-    let pages_root = pages_root_dir(project_root);
-    fs::create_dir_all(&pages_root)?;
+    let forms_root = forms_root_dir(project_root);
+    fs::create_dir_all(&forms_root)?;
 
     let mut report = EmitReport::default();
     for r in resources {
-        let dir = pages_root.join(r.name.as_str());
+        let dir = forms_root.join(r.name.as_str());
         fs::create_dir_all(&dir)?;
         let marker = header::marker_for_resource(project_root, r.name.as_str())?;
-        for (filename, body) in pages_for_resource(r) {
+        for (filename, body) in forms_for_resource(r) {
             let path = dir.join(&filename);
             let full = format!("{marker}{body}");
             write_file(&path, &full, &mut report)?;
@@ -71,8 +66,8 @@ fn emit_for(project_root: &Path, resources: &[ResourceState], sink: &mut dyn Sin
     Ok(report)
 }
 
-fn pages_root_dir(project_root: &Path) -> PathBuf {
-    project_root.join("frontend").join("src").join("pages").join("generated")
+fn forms_root_dir(project_root: &Path) -> PathBuf {
+    project_root.join("frontend").join("src").join("components").join("generated").join("forms")
 }
 
 fn read_existing(target: &Path) -> BlastResult<Option<String>> {
@@ -84,7 +79,7 @@ fn read_existing(target: &Path) -> BlastResult<Option<String>> {
 }
 
 fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult<()> {
-    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("frontend pages target has no parent: {}", target.display())))?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("frontend components target has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
 
     let existing = read_existing(target)?;
@@ -109,7 +104,7 @@ mod tests {
     use super::*;
     use crate::io::null::{NullProgress, NullSink};
     use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION};
+    use crate::state::resource::{AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION};
     use crate::state::{save_app, save_resource, AppState, SqlType};
     use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
@@ -117,14 +112,14 @@ mod tests {
 
     fn make_users_resource() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        let public_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
         let all_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
+        let id_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
 
         fields.insert(
             FieldName::new("id"),
             FieldState {
                 sql_type: SqlType::new("Int8"),
-                variants: public_v.clone(),
+                variants: id_v,
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
@@ -143,27 +138,19 @@ mod tests {
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
         verbs.insert(
-            Verb::List,
+            Verb::Create,
             VerbState {
                 auth: AuthMode::Public,
-                list_options: Some(ListOptions {
-                    paginated: true,
-                    filterable_columns: BTreeMap::new(),
-                    sortable_columns: BTreeSet::new(),
-                    default_sort: None,
-                    max_page_size: None,
-                }),
+                list_options: None,
             },
         );
-        for v in [Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
-            verbs.insert(
-                v,
-                VerbState {
-                    auth: AuthMode::Public,
-                    list_options: None,
-                },
-            );
-        }
+        verbs.insert(
+            Verb::Update,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+            },
+        );
 
         ResourceState {
             schema_version: RESOURCE_SCHEMA_VERSION,
@@ -186,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn emits_all_four_pages_for_full_crud_resource() {
+    fn emits_create_and_edit_form_per_resource() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         let resource = make_users_resource();
@@ -194,15 +181,17 @@ mod tests {
 
         let mut sink = NullSink;
         let mut progress = NullProgress;
-        let report = run(root, &mut sink, &mut progress).expect("run pages");
+        let report = run(root, &mut sink, &mut progress).expect("run components");
 
-        for filename in ["ListPage.vue", "DetailPage.vue", "CreatePage.vue", "EditPage.vue"] {
-            let path = root.join(format!("frontend/src/pages/generated/users/{filename}"));
-            assert!(path.exists(), "{filename} must exist");
-            assert!(report.written.iter().any(|p| p == &path));
-            let body = fs::read_to_string(&path).expect("read page");
-            assert!(body.starts_with("// AUTO-GENERATED from "), "marker required in {filename}");
-        }
+        let create = root.join("frontend/src/components/generated/forms/users/CreateForm.vue");
+        let edit = root.join("frontend/src/components/generated/forms/users/EditForm.vue");
+        assert!(create.exists(), "CreateForm.vue must exist");
+        assert!(edit.exists(), "EditForm.vue must exist");
+        assert!(report.written.iter().any(|p| p == &create));
+        assert!(report.written.iter().any(|p| p == &edit));
+
+        let body = fs::read_to_string(&create).expect("read create form");
+        assert!(body.starts_with("// AUTO-GENERATED from "), "marker required");
     }
 
     #[test]
@@ -231,7 +220,7 @@ mod tests {
         let mut sink = NullSink;
         let mut progress = NullProgress;
         let report = run_for_resource(root, "users", &mut sink, &mut progress).expect("run for resource");
-        assert_eq!(report.written.len(), 4, "users full-crud expects 4 pages");
+        assert_eq!(report.written.len(), 2, "users has Create + Update so 2 forms expected");
 
         let report_missing = run_for_resource(root, "ghosts", &mut sink, &mut progress).expect("run for missing resource");
         assert!(report_missing.written.is_empty());

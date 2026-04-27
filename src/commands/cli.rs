@@ -31,9 +31,7 @@ pub enum Command {
         no_warmup: bool,
     },
 
-    #[command(
-        about = "Scaffold a Catablast app in-place (or in <name>); like `new` but defaults to cwd"
-    )]
+    #[command(about = "Scaffold a Catablast app in-place (or in <name>); like `new` but defaults to cwd")]
     Init {
         /// Optional project name. If given, scaffold to `./<name>/`. If
         /// omitted, scaffold directly into the current directory (which
@@ -184,8 +182,14 @@ pub enum GenCmd {
         resource: Option<String>,
     },
 
-    #[command(about = "Emit per-resource Vue CRUD page scaffolds into frontend/src/pages/<resource>/")]
+    #[command(about = "Emit per-resource Vue CRUD page scaffolds into frontend/src/pages/generated/<resource>/")]
     Pages {
+        #[arg(value_name = "RESOURCE")]
+        resource: Option<String>,
+    },
+
+    #[command(about = "Emit per-resource Vue form components into frontend/src/components/generated/forms/<resource>/")]
+    Components {
         #[arg(value_name = "RESOURCE")]
         resource: Option<String>,
     },
@@ -224,7 +228,14 @@ mod tests {
     fn new_command_accepts_minimum_args() {
         let cli = Cli::try_parse_from(["blast", "new", "myapp"]).expect("parse");
         match cli.cmd {
-            Some(Command::New { name, dev, db_url, force, no_test_db, no_warmup }) => {
+            Some(Command::New {
+                name,
+                dev,
+                db_url,
+                force,
+                no_test_db,
+                no_warmup,
+            }) => {
                 assert_eq!(name, "myapp");
                 assert!(!dev);
                 assert!(db_url.is_none());
@@ -238,19 +249,16 @@ mod tests {
 
     #[test]
     fn new_command_accepts_all_db_args() {
-        let cli = Cli::try_parse_from([
-            "blast",
-            "new",
-            "myapp",
-            "--db-url",
-            "postgres://u:p@h/x",
-            "--force",
-            "--no-test-db",
-            "--no-warmup",
-        ])
-        .expect("parse");
+        let cli = Cli::try_parse_from(["blast", "new", "myapp", "--db-url", "postgres://u:p@h/x", "--force", "--no-test-db", "--no-warmup"]).expect("parse");
         match cli.cmd {
-            Some(Command::New { name, dev, db_url, force, no_test_db, no_warmup }) => {
+            Some(Command::New {
+                name,
+                dev,
+                db_url,
+                force,
+                no_test_db,
+                no_warmup,
+            }) => {
                 assert_eq!(name, "myapp");
                 assert!(!dev);
                 assert_eq!(db_url.as_deref(), Some("postgres://u:p@h/x"));
@@ -275,7 +283,13 @@ mod tests {
     fn init_command_no_name_uses_cwd() {
         let cli = Cli::try_parse_from(["blast", "init"]).expect("parse");
         match cli.cmd {
-            Some(Command::Init { name, db_url, force, no_test_db, no_warmup }) => {
+            Some(Command::Init {
+                name,
+                db_url,
+                force,
+                no_test_db,
+                no_warmup,
+            }) => {
                 assert!(name.is_none(), "expected no name, got {:?}", name);
                 assert!(db_url.is_none());
                 assert!(!force);
@@ -288,19 +302,15 @@ mod tests {
 
     #[test]
     fn init_command_accepts_name_and_flags() {
-        let cli = Cli::try_parse_from([
-            "blast",
-            "init",
-            "myapp",
-            "--db-url",
-            "postgres://u:p@h/x",
-            "--force",
-            "--no-test-db",
-            "--no-warmup",
-        ])
-        .expect("parse");
+        let cli = Cli::try_parse_from(["blast", "init", "myapp", "--db-url", "postgres://u:p@h/x", "--force", "--no-test-db", "--no-warmup"]).expect("parse");
         match cli.cmd {
-            Some(Command::Init { name, db_url, force, no_test_db, no_warmup }) => {
+            Some(Command::Init {
+                name,
+                db_url,
+                force,
+                no_test_db,
+                no_warmup,
+            }) => {
                 assert_eq!(name.as_deref(), Some("myapp"));
                 assert_eq!(db_url.as_deref(), Some("postgres://u:p@h/x"));
                 assert!(force);
