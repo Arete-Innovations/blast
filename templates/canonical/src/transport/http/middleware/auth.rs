@@ -7,7 +7,7 @@ use axum::{
 
 use crate::{
     cata_log,
-    flows::custom::sessions::resolve,
+    flows::sessions::resolve,
     meltdown::*,
     structs::auth::Role,
     Ctx,

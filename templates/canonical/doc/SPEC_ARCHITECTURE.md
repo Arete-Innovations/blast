@@ -70,7 +70,7 @@ The set of files in `flows/` is the answer to "what can this app do?". `Arsenal`
 
 ### `structs/`
 
-Inert data definitions: DB rows, DTOs, request/response, newtypes. Trait impls and trivial conversions only. Subdirs: `generated/` + `custom/`.
+Inert data definitions: DB rows, DTOs, request/response, newtypes. Trait impls and trivial conversions only. Subdirs: `generated/` (Blast-owned) + top-level area subdirs (user-owned: `auth/`, `sessions/`, `<your_resource>/`, etc.).
 
 **Schema-import exception:** structs may import `crate::database::schema` (the Diesel `table!` macro output) for `#[diesel(table_name = ...)]` derives on `Queryable` / `Insertable` row structs. The schema module is generated macro definitions, not a layer dependency. This is the *only* `crate::*` import permitted in `structs/`. The build.rs lint encodes this exception explicitly.
 
@@ -92,9 +92,9 @@ Atomic capabilities. Each routine is one named operation that may compose multip
 
 When a routine needs ≥2 model calls to be atomic, it wraps them in `ctx.transaction(|tx| async move { ... })` and hands `tx` to each model in place of `ctx.conn()`. Single-call routines need no wrapper — Postgres autocommits each statement.
 
-Generated/custom split: `generated/` (Blast emits CRUD leaves) + `custom/` (hand-written).
+Generated/user split: `generated/` (Blast emits CRUD leaves, regenerable) + top-level resource subdirs (user-owned, hand-written).
 
-Org convention: by resource (`routines/custom/users/...`) — one project-wide rule.
+Org convention: by resource (`routines/users/...`, `routines/auth/...`) — one project-wide rule. The canonical template ships `auth/` and `sessions/` pre-populated at scaffold time; once scaffolded, those files are yours to edit.
 
 ### `flows/`
 
@@ -107,7 +107,7 @@ The capability inventory. Each flow is:
 
 Flow body is formulaic by design. The value is registration + policy + auth, not orchestration complexity.
 
-Subdirs: `generated/` (Blast emits — typically `Crank::none()` around a single generated routine) + `custom/` (multi-routine business ops).
+Subdirs: `generated/` (Blast emits — typically `Crank::none()` around a single generated routine) + top-level resource subdirs (user-owned, multi-routine business ops).
 
 ### `transport/`
 
@@ -159,10 +159,10 @@ pub async fn send(addr: &str) -> Result<(), MeltDown> {
 pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> {
     ctx.require_anonymous()?;
     let user = Crank::none()
-        .run(|| routines::custom::users::create(ctx, &input))
+        .run(|| routines::users::create(ctx, &input))
         .await?;
     Crank::backoff(3, Duration::from_millis(500))
-        .run(|| routines::custom::email::welcome::send(&user.email))
+        .run(|| routines::email::welcome::send(&user.email))
         .await?;
     Ok(user.into_public())
 }
@@ -173,28 +173,30 @@ pub async fn signup(
     State(ctx): State<Ctx>,
     Json(input): Json<SignupInput>,
 ) -> Result<Json<UserPublic>, MeltDown> {
-    let user = flows::custom::signup::run(&ctx, input).await?;
+    let user = flows::signup::run(&ctx, input).await?;
     Ok(Json(user))
 }
 ```
 
 The flow declares two distinct retry policies: zero retries on user creation, three on email send. Routines stay pure capability units, reusable across other flows.
 
-## Generated vs Custom split
+## Generated vs User-owned split (two tiers, flat)
 
-Every layer with codegen has `layer/generated/` and `layer/custom/` subdirs. `mod.rs` re-exports both.
+Every layer with codegen has a `generated/` subdir alongside top-level resource subdirs.
 
-- Blast NEVER touches `custom/`.
-- Hand-editing `generated/` is a footgun — overwritten on regen.
-- User-written ops live in `custom/` at every layer.
+| Bucket | Owner | Behavior |
+|--------|-------|----------|
+| `<layer>/generated/` | Blast | rewritten wholesale on `blast gen`; never hand-edit |
+| `<layer>/<resource>/` (top-level subdirs) | User | Blast never reads, touches, deletes, or renames |
+
+The canonical template ships `flows/auth/`, `flows/sessions/`, `routines/auth/`, `routines/sessions/`, `models/auth/`, `structs/auth/`, `structs/sessions/`, `transport/http/auth.rs`, `transport/http/healthz.rs`, etc. Once scaffolded, these files are user-owned — modify freely, Blast never touches them again. Framework upgrades come via `git diff` against upstream `canonical/`, not via a `vendor-update` command.
 
 For default CRUD per resource, Blast emits:
-
 - one routine per verb in `routines/generated/<r>/{list,get,create,update,delete}.rs`
 - one flow per verb in `flows/generated/<r>/...` — each flow is `Crank::none()` around the matching routine, with the resource's declared auth check
 - one route per verb in `transport/http/generated/<r>/...`
 
-Custom multi-step business ops are user-written flows in `flows/custom/`.
+User-written multi-step business ops are flows in `flows/<resource>/`. Hand-editing `generated/` is a footgun — overwritten on next `blast gen`.
 
 ## State rule
 

@@ -8,7 +8,7 @@ use axum::{
 
 use crate::{
     cata_log,
-    flows::custom::auth,
+    flows::auth,
     meltdown::*,
     structs::{auth::{LoginBody, LoginResponse, RegisterBody, SessionContext}, UserPublic},
     transport::http::middleware::auth::session_auth_middleware,

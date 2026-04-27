@@ -8,6 +8,6 @@ use crate::{
 
 pub async fn run(ctx: &Ctx, session: &SessionContext) -> Result<UserPublic, MeltDown> {
     Crank::none()
-        .run(|| routines::custom::auth::me::run(ctx, session))
+        .run(|| routines::auth::me::run(ctx, session))
         .await
 }
