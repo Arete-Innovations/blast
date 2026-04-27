@@ -1,6 +1,3 @@
-//! Driver for `blast gen components` — emits per-resource Vue form SFCs
-//! into `frontend/src/components/generated/forms/<resource>/`.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -161,6 +158,7 @@ mod tests {
             singular_override: None,
             soft_delete: None,
             relations: BTreeMap::new(),
+            gen_level: crate::state::GenLevel::default(),
         }
     }
 

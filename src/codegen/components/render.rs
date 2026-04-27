@@ -1,17 +1,7 @@
-//! Vue SFC bodies for per-resource form components.
-//!
-//! Emits `CreateForm.vue` (bound to `*Insertable`) and `EditForm.vue`
-//! (bound to `*Patch`). Inputs are PrimeVue components picked by
-//! `input_map::primevue_component`.
-//!
-//! Convention: snake_case field names — Governor lints the generated
-//! file and would refuse camelCased keys.
-
 use crate::codegen::components::input_map;
 use crate::codegen::structs::naming::type_stem_for_resource;
 use crate::state::{FieldName, FieldState, FieldVariant, ResourceState, SqlType};
 
-/// Top-level: build both form files for a resource.
 pub fn forms_for_resource(resource: &ResourceState) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let insertable_fields = collect_fields(resource, FieldVariant::Insertable);
@@ -29,8 +19,6 @@ fn collect_fields<'a>(resource: &'a ResourceState, variant: FieldVariant) -> Vec
     resource.fields.iter().filter(|(_, f)| f.variants.contains(&variant) && !f.primary_key).collect()
 }
 
-/// Render the `<CreateForm>` SFC. Bound to `*Insertable`, fires
-/// `created` once the create round-trip succeeds.
 pub fn build_create_form(resource: &ResourceState, fields: &[(&FieldName, &FieldState)]) -> String {
     let table = resource.name.as_str();
     let stem = type_stem_for_resource(resource);
@@ -42,8 +30,7 @@ pub fn build_create_form(resource: &ResourceState, fields: &[(&FieldName, &Field
     let serialize_block = render_serialize_block(fields);
 
     format!(
-        "<!-- AUTO-GENERATED — do not edit -->\n\
-<script setup lang=\"ts\">\n\
+        "<script setup lang=\"ts\">\n\
 import {{ ref, reactive }} from 'vue'\n\
 import Button from 'primevue/button'\n\
 {imports_block}import {{ create{stem} }} from '@/generated/api/{table}'\n\
@@ -110,8 +97,6 @@ async function on_submit(): Promise<void> {{\n\
     )
 }
 
-/// Render the `<EditForm>` SFC. Pre-fills from a passed-in entity prop,
-/// emits `updated` once the patch round-trip succeeds.
 pub fn build_edit_form(resource: &ResourceState, fields: &[(&FieldName, &FieldState)]) -> String {
     let table = resource.name.as_str();
     let stem = type_stem_for_resource(resource);
@@ -124,8 +109,7 @@ pub fn build_edit_form(resource: &ResourceState, fields: &[(&FieldName, &FieldSt
     let serialize_block = render_serialize_block(fields);
 
     format!(
-        "<!-- AUTO-GENERATED — do not edit -->\n\
-<script setup lang=\"ts\">\n\
+        "<script setup lang=\"ts\">\n\
 import {{ ref, reactive, watch }} from 'vue'\n\
 import Button from 'primevue/button'\n\
 {imports_block}import {{ update{stem} }} from '@/generated/api/{table}'\n\
@@ -198,8 +182,6 @@ async function on_submit(): Promise<void> {{\n\
     )
 }
 
-/// Build the per-component PrimeVue import lines, deduplicated.
-/// Each component lives at `'primevue/<lowercase>'`.
 fn render_primevue_imports(fields: &[(&FieldName, &FieldState)]) -> String {
     let mut seen: Vec<String> = Vec::new();
     for (_, f) in fields {
@@ -218,7 +200,6 @@ fn render_primevue_imports(fields: &[(&FieldName, &FieldState)]) -> String {
     out
 }
 
-/// Reactive `form` block initialized to type-appropriate empty values.
 fn render_initial_create(fields: &[(&FieldName, &FieldState)]) -> String {
     let mut lines = String::new();
     lines.push_str("const form = reactive<{ [key: string]: unknown }>({\n");
@@ -230,7 +211,6 @@ fn render_initial_create(fields: &[(&FieldName, &FieldState)]) -> String {
     lines
 }
 
-/// Edit-mode initial: hydrate from `props.entity` plus a `reset_form` helper.
 fn render_initial_edit(fields: &[(&FieldName, &FieldState)]) -> String {
     let mut lines = String::new();
     lines.push_str("function snapshot_from(entity: { [key: string]: unknown }): { [key: string]: unknown } {\n");
@@ -256,7 +236,6 @@ fn render_initial_edit(fields: &[(&FieldName, &FieldState)]) -> String {
     lines
 }
 
-/// Per-field template markup wired through `v-model="form.<field>"`.
 fn render_template_fields(fields: &[(&FieldName, &FieldState)]) -> String {
     let mut out = String::new();
     for (name, field) in fields {
@@ -272,7 +251,6 @@ fn render_template_fields(fields: &[(&FieldName, &FieldState)]) -> String {
     out
 }
 
-/// Component-specific attributes (e.g. `Calendar showTime`, `Checkbox :binary="true"`).
 fn render_attrs(component: &str, sql: &SqlType) -> String {
     match component {
         "Checkbox" => " :binary=\"true\"".to_string(),
@@ -291,8 +269,6 @@ fn render_attrs(component: &str, sql: &SqlType) -> String {
     }
 }
 
-/// `payload` construction inside `on_submit`. Calendars serialize to ISO
-/// strings, JSON fields parse from raw text. All other fields pass through.
 fn render_serialize_block(fields: &[(&FieldName, &FieldState)]) -> String {
     let mut s = String::new();
     s.push_str("  const payload: { [key: string]: unknown } = {}\n");
@@ -309,8 +285,6 @@ fn render_serialize_block(fields: &[(&FieldName, &FieldState)]) -> String {
     s
 }
 
-/// Produce a TypeScript empty value for the given SQL type. Used to seed
-/// the `Create` form. Nullable fields start at `null` regardless.
 fn empty_value(sql: &SqlType, nullable: bool) -> &'static str {
     if nullable {
         return "null";
@@ -330,7 +304,6 @@ fn empty_value(sql: &SqlType, nullable: bool) -> &'static str {
     "''"
 }
 
-/// Underscored snake_case to a Title Case label: `email_address` → `Email address`.
 fn humanize(snake: &str) -> String {
     let words: Vec<String> = snake
         .split('_')
@@ -424,6 +397,7 @@ mod tests {
             singular_override: None,
             soft_delete: None,
             relations: BTreeMap::new(),
+            gen_level: crate::state::GenLevel::default(),
         }
     }
 

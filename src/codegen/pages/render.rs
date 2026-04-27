@@ -1,21 +1,6 @@
-//! Vue SFC bodies for per-resource CRUD pages.
-//!
-//! Output:
-//!   - `frontend/src/pages/generated/<r>/ListPage.vue`
-//!   - `frontend/src/pages/generated/<r>/DetailPage.vue`
-//!   - `frontend/src/pages/generated/<r>/CreatePage.vue`
-//!   - `frontend/src/pages/generated/<r>/EditPage.vue`
-//!
-//! `CreatePage` and `EditPage` wrap the `<CreateForm>` / `<EditForm>`
-//! components emitted by the `components` codegen pass.
-//!
-//! `ListPage` uses PrimeVue DataTable in lazy mode wired through
-//! the canonical list endpoint contract: `?page&page_size&sort=-col&filter[col]=val`.
-
 use crate::codegen::structs::naming::type_stem_for_resource;
 use crate::state::{FieldVariant, ResourceState, Verb};
 
-/// Build all CRUD page files for a resource. Returns `(filename, body)` pairs.
 pub fn pages_for_resource(r: &ResourceState) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     if r.verbs.contains_key(&Verb::List) {
@@ -33,9 +18,6 @@ pub fn pages_for_resource(r: &ResourceState) -> Vec<(String, String)> {
     out
 }
 
-/// Lazy-mode DataTable wired to the list endpoint contract.
-/// Sort header maps to `sort=-col`. Filter row maps to `filter[col]=val`.
-/// Page + page-size from `page` + `page_size`.
 pub fn build_list_page(r: &ResourceState) -> String {
     let table = r.name.as_str();
     let stem = type_stem_for_resource(r);
@@ -114,8 +96,7 @@ pub fn build_list_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<!-- AUTO-GENERATED — do not edit -->\n\
-<script setup lang=\"ts\">\n\
+        "<script setup lang=\"ts\">\n\
 import {{ ref }} from 'vue'\n\
 import DataTable from 'primevue/datatable'\n\
 import Column from 'primevue/column'\n\
@@ -260,7 +241,6 @@ async function load(event: LazyEvent): Promise<void> {{\n\
     )
 }
 
-/// Read-only field display, fetched via `get<Stem>` and routed off `:id`.
 pub fn build_detail_page(r: &ResourceState) -> String {
     let table = r.name.as_str();
     let stem = type_stem_for_resource(r);
@@ -296,8 +276,7 @@ pub fn build_detail_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<!-- AUTO-GENERATED — do not edit -->\n\
-<script setup lang=\"ts\">\n\
+        "<script setup lang=\"ts\">\n\
 import {{ onMounted, ref, watch }} from 'vue'\n\
 import Button from 'primevue/button'\n\
 import {{ get{stem} }} from '@/generated/api/{table}'\n\
@@ -392,7 +371,6 @@ watch(() => props.id, (next) => {{ void load(next) }})\n\
     )
 }
 
-/// `CreatePage.vue` wraps `<CreateForm>` and navigates back on success.
 pub fn build_create_page(r: &ResourceState) -> String {
     let table = r.name.as_str();
     let label = pascal_label(table);
@@ -405,8 +383,7 @@ pub fn build_create_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<!-- AUTO-GENERATED — do not edit -->\n\
-<script setup lang=\"ts\">\n\
+        "<script setup lang=\"ts\">\n\
 import {{ useRouter }} from 'vue-router'\n\
 import CreateForm from '@/components/generated/forms/{table}/CreateForm.vue'\n\
 \n\
@@ -450,7 +427,6 @@ function on_cancel(): void {{\n\
     )
 }
 
-/// `EditPage.vue` fetches the entity, then wraps `<EditForm>`.
 pub fn build_edit_page(r: &ResourceState) -> String {
     let table = r.name.as_str();
     let stem = type_stem_for_resource(r);
@@ -464,8 +440,7 @@ pub fn build_edit_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<!-- AUTO-GENERATED — do not edit -->\n\
-<script setup lang=\"ts\">\n\
+        "<script setup lang=\"ts\">\n\
 import {{ onMounted, ref, watch }} from 'vue'\n\
 import {{ useRouter }} from 'vue-router'\n\
 import EditForm from '@/components/generated/forms/{table}/EditForm.vue'\n\
@@ -540,8 +515,6 @@ watch(() => props.id, load)\n\
     )
 }
 
-/// Plural form of the type stem to match `frontend_api::list<Plural>`.
-/// E.g. `User`/`users` -> `Users`; `UserAccount`/`user_accounts` -> `UserAccounts`.
 fn list_fn_plural(singular: &str, table: &str) -> String {
     let mut out = String::with_capacity(table.len());
     let mut upper_next = true;
@@ -600,7 +573,6 @@ fn pascal_label(table: &str) -> String {
         .join(" ")
 }
 
-/// Underscored snake_case to a Title Case label.
 fn humanize(snake: &str) -> String {
     snake
         .split('_')
@@ -693,6 +665,7 @@ mod tests {
             singular_override: None,
             soft_delete: None,
             relations: BTreeMap::new(),
+            gen_level: crate::state::GenLevel::Pages,
         }
     }
 

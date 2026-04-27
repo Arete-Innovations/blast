@@ -32,7 +32,6 @@ impl GenLevel {
         }
     }
 
-    /// One-line description of what each level emits.
     pub fn description(self) -> &'static str {
         match self {
             GenLevel::Struct => "Struct: structs/generated/<r>.rs only (data shape)",

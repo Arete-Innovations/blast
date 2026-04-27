@@ -1,29 +1,5 @@
-//! Field-type → PrimeVue input-component mapping.
-//!
-//! Mirrors the `frontend_types::ts_base_type` catalogue but emits a
-//! component name (e.g. `"InputText"`) rather than a TypeScript type.
-//!
-//! Per `SPEC_CODEGEN.md`:
-//!
-//! | SQL family             | Input component         |
-//! |------------------------|-------------------------|
-//! | text/varchar/char/uuid | InputText               |
-//! | bool                   | Checkbox                |
-//! | int*/float*/numeric    | InputNumber             |
-//! | timestamp/timestamptz  | Calendar (with showTime)|
-//! | date                   | Calendar                |
-//! | time                   | Calendar (timeOnly)     |
-//! | json/jsonb             | Textarea                |
-//! | unknown                | InputText (fallback)    |
-//!
-//! `enum` and FK reference inputs (`Dropdown`, `AutoComplete`) are
-//! resource-state driven, not SQL-type driven — handled by a separate
-//! resolver in `render.rs` once the schema carries that information. For
-//! now plain SQL types route through this catalogue.
-
 use crate::state::SqlType;
 
-/// PrimeVue component name for a given SQL type.
 pub fn primevue_component(sql: &SqlType) -> &'static str {
     let lowered = sql.as_str().to_ascii_lowercase();
     match lowered.as_str() {
@@ -35,25 +11,18 @@ pub fn primevue_component(sql: &SqlType) -> &'static str {
     }
 }
 
-/// Whether the input element is bound through `v-model` directly, or via
-/// a typed wrapper (e.g. `Calendar` produces a `Date` object that we
-/// serialize on submit). Used by the renderer to pick the correct
-/// binding pattern.
 pub fn is_calendar(sql: &SqlType) -> bool {
     matches!(sql.as_str().to_ascii_lowercase().as_str(), "timestamp" | "timestamptz" | "date" | "time")
 }
 
-/// True when the field needs `showTime` on the Calendar.
 pub fn calendar_show_time(sql: &SqlType) -> bool {
     matches!(sql.as_str().to_ascii_lowercase().as_str(), "timestamp" | "timestamptz" | "time")
 }
 
-/// True when the field needs `timeOnly` on the Calendar.
 pub fn calendar_time_only(sql: &SqlType) -> bool {
     sql.as_str().eq_ignore_ascii_case("time")
 }
 
-/// True when the underlying TS value is a number (drives `:useGrouping="false"` etc.).
 pub fn is_number(sql: &SqlType) -> bool {
     matches!(
         sql.as_str().to_ascii_lowercase().as_str(),
@@ -61,12 +30,10 @@ pub fn is_number(sql: &SqlType) -> bool {
     )
 }
 
-/// True when the field is a boolean (drives Checkbox `:binary="true"`).
 pub fn is_bool(sql: &SqlType) -> bool {
     matches!(sql.as_str().to_ascii_lowercase().as_str(), "bool" | "boolean")
 }
 
-/// True when the field is JSON-shaped (drives a `<Textarea>` rendered as raw JSON).
 pub fn is_json(sql: &SqlType) -> bool {
     matches!(sql.as_str().to_ascii_lowercase().as_str(), "json" | "jsonb")
 }

@@ -1,11 +1,3 @@
-//! Driver for `blast gen pages` — emits per-resource Vue page SFCs into
-//! `frontend/src/pages/generated/<resource>/`.
-//!
-//! The page-shell layout convention: `ListPage.vue`, `DetailPage.vue`,
-//! `CreatePage.vue`, `EditPage.vue`. Pages depend on the form components
-//! emitted by the `components` codegen pass — callers are expected to
-//! run components emission before pages.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -186,6 +178,7 @@ mod tests {
             singular_override: None,
             soft_delete: None,
             relations: BTreeMap::new(),
+            gen_level: crate::state::GenLevel::Pages,
         }
     }
 
