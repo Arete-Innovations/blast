@@ -6,6 +6,7 @@
 //! Convention: snake_case field names, per Governor rule.
 
 use crate::codegen::components::input_map::{enum_meta, enum_options_const_name, enum_type_alias};
+use crate::codegen::enums::ParsedEnum;
 use crate::codegen::structs::naming::{filter_struct_name_for_resource, type_stem_for_resource};
 use crate::state::{FieldState, FieldVariant, FilterKind, ResourceState, SqlType, Verb};
 
@@ -32,15 +33,15 @@ pub fn ts_base_type(sql: &SqlType) -> &'static str {
     }
 }
 
-fn ts_field_type(sql: &SqlType) -> String {
-    match enum_meta(sql) {
+fn ts_field_type(sql: &SqlType, enums: &[ParsedEnum]) -> String {
+    match enum_meta(sql, enums) {
         Some((name, _variants)) => enum_type_alias(&name),
         None => ts_base_type(sql).to_string(), // allow: fall through to scalar SQL mapping
     }
 }
 
-fn ts_type(field: &FieldState) -> String {
-    let base = ts_field_type(&field.sql_type);
+fn ts_type(field: &FieldState, enums: &[ParsedEnum]) -> String {
+    let base = ts_field_type(&field.sql_type, enums);
     if field.nullable {
         format!("{base} | null")
     } else {
@@ -48,13 +49,13 @@ fn ts_type(field: &FieldState) -> String {
     }
 }
 
-fn ts_type_always_optional(field: &FieldState) -> String {
-    let base = ts_field_type(&field.sql_type);
+fn ts_type_always_optional(field: &FieldState, enums: &[ParsedEnum]) -> String {
+    let base = ts_field_type(&field.sql_type, enums);
     format!("{base} | null")
 }
 
-fn filter_ts_type(sql: &SqlType, kind: FilterKind) -> String {
-    let base = ts_field_type(sql);
+fn filter_ts_type(sql: &SqlType, kind: FilterKind, enums: &[ParsedEnum]) -> String {
+    let base = ts_field_type(sql, enums);
     match kind {
         FilterKind::Eq => format!("{base} | null"),
         FilterKind::Range => format!("{{ from: {base} | null; to: {base} | null }} | null"),
@@ -67,10 +68,10 @@ fn filter_ts_type(sql: &SqlType, kind: FilterKind) -> String {
 /// Collect every distinct enum referenced by this resource's fields, in
 /// the order they appear. Used by the runner to emit per-enum files and
 /// by the renderer to emit `import type` lines for the resource module.
-pub fn collect_resource_enums(resource: &ResourceState) -> Vec<(String, Vec<String>)> {
+pub fn collect_resource_enums(resource: &ResourceState, enums: &[ParsedEnum]) -> Vec<(String, Vec<String>)> {
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
     for (_, field) in resource.fields.iter() {
-        match enum_meta(&field.sql_type) {
+        match enum_meta(&field.sql_type, enums) {
             Some((name, variants)) => {
                 if !out.iter().any(|(n, _)| n == &name) {
                     out.push((name, variants));
@@ -114,14 +115,14 @@ fn escape_single_quotes(s: &str) -> String {
 }
 
 /// Build the full TS file body for one resource.
-pub fn build_resource_types(resource: &ResourceState) -> String {
+pub fn build_resource_types(resource: &ResourceState, enums: &[ParsedEnum]) -> String {
     let stem = type_stem_for_resource(resource);
 
     let mut out = String::new();
 
-    let enums = collect_resource_enums(resource);
-    if !enums.is_empty() {
-        for (name, _) in &enums {
+    let referenced = collect_resource_enums(resource, enums);
+    if !referenced.is_empty() {
+        for (name, _) in &referenced {
             let alias = enum_type_alias(name);
             out.push_str(&format!("import type {{ {alias} }} from './{name}'\n"));
         }
@@ -137,7 +138,7 @@ pub fn build_resource_types(resource: &ResourceState) -> String {
     if !db_fields.is_empty() {
         out.push_str(&format!("export interface {stem} {{\n"));
         for (name, field) in &db_fields {
-            let ty = ts_type(field);
+            let ty = ts_type(field, enums);
             out.push_str(&format!("  {}: {ty}\n", name.as_str()));
         }
         out.push_str("}\n\n");
@@ -152,7 +153,7 @@ pub fn build_resource_types(resource: &ResourceState) -> String {
     if !insertable_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Insertable {{\n"));
         for (name, field) in &insertable_fields {
-            let ty = ts_type(field);
+            let ty = ts_type(field, enums);
             out.push_str(&format!("  {}: {ty}\n", name.as_str()));
         }
         out.push_str("}\n\n");
@@ -167,7 +168,7 @@ pub fn build_resource_types(resource: &ResourceState) -> String {
     if !patch_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Patch {{\n"));
         for (name, field) in &patch_fields {
-            let ty = ts_type_always_optional(field);
+            let ty = ts_type_always_optional(field, enums);
             out.push_str(&format!("  {}?: {ty}\n", name.as_str()));
         }
         out.push_str("}\n\n");
@@ -182,7 +183,7 @@ pub fn build_resource_types(resource: &ResourceState) -> String {
     if !public_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Public {{\n"));
         for (name, field) in &public_fields {
-            let ty = ts_type(field);
+            let ty = ts_type(field, enums);
             out.push_str(&format!("  {}: {ty}\n", name.as_str()));
         }
         out.push_str("}\n\n");
@@ -197,19 +198,19 @@ pub fn build_resource_types(resource: &ResourceState) -> String {
     if !admin_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Admin {{\n"));
         for (name, field) in &admin_fields {
-            let ty = ts_type(field);
+            let ty = ts_type(field, enums);
             out.push_str(&format!("  {}: {ty}\n", name.as_str()));
         }
         out.push_str("}\n\n");
     }
 
-    emit_filter_interface(resource, &mut out);
+    emit_filter_interface(resource, enums, &mut out);
 
     let trimmed = out.trim_end_matches('\n');
     format!("{trimmed}\n")
 }
 
-fn emit_filter_interface(resource: &ResourceState, out: &mut String) {
+fn emit_filter_interface(resource: &ResourceState, enums: &[ParsedEnum], out: &mut String) {
     let list_verb = match resource.verbs.get(&Verb::List) {
         Some(v) => v,
         None => return,
@@ -229,7 +230,7 @@ fn emit_filter_interface(resource: &ResourceState, out: &mut String) {
             Some(k) => *k,
             None => continue, // allow: field not in filterable_cols; skip it
         };
-        let ty = filter_ts_type(&field.sql_type, kind);
+        let ty = filter_ts_type(&field.sql_type, kind, enums);
         out.push_str(&format!("  {}?: {ty}\n", name.as_str()));
     }
     out.push_str("}\n\n");
@@ -349,7 +350,8 @@ mod tests {
     #[test]
     fn emits_public_interface() {
         let r = synth_resource();
-        let body = build_resource_types(&r);
+        let enums: Vec<ParsedEnum> = Vec::new();
+        let body = build_resource_types(&r, &enums);
         assert!(body.contains("export interface UserPublic {"), "UserPublic missing");
         assert!(body.contains("  id: number"), "id field missing");
         assert!(body.contains("  email: string"), "email field missing");
@@ -358,7 +360,8 @@ mod tests {
     #[test]
     fn emits_insertable_interface() {
         let r = synth_resource();
-        let body = build_resource_types(&r);
+        let enums: Vec<ParsedEnum> = Vec::new();
+        let body = build_resource_types(&r, &enums);
         assert!(body.contains("export interface UserInsertable {"), "UserInsertable missing");
         assert!(
             !body.contains("  id: number\nexport interface UserInsertable"),
@@ -369,7 +372,8 @@ mod tests {
     #[test]
     fn emits_patch_with_optional_fields() {
         let r = synth_resource();
-        let body = build_resource_types(&r);
+        let enums: Vec<ParsedEnum> = Vec::new();
+        let body = build_resource_types(&r, &enums);
         assert!(body.contains("export interface UserPatch {"), "UserPatch missing");
         assert!(body.contains("  email?: string | null"), "email in patch must be optional");
     }
@@ -377,7 +381,8 @@ mod tests {
     #[test]
     fn emits_filter_interface_when_list_verb_present() {
         let r = synth_resource();
-        let body = build_resource_types(&r);
+        let enums: Vec<ParsedEnum> = Vec::new();
+        let body = build_resource_types(&r, &enums);
         assert!(body.contains("export interface UserFilter {"), "UserFilter missing");
         assert!(body.contains("  email?: string | null"), "filter email must be optional string");
     }
@@ -427,6 +432,57 @@ mod tests {
     #[test]
     fn collect_resource_enums_returns_empty_for_plain_resources() {
         let r = synth_resource();
-        assert!(collect_resource_enums(&r).is_empty());
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert!(collect_resource_enums(&r, &enums).is_empty());
+    }
+
+    #[test]
+    fn build_resource_types_emits_enum_alias_when_field_matches() {
+        use std::path::PathBuf;
+        let mut r = synth_resource();
+        let all_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
+        r.fields.insert(
+            FieldName::new("role"),
+            FieldState {
+                sql_type: SqlType::new("UserRole"),
+                variants: all_v,
+                nullable: false,
+                primary_key: false,
+                validators: BTreeSet::new(),
+            },
+        );
+        let enums = vec![ParsedEnum {
+            name: "user_role".to_string(),
+            variants: vec!["admin".to_string(), "member".to_string()],
+            source_file: PathBuf::from("/tmp/dummy.sql"),
+        }];
+        let body = build_resource_types(&r, &enums);
+        assert!(body.contains("import type { UserRole } from './user_role'"), "enum import missing: {body}");
+        assert!(body.contains("  role: UserRole"), "role field with enum alias missing");
+    }
+
+    #[test]
+    fn collect_resource_enums_finds_match() {
+        use std::path::PathBuf;
+        let mut r = synth_resource();
+        let all_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
+        r.fields.insert(
+            FieldName::new("status"),
+            FieldState {
+                sql_type: SqlType::new("TaskStatus"),
+                variants: all_v,
+                nullable: false,
+                primary_key: false,
+                validators: BTreeSet::new(),
+            },
+        );
+        let enums = vec![ParsedEnum {
+            name: "task_status".to_string(),
+            variants: vec!["pending".to_string(), "active".to_string()],
+            source_file: PathBuf::from("/tmp/dummy.sql"),
+        }];
+        let collected = collect_resource_enums(&r, &enums);
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].0, "task_status");
     }
 }

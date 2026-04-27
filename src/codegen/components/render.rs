@@ -1,16 +1,17 @@
 use crate::codegen::components::input_map::{self, enum_meta, enum_options_const_name, enum_type_alias};
+use crate::codegen::enums::ParsedEnum;
 use crate::codegen::structs::naming::type_stem_for_resource;
 use crate::state::{FieldName, FieldState, FieldVariant, ResourceState, SqlType};
 
-pub fn forms_for_resource(resource: &ResourceState) -> Vec<(String, String)> {
+pub fn forms_for_resource(resource: &ResourceState, enums: &[ParsedEnum]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let insertable_fields = collect_fields(resource, FieldVariant::Insertable);
     if !insertable_fields.is_empty() {
-        out.push(("CreateForm.vue".to_string(), build_create_form(resource, &insertable_fields)));
+        out.push(("CreateForm.vue".to_string(), build_create_form(resource, &insertable_fields, enums)));
     }
     let patch_fields = collect_fields(resource, FieldVariant::Patch);
     if !patch_fields.is_empty() {
-        out.push(("EditForm.vue".to_string(), build_edit_form(resource, &patch_fields)));
+        out.push(("EditForm.vue".to_string(), build_edit_form(resource, &patch_fields, enums)));
     }
     out
 }
@@ -19,15 +20,15 @@ fn collect_fields<'a>(resource: &'a ResourceState, variant: FieldVariant) -> Vec
     resource.fields.iter().filter(|(_, f)| f.variants.contains(&variant) && !f.primary_key).collect()
 }
 
-pub fn build_create_form(resource: &ResourceState, fields: &[(&FieldName, &FieldState)]) -> String {
+pub fn build_create_form(resource: &ResourceState, fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
     let table = resource.name.as_str();
     let stem = type_stem_for_resource(resource);
     let dto = format!("{stem}Insertable");
 
-    let imports_block = render_primevue_imports(fields);
-    let enum_imports_block = render_enum_imports(fields);
-    let initial_block = render_initial_create(fields);
-    let template_fields = render_template_fields(fields);
+    let imports_block = render_primevue_imports(fields, enums);
+    let enum_imports_block = render_enum_imports(fields, enums);
+    let initial_block = render_initial_create(fields, enums);
+    let template_fields = render_template_fields(fields, enums);
     let serialize_block = render_serialize_block(fields);
 
     format!(
@@ -99,16 +100,16 @@ async function on_submit(): Promise<void> {{\n\
     )
 }
 
-pub fn build_edit_form(resource: &ResourceState, fields: &[(&FieldName, &FieldState)]) -> String {
+pub fn build_edit_form(resource: &ResourceState, fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
     let table = resource.name.as_str();
     let stem = type_stem_for_resource(resource);
     let public = format!("{stem}Public");
     let patch = format!("{stem}Patch");
 
-    let imports_block = render_primevue_imports(fields);
-    let enum_imports_block = render_enum_imports(fields);
-    let initial_block = render_initial_edit(fields);
-    let template_fields = render_template_fields(fields);
+    let imports_block = render_primevue_imports(fields, enums);
+    let enum_imports_block = render_enum_imports(fields, enums);
+    let initial_block = render_initial_edit(fields, enums);
+    let template_fields = render_template_fields(fields, enums);
     let serialize_block = render_serialize_block(fields);
 
     format!(
@@ -186,10 +187,10 @@ async function on_submit(): Promise<void> {{\n\
     )
 }
 
-fn render_primevue_imports(fields: &[(&FieldName, &FieldState)]) -> String {
+fn render_primevue_imports(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
     let mut seen: Vec<String> = Vec::new();
     for (_, f) in fields {
-        let comp = input_map::primevue_component(&f.sql_type);
+        let comp = input_map::primevue_component(&f.sql_type, enums);
         let owned = comp.to_string();
         if !seen.contains(&owned) {
             seen.push(owned);
@@ -204,10 +205,10 @@ fn render_primevue_imports(fields: &[(&FieldName, &FieldState)]) -> String {
     out
 }
 
-fn render_enum_imports(fields: &[(&FieldName, &FieldState)]) -> String {
+fn render_enum_imports(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
     let mut seen: Vec<(String, Vec<String>)> = Vec::new();
     for (_, f) in fields {
-        match enum_meta(&f.sql_type) {
+        match enum_meta(&f.sql_type, enums) {
             Some((name, variants)) => {
                 if !seen.iter().any(|(n, _)| n == &name) {
                     seen.push((name, variants));
@@ -226,18 +227,18 @@ fn render_enum_imports(fields: &[(&FieldName, &FieldState)]) -> String {
     out
 }
 
-fn render_initial_create(fields: &[(&FieldName, &FieldState)]) -> String {
+fn render_initial_create(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
     let mut lines = String::new();
     lines.push_str("const form = reactive<{ [key: string]: unknown }>({\n");
     for (name, field) in fields {
-        let init = empty_value(&field.sql_type, field.nullable);
+        let init = empty_value(&field.sql_type, field.nullable, enums);
         lines.push_str(&format!("  {}: {},\n", name.as_str(), init));
     }
     lines.push_str("})\n");
     lines
 }
 
-fn render_initial_edit(fields: &[(&FieldName, &FieldState)]) -> String {
+fn render_initial_edit(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
     let mut lines = String::new();
     lines.push_str("function snapshot_from(entity: { [key: string]: unknown }): { [key: string]: unknown } {\n");
     lines.push_str("  return {\n");
@@ -246,7 +247,7 @@ fn render_initial_edit(fields: &[(&FieldName, &FieldState)]) -> String {
         if input_map::is_calendar(&field.sql_type) {
             lines.push_str(&format!("    {key}: typeof entity['{key}'] === 'string' ? new Date(entity['{key}'] as string) : null,\n"));
         } else {
-            let fallback = empty_value(&field.sql_type, field.nullable);
+            let fallback = empty_value(&field.sql_type, field.nullable, enums);
             lines.push_str(&format!("    {key}: entity['{key}'] === undefined ? {fallback} : entity['{key}'],\n"));
         }
     }
@@ -262,13 +263,13 @@ fn render_initial_edit(fields: &[(&FieldName, &FieldState)]) -> String {
     lines
 }
 
-fn render_template_fields(fields: &[(&FieldName, &FieldState)]) -> String {
+fn render_template_fields(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
     let mut out = String::new();
     for (name, field) in fields {
         let key = name.as_str();
         let label = humanize(key);
-        let comp = input_map::primevue_component(&field.sql_type);
-        let attrs = render_attrs(comp, &field.sql_type);
+        let comp = input_map::primevue_component(&field.sql_type, enums);
+        let attrs = render_attrs(comp, &field.sql_type, enums);
         let id = format!("form-{key}");
         out.push_str(&format!(
             "    <div class=\"form-field\">\n      <label for=\"{id}\" class=\"form-field-label\">{label}</label>\n      <{comp} id=\"{id}\" v-model=\"form.{key}\"{attrs} />\n    </div>\n"
@@ -277,7 +278,7 @@ fn render_template_fields(fields: &[(&FieldName, &FieldState)]) -> String {
     out
 }
 
-fn render_attrs(component: &str, sql: &SqlType) -> String {
+fn render_attrs(component: &str, sql: &SqlType, enums: &[ParsedEnum]) -> String {
     match component {
         "Checkbox" => " :binary=\"true\"".to_string(),
         "Calendar" => {
@@ -291,7 +292,7 @@ fn render_attrs(component: &str, sql: &SqlType) -> String {
             s
         }
         "Textarea" => " rows=\"4\"".to_string(),
-        "Dropdown" => match enum_meta(sql) {
+        "Dropdown" => match enum_meta(sql, enums) {
             Some((name, _variants)) => format!(" :options=\"{}\"", enum_options_const_name(&name)),
             None => String::new(), // allow: dropdown without enum metadata renders no options attr
         },
@@ -315,8 +316,8 @@ fn render_serialize_block(fields: &[(&FieldName, &FieldState)]) -> String {
     s
 }
 
-fn empty_value(sql: &SqlType, nullable: bool) -> String {
-    match enum_meta(sql) {
+fn empty_value(sql: &SqlType, nullable: bool, enums: &[ParsedEnum]) -> String {
+    match enum_meta(sql, enums) {
         Some((name, _variants)) => {
             if nullable {
                 return "null".to_string();
@@ -443,7 +444,8 @@ mod tests {
     #[test]
     fn create_form_imports_required_primevue_components() {
         let r = synth_resource();
-        let pairs = forms_for_resource(&r);
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        let pairs = forms_for_resource(&r, &enums);
         let create = pairs.iter().find(|(name, _)| name == "CreateForm.vue").map(|(_, body)| body.clone()).expect("CreateForm.vue produced");
         assert!(create.contains("from 'primevue/checkbox'"), "Checkbox import missing");
         assert!(create.contains("from 'primevue/inputtext'"), "InputText import missing");
@@ -453,7 +455,8 @@ mod tests {
     #[test]
     fn create_form_does_not_include_primary_key_field() {
         let r = synth_resource();
-        let pairs = forms_for_resource(&r);
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        let pairs = forms_for_resource(&r, &enums);
         let create = pairs.iter().find(|(name, _)| name == "CreateForm.vue").map(|(_, body)| body.clone()).expect("CreateForm.vue produced");
         assert!(!create.contains("v-model=\"form.id\""));
     }
@@ -461,7 +464,8 @@ mod tests {
     #[test]
     fn edit_form_imports_patch_and_public_types() {
         let r = synth_resource();
-        let pairs = forms_for_resource(&r);
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        let pairs = forms_for_resource(&r, &enums);
         let edit = pairs.iter().find(|(name, _)| name == "EditForm.vue").map(|(_, body)| body.clone()).expect("EditForm.vue produced");
         assert!(edit.contains("UserPatch"), "UserPatch type missing");
         assert!(edit.contains("UserPublic"), "UserPublic type missing");
@@ -471,7 +475,8 @@ mod tests {
     #[test]
     fn create_form_calls_create_api() {
         let r = synth_resource();
-        let pairs = forms_for_resource(&r);
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        let pairs = forms_for_resource(&r, &enums);
         let create = pairs.iter().find(|(name, _)| name == "CreateForm.vue").map(|(_, body)| body.clone()).expect("CreateForm.vue produced");
         assert!(create.contains("createUser"), "createUser API call missing");
         assert!(create.contains("UserInsertable"), "UserInsertable type missing");
@@ -487,16 +492,47 @@ mod tests {
     #[test]
     fn render_enum_imports_is_empty_when_no_enum_fields() {
         let r = synth_resource();
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
         let fields = collect_fields(&r, FieldVariant::Insertable);
-        let block = render_enum_imports(&fields);
+        let block = render_enum_imports(&fields, &enums);
         assert!(block.is_empty(), "no enum fields means no enum imports, got {block}");
     }
 
     #[test]
     fn empty_value_for_plain_text_is_empty_string() {
-        assert_eq!(empty_value(&SqlType::new("Varchar"), false), "''");
-        assert_eq!(empty_value(&SqlType::new("Bool"), false), "false");
-        assert_eq!(empty_value(&SqlType::new("Int8"), false), "0");
-        assert_eq!(empty_value(&SqlType::new("Int4"), true), "null");
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        assert_eq!(empty_value(&SqlType::new("Varchar"), false, &enums), "''");
+        assert_eq!(empty_value(&SqlType::new("Bool"), false, &enums), "false");
+        assert_eq!(empty_value(&SqlType::new("Int8"), false, &enums), "0");
+        assert_eq!(empty_value(&SqlType::new("Int4"), true, &enums), "null");
+    }
+
+    #[test]
+    fn create_form_uses_dropdown_for_enum_field() {
+        use std::path::PathBuf;
+        let mut r = synth_resource();
+        let all_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
+        r.fields.insert(
+            FieldName::new("role"),
+            FieldState {
+                sql_type: SqlType::new("UserRole"),
+                variants: all_v,
+                nullable: false,
+                primary_key: false,
+                validators: BTreeSet::new(),
+            },
+        );
+        let enums = vec![crate::codegen::enums::ParsedEnum {
+            name: "user_role".to_string(),
+            variants: vec!["admin".to_string(), "member".to_string()],
+            source_file: PathBuf::from("/tmp/dummy.sql"),
+        }];
+        let pairs = forms_for_resource(&r, &enums);
+        let create = pairs.iter().find(|(name, _)| name == "CreateForm.vue").map(|(_, body)| body.clone()).expect("CreateForm.vue produced");
+        assert!(create.contains("from 'primevue/dropdown'"), "Dropdown import missing: {create}");
+        assert!(create.contains("USER_ROLE_VALUES"), "options const reference missing");
+        assert!(create.contains("import { USER_ROLE_VALUES } from '@/generated/types/user_role'"), "enum values import missing");
+        assert!(create.contains("import type { UserRole } from '@/generated/types/user_role'"), "enum type import missing");
+        assert!(create.contains(":options=\"USER_ROLE_VALUES\""), "Dropdown options binding missing");
     }
 }

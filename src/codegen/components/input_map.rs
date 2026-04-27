@@ -1,7 +1,8 @@
+use crate::codegen::enums::{pascalize, ParsedEnum};
 use crate::state::SqlType;
 
-pub fn primevue_component(sql: &SqlType) -> &'static str {
-    if enum_meta(sql).is_some() {
+pub fn primevue_component(sql: &SqlType, enums: &[ParsedEnum]) -> &'static str {
+    if enum_meta(sql, enums).is_some() {
         return "Dropdown";
     }
     let lowered = sql.as_str().to_ascii_lowercase();
@@ -14,7 +15,13 @@ pub fn primevue_component(sql: &SqlType) -> &'static str {
     }
 }
 
-pub fn enum_meta(_sql: &SqlType) -> Option<(String, Vec<String>)> {
+pub fn enum_meta(sql: &SqlType, enums: &[ParsedEnum]) -> Option<(String, Vec<String>)> {
+    let target = sql.as_str();
+    for e in enums {
+        if pascalize(&e.name) == target || e.name == target {
+            return Some((e.name.clone(), e.variants.clone()));
+        }
+    }
     None
 }
 
@@ -88,36 +95,49 @@ pub fn is_json(sql: &SqlType) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn enums_fixture() -> Vec<ParsedEnum> {
+        vec![ParsedEnum {
+            name: "user_role".to_string(),
+            variants: vec!["admin".to_string(), "member".to_string()],
+            source_file: PathBuf::from("/tmp/dummy.sql"),
+        }]
+    }
 
     #[test]
     fn maps_text_to_input_text() {
-        assert_eq!(primevue_component(&SqlType::new("Varchar")), "InputText");
-        assert_eq!(primevue_component(&SqlType::new("text")), "InputText");
-        assert_eq!(primevue_component(&SqlType::new("Uuid")), "InputText");
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert_eq!(primevue_component(&SqlType::new("Varchar"), &enums), "InputText");
+        assert_eq!(primevue_component(&SqlType::new("text"), &enums), "InputText");
+        assert_eq!(primevue_component(&SqlType::new("Uuid"), &enums), "InputText");
     }
 
     #[test]
     fn maps_bool_to_checkbox() {
-        assert_eq!(primevue_component(&SqlType::new("Bool")), "Checkbox");
-        assert_eq!(primevue_component(&SqlType::new("BOOLEAN")), "Checkbox");
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert_eq!(primevue_component(&SqlType::new("Bool"), &enums), "Checkbox");
+        assert_eq!(primevue_component(&SqlType::new("BOOLEAN"), &enums), "Checkbox");
         assert!(is_bool(&SqlType::new("Bool")));
     }
 
     #[test]
     fn maps_numeric_to_input_number() {
-        assert_eq!(primevue_component(&SqlType::new("Int4")), "InputNumber");
-        assert_eq!(primevue_component(&SqlType::new("Int8")), "InputNumber");
-        assert_eq!(primevue_component(&SqlType::new("Float4")), "InputNumber");
-        assert_eq!(primevue_component(&SqlType::new("Numeric")), "InputNumber");
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert_eq!(primevue_component(&SqlType::new("Int4"), &enums), "InputNumber");
+        assert_eq!(primevue_component(&SqlType::new("Int8"), &enums), "InputNumber");
+        assert_eq!(primevue_component(&SqlType::new("Float4"), &enums), "InputNumber");
+        assert_eq!(primevue_component(&SqlType::new("Numeric"), &enums), "InputNumber");
         assert!(is_number(&SqlType::new("Int8")));
     }
 
     #[test]
     fn maps_temporal_to_calendar() {
-        assert_eq!(primevue_component(&SqlType::new("Timestamp")), "Calendar");
-        assert_eq!(primevue_component(&SqlType::new("Timestamptz")), "Calendar");
-        assert_eq!(primevue_component(&SqlType::new("Date")), "Calendar");
-        assert_eq!(primevue_component(&SqlType::new("Time")), "Calendar");
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert_eq!(primevue_component(&SqlType::new("Timestamp"), &enums), "Calendar");
+        assert_eq!(primevue_component(&SqlType::new("Timestamptz"), &enums), "Calendar");
+        assert_eq!(primevue_component(&SqlType::new("Date"), &enums), "Calendar");
+        assert_eq!(primevue_component(&SqlType::new("Time"), &enums), "Calendar");
         assert!(is_calendar(&SqlType::new("Timestamptz")));
         assert!(calendar_show_time(&SqlType::new("Timestamptz")));
         assert!(!calendar_show_time(&SqlType::new("Date")));
@@ -126,13 +146,15 @@ mod tests {
 
     #[test]
     fn maps_json_to_textarea() {
-        assert_eq!(primevue_component(&SqlType::new("Jsonb")), "Textarea");
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert_eq!(primevue_component(&SqlType::new("Jsonb"), &enums), "Textarea");
         assert!(is_json(&SqlType::new("Json")));
     }
 
     #[test]
     fn unknown_falls_back_to_input_text() {
-        assert_eq!(primevue_component(&SqlType::new("custom_domain")), "InputText");
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert_eq!(primevue_component(&SqlType::new("custom_domain"), &enums), "InputText");
     }
 
     #[test]
@@ -157,8 +179,38 @@ mod tests {
 
     #[test]
     fn enum_meta_returns_none_for_plain_sql_types() {
-        assert!(enum_meta(&SqlType::new("Varchar")).is_none());
-        assert!(enum_meta(&SqlType::new("Int8")).is_none());
-        assert!(enum_meta(&SqlType::new("Bool")).is_none());
+        let enums: Vec<ParsedEnum> = Vec::new();
+        assert!(enum_meta(&SqlType::new("Varchar"), &enums).is_none());
+        assert!(enum_meta(&SqlType::new("Int8"), &enums).is_none());
+        assert!(enum_meta(&SqlType::new("Bool"), &enums).is_none());
+    }
+
+    #[test]
+    fn enum_meta_matches_pascalized_diesel_form() {
+        let enums = enums_fixture();
+        let hit = enum_meta(&SqlType::new("UserRole"), &enums).expect("match by pascalized name");
+        assert_eq!(hit.0, "user_role");
+        assert_eq!(hit.1, vec!["admin".to_string(), "member".to_string()]);
+    }
+
+    #[test]
+    fn enum_meta_matches_raw_snake_case_form() {
+        let enums = enums_fixture();
+        let hit = enum_meta(&SqlType::new("user_role"), &enums).expect("match by snake_case name");
+        assert_eq!(hit.0, "user_role");
+    }
+
+    #[test]
+    fn enum_meta_misses_when_no_match() {
+        let enums = enums_fixture();
+        assert!(enum_meta(&SqlType::new("Varchar"), &enums).is_none());
+        assert!(enum_meta(&SqlType::new("OtherEnum"), &enums).is_none());
+    }
+
+    #[test]
+    fn primevue_component_uses_dropdown_when_enum_matches() {
+        let enums = enums_fixture();
+        assert_eq!(primevue_component(&SqlType::new("UserRole"), &enums), "Dropdown");
+        assert_eq!(primevue_component(&SqlType::new("user_role"), &enums), "Dropdown");
     }
 }

@@ -28,6 +28,33 @@ pub struct ParsedEnum {
     pub source_file: PathBuf,
 }
 
+/// PascalCase a snake/kebab/space-separated identifier without singularizing.
+/// `user_role` -> `UserRole`, `status` -> `Status`, `in_progress` -> `InProgress`.
+pub fn pascalize(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut capitalize_next = true;
+    for ch in input.chars() {
+        if ch == '_' || ch == '-' || ch == ' ' {
+            capitalize_next = true;
+            continue;
+        }
+        if !ch.is_ascii_alphanumeric() {
+            continue;
+        }
+        if capitalize_next {
+            for upper in ch.to_uppercase() {
+                out.push(upper);
+            }
+            capitalize_next = false;
+        } else {
+            for lower in ch.to_lowercase() {
+                out.push(lower);
+            }
+        }
+    }
+    out
+}
+
 /// Walk `<project_root>/src/database/migrations/*/up.sql` and return every
 /// ENUM type declared across them.
 ///

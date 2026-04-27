@@ -5,7 +5,7 @@
 //! `parse` helpers and `FromSql` / `ToSql` impls bound to the codegen'd
 //! `sql_types::<TypeName>` marker emitted by `diesel print-schema`.
 
-use crate::codegen::enums::scan::ParsedEnum;
+use crate::codegen::enums::scan::{pascalize, ParsedEnum};
 
 /// PascalCase the snake_case Postgres enum type name.
 /// `user_role` -> `UserRole`, `post_status` -> `PostStatus`.
@@ -23,31 +23,6 @@ pub fn enum_type_name(snake: &str) -> String {
 /// [`enum_type_name`].
 pub fn variant_name(variant: &str) -> String {
     pascalize(variant)
-}
-
-fn pascalize(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    let mut capitalize_next = true;
-    for ch in input.chars() {
-        if ch == '_' || ch == '-' || ch == ' ' {
-            capitalize_next = true;
-            continue;
-        }
-        if !ch.is_ascii_alphanumeric() {
-            continue;
-        }
-        if capitalize_next {
-            for upper in ch.to_uppercase() {
-                out.push(upper);
-            }
-            capitalize_next = false;
-        } else {
-            for lower in ch.to_lowercase() {
-                out.push(lower);
-            }
-        }
-    }
-    out
 }
 
 /// Build the full Rust file body for one enum (without the codegen

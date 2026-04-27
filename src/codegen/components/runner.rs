@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::codegen::components::render::forms_for_resource;
+use crate::codegen::enums::scan::{scan_project_enums, ParsedEnum};
 use crate::codegen::header;
 use crate::codegen::ir_loader;
 use crate::error::{BlastError, BlastResult};
@@ -42,6 +43,17 @@ pub fn run_for_resource(project_root: &Path, resource_name: &str, sink: &mut dyn
 fn emit_for(project_root: &Path, resources: &[ResourceState], sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
+    let scan = match scan_project_enums(project_root) {
+        Ok(rep) => rep,
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_LABEL, &reason);
+            sink.error(format!("{STEP_LABEL}: {reason}"));
+            return Err(err);
+        }
+    };
+    let enums: &[ParsedEnum] = &scan.enums;
+
     let forms_root = forms_root_dir(project_root);
     fs::create_dir_all(&forms_root)?;
 
@@ -50,7 +62,7 @@ fn emit_for(project_root: &Path, resources: &[ResourceState], sink: &mut dyn Sin
         let dir = forms_root.join(r.name.as_str());
         fs::create_dir_all(&dir)?;
         let marker = header::marker_for_resource(project_root, r.name.as_str())?;
-        for (filename, body) in forms_for_resource(r) {
+        for (filename, body) in forms_for_resource(r, enums) {
             let path = dir.join(&filename);
             let full = format!("{marker}{body}");
             write_file(&path, &full, &mut report)?;

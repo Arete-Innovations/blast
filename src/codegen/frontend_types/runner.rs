@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::codegen::enums::scan::{scan_project_enums, ParsedEnum};
 use crate::codegen::frontend_types::render::{build_enum_module, build_resource_types, collect_resource_enums, meltdown_ts};
 use crate::codegen::header;
 use crate::codegen::ir_loader;
@@ -38,6 +39,17 @@ pub fn run(
             return Err(err);
         }
     };
+
+    let scan = match scan_project_enums(project_root) {
+        Ok(rep) => rep,
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_LABEL, &reason);
+            sink.error(format!("{STEP_LABEL}: {reason}"));
+            return Err(err);
+        }
+    };
+    let enums: &[ParsedEnum] = &scan.enums;
 
     let resources: Vec<_> = all_resources
         .into_iter()
@@ -72,7 +84,7 @@ pub fn run(
     for r in &resources {
         let table = r.name.as_str();
         let marker = header::marker_for_resource(project_root, table)?;
-        for (enum_name, variants) in collect_resource_enums(r) {
+        for (enum_name, variants) in collect_resource_enums(r, enums) {
             if emitted_enums.iter().any(|n| n == &enum_name) {
                 continue;
             }
@@ -82,7 +94,7 @@ pub fn run(
             sink.info(format!("emitted {}", path.display()));
             emitted_enums.push(enum_name);
         }
-        let body = format!("{marker}{}", build_resource_types(r));
+        let body = format!("{marker}{}", build_resource_types(r, enums));
         let path = out_dir.join(format!("{table}.ts"));
         write_file(&path, &body, &mut report)?;
         sink.info(format!("emitted {}", path.display()));
