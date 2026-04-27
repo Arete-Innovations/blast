@@ -1,20 +1,12 @@
-pub mod login_body;
-pub mod login_input;
-pub mod login_output;
-pub mod login_response;
-pub mod register_body;
-pub mod register_input;
+pub mod login;
+pub mod register;
 pub mod role;
 pub mod session_context;
 pub mod sessions;
 pub mod users;
 
-pub use login_body::*;
-pub use login_input::*;
-pub use login_output::*;
-pub use login_response::*;
-pub use register_body::*;
-pub use register_input::*;
+pub use login::*;
+pub use register::*;
 pub use role::*;
 pub use session_context::*;
 pub use sessions::*;
