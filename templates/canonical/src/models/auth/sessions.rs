@@ -2,6 +2,7 @@ use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 
 use crate::{
+    cata_log,
     database::schema::sessions::dsl as sessions_dsl,
     meltdown::*,
     structs::{NewSession, Session, User},
@@ -59,8 +60,11 @@ pub async fn delete_by_token(
 
 fn now_unix() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => d.as_secs() as i64,
+        Err(e) => {
+            cata_log!(Error, format!("system clock before epoch: {}", e));
+            0
+        }
+    }
 }

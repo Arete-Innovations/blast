@@ -40,7 +40,6 @@ pub(crate) mod schema {
 use schema::fuses;
 
 #[derive(Debug, Clone, Queryable)]
-#[allow(dead_code)]
 pub(crate) struct FuseRow {
     pub id: i64,
     pub name: String,
@@ -113,54 +112,52 @@ pub async fn launch(pool: Pool_, registry: FuseRegistry) -> Result<(), MeltDown>
         let spec = fuse.schedule.spec_string();
         let next = fuse.schedule.next_run_after(now);
 
-        match by_name.remove(&fuse.name) {
-            None => {
-                let row = NewFuseRow {
-                    name: &fuse.name,
-                    flow_name: &fuse.flow_name,
-                    schedule_kind: kind,
-                    schedule_spec: &spec,
-                    next_run_at: next,
-                };
-                diesel::insert_into(fuses::table)
-                    .values(&row)
-                    .execute(&mut conn)
-                    .await
-                    .map_err(|e| {
-                        MeltDown::new(
-                            MeltType::DatabaseError,
-                            format!("fuses: insert {} failed: {}", fuse.name, e),
-                        )
-                    })?;
-                cata_log!(Info, format!("fuse registered: {} ({})", fuse.name, spec));
-            }
-            Some(row) => {
-                if row.schedule_kind != kind
-                    || row.schedule_spec != spec
-                    || row.flow_name != fuse.flow_name
-                {
-                    diesel::update(fuses::table.filter(fuses::name.eq(&fuse.name)))
-                        .set((
-                            fuses::flow_name.eq(&fuse.flow_name),
-                            fuses::schedule_kind.eq(kind),
-                            fuses::schedule_spec.eq(&spec),
-                            fuses::next_run_at.eq(next),
-                            fuses::updated_at.eq(now),
-                        ))
-                        .execute(&mut conn)
-                        .await
-                        .map_err(|e| {
-                            MeltDown::new(
-                                MeltType::DatabaseError,
-                                format!("fuses: update {} failed: {}", fuse.name, e),
-                            )
-                        })?;
-                    cata_log!(
-                        Info,
-                        format!("fuse schedule updated: {} -> {}", fuse.name, spec)
-                    );
-                }
-            }
+        let Some(row) = by_name.remove(&fuse.name) else {
+            let new_row = NewFuseRow {
+                name: &fuse.name,
+                flow_name: &fuse.flow_name,
+                schedule_kind: kind,
+                schedule_spec: &spec,
+                next_run_at: next,
+            };
+            diesel::insert_into(fuses::table)
+                .values(&new_row)
+                .execute(&mut conn)
+                .await
+                .map_err(|e| {
+                    MeltDown::new(
+                        MeltType::DatabaseError,
+                        format!("fuses: insert {} failed: {}", fuse.name, e),
+                    )
+                })?;
+            cata_log!(Info, format!("fuse registered: {} ({})", fuse.name, spec));
+            fn_map.insert(fuse.name.clone(), fuse.run_fn.clone());
+            continue;
+        };
+        if row.schedule_kind != kind
+            || row.schedule_spec != spec
+            || row.flow_name != fuse.flow_name
+        {
+            diesel::update(fuses::table.filter(fuses::name.eq(&fuse.name)))
+                .set((
+                    fuses::flow_name.eq(&fuse.flow_name),
+                    fuses::schedule_kind.eq(kind),
+                    fuses::schedule_spec.eq(&spec),
+                    fuses::next_run_at.eq(next),
+                    fuses::updated_at.eq(now),
+                ))
+                .execute(&mut conn)
+                .await
+                .map_err(|e| {
+                    MeltDown::new(
+                        MeltType::DatabaseError,
+                        format!("fuses: update {} failed: {}", fuse.name, e),
+                    )
+                })?;
+            cata_log!(
+                Info,
+                format!("fuse schedule updated: {} -> {}", fuse.name, spec)
+            );
         }
 
         fn_map.insert(fuse.name.clone(), fuse.run_fn.clone());
@@ -193,7 +190,13 @@ fn schedule_from_row(kind: &str, spec: &str) -> Option<Schedule> {
     match kind {
         "interval" => {
             let stripped = spec.strip_prefix("every:")?.strip_suffix('s')?;
-            let secs: u64 = stripped.parse().ok()?;
+            let secs: u64 = match stripped.parse() {
+                Ok(n) => n,
+                Err(e) => {
+                    cata_log!(Debug, format!("schedule_from_row interval parse '{}': {}", stripped, e));
+                    return None;
+                }
+            };
             Some(Schedule::Every(std::time::Duration::from_secs(secs)))
         }
         "cron" => {
@@ -202,10 +205,19 @@ fn schedule_from_row(kind: &str, spec: &str) -> Option<Schedule> {
         }
         "daily_at" => {
             let raw = spec.strip_prefix("daily_at:")?;
-            let t = chrono::NaiveTime::parse_from_str(raw, "%H:%M:%S").ok()?;
+            let t = match chrono::NaiveTime::parse_from_str(raw, "%H:%M:%S") {
+                Ok(time) => time,
+                Err(e) => {
+                    cata_log!(Debug, format!("schedule_from_row daily_at parse '{}': {}", raw, e));
+                    return None;
+                }
+            };
             Some(Schedule::DailyAt(t))
         }
-        _ => None,
+        other => {
+            cata_log!(Debug, format!("schedule_from_row: unknown kind '{}'", other));
+            None
+        }
     }
 }
 
@@ -311,9 +323,13 @@ async fn run_fuse(pool: Pool_, row: FuseRow, run_fn: FuseFn) -> Result<(), MeltD
             })?;
     }
 
-    let next_at = schedule_from_row(&row.schedule_kind, &row.schedule_spec)
-        .map(|s| s.next_run_after(Utc::now()))
-        .unwrap_or_else(|| Utc::now() + chrono::Duration::seconds(60));
+    let next_at = match schedule_from_row(&row.schedule_kind, &row.schedule_spec) {
+        Some(sched) => sched.next_run_after(Utc::now()),
+        _absent => {
+            cata_log!(Warning, format!("schedule_from_row returned None for fuse '{}'; defaulting to 60s", row.name));
+            Utc::now() + chrono::Duration::seconds(60)
+        }
+    };
 
     let ctx = Ctx::anonymous(pool.clone());
     let result = run_fn(&ctx).await;

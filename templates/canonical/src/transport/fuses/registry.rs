@@ -58,15 +58,15 @@ impl FuseBuilder {
     }
 
     fn build(self) -> Fuse {
-        let schedule = self
-            .schedule
-            .unwrap_or_else(|| panic!("Fuse '{}' is missing .schedule(...)", self.name));
-        let run_fn = self
-            .run_fn
-            .unwrap_or_else(|| panic!("Fuse '{}' is missing .run(...)", self.name));
-        let flow_name = self
-            .flow_name
-            .unwrap_or_else(|| panic!("Fuse '{}' is missing .run(...)", self.name));
+        let Some(schedule) = self.schedule else {
+            panic!("Fuse '{}' is missing .schedule(...)", self.name);
+        };
+        let Some(run_fn) = self.run_fn else {
+            panic!("Fuse '{}' is missing .run(...)", self.name);
+        };
+        let Some(flow_name) = self.flow_name else {
+            panic!("Fuse '{}' is missing .run(...)", self.name);
+        };
         Fuse {
             name: self.name,
             flow_name,

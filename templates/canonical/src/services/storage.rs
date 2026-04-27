@@ -18,7 +18,13 @@ pub struct Storage {
 
 impl Storage {
     pub fn from_env() -> Result<Storage, MeltDown> {
-        let root = env::var("STORAGE_ROOT").unwrap_or_else(|_| DEFAULT_ROOT.to_string());
+        let root = match env::var("STORAGE_ROOT") {
+            Ok(val) => val,
+            Err(e) => {
+                cata_log!(Debug, format!("STORAGE_ROOT unset, using default: {}", e));
+                DEFAULT_ROOT.to_string()
+            }
+        };
         let root = PathBuf::from(root);
 
         fs::create_dir_all(&root).map_err(|e| {
@@ -34,12 +40,12 @@ impl Storage {
     pub fn put(&self, path: &str, bytes: &[u8]) -> Result<(), MeltDown> {
         let abs = self.resolve(path)?;
 
-        if let Some(parent) = abs.parent() {
+        abs.parent().map(|parent| {
             fs::create_dir_all(parent).map_err(|e| {
                 MeltDown::new(MeltType::FileOperationFailed, format!("create parent dirs for {}", path))
                     .with_source(e)
-            })?;
-        }
+            })
+        }).transpose()?;
 
         fs::write(&abs, bytes).map_err(|e| {
             MeltDown::new(MeltType::FileOperationFailed, format!("write {}", path)).with_source(e)
@@ -82,10 +88,7 @@ impl Storage {
     }
 
     pub fn exists(&self, path: &str) -> bool {
-        match self.resolve(path) {
-            Ok(abs) => abs.exists(),
-            Err(_) => false,
-        }
+        self.resolve(path).is_ok_and(|abs| abs.exists())
     }
 
     fn resolve(&self, path: &str) -> Result<PathBuf, MeltDown> {
@@ -148,18 +151,19 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), MeltDown> 
         if ft.is_dir() {
             walk(root, &path, out)?;
         } else if ft.is_file() {
-            if let Ok(rel) = path.strip_prefix(root) {
-                let s: String = rel
-                    .components()
-                    .filter_map(|c| match c {
-                        Component::Normal(p) => Some(p.to_string_lossy().into_owned()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("/");
-                if !s.is_empty() {
-                    out.push(s);
-                }
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            let s: String = rel
+                .components()
+                .filter_map(|c| match c {
+                    Component::Normal(p) => Some(p.to_string_lossy().into_owned()),
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_) | Component::CurDir => None,
+                })
+                .collect::<Vec<_>>()
+                .join("/");
+            if !s.is_empty() {
+                out.push(s);
             }
         }
     }

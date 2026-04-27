@@ -28,7 +28,7 @@ frontend/      ← Vue, typed from contracts
 | `transport/` | **`structs`, `flows` ONLY** |
 | `frontend/` | generated TS + custom Vue |
 
-The strictness anchors at `transport/` and `flows/` — both are physically prevented from bypassing into lower layers. Enforced via crate boundaries or `mod` visibility where feasible.
+The strictness is enforced at compile time by `build.rs`, which scans every `use crate::*` import under `src/<layer>/` (single-line and multi-line `use crate::{...}` blocks) and panics the build on any forbidden cross-layer import. See `LAYER:11`–`LAYER:17` in `build.rs`. The lint reads each file's first path segment under `src/` to determine its layer, then checks every flattened import path against that layer's banned-prefix list. Aliases (`as`), glob (`*`), self-imports, and arbitrarily nested groups are all flattened before checking.
 
 ## Hard Rules
 
@@ -71,6 +71,8 @@ The set of files in `flows/` is the answer to "what can this app do?". `Arsenal`
 ### `structs/`
 
 Inert data definitions: DB rows, DTOs, request/response, newtypes. Trait impls and trivial conversions only. Subdirs: `generated/` + `custom/`.
+
+**Schema-import exception:** structs may import `crate::database::schema` (the Diesel `table!` macro output) for `#[diesel(table_name = ...)]` derives on `Queryable` / `Insertable` row structs. The schema module is generated macro definitions, not a layer dependency. This is the *only* `crate::*` import permitted in `structs/`. The build.rs lint encodes this exception explicitly.
 
 ### `database/`
 

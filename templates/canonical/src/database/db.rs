@@ -21,7 +21,10 @@ pub type DbPool = Pool<AsyncPgConnection>;
 static DB_POOL: OnceLock<DbPool> = OnceLock::new();
 
 pub async fn init_connection_pool() -> Result<(), MeltDown> {
-    dotenv().ok();
+    match dotenv() {
+        Ok(path) => cata_log!(Debug, format!("Loaded .env from {}", path.display())),
+        Err(e) => cata_log!(Debug, format!("Failed to load .env: {}", e)),
+    }
 
     if DB_POOL.get().is_some() {
         cata_log!(Debug, "Connection pool already initialized");
@@ -39,14 +42,19 @@ pub async fn init_connection_pool() -> Result<(), MeltDown> {
         .build()
         .map_err(|e| MeltDown::db_connection(format!("Failed to create connection pool: {}", e)))?;
 
-    let _ = pool.get().await.map_err(|e| MeltDown::db_connection(format!("Failed to verify connection pool: {}", e)))?;
+    let probe = pool.get().await
+        .map_err(|e| MeltDown::db_connection(format!("Failed to verify connection pool: {}", e)))?;
+    drop(probe);
 
     match DB_POOL.set(pool) {
-        Ok(_) => {
+        Ok(()) => {
             cata_log!(Info, "Database connection pool initialized successfully");
             Ok(())
         }
-        Err(_) => Err(MeltDown::new(MeltType::ConfigurationError, "Failed to set connection pool: already initialized")),
+        Err(returned) => {
+            drop(returned);
+            Err(MeltDown::new(MeltType::ConfigurationError, "Failed to set connection pool: already initialized"))
+        }
     }
 }
 
@@ -57,7 +65,11 @@ async fn get_conn_from_pool() -> Result<diesel_async::pooled_connection::deadpoo
 }
 
 pub fn pool() -> &'static DbPool {
-    DB_POOL.get().expect("pool not initialized — call init_connection_pool() first")
+    let Some(p) = DB_POOL.get() else {
+        cata_log!(Error, "pool not initialized — call init_connection_pool() first");
+        panic!("pool not initialized — call init_connection_pool() first");
+    };
+    p
 }
 
 pub async fn acquire_conn() -> Result<diesel_async::pooled_connection::deadpool::Object<AsyncPgConnection>, MeltDown> {

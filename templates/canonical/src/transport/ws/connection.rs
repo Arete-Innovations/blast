@@ -9,6 +9,8 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use tokio::sync::mpsc;
 
+use crate::cata_log;
+use crate::meltdown::{MeltDown, MeltType};
 use super::protocol::{ClientMessage, ServerMessage};
 use super::registry::{OutboundFrame, Registry, SubscriberHandle};
 
@@ -38,50 +40,56 @@ pub async fn handle_socket(socket: WebSocket, _user_id: UserId, registry: Arc<Re
     let mut subscriptions: HashSet<String> = HashSet::new();
 
     let outbound = tokio::spawn(async move {
-        while let Some(frame) = rx.recv().await {
+        loop {
+            let Some(frame) = rx.recv().await else {
+                break;
+            };
             if sink.send(Message::Text(frame)).await.is_err() {
                 break;
             }
         }
     });
 
-    while let Some(msg) = stream.next().await {
-        let msg = match msg {
+    loop {
+        let Some(stream_item) = stream.next().await else {
+            break;
+        };
+        let msg = match stream_item {
             Ok(m) => m,
-            Err(_) => break,
+            Err(e) => {
+                cata_log!(Debug, format!("ws stream err: {}", e));
+                break;
+            }
         };
         match msg {
             Message::Text(text) => {
                 match serde_json::from_str::<ClientMessage>(&text) {
                     Ok(ClientMessage::Subscribe { topic }) => {
                         if !allow_all(&topic) {
-                            let _ = send_frame(&tx, ServerMessage::error(&topic, "forbidden"))
-                                .await;
+                            log_send(send_frame(&tx, ServerMessage::error(&topic, "forbidden")).await);
                             continue;
                         }
                         registry.subscribe(topic.clone(), handle.clone());
                         subscriptions.insert(topic.clone());
-                        let _ = send_frame(&tx, ServerMessage::ack(topic)).await;
+                        log_send(send_frame(&tx, ServerMessage::ack(topic)).await);
                     }
                     Ok(ClientMessage::Unsubscribe { topic }) => {
                         registry.unsubscribe(&topic, subscriber_id);
                         subscriptions.remove(&topic);
                     }
                     Ok(ClientMessage::Ping) => {
-                        let _ = send_frame(&tx, ServerMessage::pong()).await;
+                        log_send(send_frame(&tx, ServerMessage::pong()).await);
                     }
-                    Err(_) => {
-                        let _ =
-                            send_frame(&tx, ServerMessage::error_global("malformed_frame")).await;
+                    Err(e) => {
+                        cata_log!(Debug, format!("ws frame parse: {}", e));
+                        log_send(send_frame(&tx, ServerMessage::error_global("malformed_frame")).await);
                     }
                 }
             }
-            Message::Ping(payload) => {
-                let _ = payload;
-            }
+            Message::Ping(_payload) => {}
             Message::Pong(_) => {}
             Message::Binary(_) => {
-                let _ = send_frame(&tx, ServerMessage::error_global("binary_not_supported")).await;
+                log_send(send_frame(&tx, ServerMessage::error_global("binary_not_supported")).await);
             }
             Message::Close(_) => break,
         }
@@ -90,15 +98,30 @@ pub async fn handle_socket(socket: WebSocket, _user_id: UserId, registry: Arc<Re
     registry.unsubscribe_all(subscriber_id);
     subscriptions.clear();
     drop(tx);
-    let _ = outbound.await;
+    match outbound.await {
+        Ok(()) => {}
+        Err(e) => cata_log!(Warning, format!("ws outbound task panicked: {}", e)),
+    }
 }
 
 async fn send_frame(
     tx: &mpsc::Sender<OutboundFrame>,
     msg: ServerMessage,
-) -> Result<(), ()> {
-    let encoded = serde_json::to_string(&msg).map_err(|_| ())?;
-    tx.send(encoded).await.map_err(|_| ())
+) -> Result<(), MeltDown> {
+    let encoded = serde_json::to_string(&msg).map_err(|e| {
+        MeltDown::new(MeltType::SerializationFailed, format!("ws frame encode: {}", e))
+    })?;
+    tx.send(encoded).await.map_err(|e| {
+        MeltDown::new(MeltType::Unexpected("ws_send".into()), format!("ws send: {}", e))
+    })?;
+    Ok(())
+}
+
+fn log_send(result: Result<(), MeltDown>) {
+    match result {
+        Ok(()) => {}
+        Err(e) => cata_log!(Warning, format!("ws send_frame failed: {}", e)),
+    }
 }
 
 fn allow_all(_topic: &str) -> bool {

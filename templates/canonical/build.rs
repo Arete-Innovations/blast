@@ -26,7 +26,6 @@ const SILENT_ERROR_PATTERNS: &[&str] = &[
 ];
 
 const RESULT_OPTION_MATCH_ARMS: &[&str] = &[
-    "None =>",
     "Some(_) =>",
     "Ok(_) =>",
     "Err(_) =>",
@@ -112,8 +111,9 @@ fn rule_help(rule: &str) -> &'static str {
             "    there are exactly two honest responses to failure: tell the caller, or crash.",
         ),
         "ERROR:4" => concat!(
-            "Ok(_), Err(_), Some(_), None => all throw away the value you're matching on.\n",
-            "    bind it: Ok(val), Err(err), Some(val). if you don't need the value, you don't need the match.",
+            "Ok(_), Err(_), Some(_) all throw away the value you're matching on.\n",
+            "    bind it: Ok(val), Err(err), Some(val). if you don't need the value, you don't need the match.\n",
+            "    `None =>` is allowed (no inner value to bind); silent-swallow via `None` is still caught by ERROR:5/6/18.",
         ),
         "ERROR:5" => concat!(
             "returning Vec::new(), 0, None, false, or Default::default() from an error arm is lying.\n",
@@ -726,13 +726,13 @@ fn layer_for_path(rel: &Path) -> Option<&'static str> {
 
 fn banned_for_layer(layer: &str) -> &'static [&'static str] {
     match layer {
-        "transport" => &["crate::routines", "crate::models", "crate::services", "crate::database"],
+        "transport" => &["crate::routines", "crate::models", "crate::services", "crate::database", "crate::crank"],
         "flows" => &["crate::models", "crate::services", "crate::database", "crate::transport", "crate::flows"],
-        "routines" => &["crate::database", "crate::flows", "crate::transport", "crate::routines"],
-        "models" => &["crate::services", "crate::routines", "crate::flows", "crate::transport"],
-        "services" => &["crate::database", "crate::models", "crate::routines", "crate::flows", "crate::transport"],
-        "database" => &["crate::models", "crate::services", "crate::routines", "crate::flows", "crate::transport"],
-        "structs" => &["crate::transport", "crate::flows", "crate::routines", "crate::models", "crate::services", "crate::database"],
+        "routines" => &["crate::database", "crate::flows", "crate::transport", "crate::routines", "crate::crank"],
+        "models" => &["crate::services", "crate::routines", "crate::flows", "crate::transport", "crate::crank"],
+        "services" => &["crate::database", "crate::models", "crate::routines", "crate::flows", "crate::transport", "crate::crank"],
+        "database" => &["crate::models", "crate::services", "crate::routines", "crate::flows", "crate::transport", "crate::crank"],
+        "structs" => &["crate::transport", "crate::flows", "crate::routines", "crate::models", "crate::services", "crate::database", "crate::crank"],
         _ => &[],
     }
 }
@@ -760,6 +760,7 @@ fn check_layer_imports(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
         return;
     }
     let rule = rule_id_for_layer(layer);
+    let is_structs_schema_exception = layer == "structs";
 
     let lines: Vec<&str> = content.lines().collect();
     let mut idx = 0usize;
@@ -820,6 +821,9 @@ fn check_layer_imports(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
 
         for (path, leaf_line) in leaves {
             if !path.starts_with("crate::") && path != "crate" {
+                continue;
+            }
+            if is_structs_schema_exception && import_starts_with(&path, "crate::database::schema") {
                 continue;
             }
             for ban in banned {

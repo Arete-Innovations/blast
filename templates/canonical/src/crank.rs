@@ -3,6 +3,8 @@ use rand::Rng;
 use std::future::Future;
 use std::time::{Duration, Instant};
 
+use crate::{cata_log, meltdown::MeltDown};
+
 pub trait RetryPolicy {
     fn max_attempts(&self) -> usize;
 
@@ -45,18 +47,18 @@ impl RetryPolicy for ExpBackoff {
 
     fn delay(&self, attempt: usize) -> Duration {
         let shift = attempt.saturating_sub(1).min(32) as u32;
-        let factor: u64 = 1u64.checked_shl(shift).unwrap_or(u64::MAX);
+        let factor: u64 = 1u64 << shift;
         let mut delay = self.base.saturating_mul(factor.min(u32::MAX as u64) as u32);
 
-        if let Some(cap) = self.cap {
+        self.cap.map(|cap| {
             if delay > cap {
                 delay = cap;
             }
-        }
+        });
 
         if self.jitter {
             let nanos = delay.as_nanos() as i128;
-            let jitter_range = nanos / 4; 
+            let jitter_range = nanos / 4;
             if jitter_range > 0 {
                 let mut rng = rand::thread_rng();
                 let offset: i128 = rng.gen_range(-jitter_range..=jitter_range);
@@ -110,18 +112,18 @@ impl RetryPolicy for Immediate {
     }
 }
 
-pub struct Crank<P, E>
+pub struct Crank<P>
 where
     P: RetryPolicy,
 {
     policy: P,
-    classifier: Option<Box<dyn FnMut(&E) -> bool>>,
+    classifier: Option<Box<dyn FnMut(&MeltDown) -> bool + Send>>,
     deadline: Option<Duration>,
-    on_attempt: Option<Box<dyn FnMut(usize, &E)>>,
-    on_giveup: Option<Box<dyn FnMut(usize, &E)>>,
+    on_attempt: Option<Box<dyn FnMut(usize, &MeltDown) + Send>>,
+    on_giveup: Option<Box<dyn FnMut(usize, &MeltDown) + Send>>,
 }
 
-impl<P, E> Crank<P, E>
+impl<P> Crank<P>
 where
     P: RetryPolicy,
 {
@@ -137,10 +139,18 @@ where
 
     pub fn classify<C>(mut self, classifier: C) -> Self
     where
-        C: FnMut(&E) -> bool + 'static,
+        C: FnMut(&MeltDown) -> bool + Send + 'static,
     {
         self.classifier = Some(Box::new(classifier));
         self
+    }
+
+    pub fn retry_only_transient(self) -> Self {
+        self.classify(|e: &MeltDown| e.is_transient())
+    }
+
+    pub fn retry_all(self) -> Self {
+        self.classify(|_: &MeltDown| true)
     }
 
     pub fn deadline(mut self, deadline: Duration) -> Self {
@@ -150,7 +160,7 @@ where
 
     pub fn on_attempt<F>(mut self, hook: F) -> Self
     where
-        F: FnMut(usize, &E) + 'static,
+        F: FnMut(usize, &MeltDown) + Send + 'static,
     {
         self.on_attempt = Some(Box::new(hook));
         self
@@ -158,32 +168,32 @@ where
 
     pub fn on_giveup<F>(mut self, hook: F) -> Self
     where
-        F: FnMut(usize, &E) + 'static,
+        F: FnMut(usize, &MeltDown) + Send + 'static,
     {
         self.on_giveup = Some(Box::new(hook));
         self
     }
 
-    pub async fn run<T, F, Fut>(mut self, mut f: F) -> Result<T, E>
+    pub async fn run<T, F, Fut>(mut self, mut f: F) -> Result<T, MeltDown>
     where
         F: FnMut() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
+        Fut: Future<Output = Result<T, MeltDown>>,
     {
-        let mut classifier = self
-            .classifier
-            .take()
-            .expect("Crank::run called without a classifier; call .classify(...) first");
+        let Some(mut classifier) = self.classifier.take() else {
+            panic!("Crank::run called without a classifier; call .classify(...) first");
+        };
 
         let max_attempts = self.policy.max_attempts().max(1);
         let start = Instant::now();
 
         let mut attempt_no: usize = 1;
-        let mut last_err: E;
+        let mut last_err: MeltDown;
 
         loop {
             match f().await {
                 Ok(value) => return Ok(value),
                 Err(err) => {
+                    cata_log!(Debug, format!("Crank attempt {} failed: {}", attempt_no, err));
                     last_err = err;
                 }
             }
@@ -194,27 +204,25 @@ where
             }
 
             if attempt_no >= max_attempts {
-                if let Some(hook) = self.on_giveup.as_mut() {
-                    hook(attempt_no, &last_err);
-                }
+                self.on_giveup.as_mut().map(|hook| hook(attempt_no, &last_err));
                 return Err(last_err);
             }
 
-            let delay = self.policy.delay(attempt_no);
+            let delay = match last_err.retry_after {
+                Some(d) => d,
+                None => self.policy.delay(attempt_no),
+            };
 
-            if let Some(budget) = self.deadline {
-                if start.elapsed() + delay >= budget {
-                    if let Some(hook) = self.on_giveup.as_mut() {
-                        hook(attempt_no, &last_err);
-                    }
-                    return Err(last_err);
-                }
+            let timed_out = self
+                .deadline
+                .is_some_and(|budget| start.elapsed() + delay >= budget);
+            if timed_out {
+                self.on_giveup.as_mut().map(|hook| hook(attempt_no, &last_err));
+                return Err(last_err);
             }
 
             attempt_no += 1;
-            if let Some(hook) = self.on_attempt.as_mut() {
-                hook(attempt_no, &last_err);
-            }
+            self.on_attempt.as_mut().map(|hook| hook(attempt_no, &last_err));
 
             if !delay.is_zero() {
                 tokio::time::sleep(delay).await;
@@ -223,11 +231,35 @@ where
     }
 }
 
-impl Crank<Immediate, crate::meltdown::MeltDown> {
+impl Crank<Immediate> {
     pub fn none() -> Self {
         Self {
             policy: Immediate::new(1),
             classifier: Some(Box::new(|_| false)),
+            deadline: None,
+            on_attempt: None,
+            on_giveup: None,
+        }
+    }
+}
+
+impl Crank<ExpBackoff> {
+    pub fn backoff(max_attempts: usize, base: Duration) -> Self {
+        Self {
+            policy: ExpBackoff::new(max_attempts, base),
+            classifier: Some(Box::new(|e: &MeltDown| !e.is_permanent())),
+            deadline: None,
+            on_attempt: None,
+            on_giveup: None,
+        }
+    }
+}
+
+impl Crank<FixedDelay> {
+    pub fn fixed(max_attempts: usize, delay: Duration) -> Self {
+        Self {
+            policy: FixedDelay::new(max_attempts, delay),
+            classifier: Some(Box::new(|e: &MeltDown| !e.is_permanent())),
             deadline: None,
             on_attempt: None,
             on_giveup: None,

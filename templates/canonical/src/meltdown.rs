@@ -9,6 +9,8 @@ use diesel::result::{DatabaseErrorKind, Error as DieselError};
 use serde_json::json;
 use thiserror::Error;
 
+use crate::cata_log;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MeltCategory {
     Client,
@@ -95,14 +97,9 @@ impl MeltDown {
     }
 
     pub fn with_context(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        if self.context.is_none() {
-            self.context = Some(HashMap::new());
-        }
-
-        if let Some(context) = &mut self.context {
-            context.insert(key.into(), value.into());
-        }
-
+        self.context
+            .get_or_insert_with(HashMap::new)
+            .insert(key.into(), value.into());
         self
     }
 
@@ -117,10 +114,13 @@ impl MeltDown {
     }
 
     pub fn user_message(&self) -> String {
-        if let Some(msg) = &self.user_message {
-            return msg.clone();
-        }
+        let Some(msg) = self.user_message.as_ref() else {
+            return self.default_user_message();
+        };
+        msg.clone()
+    }
 
+    fn default_user_message(&self) -> String {
         match &self.melt_type {
             MeltType::DatabaseConnection => "Unable to connect to database. Please try again later.".to_string(),
             MeltType::DatabaseError => "A database error occurred. Please try again later.".to_string(),
@@ -183,15 +183,15 @@ impl MeltDown {
     pub fn log_message(&self) -> String {
         let mut message = format!("[{}] {}", self.melt_type_str(), self.details);
 
-        if let Some(context) = &self.context {
+        self.context.as_ref().map(|context| {
             for (key, value) in context {
                 message.push_str(&format!(" | {}={}", key, value));
             }
-        }
+        });
 
-        if let Some(source) = &self.source {
+        self.source.as_ref().map(|source| {
             message.push_str(&format!(" | source: {}", source));
-        }
+        });
 
         message
     }
@@ -276,6 +276,26 @@ impl MeltDown {
     }
 }
 
+fn pick_unique_field(constraint: Option<&str>) -> &'static str {
+    let Some(c) = constraint else {
+        return "This value";
+    };
+    if c.contains("email") || c.contains("users_email_key") {
+        "Email"
+    } else if c.contains("token") || c.contains("sessions_token_key") {
+        "Session token"
+    } else {
+        "This value"
+    }
+}
+
+fn column_name_or_unknown(name: Option<&str>) -> String {
+    let Some(c) = name else {
+        return "Unknown field".to_string();
+    };
+    c.to_string()
+}
+
 fn default_transient(melt_type: &MeltType) -> bool {
     matches!(
         melt_type,
@@ -288,6 +308,35 @@ fn default_transient(melt_type: &MeltType) -> bool {
 impl MeltDown {
     pub fn is_transient(&self) -> bool {
         self.transient
+    }
+
+    pub fn is_permanent(&self) -> bool {
+        matches!(self.melt_type,
+            MeltType::ValidationFailed
+            | MeltType::BadRequest
+            | MeltType::UnprocessableEntity
+            | MeltType::MethodNotAllowed
+            | MeltType::AuthRejected
+            | MeltType::Unauthorized
+            | MeltType::Forbidden
+            | MeltType::InsufficientPermissions
+            | MeltType::SessionMissing
+            | MeltType::SessionInvalid
+            | MeltType::SessionExpired
+            | MeltType::NotFound
+            | MeltType::RecordNotFound
+            | MeltType::FileNotFound
+            | MeltType::FilePermissionDenied
+            | MeltType::Conflict
+            | MeltType::UniqueViolation
+            | MeltType::ForeignKeyViolation
+            | MeltType::CheckViolation
+            | MeltType::NotNullViolation
+            | MeltType::SerializationFailed
+            | MeltType::DeserializationFailed
+            | MeltType::ConfigurationError
+            | MeltType::EnvironmentError
+        )
     }
 
     pub fn category(&self) -> MeltCategory {
@@ -305,8 +354,8 @@ impl MeltDown {
 
     pub fn is(&self, t: MeltType) -> bool {
         match (&self.melt_type, &t) {
-            (MeltType::Unexpected(_), MeltType::Unexpected(_)) => true,
-            _ => self.melt_type == t,
+            (MeltType::Unexpected(a), MeltType::Unexpected(b)) => a == b,
+            (melt_a, melt_b) => melt_a == melt_b,
         }
     }
 }
@@ -323,49 +372,38 @@ impl From<DieselError> for MeltDown {
         match err {
             DieselError::DatabaseError(kind, ref info) => match kind {
                 DatabaseErrorKind::UniqueViolation => {
-                    let field = if let Some(constraint) = info.constraint_name() {
-                        if constraint.contains("email") || constraint.contains("users_email_key") {
-                            "Email"
-                        } else if constraint.contains("token") || constraint.contains("sessions_token_key") {
-                            "Session token"
-                        } else {
-                            "This value"
-                        }
-                    } else {
-                        "This value"
-                    };
-
-                    let mut error = MeltDown::new(MeltType::UniqueViolation, field)
+                    let field = pick_unique_field(info.constraint_name());
+                    let error = MeltDown::new(MeltType::UniqueViolation, field)
                         .with_context("error_type", "database_unique_violation");
-                    if let Some(constraint) = info.constraint_name() {
-                        error = error.with_context("constraint", constraint);
-                    }
-                    error
+                    let Some(constraint) = info.constraint_name() else {
+                        return error;
+                    };
+                    error.with_context("constraint", constraint)
                 }
                 DatabaseErrorKind::ForeignKeyViolation => {
-                    let mut error = MeltDown::new(MeltType::ForeignKeyViolation, "Related record not found")
+                    let error = MeltDown::new(MeltType::ForeignKeyViolation, "Related record not found")
                         .with_context("error_type", "database_foreign_key_violation");
-                    if let Some(constraint) = info.constraint_name() {
-                        error = error.with_context("constraint", constraint);
-                    }
-                    error
+                    let Some(constraint) = info.constraint_name() else {
+                        return error;
+                    };
+                    error.with_context("constraint", constraint)
                 }
                 DatabaseErrorKind::CheckViolation => {
-                    let mut error = MeltDown::new(MeltType::CheckViolation, "Check constraint failed");
-                    if let Some(constraint) = info.constraint_name() {
-                        error = error.with_context("constraint", constraint);
-                    }
-                    error
+                    let error = MeltDown::new(MeltType::CheckViolation, "Check constraint failed");
+                    let Some(constraint) = info.constraint_name() else {
+                        return error;
+                    };
+                    error.with_context("constraint", constraint)
                 }
                 DatabaseErrorKind::NotNullViolation => {
-                    let column = info.column_name().unwrap_or("Unknown field").to_string();
-                    let mut error = MeltDown::new(MeltType::NotNullViolation, column);
-                    if let Some(table) = info.table_name() {
-                        error = error.with_context("table", table);
-                    }
-                    error
+                    let column = column_name_or_unknown(info.column_name());
+                    let error = MeltDown::new(MeltType::NotNullViolation, column);
+                    let Some(table) = info.table_name() else {
+                        return error;
+                    };
+                    error.with_context("table", table)
                 }
-                _ => MeltDown::new(MeltType::DatabaseError, format!("Database error: {:?}", err)),
+                other_kind => MeltDown::new(MeltType::DatabaseError, format!("Database error: {:?}", other_kind)),
             },
             DieselError::NotFound => MeltDown::new(MeltType::RecordNotFound, "Record"),
             DieselError::RollbackTransaction => MeltDown::new(MeltType::DatabaseError, "Transaction rolled back"),
@@ -373,7 +411,7 @@ impl From<DieselError> for MeltDown {
             DieselError::QueryBuilderError(e) => MeltDown::new(MeltType::DatabaseError, format!("Query builder error: {}", e)),
             DieselError::DeserializationError(e) => MeltDown::new(MeltType::DeserializationFailed, format!("Failed to deserialize result: {}", e)),
             DieselError::SerializationError(e) => MeltDown::new(MeltType::SerializationFailed, format!("Failed to serialize data: {}", e)),
-            _ => MeltDown::new(MeltType::DatabaseError, format!("Database error: {:?}", err)),
+            other_err => MeltDown::new(MeltType::DatabaseError, format!("Database error: {:?}", other_err)),
         }
     }
 }
@@ -385,7 +423,7 @@ impl From<IoError> for MeltDown {
         let (melt_type, message) = match err.kind() {
             ErrorKind::NotFound => (MeltType::FileNotFound, "File not found"),
             ErrorKind::PermissionDenied => (MeltType::FilePermissionDenied, "File permission denied"),
-            _ => (MeltType::FileOperationFailed, "File operation failed"),
+            other_kind => (MeltType::FileOperationFailed, "File operation failed"),
         };
 
         MeltDown::new(melt_type, message).with_source(err)
@@ -406,11 +444,16 @@ impl IntoResponse for MeltDown {
 
         let mut response = (status, Json(body)).into_response();
 
-        if let Some(retry) = self.retry_after {
-            if let Ok(value) = retry.as_secs().to_string().parse() {
-                response.headers_mut().insert("Retry-After", value);
+        self.retry_after.map(|retry| {
+            match retry.as_secs().to_string().parse() {
+                Ok(value) => {
+                    response.headers_mut().insert("Retry-After", value);
+                }
+                Err(e) => {
+                    cata_log!(Warning, format!("Retry-After header parse failed: {}", e));
+                }
             }
-        }
+        });
 
         response
     }
@@ -418,11 +461,9 @@ impl IntoResponse for MeltDown {
 
 impl MeltDown {
     pub fn log(&self) {
-        use crate::cata_log;
-
         match self.status_code().as_u16() {
             400..=499 => cata_log!(Warning, self.log_message()),
-            _ => cata_log!(Error, self.log_message()),
+            code => cata_log!(Error, format!("status={} {}", code, self.log_message())),
         }
     }
 }

@@ -2,6 +2,8 @@
 use chrono::{DateTime, NaiveTime, Utc};
 use std::time::Duration;
 
+use crate::cata_log;
+
 #[derive(Debug, Clone)]
 pub enum Schedule {
     Every(Duration),
@@ -43,18 +45,27 @@ impl Schedule {
     pub fn next_run_after(&self, now: DateTime<Utc>) -> DateTime<Utc> {
         match self {
             Schedule::Every(d) => {
-                let delta = chrono::Duration::from_std(*d)
-                    .unwrap_or_else(|_| chrono::Duration::seconds(i64::MAX));
-                now.checked_add_signed(delta).unwrap_or(now)
+                let delta = match chrono::Duration::from_std(*d) {
+                    Ok(dur) => dur,
+                    Err(e) => {
+                        cata_log!(Warning, format!("Schedule::Every duration overflow: {}", e));
+                        chrono::Duration::seconds(i64::MAX)
+                    }
+                };
+                let Some(result) = now.checked_add_signed(delta) else {
+                    return now;
+                };
+                result
             }
             Schedule::Cron(expr) => {
-                let parsed: cron::Schedule = expr
-                    .parse()
-                    .unwrap_or_else(|e| panic!("invalid cron expression {:?}: {}", expr, e));
-                parsed
-                    .after(&now)
-                    .next()
-                    .unwrap_or_else(|| now + chrono::Duration::seconds(60))
+                let parsed: cron::Schedule = match expr.parse() {
+                    Ok(p) => p,
+                    Err(e) => panic!("invalid cron expression {:?}: {}", expr, e),
+                };
+                let Some(next) = parsed.after(&now).next() else {
+                    return now + chrono::Duration::seconds(60);
+                };
+                next
             }
             Schedule::DailyAt(t) => {
                 let today = now

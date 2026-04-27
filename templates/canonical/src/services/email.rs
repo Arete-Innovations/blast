@@ -35,7 +35,10 @@ impl Email {
                 MeltDown::new(MeltType::ConfigurationError, format!("SMTP_PORT not a u16: {}", p))
                     .with_source(e)
             })?,
-            Err(_) => DEFAULT_PORT,
+            Err(e) => {
+                cata_log!(Debug, format!("SMTP_PORT unset, using default {}: {}", DEFAULT_PORT, e));
+                DEFAULT_PORT
+            }
         };
 
         let tls = match env::var("SMTP_TLS") {
@@ -49,7 +52,10 @@ impl Email {
                     ));
                 }
             },
-            Err(_) => DEFAULT_TLS,
+            Err(e) => {
+                cata_log!(Debug, format!("SMTP_TLS unset, using default {}: {}", DEFAULT_TLS, e));
+                DEFAULT_TLS
+            }
         };
 
         let from: Mailbox = from_raw.parse().map_err(|e: lettre::address::AddressError| {
@@ -111,7 +117,7 @@ impl Email {
                     MeltDown::new(MeltType::ValidationFailed, "build multipart message")
                         .with_source(e)
                 })?,
-            None => builder
+            _no_html => builder
                 .header(ContentType::TEXT_PLAIN)
                 .body(body_text.to_string())
                 .map_err(|e| {
@@ -121,15 +127,18 @@ impl Email {
         };
 
         match self.transport.send(message).await {
-            Ok(_resp) => Ok(()),
+            Ok(resp) => {
+                drop(resp);
+                Ok(())
+            }
             Err(e) => Err(map_smtp_error(e)),
         }
     }
 }
 
 fn required_env(key: &str) -> Result<String, MeltDown> {
-    env::var(key).map_err(|_| {
-        MeltDown::new(MeltType::EnvironmentError, format!("missing required env var `{}`", key))
+    env::var(key).map_err(|e| {
+        MeltDown::new(MeltType::EnvironmentError, format!("missing required env var `{}`: {}", key, e))
     })
 }
 

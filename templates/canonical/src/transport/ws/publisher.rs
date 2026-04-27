@@ -4,18 +4,25 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
+use crate::cata_log;
 use super::protocol::ServerMessage;
 use super::registry::Registry;
 
 pub fn publish<T: Serialize>(registry: &Registry, topic: &str, event: &T) -> usize {
     let payload = match serde_json::to_value(event) {
         Ok(v) => v,
-        Err(_) => return 0,
+        Err(e) => {
+            cata_log!(Warning, format!("publish: serialize event failed for topic '{}': {}", topic, e));
+            return 0;
+        }
     };
     let frame = ServerMessage::event(topic, payload);
     let encoded = match serde_json::to_string(&frame) {
         Ok(s) => s,
-        Err(_) => return 0,
+        Err(e) => {
+            cata_log!(Warning, format!("publish: encode frame failed for topic '{}': {}", topic, e));
+            return 0;
+        }
     };
 
     let subscribers = registry.subscribers_of(topic);

@@ -42,11 +42,13 @@ impl Registry {
     }
 
     pub fn unsubscribe(&self, topic: &str, subscriber_id: SubscriberId) {
-        let mut remove_topic = false;
-        if let Some(mut entry) = self.topics.get_mut(topic) {
+        let remove_topic = {
+            let Some(mut entry) = self.topics.get_mut(topic) else {
+                return;
+            };
             entry.retain(|h| h.id != subscriber_id);
-            remove_topic = entry.is_empty();
-        }
+            entry.is_empty()
+        };
         if remove_topic {
             self.topics.remove(topic);
         }
@@ -66,13 +68,16 @@ impl Registry {
     }
 
     pub fn subscribers_of(&self, topic: &str) -> Vec<SubscriberHandle> {
-        self.topics
-            .get(topic)
-            .map(|entry| entry.clone())
-            .unwrap_or_default()
+        let Some(entry) = self.topics.get(topic) else {
+            return Vec::new();
+        };
+        entry.clone()
     }
 
     pub fn subscribers_count(&self, topic: &str) -> usize {
-        self.topics.get(topic).map(|e| e.len()).unwrap_or(0)
+        let Some(e) = self.topics.get(topic) else {
+            return 0;
+        };
+        e.len()
     }
 }

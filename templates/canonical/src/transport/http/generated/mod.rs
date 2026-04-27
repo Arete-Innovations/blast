@@ -1,7 +1,3 @@
-use axum::Router;
+pub mod router;
 
-use crate::Ctx;
-
-pub fn router() -> Router<Ctx> {
-    Router::new()
-}
+pub use router::router;

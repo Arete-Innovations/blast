@@ -15,11 +15,17 @@ pub async fn bootstrap(migrations: EmbeddedMigrations) {
     cata_log!(Info, "Running pending migrations");
     let database_url = match env::var("DATABASE_URL") {
         Ok(u) => u,
-        Err(e) => panic!("DATABASE_URL not set: {}", e),
+        Err(e) => {
+            cata_log!(Error, format!("DATABASE_URL not set: {}", e));
+            panic!("DATABASE_URL not set: {}", e)
+        }
     };
     let mut sync_conn = match PgConnection::establish(&database_url) {
         Ok(c) => c,
-        Err(e) => panic!("Failed to open sync connection for migrations: {}", e),
+        Err(e) => {
+            cata_log!(Error, format!("Failed to open sync connection for migrations: {}", e));
+            panic!("Failed to open sync connection for migrations: {}", e)
+        }
     };
     if let Err(e) = auto_migrate::run_pending(&mut sync_conn, migrations) {
         panic!("Migration failed; refusing to start: {}", e);

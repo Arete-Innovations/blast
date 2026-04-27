@@ -5,6 +5,7 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
 mod bootstrap;
+mod crank;
 mod ctx;
 mod database;
 mod flows;
@@ -35,8 +36,20 @@ async fn main() {
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
     cata_log!(Info, format!("Server listening on {}", addr));
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            cata_log!(Error, format!("failed to bind {}: {}", addr, e));
+            std::process::exit(1);
+        }
+    };
+    match axum::serve(listener, app).await {
+        Ok(()) => {}
+        Err(e) => {
+            cata_log!(Error, format!("axum serve exited: {}", e));
+            std::process::exit(1);
+        }
+    }
 }
 
 async fn create_app() -> Router {

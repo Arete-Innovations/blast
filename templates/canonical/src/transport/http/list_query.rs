@@ -9,6 +9,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::cata_log;
 use crate::meltdown::MeltDown;
 
 pub const DEFAULT_PAGE: u32 = 1;
@@ -44,16 +45,15 @@ impl Sort {
         if trimmed.is_empty() {
             return Err(ParseError::EmptySortSegment);
         }
-        if let Some(rest) = trimmed.strip_prefix('-') {
-            if rest.is_empty() {
-                return Err(ParseError::EmptySortSegment);
-            }
-            Self::validate_column(rest)?;
-            Ok(Sort { column: rest.to_string(), direction: SortDirection::Desc })
-        } else {
+        let Some(rest) = trimmed.strip_prefix('-') else {
             Self::validate_column(trimmed)?;
-            Ok(Sort { column: trimmed.to_string(), direction: SortDirection::Asc })
+            return Ok(Sort { column: trimmed.to_string(), direction: SortDirection::Asc });
+        };
+        if rest.is_empty() {
+            return Err(ParseError::EmptySortSegment);
         }
+        Self::validate_column(rest)?;
+        Ok(Sort { column: rest.to_string(), direction: SortDirection::Desc })
     }
 
     fn validate_column(col: &str) -> Result<(), ParseError> {
@@ -116,7 +116,9 @@ where
     type Rejection = MeltDown;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let raw = parts.uri.query().unwrap_or("");
+        let Some(raw) = parts.uri.query() else {
+            return ListQuery::from_query_str("");
+        };
         ListQuery::from_query_str(raw)
     }
 }
@@ -133,8 +135,9 @@ impl ListQueryBuilder {
     fn absorb(&mut self, key: &str, value: &str) -> Result<(), MeltDown> {
         match key {
             "page" => {
-                let n: u32 = value.parse().map_err(|_| {
+                let n: u32 = value.parse().map_err(|e| {
                     bad_request(ParseError::NotAnInt { key: "page", value: value.to_string() })
+                        .with_context("parse_error", format!("{}", e))
                 })?;
                 if n == 0 {
                     return Err(bad_request(ParseError::PageMustBePositive));
@@ -142,11 +145,12 @@ impl ListQueryBuilder {
                 self.page = Some(n);
             }
             "page_size" => {
-                let n: u32 = value.parse().map_err(|_| {
+                let n: u32 = value.parse().map_err(|e| {
                     bad_request(ParseError::NotAnInt {
                         key: "page_size",
                         value: value.to_string(),
                     })
+                    .with_context("parse_error", format!("{}", e))
                 })?;
                 if n == 0 {
                     return Err(bad_request(ParseError::PageSizeMustBePositive));
@@ -160,24 +164,39 @@ impl ListQueryBuilder {
                 }
             }
             other => {
-                if let Some(col) = parse_filter_key(other)? {
-                    self.filter.push((col, value.to_string()));
-                } else {
+                let Some(col) = parse_filter_key(other)? else {
                     return Err(bad_request(ParseError::UnknownKey(other.to_string())));
-                }
+                };
+                self.filter.push((col, value.to_string()));
             }
         }
         Ok(())
     }
 
     fn build(self) -> Result<ListQuery, MeltDown> {
+        let page = option_or(self.page, DEFAULT_PAGE);
+        let page_size = option_or(self.page_size, DEFAULT_PAGE_SIZE);
         Ok(ListQuery {
-            page: self.page.unwrap_or(DEFAULT_PAGE),
-            page_size: self.page_size.unwrap_or(DEFAULT_PAGE_SIZE),
+            page,
+            page_size,
             sort: self.sort,
             filter: self.filter,
         })
     }
+}
+
+fn option_or<T>(opt: Option<T>, default: T) -> T {
+    let Some(v) = opt else {
+        return default;
+    };
+    v
+}
+
+fn split_pair(s: &str) -> (&str, &str) {
+    let Some((k, v)) = s.split_once('=') else {
+        return (s, "");
+    };
+    (k, v)
 }
 
 fn parse_filter_key(key: &str) -> Result<Option<String>, MeltDown> {
@@ -200,10 +219,7 @@ fn iter_pairs(raw: &str) -> impl Iterator<Item = (String, String)> + '_ {
     raw.split('&')
         .filter(|s| !s.is_empty())
         .map(|pair| {
-            let (k, v) = match pair.split_once('=') {
-                Some((k, v)) => (k, v),
-                None => (pair, ""),
-            };
+            let (k, v) = split_pair(pair);
             (decode(k), decode(v))
         })
 }
@@ -220,12 +236,16 @@ fn decode(s: &str) -> String {
             }
             b'%' if i + 2 < bytes.len() => {
                 let hex = &s[i + 1..i + 3];
-                if let Ok(b) = u8::from_str_radix(hex, 16) {
-                    out.push(b as char);
-                    i += 3;
-                } else {
-                    out.push('%');
-                    i += 1;
+                match u8::from_str_radix(hex, 16) {
+                    Ok(b) => {
+                        out.push(b as char);
+                        i += 3;
+                    }
+                    Err(e) => {
+                        cata_log!(Debug, format!("decode: malformed %-escape '{}': {}", hex, e));
+                        out.push('%');
+                        i += 1;
+                    }
                 }
             }
             b => {
