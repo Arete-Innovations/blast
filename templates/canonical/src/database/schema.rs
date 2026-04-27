@@ -1,9 +1,18 @@
+pub mod sql_types {
+    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[diesel(postgres_type(name = "user_role"))]
+    pub struct UserRole;
+}
+
 diesel::table! {
+    use diesel::sql_types::*;
+    use super::sql_types::UserRole;
+
     users (id) {
         id -> Int8,
         email -> Text,
         password_hash -> Text,
-        role -> Text,
+        role -> UserRole,
         created_at -> Int8,
         updated_at -> Int8,
         deleted_at -> Nullable<Int8>,
