@@ -390,9 +390,23 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
 }
 
 fn check_switchboard_purity(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    let mut in_block_comment = false;
     for (line_no, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.contains("/*") {
+            in_block_comment = true;
+        }
+        if trimmed.contains("*/") {
+            in_block_comment = false;
+            continue;
+        }
+        if in_block_comment {
+            continue;
+        }
+        if trimmed.starts_with("//") {
             continue;
         }
         let is_mod = trimmed.starts_with("mod ")
