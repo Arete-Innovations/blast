@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::codegen::frontend_types::render::{build_resource_types, meltdown_ts};
+use crate::codegen::frontend_types::render::{build_enum_module, build_resource_types, collect_resource_enums, meltdown_ts};
 use crate::codegen::header;
 use crate::codegen::ir_loader;
 use crate::error::{BlastError, BlastResult};
@@ -68,9 +68,20 @@ pub fn run(
         return Ok(report);
     }
 
+    let mut emitted_enums: Vec<String> = Vec::new();
     for r in &resources {
         let table = r.name.as_str();
         let marker = header::marker_for_resource(project_root, table)?;
+        for (enum_name, variants) in collect_resource_enums(r) {
+            if emitted_enums.iter().any(|n| n == &enum_name) {
+                continue;
+            }
+            let body = format!("{marker}{}", build_enum_module(&enum_name, &variants));
+            let path = out_dir.join(format!("{enum_name}.ts"));
+            write_file(&path, &body, &mut report)?;
+            sink.info(format!("emitted {}", path.display()));
+            emitted_enums.push(enum_name);
+        }
         let body = format!("{marker}{}", build_resource_types(r));
         let path = out_dir.join(format!("{table}.ts"));
         write_file(&path, &body, &mut report)?;

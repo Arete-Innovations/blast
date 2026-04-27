@@ -1,6 +1,9 @@
 use crate::state::SqlType;
 
 pub fn primevue_component(sql: &SqlType) -> &'static str {
+    if enum_meta(sql).is_some() {
+        return "Dropdown";
+    }
     let lowered = sql.as_str().to_ascii_lowercase();
     match lowered.as_str() {
         "bool" | "boolean" => "Checkbox",
@@ -8,6 +11,50 @@ pub fn primevue_component(sql: &SqlType) -> &'static str {
         "timestamp" | "timestamptz" | "date" | "time" => "Calendar",
         "json" | "jsonb" => "Textarea",
         _other => "InputText",
+    }
+}
+
+pub fn enum_meta(_sql: &SqlType) -> Option<(String, Vec<String>)> {
+    None
+}
+
+pub fn enum_type_alias(enum_name: &str) -> String {
+    let mut out = String::with_capacity(enum_name.len());
+    let mut upper_next = true;
+    for ch in enum_name.chars() {
+        if ch == '_' || ch == '-' {
+            upper_next = true;
+            continue;
+        }
+        if upper_next {
+            for u in ch.to_uppercase() {
+                out.push(u);
+            }
+            upper_next = false;
+        } else {
+            for l in ch.to_lowercase() {
+                out.push(l);
+            }
+        }
+    }
+    out
+}
+
+pub fn enum_options_const_name(enum_name: &str) -> String {
+    let mut out = String::with_capacity(enum_name.len());
+    for ch in enum_name.chars() {
+        if ch == '-' {
+            out.push('_');
+            continue;
+        }
+        for u in ch.to_uppercase() {
+            out.push(u);
+        }
+    }
+    if out.ends_with("_VALUES") {
+        out
+    } else {
+        format!("{out}_VALUES")
     }
 }
 
@@ -86,5 +133,32 @@ mod tests {
     #[test]
     fn unknown_falls_back_to_input_text() {
         assert_eq!(primevue_component(&SqlType::new("custom_domain")), "InputText");
+    }
+
+    #[test]
+    fn enum_type_alias_pascal_cases_snake() {
+        assert_eq!(enum_type_alias("user_role"), "UserRole");
+        assert_eq!(enum_type_alias("task_status"), "TaskStatus");
+        assert_eq!(enum_type_alias("priority"), "Priority");
+    }
+
+    #[test]
+    fn enum_type_alias_handles_kebab_and_uppercase_input() {
+        assert_eq!(enum_type_alias("user-role"), "UserRole");
+        assert_eq!(enum_type_alias("USER_ROLE"), "UserRole");
+    }
+
+    #[test]
+    fn enum_options_const_name_screams_snake() {
+        assert_eq!(enum_options_const_name("user_role"), "USER_ROLE_VALUES");
+        assert_eq!(enum_options_const_name("priority"), "PRIORITY_VALUES");
+        assert_eq!(enum_options_const_name("task-status"), "TASK_STATUS_VALUES");
+    }
+
+    #[test]
+    fn enum_meta_returns_none_for_plain_sql_types() {
+        assert!(enum_meta(&SqlType::new("Varchar")).is_none());
+        assert!(enum_meta(&SqlType::new("Int8")).is_none());
+        assert!(enum_meta(&SqlType::new("Bool")).is_none());
     }
 }

@@ -1,4 +1,4 @@
-use crate::codegen::components::input_map;
+use crate::codegen::components::input_map::{self, enum_meta, enum_options_const_name, enum_type_alias};
 use crate::codegen::structs::naming::type_stem_for_resource;
 use crate::state::{FieldName, FieldState, FieldVariant, ResourceState, SqlType};
 
@@ -25,6 +25,7 @@ pub fn build_create_form(resource: &ResourceState, fields: &[(&FieldName, &Field
     let dto = format!("{stem}Insertable");
 
     let imports_block = render_primevue_imports(fields);
+    let enum_imports_block = render_enum_imports(fields);
     let initial_block = render_initial_create(fields);
     let template_fields = render_template_fields(fields);
     let serialize_block = render_serialize_block(fields);
@@ -35,7 +36,7 @@ import {{ ref, reactive }} from 'vue'\n\
 import Button from 'primevue/button'\n\
 {imports_block}import {{ create{stem} }} from '@/generated/api/{table}'\n\
 import type {{ {dto} }} from '@/generated/types/{table}'\n\
-\n\
+{enum_imports_block}\n\
 const emit = defineEmits<{{\n\
   (event: 'created', payload: {dto}): void\n\
   (event: 'cancel'): void\n\
@@ -91,6 +92,7 @@ async function on_submit(): Promise<void> {{\n\
         stem = stem,
         dto = dto,
         imports_block = imports_block,
+        enum_imports_block = enum_imports_block,
         initial_block = initial_block,
         template_fields = template_fields,
         serialize_block = serialize_block,
@@ -104,6 +106,7 @@ pub fn build_edit_form(resource: &ResourceState, fields: &[(&FieldName, &FieldSt
     let patch = format!("{stem}Patch");
 
     let imports_block = render_primevue_imports(fields);
+    let enum_imports_block = render_enum_imports(fields);
     let initial_block = render_initial_edit(fields);
     let template_fields = render_template_fields(fields);
     let serialize_block = render_serialize_block(fields);
@@ -114,7 +117,7 @@ import {{ ref, reactive, watch }} from 'vue'\n\
 import Button from 'primevue/button'\n\
 {imports_block}import {{ update{stem} }} from '@/generated/api/{table}'\n\
 import type {{ {public}, {patch} }} from '@/generated/types/{table}'\n\
-\n\
+{enum_imports_block}\n\
 const props = defineProps<{{ entity: {public} }}>()\n\
 const emit = defineEmits<{{\n\
   (event: 'updated', payload: {patch}): void\n\
@@ -176,6 +179,7 @@ async function on_submit(): Promise<void> {{\n\
         public = public,
         patch = patch,
         imports_block = imports_block,
+        enum_imports_block = enum_imports_block,
         initial_block = initial_block,
         template_fields = template_fields,
         serialize_block = serialize_block,
@@ -196,6 +200,28 @@ fn render_primevue_imports(fields: &[(&FieldName, &FieldState)]) -> String {
     for comp in &seen {
         let lower = comp.to_ascii_lowercase();
         out.push_str(&format!("import {comp} from 'primevue/{lower}'\n"));
+    }
+    out
+}
+
+fn render_enum_imports(fields: &[(&FieldName, &FieldState)]) -> String {
+    let mut seen: Vec<(String, Vec<String>)> = Vec::new();
+    for (_, f) in fields {
+        match enum_meta(&f.sql_type) {
+            Some((name, variants)) => {
+                if !seen.iter().any(|(n, _)| n == &name) {
+                    seen.push((name, variants));
+                }
+            }
+            None => continue, // allow: non-enum fields produce no enum import
+        }
+    }
+    let mut out = String::new();
+    for (name, _) in &seen {
+        let alias = enum_type_alias(name);
+        let const_name = enum_options_const_name(name);
+        out.push_str(&format!("import {{ {const_name} }} from '@/generated/types/{name}'\n"));
+        out.push_str(&format!("import type {{ {alias} }} from '@/generated/types/{name}'\n"));
     }
     out
 }
@@ -265,6 +291,10 @@ fn render_attrs(component: &str, sql: &SqlType) -> String {
             s
         }
         "Textarea" => " rows=\"4\"".to_string(),
+        "Dropdown" => match enum_meta(sql) {
+            Some((name, _variants)) => format!(" :options=\"{}\"", enum_options_const_name(&name)),
+            None => String::new(), // allow: dropdown without enum metadata renders no options attr
+        },
         _other => String::new(),
     }
 }
@@ -285,23 +315,32 @@ fn render_serialize_block(fields: &[(&FieldName, &FieldState)]) -> String {
     s
 }
 
-fn empty_value(sql: &SqlType, nullable: bool) -> &'static str {
+fn empty_value(sql: &SqlType, nullable: bool) -> String {
+    match enum_meta(sql) {
+        Some((name, _variants)) => {
+            if nullable {
+                return "null".to_string();
+            }
+            return format!("{}[0]", enum_options_const_name(&name));
+        }
+        None => {} // allow: fall through to non-enum scalar mapping
+    }
     if nullable {
-        return "null";
+        return "null".to_string();
     }
     if input_map::is_bool(sql) {
-        return "false";
+        return "false".to_string();
     }
     if input_map::is_number(sql) {
-        return "0";
+        return "0".to_string();
     }
     if input_map::is_calendar(sql) {
-        return "null";
+        return "null".to_string();
     }
     if input_map::is_json(sql) {
-        return "''";
+        return "''".to_string();
     }
-    "''"
+    "''".to_string()
 }
 
 fn humanize(snake: &str) -> String {
@@ -443,5 +482,21 @@ mod tests {
         assert_eq!(humanize("email_address"), "Email address");
         assert_eq!(humanize("first_name"), "First name");
         assert_eq!(humanize("name"), "Name");
+    }
+
+    #[test]
+    fn render_enum_imports_is_empty_when_no_enum_fields() {
+        let r = synth_resource();
+        let fields = collect_fields(&r, FieldVariant::Insertable);
+        let block = render_enum_imports(&fields);
+        assert!(block.is_empty(), "no enum fields means no enum imports, got {block}");
+    }
+
+    #[test]
+    fn empty_value_for_plain_text_is_empty_string() {
+        assert_eq!(empty_value(&SqlType::new("Varchar"), false), "''");
+        assert_eq!(empty_value(&SqlType::new("Bool"), false), "false");
+        assert_eq!(empty_value(&SqlType::new("Int8"), false), "0");
+        assert_eq!(empty_value(&SqlType::new("Int4"), true), "null");
     }
 }

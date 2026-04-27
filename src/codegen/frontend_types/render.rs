@@ -5,9 +5,8 @@
 //!
 //! Convention: snake_case field names, per Governor rule.
 
-use crate::codegen::structs::naming::{
-    filter_struct_name_for_resource, type_stem_for_resource,
-};
+use crate::codegen::components::input_map::{enum_meta, enum_options_const_name, enum_type_alias};
+use crate::codegen::structs::naming::{filter_struct_name_for_resource, type_stem_for_resource};
 use crate::state::{FieldState, FieldVariant, FilterKind, ResourceState, SqlType, Verb};
 
 /// Map a Diesel SQL type to its TypeScript type.
@@ -33,22 +32,29 @@ pub fn ts_base_type(sql: &SqlType) -> &'static str {
     }
 }
 
+fn ts_field_type(sql: &SqlType) -> String {
+    match enum_meta(sql) {
+        Some((name, _variants)) => enum_type_alias(&name),
+        None => ts_base_type(sql).to_string(), // allow: fall through to scalar SQL mapping
+    }
+}
+
 fn ts_type(field: &FieldState) -> String {
-    let base = ts_base_type(&field.sql_type);
+    let base = ts_field_type(&field.sql_type);
     if field.nullable {
         format!("{base} | null")
     } else {
-        base.to_string()
+        base
     }
 }
 
 fn ts_type_always_optional(field: &FieldState) -> String {
-    let base = ts_base_type(&field.sql_type);
+    let base = ts_field_type(&field.sql_type);
     format!("{base} | null")
 }
 
 fn filter_ts_type(sql: &SqlType, kind: FilterKind) -> String {
-    let base = ts_base_type(sql);
+    let base = ts_field_type(sql);
     match kind {
         FilterKind::Eq => format!("{base} | null"),
         FilterKind::Range => format!("{{ from: {base} | null; to: {base} | null }} | null"),
@@ -58,11 +64,69 @@ fn filter_ts_type(sql: &SqlType, kind: FilterKind) -> String {
     }
 }
 
+/// Collect every distinct enum referenced by this resource's fields, in
+/// the order they appear. Used by the runner to emit per-enum files and
+/// by the renderer to emit `import type` lines for the resource module.
+pub fn collect_resource_enums(resource: &ResourceState) -> Vec<(String, Vec<String>)> {
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    for (_, field) in resource.fields.iter() {
+        match enum_meta(&field.sql_type) {
+            Some((name, variants)) => {
+                if !out.iter().any(|(n, _)| n == &name) {
+                    out.push((name, variants));
+                }
+            }
+            None => continue, // allow: scalar SQL types contribute no enums
+        }
+    }
+    out
+}
+
+/// Build the body of a per-enum TS module.
+///
+/// Emits the named string-literal-union alias plus a `readonly` values
+/// constant the form codegen feeds to `<Dropdown :options="...">`.
+pub fn build_enum_module(name: &str, variants: &[String]) -> String {
+    let alias = enum_type_alias(name);
+    let const_name = enum_options_const_name(name);
+    let union = if variants.is_empty() {
+        "never".to_string()
+    } else {
+        variants
+            .iter()
+            .map(|v| format!("'{}'", escape_single_quotes(v)))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+    let array_body = variants
+        .iter()
+        .map(|v| format!("'{}'", escape_single_quotes(v)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut out = String::new();
+    out.push_str(&format!("export type {alias} = {union}\n\n"));
+    out.push_str(&format!("export const {const_name}: readonly {alias}[] = [{array_body}] as const\n"));
+    out
+}
+
+fn escape_single_quotes(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
 /// Build the full TS file body for one resource.
 pub fn build_resource_types(resource: &ResourceState) -> String {
     let stem = type_stem_for_resource(resource);
 
     let mut out = String::new();
+
+    let enums = collect_resource_enums(resource);
+    if !enums.is_empty() {
+        for (name, _) in &enums {
+            let alias = enum_type_alias(name);
+            out.push_str(&format!("import type {{ {alias} }} from './{name}'\n"));
+        }
+        out.push('\n');
+    }
 
     // --- Db struct (only if Db fields exist) ---
     let db_fields: Vec<_> = resource
@@ -338,5 +402,31 @@ mod tests {
         assert!(body.contains("type: string"));
         assert!(body.contains("message: string"));
         assert!(body.contains("context: Record<string, string> | null"));
+    }
+
+    #[test]
+    fn build_enum_module_emits_alias_and_values_const() {
+        let body = build_enum_module("user_role", &["admin".to_string(), "member".to_string()]);
+        assert!(body.contains("export type UserRole = 'admin' | 'member'"), "alias missing");
+        assert!(body.contains("export const USER_ROLE_VALUES: readonly UserRole[] = ['admin', 'member'] as const"), "values const missing");
+    }
+
+    #[test]
+    fn build_enum_module_handles_single_variant() {
+        let body = build_enum_module("flag", &["only".to_string()]);
+        assert!(body.contains("export type Flag = 'only'"));
+        assert!(body.contains("export const FLAG_VALUES: readonly Flag[] = ['only'] as const"));
+    }
+
+    #[test]
+    fn build_enum_module_escapes_single_quotes_in_variants() {
+        let body = build_enum_module("kind", &["it's".to_string()]);
+        assert!(body.contains("'it\\'s'"), "single-quote escape missing");
+    }
+
+    #[test]
+    fn collect_resource_enums_returns_empty_for_plain_resources() {
+        let r = synth_resource();
+        assert!(collect_resource_enums(&r).is_empty());
     }
 }
