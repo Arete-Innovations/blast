@@ -1,7 +1,7 @@
 
 use diesel_async::{scoped_futures::ScopedBoxFuture, AsyncPgConnection};
 
-use crate::meltdown::MeltDown;
+use canonical::meltdown::MeltDown;
 
 use super::harness::{with_test_transaction, TestPool};
 

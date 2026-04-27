@@ -2,5 +2,5 @@
 use std::path::PathBuf;
 
 pub struct Storage {
-    pub(crate) root: PathBuf,
+    pub root: PathBuf,
 }

@@ -1,5 +1,5 @@
 
-use crate::meltdown::MeltDown;
+use canonical::meltdown::MeltDown;
 
 use super::ctx::TestCtx;
 
@@ -16,6 +16,6 @@ pub async fn make_fixture<T: Fixture>(ctx: &mut TestCtx<'_>) -> Result<T, MeltDo
 #[macro_export]
 macro_rules! fixture {
     (let $name:ident : $ty:ty = $ctx:expr) => {
-        let $name: $ty = <$ty as $crate::testing::Fixture>::create($ctx).await?;
+        let $name: $ty = <$ty as common::fixtures::Fixture>::create($ctx).await?;
     };
 }

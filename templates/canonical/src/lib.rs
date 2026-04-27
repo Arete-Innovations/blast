@@ -14,6 +14,3 @@ pub mod transport;
 
 pub use ctx::Ctx;
 pub use bootstrap::bootstrap;
-
-#[cfg(feature = "testing")]
-pub mod testing;
