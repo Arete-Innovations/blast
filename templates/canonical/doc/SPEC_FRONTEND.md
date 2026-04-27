@@ -68,16 +68,13 @@ frontend/
 │   │   ├── bus.ts                      (cross-resource event bus, singleton)
 │   │   └── components/                 (PageShell, layouts, generated CRUD Form/List per resource)
 │   ├── pages/                          (auto-emitted CRUD pages: <Resource>ListPage.vue, etc.)
-│   └── custom/                         (user-authored)
-│       ├── pages/
-│       │   ├── DashboardPage.vue
-│       │   └── SettingsPage.vue
-│       ├── components/
-│       └── composables/
+│   ├── DashboardPage.vue               (user-authored pages live alongside generated; Blast never touches)
+│   ├── SettingsPage.vue
+│   └── components/                     (user-authored components and composables)
 └── dist/                               (Vite output — served by Axum, gitignored)
 ```
 
-`generated/` and `custom/` are both linted by Governor (`SPEC_GOVERNOR.md`). Generated should be compliant by construction; linting it is a forcing function on the codegen.
+Both `generated/` and all user-authored files in `src/` are linted by Governor (`SPEC_GOVERNOR.md`). Generated should be compliant by construction; linting it is a forcing function on the codegen.
 
 ## Packaging
 
@@ -227,13 +224,13 @@ User doesn't hand-write these. Edit the resource state file via `blast gen resou
 
 ## Hand-Written Code
 
-Pages, components, hand-written composables, and custom WS handlers live in `frontend/src/custom/` and consume the generated composables.
+Pages, components, hand-written composables, and custom WS handlers live alongside generated code in `frontend/src/` (any path outside `generated/`) and consume the generated composables.
 
 ```vue
 
 <script setup lang="ts">
 import { useOrdersList } from '@/generated/composables/orders';
-import OrderCard from '@/custom/components/OrderCard.vue';
+import OrderCard from '@/components/OrderCard.vue';
 
 const { data: orders, error } = useOrdersList({ live: true });
 </script>
@@ -286,7 +283,7 @@ CSS layer order: `reset, primevue, app` — app styles always win.
 
 ### PrimeVue: do not reinvent
 
-`PrimeVueReinvented` Governor rule bans wrapping/replacing PrimeVue primitives (`Button`, `Card`, `Dialog`, `Drawer`, `Dropdown`, `DataTable`, etc.) with custom components of the same name in `custom/components/`. Use PrimeVue directly. If you wrap, name after the domain (`OrderActionsMenu`, not `Menu`).
+`PrimeVueReinvented` Governor rule bans wrapping/replacing PrimeVue primitives (`Button`, `Card`, `Dialog`, `Drawer`, `Dropdown`, `DataTable`, etc.) with custom components of the same name. Use PrimeVue directly. If you wrap, name after the domain (`OrderActionsMenu`, not `Menu`).
 
 ## MeltDown Error Consumption
 

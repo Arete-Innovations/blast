@@ -43,7 +43,7 @@ import AdminShell from '@/generated/admin/AdminShell.vue';
 <template><AdminShell /></template>
 ```
 
-Router entry: `{ path: '/admin', component: () => import('@/custom/AdminEntry.vue') }`.
+Router entry: `{ path: '/admin', component: () => import('@/AdminEntry.vue') }`.
 
 ## Widget Inference (schema.rs types → default widgets)
 
@@ -155,7 +155,7 @@ admin_actions: [
     AdminAction(
         resource: "orders",
         label: "Issue Refund",
-        component: "custom/admin/actions/OrderActions.vue",
+        component: "admin/actions/OrderActions.vue",
         flow: "admin::orders::refund",
     ),
 ]

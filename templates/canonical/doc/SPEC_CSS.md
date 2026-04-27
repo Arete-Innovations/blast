@@ -14,7 +14,7 @@ Monolithic design-token file + scoped SFC styles. No Tailwind. No utility-class 
 5. **`rem` + responsive** (`clamp()`, `vw`) for everything else. Root scales with viewport.
 6. **Scoped styles with `@layer app`.** No global styles outside `base.css` and `tokens.css`.
 7. **Scoped `<style>` blocks get the same hammer as global CSS.** All color/px/rem rules apply identically inside per-SFC `<style scoped>`. There is no "I'm in a scoped block so I can hardcode" exception. Inline `style=` and `:style=` directives also subject to the same rules — actually banned outright (`InlineStyle` rule), but if they sneak through they still fail color/px checks.
-8. **Enforcement via `blast check` / Governor** (see `blast/doc/SPEC_GOVERNOR.md`). Fail the build on violation. Lints both `generated/` and `custom/` subtrees.
+8. **Enforcement via `blast check` / Governor** (see `blast/doc/SPEC_GOVERNOR.md`). Fail the build on violation. Lints both `generated/` and all user-authored files in `src/`.
 
 ## Root Font Scaling
 

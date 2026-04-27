@@ -121,7 +121,7 @@ Each handler: extract input → call exactly one flow → map `Result` to respon
 
 ### `frontend/`
 
-Vue 3 + TS + Vite + PrimeVue. `generated/` + `custom/` split inside `frontend/src/`.
+Vue 3 + TS + Vite + PrimeVue. Two-tier model inside `frontend/src/`: `generated/` (Blast-owned) + everything else (user-owned forever).
 
 ## Routine vs Flow Heuristic
 

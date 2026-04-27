@@ -52,7 +52,7 @@ Chain in builder style:
 Crank::backoff(3, Duration::from_millis(500))
     .retry_only_transient()
     .deadline(Duration::from_secs(10))
-    .run(|| routines::custom::stripe::charge(ctx, &input))
+    .run(|| routines::stripe::charge(ctx, &input))
     .await?;
 ```
 
@@ -155,7 +155,7 @@ pub async fn run(ctx: &Ctx, input: ChargeInput) -> Result<Receipt, MeltDown> {
     let receipt = Crank::backoff(3, Duration::from_millis(200))
         .deadline(Duration::from_secs(15))
         .on_attempt(|n, e| cata_log!(Warning, format!("retrying charge attempt {}: {}", n, e)))
-        .run(|| routines::custom::payments::charge(ctx, &input.card, input.amount))
+        .run(|| routines::payments::charge(ctx, &input.card, input.amount))
         .await?;
 
     Ok(receipt)
@@ -168,7 +168,7 @@ pub async fn run(ctx: &Ctx, input: ChargeInput) -> Result<Receipt, MeltDown> {
 pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<UserPublic, MeltDown> {
     ctx.require_anonymous()?;
     Crank::none()
-        .run(|| routines::custom::auth::register::run(ctx, input))
+        .run(|| routines::auth::register::run(ctx, input))
         .await
 }
 ```

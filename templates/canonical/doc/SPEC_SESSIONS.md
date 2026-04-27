@@ -88,7 +88,7 @@ After login, transport sets an httpOnly secure cookie:
 ```rust
 
 pub async fn login(State(ctx), Json(input)) -> Result<impl IntoResponse, MeltDown> {
-    let outcome = flows::custom::login::run(&ctx, input).await?;
+    let outcome = flows::auth::login::run(&ctx, input).await?;
     let cookie = Cookie::build(("cb_session", outcome.token))
         .http_only(true)
         .secure(ctx.env == Env::Prod)
@@ -181,7 +181,7 @@ First match wins. Supports both transports uniformly.
 Flows call a routine; the routine owns the model call:
 
 ```rust
-// inside flows/custom/logout.rs
+// inside flows/auth/logout.rs
 routines::sessions::revoke(ctx, ctx.session().id).await?;
 ```
 
@@ -196,7 +196,7 @@ let jar = jar.add(Cookie::build(("cb_session", ""))
 ### All sessions for a user
 
 ```rust
-// inside a flow (e.g. flows/custom/revoke_all_sessions.rs)
+// inside a flow (e.g. flows/auth/revoke_all_sessions.rs)
 routines::sessions::revoke_all_for_user(ctx, user_id).await?;
 ```
 
@@ -209,7 +209,7 @@ A Fuse runs periodically:
 ```rust
 Fuse::named("prune_expired_sessions")
     .schedule(Schedule::every(Duration::from_hours(1)))
-    .run(flows::custom::prune_expired_sessions::run)
+    .run(flows::sessions::prune_expired::run)
 ```
 
 ```sql

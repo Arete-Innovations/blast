@@ -34,14 +34,16 @@ src/flows/
 │   │   └── delete.rs
 │   └── orders/
 │       └── ...
-└── custom/                 ← hand-written business ops
-    ├── mod.rs
-    ├── signup.rs
-    ├── checkout.rs
-    └── cancel_subscription.rs
+├── auth/                   ← scaffolded auth flows (user-owned after scaffold)
+│   ├── login.rs
+│   ├── logout.rs
+│   └── register.rs
+├── signup.rs               ← user-written business ops live at top level (flat)
+├── checkout.rs
+└── cancel_subscription.rs
 ```
 
-Generated flows: one subdir per resource, one file per declared verb. Custom flows: flat, one file per op. Both live side by side.
+Generated flows: one subdir per resource, one file per declared verb. User-written flows: flat top-level files or top-level subdirs per domain. Two-tier ownership: `flows/generated/` is Blast-owned; everything else is user-owned forever.
 
 ## Hard Rules
 
@@ -52,7 +54,7 @@ pub async fn signup(
     State(ctx): State<Ctx>,
     Json(input): Json<SignupInput>,
 ) -> Result<Json<UserPublic>, MeltDown> {
-    let user = flows::custom::signup::run(&ctx, input).await?;
+    let user = flows::signup::run(&ctx, input).await?;
     Ok(Json(user))
 }
 ```
@@ -112,7 +114,7 @@ Generated flows are predictable, ~10-15 lines, regeneration-safe. They wrap exac
 
 ## Custom Flow Shape
 
-Custom flows live in `flows/custom/`. They compose routines (never models/services/database) and may declare per-routine retry policies.
+User-written flows live at the top level of `flows/` (flat files or per-domain subdirs). They compose routines (never models/services/database) and may declare per-routine retry policies.
 
 ```rust
 use crate::{
@@ -134,11 +136,11 @@ pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> 
     ctx.require_anonymous()?;
 
     let user = Crank::none()
-        .run(|| routines::custom::users::create(ctx, &input))
+        .run(|| routines::users::create(ctx, &input))
         .await?;
 
     Crank::backoff(3, Duration::from_millis(500))
-        .run(|| routines::custom::email::welcome::send(&user.email))
+        .run(|| routines::email::welcome::send(&user.email))
         .await?;
 
     Ok(user.into_public())
@@ -156,19 +158,19 @@ pub async fn run(ctx: &Ctx, input: CheckoutInput) -> Result<Receipt, MeltDown> {
     ctx.require_session()?;
 
     let charge = Crank::backoff(3, Duration::from_millis(200))
-        .run(|| routines::custom::payments::charge(&input.card, input.amount))
+        .run(|| routines::payments::charge(&input.card, input.amount))
         .await?;
 
     let sub = Crank::none()
-        .run(|| routines::custom::subscriptions::create(ctx, &input, &charge))
+        .run(|| routines::subscriptions::create(ctx, &input, &charge))
         .await?;
 
     Crank::backoff(2, Duration::from_millis(500))
-        .run(|| routines::custom::email::send_receipt(&sub.email, &charge))
+        .run(|| routines::email::send_receipt(&sub.email, &charge))
         .await?;
 
     Crank::none()
-        .run(|| routines::custom::users::update_tier(ctx, sub.user_id))
+        .run(|| routines::users::update_tier(ctx, sub.user_id))
         .await?;
 
     Ok(Receipt::from((charge, sub)))
@@ -183,7 +185,7 @@ Scheduled tasks dispatch to exactly one flow per tick.
 
 ```rust
 Fuse::every(Duration::from_minutes(5))
-    .run(flows::custom::cleanup_expired_sessions::run)
+    .run(flows::sessions::cleanup_expired::run)
     .register();
 ```
 
@@ -195,7 +197,7 @@ Per WS message, one flow.
 
 ```rust
 pub async fn on_message(ws: &WsCtx, msg: ChatSend) -> Result<(), MeltDown> {
-    flows::custom::post_chat_message::run(&ws.ctx, msg).await?;
+    flows::chat::post_message::run(&ws.ctx, msg).await?;
     Ok(())
 }
 ```
@@ -229,20 +231,20 @@ Banned. Custom flows compose routines, not other flows.
 
 ```rust
 pub async fn signup_route(State(ctx), Json(input)) -> Result<...> {
-    let user = flows::custom::create_user::run(...).await?;
-    flows::custom::send_welcome::run(...).await?;
-    flows::custom::log_signup::run(...).await?;
+    let user = flows::users::create::run(...).await?;
+    flows::email::send_welcome::run(...).await?;
+    flows::audit::log_signup::run(...).await?;
     Ok(Json(user))
 }
 ```
 
-Build one `flows::custom::signup` that chains routines.
+Build one `flows::signup` that chains routines.
 
 **Implicit no-retry (omitted Crank):**
 
 ```rust
 pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
-    routines::custom::users::list(ctx).await
+    routines::users::list(ctx).await
 }
 ```
 
@@ -251,7 +253,7 @@ Banned. Wrap in `Crank::none()` so the policy is visible:
 ```rust
 pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
     Crank::none()
-        .run(|| routines::custom::users::list(ctx))
+        .run(|| routines::users::list(ctx))
         .await
 }
 ```

@@ -43,7 +43,7 @@ pub fn register(registry: &mut FuseRegistry) {
     registry.add(
         Fuse::named("cleanup_expired_sessions")
             .schedule(Schedule::every(Duration::from_minutes(5)))
-            .run(crate::flows::custom::cleanup_expired_sessions::run)
+            .run(crate::flows::sessions::cleanup_expired::run)
     );
 }
 ```
@@ -176,7 +176,7 @@ Fuse::every(...)
     })
 ```
 
-Fuses dispatch to flows. If you're writing code inline, turn it into `flows/custom/whatever.rs` and dispatch to that.
+Fuses dispatch to flows. If you're writing code inline, extract it into a flow file (e.g. `flows/jobs/whatever.rs`) and dispatch to that.
 
 **Using Fuses for request-response:**
 Fuses are fire-and-forget background work. HTTP handlers don't wait for Fuse results. If a user action needs a side-effect immediately, do it in the flow for that action.

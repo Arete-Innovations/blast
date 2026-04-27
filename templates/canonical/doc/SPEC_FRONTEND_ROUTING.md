@@ -69,7 +69,7 @@ pages: [
     Page(
         route: "dashboard",
         path: "/",
-        component: "custom/pages/DashboardPage.vue",
+        component: "DashboardPage.vue",
         layout: "cards",
         label: "Dashboard",
         icon: "dashboard",
@@ -79,14 +79,14 @@ pages: [
     Page(
         route: "debug.thing",
         path: "/_debug/thing",
-        component: "custom/pages/DebugThing.vue",
+        component: "DebugThing.vue",
         layout: "bleed",
         in_nav: false,
     ),
 ]
 ```
 
-The `component:` field references a hand-written Vue file in `custom/pages/` — codegen wires the route to it but does not generate the page body itself.
+The `component:` field references a hand-written Vue file in `src/` (user-owned, any path outside `generated/`) — codegen wires the route to it but does not generate the page body itself.
 
 ### Nav declaration
 

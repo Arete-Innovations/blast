@@ -69,7 +69,7 @@ async fn test_get_user_baseline() {
 }
 ```
 
-User adds edge-case assertions in `flows/custom/users_get_edge_cases.test.rs`. Blast never touches `custom/`.
+User adds edge-case assertions in `flows/users/get_edge_cases.test.rs`. Blast never touches user-owned files.
 
 ### Per-route baseline
 

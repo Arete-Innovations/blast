@@ -140,11 +140,11 @@ RATE_LIMIT_PER_MIN=60
 
 Template is always in sync with the state spec. Never hand-maintained.
 
-## Custom Escape Hatch
+## Escape Hatch
 
-Anything the TUI cannot express goes in `src/<layer>/custom/`. No `raw_rust` field in RON state — that would leak the DSL problem into the state files. If you need behavior beyond what the state model supports, hand-write it in `custom/`, wire it in the layer's `mod.rs`.
+Anything the TUI cannot express, hand-write directly in `src/<layer>/`. No `raw_rust` field in RON state — that would leak the DSL problem into the state files. If you need behavior beyond what the state model supports, add a file at the layer root and wire it in the layer's `mod.rs`.
 
-Blast never touches `custom/`.
+Two-tier ownership: `<layer>/generated/` is Blast-owned (rewritten on `blast gen`); everything else in the layer is user-owned forever — Blast never reads, touches, deletes, or renames it.
 
 ## Path Conventions (Not Configurable)
 
