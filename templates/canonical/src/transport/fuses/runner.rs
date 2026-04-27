@@ -11,8 +11,8 @@ use dashmap::DashMap;
 
 use crate::cata_log;
 use crate::ctx::Ctx;
-use crate::transport::fuses::registry::{FuseFn, FuseRegistry};
-use crate::transport::fuses::schedule::Schedule;
+use crate::structs::fuses::registry::{FuseFn, FuseRegistry};
+use crate::structs::fuses::schedule::Schedule;
 use crate::meltdown::{MeltDown, MeltType};
 
 pub type Pool_ = Pool<AsyncPgConnection>;

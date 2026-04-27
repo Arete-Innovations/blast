@@ -13,15 +13,11 @@ use lettre::{
 use crate::{
     cata_log,
     meltdown::{MeltDown, MeltType},
+    structs::services::email::*,
 };
 
 const DEFAULT_PORT: u16 = 587;
 const DEFAULT_TLS: bool = true;
-
-pub struct Email {
-    transport: AsyncSmtpTransport<Tokio1Executor>,
-    from: Mailbox,
-}
 
 impl Email {
     pub fn from_env() -> Result<Email, MeltDown> {

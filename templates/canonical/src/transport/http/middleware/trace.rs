@@ -6,6 +6,7 @@ use tracing::Span;
 use uuid::Uuid;
 
 use crate::cata_log;
+use crate::structs::middleware::trace::{CatalystMakeSpan, CatalystOnResponse};
 
 pub fn make_trace_layer() -> TraceLayer<
     tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>,
@@ -18,9 +19,6 @@ pub fn make_trace_layer() -> TraceLayer<
         .on_response(CatalystOnResponse)
         .on_request(())
 }
-
-#[derive(Clone)]
-pub struct CatalystMakeSpan;
 
 impl<B> MakeSpan<B> for CatalystMakeSpan {
     fn make_span(&mut self, request: &Request<B>) -> Span {
@@ -38,9 +36,6 @@ impl<B> MakeSpan<B> for CatalystMakeSpan {
         )
     }
 }
-
-#[derive(Clone)]
-pub struct CatalystOnResponse;
 
 impl<B> OnResponse<B> for CatalystOnResponse {
     fn on_response(self, response: &axum::http::Response<B>, latency: Duration, span: &Span) {

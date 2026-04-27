@@ -3,24 +3,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tokio::sync::mpsc;
 
-pub type Topic = String;
-
-pub type SubscriberId = u64;
-
-pub type OutboundFrame = String;
-
-#[derive(Clone)]
-pub struct SubscriberHandle {
-    pub id: SubscriberId,
-    pub sender: mpsc::Sender<OutboundFrame>,
-}
-
-pub struct Registry {
-    topics: DashMap<Topic, Vec<SubscriberHandle>>,
-    next_id: AtomicU64,
-}
+pub use crate::structs::ws::registry::{OutboundFrame, Registry, SubscriberHandle, SubscriberId, Topic};
 
 impl Registry {
     pub fn new() -> Arc<Self> {

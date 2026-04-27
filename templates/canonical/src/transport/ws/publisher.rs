@@ -5,8 +5,9 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::cata_log;
+use crate::structs::ws::publisher::Channel;
+use crate::structs::ws::registry::Registry;
 use super::protocol::ServerMessage;
-use super::registry::Registry;
 
 pub fn publish<T: Serialize>(registry: &Registry, topic: &str, event: &T) -> usize {
     let payload = match serde_json::to_value(event) {
@@ -33,12 +34,6 @@ pub fn publish<T: Serialize>(registry: &Registry, topic: &str, event: &T) -> usi
         }
     }
     delivered
-}
-
-pub struct Channel<T: Serialize + Send + Sync + 'static> {
-    topic: String,
-    registry: Arc<Registry>,
-    _phantom: PhantomData<fn() -> T>,
 }
 
 impl<T: Serialize + Send + Sync + 'static> Channel<T> {

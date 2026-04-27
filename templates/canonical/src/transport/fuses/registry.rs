@@ -1,22 +1,11 @@
 
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::ctx::Ctx;
-use crate::transport::fuses::schedule::Schedule;
 use crate::meltdown::MeltDown;
-
-pub type FuseFuture = Pin<Box<dyn Future<Output = Result<(), MeltDown>> + Send>>;
-
-pub type FuseFn = Arc<dyn Fn(&Ctx) -> FuseFuture + Send + Sync>;
-
-pub struct Fuse {
-    pub name: String,
-    pub flow_name: String,
-    pub schedule: Schedule,
-    pub run_fn: FuseFn,
-}
+use crate::structs::fuses::registry::{Fuse, FuseBuilder, FuseRegistry, FuseFn, FuseFuture};
+use crate::structs::fuses::schedule::Schedule;
 
 impl Fuse {
     pub fn named(name: impl Into<String>) -> FuseBuilder {
@@ -27,13 +16,6 @@ impl Fuse {
             flow_name: None,
         }
     }
-}
-
-pub struct FuseBuilder {
-    name: String,
-    schedule: Option<Schedule>,
-    run_fn: Option<FuseFn>,
-    flow_name: Option<String>,
 }
 
 impl FuseBuilder {
@@ -74,11 +56,6 @@ impl FuseBuilder {
             run_fn,
         }
     }
-}
-
-#[derive(Default)]
-pub struct FuseRegistry {
-    fuses: Vec<Fuse>,
 }
 
 impl FuseRegistry {

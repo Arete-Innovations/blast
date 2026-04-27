@@ -8,13 +8,10 @@ use std::{
 use crate::{
     cata_log,
     meltdown::{MeltDown, MeltType},
+    structs::services::storage::*,
 };
 
 const DEFAULT_ROOT: &str = "./storage";
-
-pub struct Storage {
-    root: PathBuf,
-}
 
 impl Storage {
     pub fn from_env() -> Result<Storage, MeltDown> {

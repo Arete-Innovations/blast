@@ -1,5 +1,5 @@
 
-use crate::structs::ws::{ClientMessage, ControlFrame, ServerMessage};
+pub use crate::structs::ws::{ClientMessage, ControlFrame, ServerMessage};
 use serde_json::Value;
 
 impl ServerMessage {

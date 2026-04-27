@@ -9,10 +9,9 @@ use crate::{
     flows::sessions::resolve,
     meltdown::*,
     structs::auth::{Role, SessionContext},
+    structs::middleware::guards::{AdminGuard, Referer, UserGuard},
     Ctx,
 };
-
-pub struct AdminGuard(pub SessionContext);
 
 #[async_trait]
 impl FromRequestParts<Ctx> for AdminGuard {
@@ -27,8 +26,6 @@ impl FromRequestParts<Ctx> for AdminGuard {
         }
     }
 }
-
-pub struct UserGuard(pub SessionContext);
 
 #[async_trait]
 impl FromRequestParts<Ctx> for UserGuard {
@@ -60,8 +57,6 @@ async fn extract_session(parts: &Parts, ctx: &Ctx) -> Result<SessionContext, Mel
 
     resolve::run(ctx, &raw_token).await
 }
-
-pub struct Referer(pub String);
 
 #[async_trait]
 impl<S> FromRequestParts<S> for Referer

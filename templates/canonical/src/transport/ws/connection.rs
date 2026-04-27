@@ -11,11 +11,9 @@ use tokio::sync::mpsc;
 
 use crate::cata_log;
 use crate::meltdown::{MeltDown, MeltType};
+use crate::structs::ws::connection::UserId;
 use super::protocol::{ClientMessage, ServerMessage};
 use super::registry::{OutboundFrame, Registry, SubscriberHandle};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct UserId(pub i64);
 
 pub const OUTBOUND_QUEUE_DEPTH: usize = 64;
 

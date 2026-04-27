@@ -3,13 +3,7 @@ use chrono::{DateTime, NaiveTime, Utc};
 use std::time::Duration;
 
 use crate::cata_log;
-
-#[derive(Debug, Clone)]
-pub enum Schedule {
-    Every(Duration),
-    Cron(String),
-    DailyAt(NaiveTime),
-}
+use crate::structs::fuses::schedule::Schedule;
 
 impl Schedule {
     pub fn every(d: Duration) -> Self {

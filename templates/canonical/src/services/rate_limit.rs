@@ -3,15 +3,7 @@ use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 
-pub struct RateLimit {
-    buckets: DashMap<String, TokenBucket>,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct TokenBucket {
-    tokens: u32,
-    last_refill: Instant,
-}
+use crate::structs::services::rate_limit::*;
 
 impl Default for RateLimit {
     fn default() -> Self {
