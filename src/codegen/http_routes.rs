@@ -1,20 +1,3 @@
-//! `blast gen http-routes` — emit Axum handlers per resource state into the
-//! user app's `src/transport/http/generated/` directory.
-//!
-//! Architecture rule (locked, see `catalyst/doc/SPEC_ARCHITECTURE.md`):
-//! transport calls flows ONLY. One transport call == one flow call. Auth lives
-//! in the flow, not the handler. The handlers we emit here are deliberately
-//! dumb glue: extract typed input from Axum extractors, call the resource's
-//! generated flow, wrap the result in `Json` (or `StatusCode` for delete).
-//!
-//! Path convention is hardcoded:
-//! - collection: `/<plural>/`
-//! - item:       `/<plural>/:id`
-//! Custom paths land in `transport/http/custom/`, hand-written.
-//!
-//! Emits one file per resource plus a barrel `mod.rs` that nests every
-//! per-resource router under a top-level `pub fn router() -> Router<Ctx>`.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 

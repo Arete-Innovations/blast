@@ -1,21 +1,3 @@
-//! `blast gen flows` — emit per-resource flow stubs.
-//!
-//! For every resource state file in `storage/blast/state/resources/`, write
-//! one barrel `mod.rs` plus one Rust file per declared verb under
-//! `src/flows/generated/<resource>/<verb>.rs`. Each verb stub is a thin
-//! named operation (capability inventory) that:
-//!
-//! 1. enforces auth based on the verb's `AuthMode` (declared in state)
-//! 2. delegates to the `models::<resource>::<verb>` persistence fn
-//! 3. returns the model output unchanged
-//!
-//! Generated flows are predictable, ~10-20 lines, and regeneration-safe.
-//! Custom flows belong in `src/flows/custom/` and are never touched here.
-//!
-//! Idempotency: always overwrite (generated files are regeneratable per the
-//! contract). Determinism: verbs and resources are emitted in `Verb` /
-//! lexical order respectively, so byte-stable across runs.
-
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
