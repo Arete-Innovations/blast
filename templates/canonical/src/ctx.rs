@@ -1,10 +1,13 @@
+use diesel_async::{
+    pooled_connection::deadpool::{Object, Pool},
+    scoped_futures::ScopedBoxFuture,
+    AsyncConnection, AsyncPgConnection,
+};
 
-use diesel_async::pooled_connection::deadpool::{Object, Pool};
-use diesel_async::scoped_futures::ScopedBoxFuture;
-use diesel_async::{AsyncConnection, AsyncPgConnection};
-
-use crate::meltdown::*;
-use crate::structs::auth::{Role, SessionContext};
+use crate::{
+    meltdown::*,
+    structs::auth::{Role, SessionContext},
+};
 
 pub type CtxPool = Pool<AsyncPgConnection>;
 
@@ -21,7 +24,11 @@ impl Ctx {
     }
 
     pub fn with_session(pool: CtxPool, session: SessionContext) -> Self {
-        Self { pool, session: Some(session), request_id: None }
+        Self {
+            pool,
+            session: Some(session),
+            request_id: None,
+        }
     }
 
     pub fn with_request_id(mut self, id: impl Into<String>) -> Self {
@@ -30,17 +37,12 @@ impl Ctx {
     }
 
     pub async fn conn(&self) -> Result<Object<AsyncPgConnection>, MeltDown> {
-        self.pool
-            .get()
-            .await
-            .map_err(|e| MeltDown::db_connection(format!("ctx: failed to get pool conn: {}", e)))
+        self.pool.get().await.map_err(|e| MeltDown::db_connection(format!("ctx: failed to get pool conn: {}", e)))
     }
 
     pub async fn transaction<'a, T, F>(&self, f: F) -> Result<T, MeltDown>
     where
-        F: for<'r> FnOnce(&'r mut AsyncPgConnection) -> ScopedBoxFuture<'a, 'r, Result<T, MeltDown>>
-            + Send
-            + 'a,
+        F: for<'r> FnOnce(&'r mut AsyncPgConnection) -> ScopedBoxFuture<'a, 'r, Result<T, MeltDown>> + Send + 'a,
         T: Send + 'a,
     {
         let mut conn = self.conn().await?;
@@ -56,9 +58,7 @@ impl Ctx {
     }
 
     pub fn require_session(&self) -> Result<&SessionContext, MeltDown> {
-        self.session
-            .as_ref()
-            .ok_or_else(MeltDown::session_missing)
+        self.session.as_ref().ok_or_else(MeltDown::session_missing)
     }
 
     pub fn role(&self) -> Option<Role> {

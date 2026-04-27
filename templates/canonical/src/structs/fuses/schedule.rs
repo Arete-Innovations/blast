@@ -1,6 +1,6 @@
+use std::time::Duration;
 
 use chrono::NaiveTime;
-use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub enum Schedule {

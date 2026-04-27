@@ -1,12 +1,8 @@
-
 use std::env;
 
 use lettre::{
     message::{header::ContentType, Mailbox, MultiPart, SinglePart},
-    transport::smtp::{
-        authentication::Credentials,
-        AsyncSmtpTransport,
-    },
+    transport::smtp::{authentication::Credentials, AsyncSmtpTransport},
     AsyncTransport, Message, Tokio1Executor,
 };
 
@@ -27,10 +23,7 @@ impl Email {
         let from_raw = required_env("SMTP_FROM")?;
 
         let port = match env::var("SMTP_PORT") {
-            Ok(p) => p.parse::<u16>().map_err(|e| {
-                MeltDown::new(MeltType::ConfigurationError, format!("SMTP_PORT not a u16: {}", p))
-                    .with_source(e)
-            })?,
+            Ok(p) => p.parse::<u16>().map_err(|e| MeltDown::new(MeltType::ConfigurationError, format!("SMTP_PORT not a u16: {}", p)).with_source(e))?,
             Err(e) => {
                 cata_log!(Debug, format!("SMTP_PORT unset, using default {}: {}", DEFAULT_PORT, e));
                 DEFAULT_PORT
@@ -42,10 +35,7 @@ impl Email {
                 "true" | "1" | "yes" | "on" => true,
                 "false" | "0" | "no" | "off" => false,
                 other => {
-                    return Err(MeltDown::new(
-                        MeltType::ConfigurationError,
-                        format!("SMTP_TLS must be true/false, got `{}`", other),
-                    ));
+                    return Err(MeltDown::new(MeltType::ConfigurationError, format!("SMTP_TLS must be true/false, got `{}`", other)));
                 }
             },
             Err(e) => {
@@ -54,18 +44,14 @@ impl Email {
             }
         };
 
-        let from: Mailbox = from_raw.parse().map_err(|e: lettre::address::AddressError| {
-            MeltDown::new(MeltType::ConfigurationError, format!("SMTP_FROM not a valid mailbox: {}", from_raw))
-                .with_source(e)
-        })?;
+        let from: Mailbox = from_raw
+            .parse()
+            .map_err(|e: lettre::address::AddressError| MeltDown::new(MeltType::ConfigurationError, format!("SMTP_FROM not a valid mailbox: {}", from_raw)).with_source(e))?;
 
         let creds = Credentials::new(user, pass);
 
         let builder = if tls {
-            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&host).map_err(|e| {
-                MeltDown::new(MeltType::ConfigurationError, format!("SMTP starttls relay setup failed for {}", host))
-                    .with_source(e)
-            })?
+            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&host).map_err(|e| MeltDown::new(MeltType::ConfigurationError, format!("SMTP starttls relay setup failed for {}", host)).with_source(e))?
         } else {
             AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&host)
         };
@@ -77,49 +63,25 @@ impl Email {
         Ok(Email { transport, from })
     }
 
-    pub async fn send(
-        &self,
-        to: &str,
-        subject: &str,
-        body_text: &str,
-        body_html: Option<&str>,
-    ) -> Result<(), MeltDown> {
-        let to_mb: Mailbox = to.parse().map_err(|e: lettre::address::AddressError| {
-            MeltDown::new(MeltType::ValidationFailed, format!("invalid recipient: {}", to))
-                .with_source(e)
-        })?;
+    pub async fn send(&self, to: &str, subject: &str, body_text: &str, body_html: Option<&str>) -> Result<(), MeltDown> {
+        let to_mb: Mailbox = to
+            .parse()
+            .map_err(|e: lettre::address::AddressError| MeltDown::new(MeltType::ValidationFailed, format!("invalid recipient: {}", to)).with_source(e))?;
 
-        let builder = Message::builder()
-            .from(self.from.clone())
-            .to(to_mb)
-            .subject(subject);
+        let builder = Message::builder().from(self.from.clone()).to(to_mb).subject(subject);
 
         let message = match body_html {
             Some(html) => builder
                 .multipart(
                     MultiPart::alternative()
-                        .singlepart(
-                            SinglePart::builder()
-                                .header(ContentType::TEXT_PLAIN)
-                                .body(body_text.to_string()),
-                        )
-                        .singlepart(
-                            SinglePart::builder()
-                                .header(ContentType::TEXT_HTML)
-                                .body(html.to_string()),
-                        ),
+                        .singlepart(SinglePart::builder().header(ContentType::TEXT_PLAIN).body(body_text.to_string()))
+                        .singlepart(SinglePart::builder().header(ContentType::TEXT_HTML).body(html.to_string())),
                 )
-                .map_err(|e| {
-                    MeltDown::new(MeltType::ValidationFailed, "build multipart message")
-                        .with_source(e)
-                })?,
+                .map_err(|e| MeltDown::new(MeltType::ValidationFailed, "build multipart message").with_source(e))?,
             _no_html => builder
                 .header(ContentType::TEXT_PLAIN)
                 .body(body_text.to_string())
-                .map_err(|e| {
-                    MeltDown::new(MeltType::ValidationFailed, "build text message")
-                        .with_source(e)
-                })?,
+                .map_err(|e| MeltDown::new(MeltType::ValidationFailed, "build text message").with_source(e))?,
         };
 
         match self.transport.send(message).await {
@@ -133,15 +95,11 @@ impl Email {
 }
 
 fn required_env(key: &str) -> Result<String, MeltDown> {
-    env::var(key).map_err(|e| {
-        MeltDown::new(MeltType::EnvironmentError, format!("missing required env var `{}`: {}", key, e))
-    })
+    env::var(key).map_err(|e| MeltDown::new(MeltType::EnvironmentError, format!("missing required env var `{}`: {}", key, e)))
 }
 
 fn map_smtp_error(err: lettre::transport::smtp::Error) -> MeltDown {
     let is_auth = err.is_permanent() || err.is_client();
     let transient = !is_auth;
-    MeltDown::new(MeltType::ExternalServiceError, format!("smtp send failed: {}", err))
-        .with_source(err)
-        .mark_transient(transient)
+    MeltDown::new(MeltType::ExternalServiceError, format!("smtp send failed: {}", err)).with_source(err).mark_transient(transient)
 }

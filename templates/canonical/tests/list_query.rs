@@ -48,9 +48,27 @@ fn page_must_be_int() {
 fn parses_multi_sort_via_repeat_and_comma() {
     let q = ListQuery::from_query_str("sort=name&sort=-created_at,id").unwrap();
     assert_eq!(q.sort.len(), 3);
-    assert_eq!(q.sort[0], Sort { column: "name".into(), direction: SortDirection::Asc });
-    assert_eq!(q.sort[1], Sort { column: "created_at".into(), direction: SortDirection::Desc });
-    assert_eq!(q.sort[2], Sort { column: "id".into(), direction: SortDirection::Asc });
+    assert_eq!(
+        q.sort[0],
+        Sort {
+            column: "name".into(),
+            direction: SortDirection::Asc
+        }
+    );
+    assert_eq!(
+        q.sort[1],
+        Sort {
+            column: "created_at".into(),
+            direction: SortDirection::Desc
+        }
+    );
+    assert_eq!(
+        q.sort[2],
+        Sort {
+            column: "id".into(),
+            direction: SortDirection::Asc
+        }
+    );
 }
 
 #[test]
@@ -67,10 +85,7 @@ fn sort_invalid_column_is_rejected() {
 
 #[test]
 fn parses_filters_with_url_encoding_and_keeps_order() {
-    let q = ListQuery::from_query_str(
-        "filter%5Bname%5D=Jo%20hn&filter%5Brole%5D=admin&filter%5Bname%5D=Jane",
-    )
-    .unwrap();
+    let q = ListQuery::from_query_str("filter%5Bname%5D=Jo%20hn&filter%5Brole%5D=admin&filter%5Bname%5D=Jane").unwrap();
     assert_eq!(q.filter.len(), 3);
     assert_eq!(q.filter[0], ("name".into(), "Jo hn".into()));
     assert_eq!(q.filter[1], ("role".into(), "admin".into()));
@@ -99,9 +114,15 @@ fn unknown_key_is_strict_rejected() {
 
 #[test]
 fn sort_as_wire_round_trips() {
-    let s = Sort { column: "created_at".into(), direction: SortDirection::Desc };
+    let s = Sort {
+        column: "created_at".into(),
+        direction: SortDirection::Desc,
+    };
     assert_eq!(s.as_wire(), "-created_at");
-    let s = Sort { column: "name".into(), direction: SortDirection::Asc };
+    let s = Sort {
+        column: "name".into(),
+        direction: SortDirection::Asc,
+    };
     assert_eq!(s.as_wire(), "name");
 }
 
@@ -121,7 +142,11 @@ fn list_response_total_pages_ceil() {
 
 #[test]
 fn list_response_from_query() {
-    let q = ListQuery { page: 2, page_size: 50, ..Default::default() };
+    let q = ListQuery {
+        page: 2,
+        page_size: 50,
+        ..Default::default()
+    };
     let r = ListResponse::from_query(vec![1u32, 2, 3], &q, 120);
     assert_eq!(r.page, 2);
     assert_eq!(r.page_size, 50);

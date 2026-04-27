@@ -1,14 +1,12 @@
 mod common;
 
+use canonical::meltdown::MeltDown;
+use common::harness::TestPool;
 use diesel::sql_query;
 use diesel_async::{
     pooled_connection::{deadpool::Pool, AsyncDieselConnectionManager},
     AsyncPgConnection, RunQueryDsl,
 };
-
-use canonical::meltdown::MeltDown;
-
-use common::harness::TestPool;
 
 #[derive(diesel::QueryableByName)]
 struct CountRow {
@@ -42,12 +40,10 @@ async fn rollback_discards_changes_even_on_ok() {
     assert!(outcome.is_ok(), "wrapper returned Err: {:?}", outcome);
 
     let mut verify_conn = pool.get().await.expect("verify conn");
-    let hits: Vec<CountRow> = diesel::sql_query(
-        "SELECT count(*)::bigint AS n FROM pg_class WHERE relname = $1 AND relkind = 'r'",
-    )
-    .bind::<diesel::sql_types::Text, _>(&probe)
-    .load(&mut *verify_conn)
-    .await
-    .expect("verify load");
+    let hits: Vec<CountRow> = diesel::sql_query("SELECT count(*)::bigint AS n FROM pg_class WHERE relname = $1 AND relkind = 'r'")
+        .bind::<diesel::sql_types::Text, _>(&probe)
+        .load(&mut *verify_conn)
+        .await
+        .expect("verify load");
     assert_eq!(hits[0].n, 0, "rollback did not discard CREATE TABLE");
 }

@@ -1,9 +1,4 @@
-use crate::{
-    meltdown::*,
-    models,
-    structs::auth::SessionContext,
-    Ctx,
-};
+use crate::{meltdown::*, models, structs::auth::SessionContext, Ctx};
 
 pub async fn run(ctx: &Ctx, token: &str) -> Result<SessionContext, MeltDown> {
     let mut conn = ctx.conn().await?;

@@ -1,7 +1,9 @@
+use std::{
+    future::Future,
+    time::{Duration, Instant},
+};
 
 use rand::Rng;
-use std::future::Future;
-use std::time::{Duration, Instant};
 
 use crate::{cata_log, meltdown::MeltDown};
 
@@ -213,9 +215,7 @@ where
                 None => self.policy.delay(attempt_no),
             };
 
-            let timed_out = self
-                .deadline
-                .is_some_and(|budget| start.elapsed() + delay >= budget);
+            let timed_out = self.deadline.is_some_and(|budget| start.elapsed() + delay >= budget);
             if timed_out {
                 self.on_giveup.as_mut().map(|hook| hook(attempt_no, &last_err));
                 return Err(last_err);

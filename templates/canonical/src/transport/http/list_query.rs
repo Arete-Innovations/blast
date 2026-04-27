@@ -9,10 +9,10 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::cata_log;
-use crate::meltdown::MeltDown;
-use crate::structs::list_query::{
-    ListQuery, ListQueryBuilder, ListResponse, ParseError, Sort, SortDirection,
+use crate::{
+    cata_log,
+    meltdown::MeltDown,
+    structs::list_query::{ListQuery, ListQueryBuilder, ListResponse, ParseError, Sort, SortDirection},
 };
 
 pub const DEFAULT_PAGE: u32 = 1;
@@ -38,13 +38,19 @@ impl Sort {
         }
         let Some(rest) = trimmed.strip_prefix('-') else {
             Self::validate_column(trimmed)?;
-            return Ok(Sort { column: trimmed.to_string(), direction: SortDirection::Asc });
+            return Ok(Sort {
+                column: trimmed.to_string(),
+                direction: SortDirection::Asc,
+            });
         };
         if rest.is_empty() {
             return Err(ParseError::EmptySortSegment);
         }
         Self::validate_column(rest)?;
-        Ok(Sort { column: rest.to_string(), direction: SortDirection::Desc })
+        Ok(Sort {
+            column: rest.to_string(),
+            direction: SortDirection::Desc,
+        })
     }
 
     fn validate_column(col: &str) -> Result<(), ParseError> {
@@ -110,10 +116,9 @@ impl ListQueryBuilder {
     fn absorb(&mut self, key: &str, value: &str) -> Result<(), MeltDown> {
         match key {
             "page" => {
-                let n: u32 = value.parse().map_err(|e| {
-                    bad_request(ParseError::NotAnInt { key: "page", value: value.to_string() })
-                        .with_context("parse_error", format!("{}", e))
-                })?;
+                let n: u32 = value
+                    .parse()
+                    .map_err(|e| bad_request(ParseError::NotAnInt { key: "page", value: value.to_string() }).with_context("parse_error", format!("{}", e)))?;
                 if n == 0 {
                     return Err(bad_request(ParseError::PageMustBePositive));
                 }
@@ -191,12 +196,10 @@ fn parse_filter_key(key: &str) -> Result<Option<String>, MeltDown> {
 }
 
 fn iter_pairs(raw: &str) -> impl Iterator<Item = (String, String)> + '_ {
-    raw.split('&')
-        .filter(|s| !s.is_empty())
-        .map(|pair| {
-            let (k, v) = split_pair(pair);
-            (decode(k), decode(v))
-        })
+    raw.split('&').filter(|s| !s.is_empty()).map(|pair| {
+        let (k, v) = split_pair(pair);
+        (decode(k), decode(v))
+    })
 }
 
 fn decode(s: &str) -> String {
@@ -234,42 +237,16 @@ fn decode(s: &str) -> String {
 
 fn bad_request(e: ParseError) -> MeltDown {
     match e {
-        ParseError::NotAnInt { key, value } => MeltDown::bad_request(format!(
-            "list query: `{}` must be an unsigned integer",
-            key
-        ))
-        .with_context("query_key", key)
-        .with_context("query_value", value),
-        ParseError::PageMustBePositive => {
-            MeltDown::bad_request("list query: `page` must be >= 1").with_context("query_key", "page")
-        }
-        ParseError::PageSizeMustBePositive => {
-            MeltDown::bad_request("list query: `page_size` must be >= 1")
-                .with_context("query_key", "page_size")
-        }
-        ParseError::EmptySortSegment => MeltDown::bad_request(
-            "list query: `sort` segment is empty (use `col` or `-col`, comma-separated)",
-        )
-        .with_context("query_key", "sort"),
-        ParseError::InvalidColumnIdent(col) => {
-            MeltDown::bad_request("list query: column identifier must be `[A-Za-z0-9_]+`")
-                .with_context("column", col)
-        }
-        ParseError::MalformedFilterKey(key) => {
-            MeltDown::bad_request("list query: filter key must be `filter[col]`")
-                .with_context("query_key", key)
-        }
-        ParseError::EmptyFilterColumn => {
-            MeltDown::bad_request("list query: filter column is empty (`filter[]=...`)")
-                .with_context("query_key", "filter[]")
-        }
-        ParseError::UnknownKey(key) => {
-            MeltDown::bad_request(format!(
-                "list query: unknown query key `{}` (allowed: page, page_size, sort, filter[<col>])",
-                key
-            ))
+        ParseError::NotAnInt { key, value } => MeltDown::bad_request(format!("list query: `{}` must be an unsigned integer", key))
             .with_context("query_key", key)
-        }
+            .with_context("query_value", value),
+        ParseError::PageMustBePositive => MeltDown::bad_request("list query: `page` must be >= 1").with_context("query_key", "page"),
+        ParseError::PageSizeMustBePositive => MeltDown::bad_request("list query: `page_size` must be >= 1").with_context("query_key", "page_size"),
+        ParseError::EmptySortSegment => MeltDown::bad_request("list query: `sort` segment is empty (use `col` or `-col`, comma-separated)").with_context("query_key", "sort"),
+        ParseError::InvalidColumnIdent(col) => MeltDown::bad_request("list query: column identifier must be `[A-Za-z0-9_]+`").with_context("column", col),
+        ParseError::MalformedFilterKey(key) => MeltDown::bad_request("list query: filter key must be `filter[col]`").with_context("query_key", key),
+        ParseError::EmptyFilterColumn => MeltDown::bad_request("list query: filter column is empty (`filter[]=...`)").with_context("query_key", "filter[]"),
+        ParseError::UnknownKey(key) => MeltDown::bad_request(format!("list query: unknown query key `{}` (allowed: page, page_size, sort, filter[<col>])", key)).with_context("query_key", key),
     }
 }
 
@@ -281,7 +258,13 @@ impl<T> ListResponse<T> {
             let ps = page_size as u64;
             total.div_ceil(ps)
         };
-        Self { items, page, page_size, total, total_pages }
+        Self {
+            items,
+            page,
+            page_size,
+            total,
+            total_pages,
+        }
     }
 
     pub fn from_query(items: Vec<T>, query: &ListQuery, total: u64) -> Self {

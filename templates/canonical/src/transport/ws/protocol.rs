@@ -1,6 +1,6 @@
+use serde_json::Value;
 
 pub use crate::structs::ws::{ClientMessage, ControlFrame, ServerMessage};
-use serde_json::Value;
 
 impl ServerMessage {
     pub fn ack(topic: impl Into<String>) -> Self {
@@ -15,10 +15,7 @@ impl ServerMessage {
     }
 
     pub fn error_global(reason: impl Into<String>) -> Self {
-        ServerMessage::Control(ControlFrame::Error {
-            topic: None,
-            reason: reason.into(),
-        })
+        ServerMessage::Control(ControlFrame::Error { topic: None, reason: reason.into() })
     }
 
     pub fn pong() -> Self {
@@ -26,9 +23,6 @@ impl ServerMessage {
     }
 
     pub fn event(topic: impl Into<String>, payload: Value) -> Self {
-        ServerMessage::Event {
-            topic: topic.into(),
-            payload,
-        }
+        ServerMessage::Event { topic: topic.into(), payload }
     }
 }

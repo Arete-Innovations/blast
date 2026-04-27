@@ -8,8 +8,10 @@ use crate::{
     cata_log,
     flows::sessions::resolve,
     meltdown::*,
-    structs::auth::{Role, SessionContext},
-    structs::middleware::guards::{AdminGuard, Referer, UserGuard},
+    structs::{
+        auth::{Role, SessionContext},
+        middleware::guards::{AdminGuard, Referer, UserGuard},
+    },
     Ctx,
 };
 
@@ -69,9 +71,7 @@ where
         let Some(h) = parts.headers.get("Referer") else {
             return Err(MeltDown::new(MeltType::BadRequest, "Missing Referer header"));
         };
-        let referer = h.to_str().map_err(|e| {
-            MeltDown::new(MeltType::BadRequest, format!("Referer header parse: {}", e))
-        })?;
+        let referer = h.to_str().map_err(|e| MeltDown::new(MeltType::BadRequest, format!("Referer header parse: {}", e)))?;
         Ok(Referer(referer.to_string()))
     }
 }

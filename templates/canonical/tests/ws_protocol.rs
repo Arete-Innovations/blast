@@ -1,11 +1,9 @@
-use serde_json::json;
-
 use canonical::structs::ws::{ClientMessage, ServerMessage};
+use serde_json::json;
 
 #[test]
 fn decodes_subscribe() {
-    let m: ClientMessage =
-        serde_json::from_str(r#"{"op":"subscribe","topic":"orders:customer:42"}"#).unwrap();
+    let m: ClientMessage = serde_json::from_str(r#"{"op":"subscribe","topic":"orders:customer:42"}"#).unwrap();
     match m {
         ClientMessage::Subscribe { topic } => assert_eq!(topic, "orders:customer:42"),
         _ => panic!("wrong variant"),
@@ -14,8 +12,7 @@ fn decodes_subscribe() {
 
 #[test]
 fn decodes_unsubscribe_and_ping() {
-    let u: ClientMessage =
-        serde_json::from_str(r#"{"op":"unsubscribe","topic":"x:y:z"}"#).unwrap();
+    let u: ClientMessage = serde_json::from_str(r#"{"op":"unsubscribe","topic":"x:y:z"}"#).unwrap();
     assert!(matches!(u, ClientMessage::Unsubscribe { .. }));
     let p: ClientMessage = serde_json::from_str(r#"{"op":"ping"}"#).unwrap();
     assert!(matches!(p, ClientMessage::Ping));

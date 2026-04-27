@@ -17,9 +17,9 @@ pub async fn error_handling_middleware(request: Request, next: Next) -> Response
     let request_id = Uuid::new_v4().to_string();
     let method = request.method().clone();
     let uri = request.uri().clone();
-    
+
     let mut response = next.run(request).await;
-    
+
     let headers = response.headers_mut();
     match HeaderValue::from_str(&request_id) {
         Ok(val) => {
@@ -37,17 +37,17 @@ pub async fn error_handling_middleware(request: Request, next: Next) -> Response
             cata_log!(Debug, format!("Failed to parse response time as HeaderValue: {}", e));
         }
     }
-    
+
     let status = response.status();
     let duration = start.elapsed();
-    
+
     match status.as_u16() {
         200..=299 => cata_log!(Info, format!("{} {} {} - {}ms", method, uri, status, duration.as_millis())),
         400..=499 => cata_log!(Warning, format!("{} {} {} - {}ms", method, uri, status, duration.as_millis())),
         500..=599 => cata_log!(Error, format!("{} {} {} - {}ms", method, uri, status, duration.as_millis())),
         other => cata_log!(Debug, format!("{} {} {} - {}ms", method, uri, other, duration.as_millis())),
     }
-    
+
     response
 }
 

@@ -97,9 +97,7 @@ impl MeltDown {
     }
 
     pub fn with_context(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.context
-            .get_or_insert_with(HashMap::new)
-            .insert(key.into(), value.into());
+        self.context.get_or_insert_with(HashMap::new).insert(key.into(), value.into());
         self
     }
 
@@ -233,32 +231,19 @@ impl MeltDown {
 
     pub fn status_code(&self) -> StatusCode {
         match self.melt_type {
-            MeltType::AuthRejected
-            | MeltType::SessionExpired
-            | MeltType::SessionInvalid
-            | MeltType::SessionMissing
-            | MeltType::Unauthorized => StatusCode::UNAUTHORIZED,
+            MeltType::AuthRejected | MeltType::SessionExpired | MeltType::SessionInvalid | MeltType::SessionMissing | MeltType::Unauthorized => StatusCode::UNAUTHORIZED,
 
-            MeltType::InsufficientPermissions
-            | MeltType::Forbidden
-            | MeltType::FilePermissionDenied => StatusCode::FORBIDDEN,
+            MeltType::InsufficientPermissions | MeltType::Forbidden | MeltType::FilePermissionDenied => StatusCode::FORBIDDEN,
 
-            MeltType::ValidationFailed
-            | MeltType::UnprocessableEntity => StatusCode::UNPROCESSABLE_ENTITY,
+            MeltType::ValidationFailed | MeltType::UnprocessableEntity => StatusCode::UNPROCESSABLE_ENTITY,
 
-            MeltType::BadRequest
-            | MeltType::CheckViolation
-            | MeltType::NotNullViolation => StatusCode::BAD_REQUEST,
+            MeltType::BadRequest | MeltType::CheckViolation | MeltType::NotNullViolation => StatusCode::BAD_REQUEST,
 
-            MeltType::NotFound
-            | MeltType::RecordNotFound
-            | MeltType::FileNotFound => StatusCode::NOT_FOUND,
+            MeltType::NotFound | MeltType::RecordNotFound | MeltType::FileNotFound => StatusCode::NOT_FOUND,
 
             MeltType::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
 
-            MeltType::UniqueViolation
-            | MeltType::ForeignKeyViolation
-            | MeltType::Conflict => StatusCode::CONFLICT,
+            MeltType::UniqueViolation | MeltType::ForeignKeyViolation | MeltType::Conflict => StatusCode::CONFLICT,
 
             MeltType::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
 
@@ -297,12 +282,7 @@ fn column_name_or_unknown(name: Option<&str>) -> String {
 }
 
 fn default_transient(melt_type: &MeltType) -> bool {
-    matches!(
-        melt_type,
-        MeltType::DatabaseConnection
-            | MeltType::ExternalServiceError
-            | MeltType::TooManyRequests
-    )
+    matches!(melt_type, MeltType::DatabaseConnection | MeltType::ExternalServiceError | MeltType::TooManyRequests)
 }
 
 impl MeltDown {
@@ -311,31 +291,32 @@ impl MeltDown {
     }
 
     pub fn is_permanent(&self) -> bool {
-        matches!(self.melt_type,
+        matches!(
+            self.melt_type,
             MeltType::ValidationFailed
-            | MeltType::BadRequest
-            | MeltType::UnprocessableEntity
-            | MeltType::MethodNotAllowed
-            | MeltType::AuthRejected
-            | MeltType::Unauthorized
-            | MeltType::Forbidden
-            | MeltType::InsufficientPermissions
-            | MeltType::SessionMissing
-            | MeltType::SessionInvalid
-            | MeltType::SessionExpired
-            | MeltType::NotFound
-            | MeltType::RecordNotFound
-            | MeltType::FileNotFound
-            | MeltType::FilePermissionDenied
-            | MeltType::Conflict
-            | MeltType::UniqueViolation
-            | MeltType::ForeignKeyViolation
-            | MeltType::CheckViolation
-            | MeltType::NotNullViolation
-            | MeltType::SerializationFailed
-            | MeltType::DeserializationFailed
-            | MeltType::ConfigurationError
-            | MeltType::EnvironmentError
+                | MeltType::BadRequest
+                | MeltType::UnprocessableEntity
+                | MeltType::MethodNotAllowed
+                | MeltType::AuthRejected
+                | MeltType::Unauthorized
+                | MeltType::Forbidden
+                | MeltType::InsufficientPermissions
+                | MeltType::SessionMissing
+                | MeltType::SessionInvalid
+                | MeltType::SessionExpired
+                | MeltType::NotFound
+                | MeltType::RecordNotFound
+                | MeltType::FileNotFound
+                | MeltType::FilePermissionDenied
+                | MeltType::Conflict
+                | MeltType::UniqueViolation
+                | MeltType::ForeignKeyViolation
+                | MeltType::CheckViolation
+                | MeltType::NotNullViolation
+                | MeltType::SerializationFailed
+                | MeltType::DeserializationFailed
+                | MeltType::ConfigurationError
+                | MeltType::EnvironmentError
         )
     }
 
@@ -362,8 +343,7 @@ impl MeltDown {
 
 impl From<std::env::VarError> for MeltDown {
     fn from(err: std::env::VarError) -> Self {
-        MeltDown::new(MeltType::EnvironmentError, "Environment variable error")
-            .with_source(err)
+        MeltDown::new(MeltType::EnvironmentError, "Environment variable error").with_source(err)
     }
 }
 
@@ -373,16 +353,14 @@ impl From<DieselError> for MeltDown {
             DieselError::DatabaseError(kind, ref info) => match kind {
                 DatabaseErrorKind::UniqueViolation => {
                     let field = pick_unique_field(info.constraint_name());
-                    let error = MeltDown::new(MeltType::UniqueViolation, field)
-                        .with_context("error_type", "database_unique_violation");
+                    let error = MeltDown::new(MeltType::UniqueViolation, field).with_context("error_type", "database_unique_violation");
                     let Some(constraint) = info.constraint_name() else {
                         return error;
                     };
                     error.with_context("constraint", constraint)
                 }
                 DatabaseErrorKind::ForeignKeyViolation => {
-                    let error = MeltDown::new(MeltType::ForeignKeyViolation, "Related record not found")
-                        .with_context("error_type", "database_foreign_key_violation");
+                    let error = MeltDown::new(MeltType::ForeignKeyViolation, "Related record not found").with_context("error_type", "database_foreign_key_violation");
                     let Some(constraint) = info.constraint_name() else {
                         return error;
                     };
@@ -444,14 +422,12 @@ impl IntoResponse for MeltDown {
 
         let mut response = (status, Json(body)).into_response();
 
-        self.retry_after.map(|retry| {
-            match retry.as_secs().to_string().parse() {
-                Ok(value) => {
-                    response.headers_mut().insert("Retry-After", value);
-                }
-                Err(e) => {
-                    cata_log!(Warning, format!("Retry-After header parse failed: {}", e));
-                }
+        self.retry_after.map(|retry| match retry.as_secs().to_string().parse() {
+            Ok(value) => {
+                response.headers_mut().insert("Retry-After", value);
+            }
+            Err(e) => {
+                cata_log!(Warning, format!("Retry-After header parse failed: {}", e));
             }
         });
 

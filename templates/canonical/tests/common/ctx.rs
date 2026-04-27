@@ -1,7 +1,5 @@
-
-use diesel_async::{scoped_futures::ScopedBoxFuture, AsyncPgConnection};
-
 use canonical::meltdown::MeltDown;
+use diesel_async::{scoped_futures::ScopedBoxFuture, AsyncPgConnection};
 
 use super::harness::{with_test_transaction, TestPool};
 
@@ -46,9 +44,7 @@ impl TestCtxBuilder {
 pub async fn run_in_test<'a, T, B, F>(pool: &TestPool, build: B, f: F) -> Result<T, MeltDown>
 where
     B: FnOnce(TestCtxBuilder) -> TestCtxBuilder + Send + 'a,
-    F: for<'r> FnOnce(&'r mut TestCtx<'r>) -> ScopedBoxFuture<'a, 'r, Result<T, MeltDown>>
-        + Send
-        + 'a,
+    F: for<'r> FnOnce(&'r mut TestCtx<'r>) -> ScopedBoxFuture<'a, 'r, Result<T, MeltDown>> + Send + 'a,
     T: Send + 'a,
 {
     let builder = build(TestCtxBuilder::default());

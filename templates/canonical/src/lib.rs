@@ -12,5 +12,5 @@ pub mod services;
 pub mod structs;
 pub mod transport;
 
-pub use ctx::Ctx;
 pub use bootstrap::bootstrap;
+pub use ctx::Ctx;

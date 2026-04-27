@@ -1,9 +1,8 @@
-
-use chrono::{DateTime, NaiveTime, Utc};
 use std::time::Duration;
 
-use crate::cata_log;
-use crate::structs::fuses::schedule::Schedule;
+use chrono::{DateTime, NaiveTime, Utc};
+
+use crate::{cata_log, structs::fuses::schedule::Schedule};
 
 impl Schedule {
     pub fn every(d: Duration) -> Self {
@@ -62,10 +61,7 @@ impl Schedule {
                 next
             }
             Schedule::DailyAt(t) => {
-                let today = now
-                    .date_naive()
-                    .and_time(*t)
-                    .and_utc();
+                let today = now.date_naive().and_time(*t).and_utc();
                 if today > now {
                     today
                 } else {

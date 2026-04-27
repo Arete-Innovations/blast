@@ -1,4 +1,3 @@
-
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -23,10 +22,7 @@ impl RateLimit {
 
         let now = Instant::now();
 
-        let mut entry = self
-            .buckets
-            .entry(key.to_string())
-            .or_insert_with(|| TokenBucket { tokens: max, last_refill: now });
+        let mut entry = self.buckets.entry(key.to_string()).or_insert_with(|| TokenBucket { tokens: max, last_refill: now });
 
         let bucket = entry.value_mut();
 

@@ -3,7 +3,10 @@ use crate::{
     meltdown::*,
     models::auth::{sessions, users},
     services::crypto,
-    structs::{auth::{LoginInput, LoginOutput, SessionContext}, UserPublic},
+    structs::{
+        auth::{LoginInput, LoginOutput, SessionContext},
+        UserPublic,
+    },
     Ctx,
 };
 
@@ -11,9 +14,7 @@ pub const SESSION_TTL_SECS: i64 = 60 * 60 * 24 * 7;
 
 pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> {
     let mut conn = ctx.conn().await?;
-    let user = users::find_by_email(&mut conn, &input.email)
-        .await?
-        .ok_or_else(MeltDown::auth_rejected)?;
+    let user = users::find_by_email(&mut conn, &input.email).await?.ok_or_else(MeltDown::auth_rejected)?;
 
     if !crypto::verify_password(&input.password, &user.password_hash)? {
         cata_log!(Warning, format!("Invalid password for email: {}", input.email));

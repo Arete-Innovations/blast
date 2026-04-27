@@ -1,33 +1,28 @@
-
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::Utc;
-use diesel::prelude::*;
-use diesel_async::pooled_connection::deadpool::Pool;
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
-
 use dashmap::DashMap;
+use diesel::prelude::*;
+use diesel_async::{pooled_connection::deadpool::Pool, AsyncPgConnection, RunQueryDsl};
 
-use crate::cata_log;
-use crate::ctx::Ctx;
-use crate::structs::fuses::registry::{FuseFn, FuseRegistry};
-use crate::structs::fuses::schedule::Schedule;
-use crate::meltdown::{MeltDown, MeltType};
+use crate::{
+    cata_log,
+    ctx::Ctx,
+    meltdown::{MeltDown, MeltType},
+    structs::fuses::{
+        registry::{FuseFn, FuseRegistry},
+        schedule::Schedule,
+    },
+};
 
 pub type Pool_ = Pool<AsyncPgConnection>;
 
-use crate::structs::fuses::table as fuses;
-use crate::structs::fuses::{FuseRow, NewFuseRow};
+use crate::structs::fuses::{table as fuses, FuseRow, NewFuseRow};
 
 pub(crate) type FuseFnMap = Arc<HashMap<String, FuseFn>>;
 
-async fn pool_conn(
-    pool: &Pool_,
-) -> Result<diesel_async::pooled_connection::deadpool::Object<AsyncPgConnection>, MeltDown> {
-    pool.get()
-        .await
-        .map_err(|e| MeltDown::db_connection(format!("fuses: failed to get pool conn: {}", e)))
+async fn pool_conn(pool: &Pool_) -> Result<diesel_async::pooled_connection::deadpool::Object<AsyncPgConnection>, MeltDown> {
+    pool.get().await.map_err(|e| MeltDown::db_connection(format!("fuses: failed to get pool conn: {}", e)))
 }
 
 pub async fn launch(pool: Pool_, registry: FuseRegistry) -> Result<(), MeltDown> {
@@ -52,12 +47,9 @@ pub async fn launch(pool: Pool_, registry: FuseRegistry) -> Result<(), MeltDown>
         ))
         .load::<FuseRow>(&mut conn)
         .await
-        .map_err(|e| {
-            MeltDown::new(MeltType::DatabaseError, format!("fuses: load failed: {}", e))
-        })?;
+        .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: load failed: {}", e)))?;
 
-    let mut by_name: HashMap<String, FuseRow> =
-        existing.into_iter().map(|r| (r.name.clone(), r)).collect();
+    let mut by_name: HashMap<String, FuseRow> = existing.into_iter().map(|r| (r.name.clone(), r)).collect();
 
     let mut fn_map: HashMap<String, FuseFn> = HashMap::new();
 
@@ -78,20 +70,12 @@ pub async fn launch(pool: Pool_, registry: FuseRegistry) -> Result<(), MeltDown>
                 .values(&new_row)
                 .execute(&mut conn)
                 .await
-                .map_err(|e| {
-                    MeltDown::new(
-                        MeltType::DatabaseError,
-                        format!("fuses: insert {} failed: {}", fuse.name, e),
-                    )
-                })?;
+                .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: insert {} failed: {}", fuse.name, e)))?;
             cata_log!(Info, format!("fuse registered: {} ({})", fuse.name, spec));
             fn_map.insert(fuse.name.clone(), fuse.run_fn.clone());
             continue;
         };
-        if row.schedule_kind != kind
-            || row.schedule_spec != spec
-            || row.flow_name != fuse.flow_name
-        {
+        if row.schedule_kind != kind || row.schedule_spec != spec || row.flow_name != fuse.flow_name {
             diesel::update(fuses::table.filter(fuses::name.eq(&fuse.name)))
                 .set((
                     fuses::flow_name.eq(&fuse.flow_name),
@@ -102,29 +86,15 @@ pub async fn launch(pool: Pool_, registry: FuseRegistry) -> Result<(), MeltDown>
                 ))
                 .execute(&mut conn)
                 .await
-                .map_err(|e| {
-                    MeltDown::new(
-                        MeltType::DatabaseError,
-                        format!("fuses: update {} failed: {}", fuse.name, e),
-                    )
-                })?;
-            cata_log!(
-                Info,
-                format!("fuse schedule updated: {} -> {}", fuse.name, spec)
-            );
+                .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: update {} failed: {}", fuse.name, e)))?;
+            cata_log!(Info, format!("fuse schedule updated: {} -> {}", fuse.name, spec));
         }
 
         fn_map.insert(fuse.name.clone(), fuse.run_fn.clone());
     }
 
     for (name, _) in by_name.iter() {
-        cata_log!(
-            Warning,
-            format!(
-                "fuse '{}' present in DB but missing from code; leaving row in place",
-                name
-            )
-        );
+        cata_log!(Warning, format!("fuse '{}' present in DB but missing from code; leaving row in place", name));
     }
 
     drop(conn);
@@ -186,11 +156,7 @@ pub(crate) async fn run_loop(pool: Pool_, fn_map: FuseFnMap) {
     }
 }
 
-async fn poll_once(
-    pool: &Pool_,
-    fn_map: &FuseFnMap,
-    running: &Arc<DashMap<String, ()>>,
-) -> Result<(), MeltDown> {
+async fn poll_once(pool: &Pool_, fn_map: &FuseFnMap, running: &Arc<DashMap<String, ()>>) -> Result<(), MeltDown> {
     let mut conn = pool_conn(pool).await?;
     let now = Utc::now();
 
@@ -214,12 +180,7 @@ async fn poll_once(
         ))
         .load::<FuseRow>(&mut conn)
         .await
-        .map_err(|e| {
-            MeltDown::new(
-                MeltType::DatabaseError,
-                format!("fuses: due query failed: {}", e),
-            )
-        })?;
+        .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: due query failed: {}", e)))?;
 
     drop(conn);
 
@@ -241,10 +202,7 @@ async fn poll_once(
             let res = run_fuse(pool_for_task, row, run_fn).await;
             running_for_task.remove(&row_name);
             if let Err(e) = res {
-                cata_log!(
-                    Error,
-                    format!("fuse '{}' supervisor error: {}", row_name, e.details)
-                );
+                cata_log!(Error, format!("fuse '{}' supervisor error: {}", row_name, e.details));
             }
         });
     }
@@ -254,27 +212,15 @@ async fn poll_once(
 
 async fn run_fuse(pool: Pool_, row: FuseRow, run_fn: FuseFn) -> Result<(), MeltDown> {
     let started = Utc::now();
-    cata_log!(
-        Info,
-        format!("fuse_run_started name={} attempt={}", row.name, row.run_count + 1)
-    );
+    cata_log!(Info, format!("fuse_run_started name={} attempt={}", row.name, row.run_count + 1));
 
     {
         let mut conn = pool_conn(&pool).await?;
         diesel::update(fuses::table.filter(fuses::id.eq(row.id)))
-            .set((
-                fuses::last_run_status.eq(Some("running".to_string())),
-                fuses::last_run_at.eq(started),
-                fuses::updated_at.eq(started),
-            ))
+            .set((fuses::last_run_status.eq(Some("running".to_string())), fuses::last_run_at.eq(started), fuses::updated_at.eq(started)))
             .execute(&mut conn)
             .await
-            .map_err(|e| {
-                MeltDown::new(
-                    MeltType::DatabaseError,
-                    format!("fuses: mark-running failed: {}", e),
-                )
-            })?;
+            .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: mark-running failed: {}", e)))?;
     }
 
     let next_at = match schedule_from_row(&row.schedule_kind, &row.schedule_spec) {
@@ -303,19 +249,8 @@ async fn run_fuse(pool: Pool_, row: FuseRow, run_fn: FuseFn) -> Result<(), MeltD
                 ))
                 .execute(&mut conn)
                 .await
-                .map_err(|e| {
-                    MeltDown::new(
-                        MeltType::DatabaseError,
-                        format!("fuses: mark-ok failed: {}", e),
-                    )
-                })?;
-            cata_log!(
-                Info,
-                format!(
-                    "fuse_run_succeeded name={} duration_ms={}",
-                    row.name, duration_ms
-                )
-            );
+                .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: mark-ok failed: {}", e)))?;
+            cata_log!(Info, format!("fuse_run_succeeded name={} duration_ms={}", row.name, duration_ms));
             Ok(())
         }
         Err(meltdown) => {
@@ -329,21 +264,10 @@ async fn run_fuse(pool: Pool_, row: FuseRow, run_fn: FuseFn) -> Result<(), MeltD
                 ))
                 .execute(&mut conn)
                 .await
-                .map_err(|e| {
-                    MeltDown::new(
-                        MeltType::DatabaseError,
-                        format!("fuses: mark-error failed: {}", e),
-                    )
-                })?;
+                .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: mark-error failed: {}", e)))?;
             cata_log!(
                 Error,
-                format!(
-                    "fuse_run_failed name={} duration_ms={} error_type={} error_message={}",
-                    row.name,
-                    duration_ms,
-                    meltdown.melt_type_str(),
-                    err_msg
-                )
+                format!("fuse_run_failed name={} duration_ms={} error_type={} error_message={}", row.name, duration_ms, meltdown.melt_type_str(), err_msg)
             );
             Ok(())
         }

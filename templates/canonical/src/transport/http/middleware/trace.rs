@@ -5,19 +5,13 @@ use tower_http::trace::{MakeSpan, OnResponse, TraceLayer};
 use tracing::Span;
 use uuid::Uuid;
 
-use crate::cata_log;
-use crate::structs::middleware::trace::{CatalystMakeSpan, CatalystOnResponse};
+use crate::{
+    cata_log,
+    structs::middleware::trace::{CatalystMakeSpan, CatalystOnResponse},
+};
 
-pub fn make_trace_layer() -> TraceLayer<
-    tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>,
-    CatalystMakeSpan,
-    (),
-    CatalystOnResponse,
-> {
-    TraceLayer::new_for_http()
-        .make_span_with(CatalystMakeSpan)
-        .on_response(CatalystOnResponse)
-        .on_request(())
+pub fn make_trace_layer() -> TraceLayer<tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>, CatalystMakeSpan, (), CatalystOnResponse> {
+    TraceLayer::new_for_http().make_span_with(CatalystMakeSpan).on_response(CatalystOnResponse).on_request(())
 }
 
 impl<B> MakeSpan<B> for CatalystMakeSpan {

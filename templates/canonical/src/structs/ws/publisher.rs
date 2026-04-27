@@ -1,6 +1,4 @@
-
-use std::marker::PhantomData;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 

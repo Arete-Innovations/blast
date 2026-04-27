@@ -1,11 +1,6 @@
+use std::{future::Future, pin::Pin, sync::Arc};
 
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-
-use crate::ctx::Ctx;
-use crate::meltdown::MeltDown;
-use crate::structs::fuses::schedule::Schedule;
+use crate::{ctx::Ctx, meltdown::MeltDown, structs::fuses::schedule::Schedule};
 
 pub type FuseFuture = Pin<Box<dyn Future<Output = Result<(), MeltDown>> + Send>>;
 

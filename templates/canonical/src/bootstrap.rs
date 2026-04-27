@@ -3,7 +3,10 @@ use std::env;
 use diesel::{Connection, PgConnection};
 use diesel_migrations::EmbeddedMigrations;
 
-use crate::{cata_log, database::{auto_migrate, db}};
+use crate::{
+    cata_log,
+    database::{auto_migrate, db},
+};
 
 pub async fn bootstrap(migrations: EmbeddedMigrations) {
     cata_log!(Info, "Starting Catalyst bootstrap...");

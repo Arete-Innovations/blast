@@ -7,7 +7,5 @@ use crate::{
 };
 
 pub async fn run(ctx: &Ctx, session: &SessionContext) -> Result<UserPublic, MeltDown> {
-    Crank::none()
-        .run(|| routines::auth::me::run(ctx, session))
-        .await
+    Crank::none().run(|| routines::auth::me::run(ctx, session)).await
 }

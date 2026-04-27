@@ -1,16 +1,10 @@
 use std::time::Duration;
 
+use canonical::structs::fuses::schedule::Schedule;
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 
-use canonical::structs::fuses::schedule::Schedule;
-
 fn at(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> DateTime<Utc> {
-    Utc.from_utc_datetime(
-        &NaiveDate::from_ymd_opt(y, m, d)
-            .unwrap()
-            .and_hms_opt(h, mi, s)
-            .unwrap(),
-    )
+    Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(h, mi, s).unwrap())
 }
 
 #[test]

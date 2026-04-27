@@ -1,13 +1,7 @@
-use std::{
-    env,
-    sync::OnceLock,
-};
+use std::{env, sync::OnceLock};
 
 use diesel_async::{
-    pooled_connection::{
-        deadpool::Pool,
-        AsyncDieselConnectionManager,
-    },
+    pooled_connection::{deadpool::Pool, AsyncDieselConnectionManager},
     AsyncConnection, AsyncPgConnection,
 };
 use dotenv::dotenv;
@@ -42,8 +36,7 @@ pub async fn init_connection_pool() -> Result<(), MeltDown> {
         .build()
         .map_err(|e| MeltDown::db_connection(format!("Failed to create connection pool: {}", e)))?;
 
-    let probe = pool.get().await
-        .map_err(|e| MeltDown::db_connection(format!("Failed to verify connection pool: {}", e)))?;
+    let probe = pool.get().await.map_err(|e| MeltDown::db_connection(format!("Failed to verify connection pool: {}", e)))?;
     drop(probe);
 
     match DB_POOL.set(pool) {

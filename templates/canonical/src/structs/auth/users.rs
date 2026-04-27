@@ -1,8 +1,8 @@
 use diesel::{prelude::*, Queryable};
 use serde::{Deserialize, Serialize};
 
-use crate::database::schema::users;
 use super::Role;
+use crate::database::schema::users;
 
 #[derive(Queryable, QueryableByName, Selectable, Debug, Clone, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = users)]
@@ -42,10 +42,6 @@ impl From<&User> for UserPublic {
 
 impl From<User> for UserPublic {
     fn from(u: User) -> Self {
-        Self {
-            id: u.id,
-            email: u.email,
-            role: u.role,
-        }
+        Self { id: u.id, email: u.email, role: u.role }
     }
 }

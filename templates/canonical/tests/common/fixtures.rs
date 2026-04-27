@@ -1,12 +1,9 @@
-
 use canonical::meltdown::MeltDown;
 
 use super::ctx::TestCtx;
 
 pub trait Fixture: Sized {
-    fn create(
-        ctx: &mut TestCtx<'_>,
-    ) -> impl std::future::Future<Output = Result<Self, MeltDown>> + Send;
+    fn create(ctx: &mut TestCtx<'_>) -> impl std::future::Future<Output = Result<Self, MeltDown>> + Send;
 }
 
 pub async fn make_fixture<T: Fixture>(ctx: &mut TestCtx<'_>) -> Result<T, MeltDown> {

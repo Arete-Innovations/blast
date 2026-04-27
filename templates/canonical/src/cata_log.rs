@@ -1,4 +1,3 @@
-
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::meltdown::*;
@@ -36,13 +35,9 @@ pub fn init_tracing() {
     let registry = tracing_subscriber::registry().with(filter);
 
     if is_prod {
-        registry
-            .with(tracing_subscriber::fmt::layer().json())
-            .init();
+        registry.with(tracing_subscriber::fmt::layer().json()).init();
     } else {
-        registry
-            .with(tracing_subscriber::fmt::layer())
-            .init();
+        registry.with(tracing_subscriber::fmt::layer()).init();
     }
 }
 
@@ -57,8 +52,7 @@ fn resolve_env_filter(default: &str) -> EnvFilter {
 }
 
 fn try_env_filter() -> Result<EnvFilter, MeltDown> {
-    EnvFilter::try_from_default_env()
-        .map_err(|e| MeltDown::new(MeltType::ConfigurationError, format!("env filter: {}", e)))
+    EnvFilter::try_from_default_env().map_err(|e| MeltDown::new(MeltType::ConfigurationError, format!("env filter: {}", e)))
 }
 
 #[track_caller]

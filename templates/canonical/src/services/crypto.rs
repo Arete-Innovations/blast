@@ -1,5 +1,7 @@
-use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use argon2::Argon2;
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use base64::Engine as _;
 use rand::RngCore;
 
@@ -15,8 +17,7 @@ pub fn hash_password(plain: &str) -> Result<String, MeltDown> {
 }
 
 pub fn verify_password(plain: &str, phc: &str) -> Result<bool, MeltDown> {
-    let parsed = PasswordHash::new(phc)
-        .map_err(|e| MeltDown::new(MeltType::Unexpected("argon2_parse".into()), format!("argon2 parse: {e}")))?;
+    let parsed = PasswordHash::new(phc).map_err(|e| MeltDown::new(MeltType::Unexpected("argon2_parse".into()), format!("argon2 parse: {e}")))?;
     let argon = Argon2::default();
     Ok(argon.verify_password(plain.as_bytes(), &parsed).is_ok())
 }

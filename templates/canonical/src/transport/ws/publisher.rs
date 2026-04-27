@@ -1,13 +1,12 @@
-
-use std::marker::PhantomData;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 
-use crate::cata_log;
-use crate::structs::ws::publisher::Channel;
-use crate::structs::ws::registry::Registry;
 use super::protocol::ServerMessage;
+use crate::{
+    cata_log,
+    structs::ws::{publisher::Channel, registry::Registry},
+};
 
 pub fn publish<T: Serialize>(registry: &Registry, topic: &str, event: &T) -> usize {
     let payload = match serde_json::to_value(event) {
@@ -50,10 +49,7 @@ impl<T: Serialize + Send + Sync + 'static> Channel<T> {
     }
 }
 
-pub fn channel<T: Serialize + Send + Sync + 'static>(
-    registry: Arc<Registry>,
-    topic: impl Into<String>,
-) -> Channel<T> {
+pub fn channel<T: Serialize + Send + Sync + 'static>(registry: Arc<Registry>, topic: impl Into<String>) -> Channel<T> {
     Channel {
         topic: topic.into(),
         registry,

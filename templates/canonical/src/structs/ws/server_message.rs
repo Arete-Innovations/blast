@@ -1,6 +1,7 @@
-use crate::structs::ws::control_frame::ControlFrame;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::structs::ws::control_frame::ControlFrame;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]

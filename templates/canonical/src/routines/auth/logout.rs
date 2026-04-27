@@ -1,10 +1,4 @@
-use crate::{
-    cata_log,
-    meltdown::*,
-    models::auth::sessions,
-    structs::auth::SessionContext,
-    Ctx,
-};
+use crate::{cata_log, meltdown::*, models::auth::sessions, structs::auth::SessionContext, Ctx};
 
 pub async fn run(ctx: &Ctx, session: &SessionContext) -> Result<(), MeltDown> {
     let mut conn = ctx.conn().await?;

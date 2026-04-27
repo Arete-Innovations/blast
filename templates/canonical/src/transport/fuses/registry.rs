@@ -1,11 +1,13 @@
+use std::{future::Future, sync::Arc};
 
-use std::future::Future;
-use std::sync::Arc;
-
-use crate::ctx::Ctx;
-use crate::meltdown::MeltDown;
-use crate::structs::fuses::registry::{Fuse, FuseBuilder, FuseRegistry, FuseFn, FuseFuture};
-use crate::structs::fuses::schedule::Schedule;
+use crate::{
+    ctx::Ctx,
+    meltdown::MeltDown,
+    structs::fuses::{
+        registry::{Fuse, FuseBuilder, FuseFn, FuseFuture, FuseRegistry},
+        schedule::Schedule,
+    },
+};
 
 impl Fuse {
     pub fn named(name: impl Into<String>) -> FuseBuilder {

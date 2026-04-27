@@ -1,14 +1,15 @@
 use std::io::Write;
 
-use diesel::backend::Backend;
-use diesel::deserialize::{self, FromSql, FromSqlRow};
-use diesel::expression::AsExpression;
-use diesel::pg::Pg;
-use diesel::serialize::{self, IsNull, Output, ToSql};
+use diesel::{
+    backend::Backend,
+    deserialize::{self, FromSql, FromSqlRow},
+    expression::AsExpression,
+    pg::Pg,
+    serialize::{self, IsNull, Output, ToSql},
+};
 use serde::{Deserialize, Serialize};
 
-use crate::database::schema::sql_types::UserRole;
-use crate::meltdown::*;
+use crate::{database::schema::sql_types::UserRole, meltdown::*};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]
 #[diesel(sql_type = UserRole)]

@@ -1,6 +1,7 @@
+use std::net::SocketAddr;
+
 use axum::{extract::DefaultBodyLimit, middleware::from_fn, Router};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
-use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 

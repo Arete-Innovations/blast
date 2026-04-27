@@ -1,10 +1,9 @@
-use serde::Serialize;
-use tokio::sync::mpsc;
-
 use canonical::{
     structs::ws::SubscriberHandle,
     transport::ws::{publisher::publish, registry::Registry},
 };
+use serde::Serialize;
+use tokio::sync::mpsc;
 
 #[derive(Serialize)]
 struct TestEvent {
@@ -18,14 +17,8 @@ async fn publish_fans_out_to_each_subscriber() {
     let (tx2, mut rx2) = mpsc::channel(4);
     let id1 = registry.next_id();
     let id2 = registry.next_id();
-    registry.subscribe(
-        "x:y:1".to_string(),
-        SubscriberHandle { id: id1, sender: tx1 },
-    );
-    registry.subscribe(
-        "x:y:1".to_string(),
-        SubscriberHandle { id: id2, sender: tx2 },
-    );
+    registry.subscribe("x:y:1".to_string(), SubscriberHandle { id: id1, sender: tx1 });
+    registry.subscribe("x:y:1".to_string(), SubscriberHandle { id: id2, sender: tx2 });
 
     let n = publish(&registry, "x:y:1", &TestEvent { kind: "K" });
     assert_eq!(n, 2);

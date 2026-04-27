@@ -1,8 +1,10 @@
 use axum::{body::Body, http::Request};
-use diesel_async::{pooled_connection::{deadpool::Pool, AsyncDieselConnectionManager}, AsyncPgConnection};
-use tower::ServiceExt;
-
 use canonical::{transport::http::router, Ctx};
+use diesel_async::{
+    pooled_connection::{deadpool::Pool, AsyncDieselConnectionManager},
+    AsyncPgConnection,
+};
+use tower::ServiceExt;
 
 fn build_pool(url: &str) -> Result<Pool<AsyncPgConnection>, canonical::meltdown::MeltDown> {
     let cfg = AsyncDieselConnectionManager::<AsyncPgConnection>::new(url);
@@ -29,8 +31,7 @@ async fn healthz_returns_200() -> Result<(), canonical::meltdown::MeltDown> {
         .body(Body::empty())
         .map_err(|e| canonical::meltdown::MeltDown::bad_request(format!("request build failed: {}", e)))?;
 
-    let response = app.oneshot(request).await
-        .map_err(|e| canonical::meltdown::MeltDown::db_connection(format!("oneshot failed: {}", e)))?;
+    let response = app.oneshot(request).await.map_err(|e| canonical::meltdown::MeltDown::db_connection(format!("oneshot failed: {}", e)))?;
 
     assert_eq!(response.status(), axum::http::StatusCode::OK);
 

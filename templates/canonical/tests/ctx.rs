@@ -1,13 +1,12 @@
+use canonical::{
+    ctx::{Ctx, CtxPool},
+    meltdown::MeltDown,
+};
 use diesel::sql_query;
 use diesel_async::{
     pooled_connection::{deadpool::Pool, AsyncDieselConnectionManager},
     scoped_futures::ScopedFutureExt,
     AsyncPgConnection, RunQueryDsl,
-};
-
-use canonical::{
-    ctx::{Ctx, CtxPool},
-    meltdown::MeltDown,
 };
 
 #[derive(diesel::QueryableByName)]
@@ -32,10 +31,7 @@ async fn transaction_returns_ok_value() {
     let outcome: Result<i64, MeltDown> = ctx
         .transaction(|conn| {
             async move {
-                let rows: Vec<CountRow> = sql_query("SELECT 7::bigint AS n")
-                    .load(conn)
-                    .await
-                    .map_err(MeltDown::from)?;
+                let rows: Vec<CountRow> = sql_query("SELECT 7::bigint AS n").load(conn).await.map_err(MeltDown::from)?;
                 Ok(rows[0].n)
             }
             .scope_boxed()
@@ -61,10 +57,7 @@ async fn transaction_rolls_back_on_err() {
             let probe = probe_for_closure;
             async move {
                 let create_sql = format!("CREATE TABLE {} (i int)", probe);
-                sql_query(create_sql)
-                    .execute(conn)
-                    .await
-                    .map_err(MeltDown::from)?;
+                sql_query(create_sql).execute(conn).await.map_err(MeltDown::from)?;
                 Err(MeltDown::bad_request("intentional rollback"))
             }
             .scope_boxed()
@@ -74,12 +67,10 @@ async fn transaction_rolls_back_on_err() {
     assert!(outcome.is_err(), "expected Err, got {:?}", outcome.as_ref().err());
 
     let mut verify_conn = ctx.conn().await.expect("verify conn");
-    let hits: Vec<CountRow> = sql_query(
-        "SELECT count(*)::bigint AS n FROM pg_class WHERE relname = $1 AND relkind = 'r'",
-    )
-    .bind::<diesel::sql_types::Text, _>(&probe)
-    .load(&mut *verify_conn)
-    .await
-    .expect("verify load");
+    let hits: Vec<CountRow> = sql_query("SELECT count(*)::bigint AS n FROM pg_class WHERE relname = $1 AND relkind = 'r'")
+        .bind::<diesel::sql_types::Text, _>(&probe)
+        .load(&mut *verify_conn)
+        .await
+        .expect("verify load");
     assert_eq!(hits[0].n, 0, "rollback did not discard CREATE TABLE");
 }
