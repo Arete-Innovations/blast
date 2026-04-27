@@ -33,8 +33,8 @@ impl OptimisticUpdateInCustom {
     }
 }
 
-fn is_custom_file(file: &Path) -> bool {
-    path_contains(file, "/custom/")
+fn is_user_file(file: &Path) -> bool {
+    !path_contains(file, "/generated/")
 }
 
 /// Walk the file looking for: a mutation hook call, then a function/handler
@@ -149,7 +149,7 @@ impl FileRule for OptimisticUpdateInCustom {
         if !extension_is(file, "vue") && !extension_is(file, "ts") {
             return Vec::new();
         }
-        if !is_custom_file(file) {
+        if !is_user_file(file) {
             return Vec::new();
         }
         let mut out: Vec<Violation> = Vec::new();
@@ -175,7 +175,7 @@ mod tests {
         let rule = OptimisticUpdateInCustom::new();
         let cfg = FeLintState::default();
         rule.check_file(
-            &PathBuf::from("frontend/src/custom/pages/X.vue"),
+            &PathBuf::from("frontend/src/pages/X.vue"),
             contents,
             &cfg,
         )

@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn flags_fetch_in_custom() {
         let v = run(
-            "frontend/src/custom/composables/useFoo.ts",
+            "frontend/src/composables/useFoo.ts",
             "  const r = await fetch('/api/x')",
         );
         assert!(v.is_some());
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn flags_axios_in_custom() {
         let v = run(
-            "frontend/src/custom/components/Foo.vue",
+            "frontend/src/components/Foo.vue",
             "axios.get('/x')",
         );
         assert!(v.is_some());

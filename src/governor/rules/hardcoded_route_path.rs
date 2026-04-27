@@ -84,7 +84,7 @@ mod tests {
     fn run(line: &str) -> Option<Violation> {
         let rule = HardcodedRoutePath::new();
         let cfg = FeLintState::default();
-        rule.check(&PathBuf::from("frontend/src/custom/pages/X.vue"), line, 1, &cfg)
+        rule.check(&PathBuf::from("frontend/src/pages/X.vue"), line, 1, &cfg)
     }
 
     #[test]

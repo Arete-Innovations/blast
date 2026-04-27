@@ -59,7 +59,7 @@ mod tests {
     fn run(line: &str) -> Option<Violation> {
         let rule = PiniaImport::new();
         let cfg = FeLintState::default();
-        rule.check(&PathBuf::from("frontend/src/custom/x.ts"), line, 1, &cfg)
+        rule.check(&PathBuf::from("frontend/src/x.ts"), line, 1, &cfg)
     }
 
     #[test]

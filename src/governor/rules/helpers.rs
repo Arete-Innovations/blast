@@ -39,7 +39,7 @@ pub fn extension_is(file: &Path, ext: &str) -> bool {
 }
 
 /// Returns true when the file's normalized path contains the given
-/// directory segment (e.g. `frontend/src/custom/pages/`). The needle
+/// directory segment (e.g. `frontend/src/pages/`). The needle
 /// should NOT start with `/` and SHOULD end with `/` to avoid prefix
 /// collisions like `pages` matching `pagesrc`.
 pub fn path_contains(file: &Path, needle: &str) -> bool {

@@ -48,8 +48,8 @@ fn component_name_from_path(file: &Path) -> Option<String> {
     Some(stem.to_string())
 }
 
-fn is_custom_components(file: &Path) -> bool {
-    path_contains(file, "/custom/components/")
+fn is_user_components(file: &Path) -> bool {
+    !path_contains(file, "/generated/")
 }
 
 impl FileRule for PrimeVueReinvented {
@@ -66,7 +66,7 @@ impl FileRule for PrimeVueReinvented {
         if !extension_is(file, "vue") {
             return Vec::new();
         }
-        if !is_custom_components(file) {
+        if !is_user_components(file) {
             return Vec::new();
         }
         let name = match component_name_from_path(file) {
@@ -99,19 +99,19 @@ mod tests {
 
     #[test]
     fn flags_custom_button_component() {
-        let v = run("frontend/src/custom/components/Button.vue");
+        let v = run("frontend/src/components/Button.vue");
         assert_eq!(v.len(), 1);
     }
 
     #[test]
     fn flags_custom_dialog_component() {
-        let v = run("frontend/src/custom/components/Dialog.vue");
+        let v = run("frontend/src/components/Dialog.vue");
         assert_eq!(v.len(), 1);
     }
 
     #[test]
     fn allows_domain_wrapper_name() {
-        let v = run("frontend/src/custom/components/OrderActionsMenu.vue");
+        let v = run("frontend/src/components/OrderActionsMenu.vue");
         assert!(v.is_empty());
     }
 

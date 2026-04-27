@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn flags_local_page_ref_in_list_page() {
         let v = run(
-            "frontend/src/custom/pages/UsersListPage.vue",
+            "frontend/src/pages/UsersListPage.vue",
             "const page = ref(1)",
         );
         assert!(v.is_some(), "expected violation, got none");
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn flags_local_sort_ref_in_list_page() {
         let v = run(
-            "frontend/src/custom/pages/OrdersListPage.vue",
+            "frontend/src/pages/OrdersListPage.vue",
             "const sort = ref('-created_at')",
         );
         assert!(v.is_some(), "expected violation, got none");
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn ignores_local_page_outside_list_page() {
         let v = run(
-            "frontend/src/custom/components/Pager.vue",
+            "frontend/src/components/Pager.vue",
             "const page = ref(1)",
         );
         assert!(v.is_none(), "non-list page should not trigger, got {:?}", v);
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn ignores_destructure_from_composable() {
         let v = run(
-            "frontend/src/custom/pages/UsersListPage.vue",
+            "frontend/src/pages/UsersListPage.vue",
             "const { data, page, sort, filter } = useUsersList()",
         );
         assert!(v.is_none(), "destructure from composable should be clean");

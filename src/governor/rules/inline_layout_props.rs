@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn ignores_non_page_files() {
         let src = r#"<template><PageShell padding="10"/></template>"#;
-        let v = run("frontend/src/custom/components/Foo.vue", src);
+        let v = run("frontend/src/components/Foo.vue", src);
         assert!(v.is_empty());
     }
 }

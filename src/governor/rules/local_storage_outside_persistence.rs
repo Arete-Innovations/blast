@@ -24,9 +24,7 @@ impl LocalStorageOutsidePersistence {
 }
 
 fn is_persistence_dir(file: &Path) -> bool {
-    path_contains(file, "/generated/persistence/")
-        || path_contains(file, "/custom/persistence/")
-        || path_contains(file, "composables/auth.ts")
+    path_contains(file, "/persistence/") || path_contains(file, "composables/auth.ts")
 }
 
 impl Rule for LocalStorageOutsidePersistence {
@@ -55,7 +53,7 @@ impl Rule for LocalStorageOutsidePersistence {
             file.to_path_buf(),
             line_no,
             snippet_of(line),
-            "browser storage belongs in generated/persistence/ or custom/persistence/",
+            "browser storage belongs in a persistence/ directory",
         ))
     }
 }
@@ -74,7 +72,7 @@ mod tests {
     #[test]
     fn flags_localstorage_in_component() {
         let v = run(
-            "frontend/src/custom/components/Foo.vue",
+            "frontend/src/components/Foo.vue",
             "localStorage.setItem('k','v')",
         );
         assert!(v.is_some());
@@ -83,7 +81,7 @@ mod tests {
     #[test]
     fn flags_sessionstorage_in_composable() {
         let v = run(
-            "frontend/src/custom/composables/useX.ts",
+            "frontend/src/composables/useX.ts",
             "  const x = sessionStorage.getItem('k')",
         );
         assert!(v.is_some());
@@ -92,7 +90,7 @@ mod tests {
     #[test]
     fn allows_in_persistence_dir() {
         let v = run(
-            "frontend/src/custom/persistence/local.ts",
+            "frontend/src/persistence/local.ts",
             "localStorage.setItem('k','v')",
         );
         assert!(v.is_none());

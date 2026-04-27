@@ -139,7 +139,7 @@ mod tests {
   <div>hello</div>
 </template>
 "#;
-        let v = run("frontend/src/custom/pages/UsersPage.vue", src);
+        let v = run("frontend/src/pages/UsersPage.vue", src);
         assert_eq!(v.len(), 1);
     }
 
@@ -152,14 +152,14 @@ mod tests {
   </PageShell>
 </template>
 "#;
-        let v = run("frontend/src/custom/pages/UsersPage.vue", src);
+        let v = run("frontend/src/pages/UsersPage.vue", src);
         assert!(v.is_empty(), "got {:?}", v);
     }
 
     #[test]
     fn ignores_non_page_files() {
         let src = r#"<template><div /></template>"#;
-        let v = run("frontend/src/custom/components/UserCard.vue", src);
+        let v = run("frontend/src/components/UserCard.vue", src);
         assert!(v.is_empty());
     }
 

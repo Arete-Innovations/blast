@@ -32,7 +32,7 @@ impl SnakeCaseInterfaceFields {
 }
 
 fn is_types_dir(file: &Path) -> bool {
-    path_contains(file, "/generated/types/") || path_contains(file, "/custom/types/")
+    path_contains(file, "/types/")
 }
 
 fn is_snake_case(ident: &str) -> bool {
@@ -130,7 +130,7 @@ export interface User {
     firstName: string;
 }
 "#;
-        let v = run("frontend/src/custom/types/user.ts", src);
+        let v = run("frontend/src/types/user.ts", src);
         assert_eq!(v.len(), 1, "got {:?}", v);
     }
 
@@ -143,7 +143,7 @@ export interface User {
     created_at: string;
 }
 "#;
-        let v = run("frontend/src/custom/types/user.ts", src);
+        let v = run("frontend/src/types/user.ts", src);
         assert!(v.is_empty(), "got {:?}", v);
     }
 
@@ -166,7 +166,7 @@ export interface User {
     firstName: string;
 }
 "#;
-        let v = run("frontend/src/custom/composables/useUser.ts", src);
+        let v = run("frontend/src/composables/useUser.ts", src);
         assert!(v.is_empty(), "got {:?}", v);
     }
 }

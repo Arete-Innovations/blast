@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn flags_new_websocket_in_custom() {
         let v = run(
-            "frontend/src/custom/composables/useFoo.ts",
+            "frontend/src/composables/useFoo.ts",
             "const ws = new WebSocket('wss://x')",
         );
         assert!(v.is_some());
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn flags_socket_io_import() {
         let v = run(
-            "frontend/src/custom/x.ts",
+            "frontend/src/x.ts",
             "import { io } from 'socket.io-client'",
         );
         assert!(v.is_some());

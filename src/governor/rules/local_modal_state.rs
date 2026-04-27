@@ -119,7 +119,7 @@ mod tests {
     fn run(contents: &str) -> Vec<Violation> {
         let rule = LocalModalState::new();
         let cfg = FeLintState::default();
-        rule.check_file(&PathBuf::from("frontend/src/custom/pages/X.vue"), contents, &cfg)
+        rule.check_file(&PathBuf::from("frontend/src/pages/X.vue"), contents, &cfg)
     }
 
     #[test]
