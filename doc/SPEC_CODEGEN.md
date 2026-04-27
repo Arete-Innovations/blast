@@ -344,29 +344,40 @@ pub mod generated;
 
 ### Frontend split
 
+Same flat two-tier model as the backend. Each top-level FE dir owns user code at the root + a `generated/` subdir owned by Blast.
+
 ```
 frontend/src/
-├── generated/          ← Blast-owned: types, api, composables, validators, styles/*, plugins/*, icons.ts
-├── custom/             ← user-owned: Blast never touches
-│   ├── main.ts         (installCustomPlugins hook)
-│   ├── router.ts       (customRoutes merge hook)
-│   └── components/
-│       └── AppChrome.vue
-└── composables/
-    └── bus.ts          ← static framework file (NOT codegen); was moved out of generated/ in Wave 10
+├── main.ts                   user — boots app
+├── App.vue                   user — root chrome
+├── components/               user
+│   └── generated/            Blast (forms per resource: forms/<r>/CreateForm.vue, EditForm.vue)
+├── composables/              user (auth, dialog, drawer, channel, bus, url, global-progress)
+│   └── generated/            Blast (per-resource: <r>.ts with use<R>List, use<R>, use<R>Create, ...)
+├── pages/                    user (Welcome, Login, Register, Dashboard, Profile, NotFound)
+│   └── generated/            Blast (admin-style CRUD: <r>/{ListPage,DetailPage,CreatePage,EditPage}.vue)
+├── router/
+│   ├── index.ts              user — wires generated routes + user routes
+│   └── generated/            Blast (routes.ts, route-names.ts, install-router-guards.ts)
+├── nav/
+│   └── generated/            Blast (menu.ts — sidebar entries per resource)
+├── api/
+│   └── generated/            Blast (per-resource fetch wrappers)
+├── types/
+│   └── generated/            Blast (TS interfaces from Rust DTOs)
+├── validators/
+│   └── generated/            Blast (TS validators mirroring Rust)
+├── styles/                   user (base.css)
+│   └── generated/            Blast (tokens.css, primevue-preset, icons.ts)
+├── plugins/
+│   └── generated/            Blast (primevue.ts boot)
+└── ws/
+    └── generated/            Blast (client.ts)
 ```
 
-`bus.ts` is static — it doesn't depend on resource state — so it is no longer under `generated/`. It lives at `frontend/src/composables/bus.ts` as a vendored framework file. The per-resource composables that emit on the bus remain codegen'd under `frontend/src/generated/composables/`.
+There is no `frontend/src/custom/` and no composition-hooks indirection. `main.ts`, `App.vue`, and `router/index.ts` are user-owned root files; users edit them directly to add plugins, routes, or chrome. The canonical template ships these pre-populated with sensible defaults; once scaffolded they're yours forever.
 
-### Composition-hooks pattern (FE-only)
-
-Framework files in `templates/canonical/frontend/` import from `@/custom/...` so users can extend without touching framework files:
-
-- `main.ts` calls `installCustomPlugins(app)` from `@/custom/main`
-- `router/index.ts` merges `customRoutes` from `@/custom/router`
-- `App.vue` wraps `<RouterView>` in `<AppChrome>` from `@/custom/components/AppChrome.vue`
-
-Stub seeds at `templates/canonical/frontend/src/custom/{main.ts,router.ts,components/AppChrome.vue,.gitkeep}` make first-build resolve without errors. After scaffold, users edit only `custom/` files. `blast vendor-update` safely stomps framework files without touching `custom/`.
+User-owned root dirs (`components/`, `composables/`, `pages/`, etc.) coexist with their `generated/` subdir. Blast NEVER touches files outside `generated/` subdirs. Resource-specific user code (e.g. a hand-written replacement `pages/users/ListPage.vue` that shadows the generated one) lives at top level of the appropriate dir.
 
 ### Blast's invariants
 

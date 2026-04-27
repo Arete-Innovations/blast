@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import GlobalProgressBar from '@/components/GlobalProgressBar.vue'
-import AppChrome from '@/custom/components/AppChrome.vue'
+import AppChrome from '@/components/AppChrome.vue'
 </script>
 
 <template>
