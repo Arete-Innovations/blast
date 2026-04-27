@@ -1,5 +1,6 @@
 pub mod build_rs_template;
 pub mod components;
+pub mod enums;
 pub mod env_example;
 pub mod flows;
 pub mod frontend_api;

@@ -157,6 +157,12 @@ pub enum GenCmd {
     #[command(about = "Generate structs from schema")]
     Structs,
 
+    #[command(about = "Generate Rust enums from CREATE TYPE statements in migrations")]
+    Enums {
+        #[arg(value_name = "ENUM_NAME")]
+        resource: Option<String>,
+    },
+
     #[command(about = "Generate model implementations")]
     Models,
 

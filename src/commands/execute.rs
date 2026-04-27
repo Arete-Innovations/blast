@@ -216,6 +216,7 @@ fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, dep_manager: &mut Depe
             logger::info(&format!("structs: {} written, {} skipped", report.written.len(), report.skipped.len(),))?;
             Ok(())
         }
+        GenCmd::Enums { resource: _ } => run_gen_enums(config),
         GenCmd::Models => {
             if !crate::models::generate(config) {
                 logger::warning("Some model generation issues occurred")?;
@@ -305,6 +306,17 @@ fn run_gen_types(config: &Config, _resource: Option<String>) -> BlastResult<()> 
     let mut progress = crate::io::cli_progress(None);
     let report = crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
     logger::info(&format!("types: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
+    Ok(())
+}
+
+fn run_gen_enums(config: &Config) -> BlastResult<()> {
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    let report = crate::codegen::enums::run(&config.project_dir, &mut sink, &mut progress)?;
+    for p in &report.written {
+        logger::success(&format!("wrote {}", p.display()))?;
+    }
+    logger::info(&format!("enums: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
     Ok(())
 }
 

@@ -33,6 +33,7 @@ pub struct Outcome {
 }
 
 const STEP_SCHEMA: &str = "schema generation";
+const STEP_ENUMS: &str = "enums generation";
 const STEP_STRUCTS: &str = "structs generation";
 const STEP_MODELS: &str = "models generation";
 const STEP_FLOWS: &str = "flows generation";
@@ -72,6 +73,7 @@ pub fn run(
     let mut outcome = Outcome::default();
 
     run_schema_step(sink, progress, &mut outcome)?;
+    run_enums_step(&args.project_root, sink, progress, &mut outcome)?;
     run_structs_step(&args.project_root, sink, progress, &mut outcome)?;
     run_models_step(&args.project_root, config, sink, progress, &mut outcome)?;
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -168,6 +170,31 @@ fn run_schema_step(
     progress.step_done(STEP_SCHEMA);
     outcome.steps_run += 1;
     Ok(())
+}
+
+fn run_enums_step(
+    project_root: &PathBuf,
+    sink: &mut dyn Sink,
+    progress: &mut dyn Progress,
+    outcome: &mut Outcome,
+) -> BlastResult<()> {
+    match codegen::enums::run(project_root, sink, progress) {
+        Ok(report) => {
+            for path in &report.written {
+                sink.info(format!("wrote {}", path.display()));
+            }
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_ENUMS, &reason);
+            sink.error(format!("{}: {}", STEP_ENUMS, reason));
+            Err(err)
+        }
+    }
 }
 
 fn run_structs_step(
