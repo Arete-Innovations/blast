@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
-use std::env;
-use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
+use std::{
+    collections::BTreeMap,
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 const MAX_LOC: usize = 800;
 
@@ -25,11 +25,7 @@ const SILENT_ERROR_PATTERNS: &[&str] = &[
     "while let Ok(",
 ];
 
-const RESULT_OPTION_MATCH_ARMS: &[&str] = &[
-    "Some(_) =>",
-    "Ok(_) =>",
-    "Err(_) =>",
-];
+const RESULT_OPTION_MATCH_ARMS: &[&str] = &["Some(_) =>", "Ok(_) =>", "Err(_) =>"];
 
 const ERR_DEFAULT_VALUES: &[&str] = &[
     "=> None",
@@ -55,15 +51,7 @@ const ERR_DEFAULT_VALUES: &[&str] = &[
     "=> Ok(Default::default())",
 ];
 
-const LAYER_NAMES: &[&str] = &[
-    "transport",
-    "flows",
-    "routines",
-    "models",
-    "services",
-    "database",
-    "structs",
-];
+const LAYER_NAMES: &[&str] = &["transport", "flows", "routines", "models", "services", "database", "structs"];
 
 struct Hit {
     rule: &'static str,
@@ -194,7 +182,8 @@ fn rule_help(rule: &str) -> &'static str {
         "DEAD:21" => concat!(
             "every form of comment (//, ///, //!, /* */, /** */, /*! */) is banned in src/.\n",
             "    names, types, and commit messages are the documentation. if a reader needs a comment to follow the code, refactor: smaller fns, better names, named constants.\n",
-            "    one exception: files under a `generated/` segment may have a leading comment header (auto-gen warning + hash marker) BEFORE any non-comment code. once code starts, the rest of the file is back under the total ban.",
+            "    one exception: files under a `generated/` segment may have a leading comment header (auto-gen warning + hash marker) BEFORE any non-comment code. once code starts, the rest of the file is back under \
+             the total ban.",
         ),
         "STRUCTS:22" => concat!(
             "data definitions (`struct`, `enum`) live in src/structs/.\n",
@@ -210,10 +199,7 @@ const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "ERROR", 
 fn format_report(hits: &[Hit]) -> String {
     let mut by_rule: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for hit in hits {
-        by_rule
-            .entry(hit.rule)
-            .or_default()
-            .push(format!("{}:{}", hit.file, hit.line));
+        by_rule.entry(hit.rule).or_default().push(format!("{}:{}", hit.file, hit.line));
     }
 
     let mut by_category: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -234,11 +220,7 @@ fn format_report(hits: &[Hit]) -> String {
             None => continue,
         };
 
-        out.push_str(&format!(
-            "\n--- {} --- {}\n",
-            cat,
-            category_spirit(cat)
-        ));
+        out.push_str(&format!("\n--- {} --- {}\n", cat, category_spirit(cat)));
 
         for rule in rules {
             let locations = match by_rule.get(rule) {
@@ -304,10 +286,7 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
     let src_dir = manifest_dir.join("src");
     let rel = path.strip_prefix(&src_dir).unwrap_or(path);
     let rel_str = rel.to_string_lossy();
-    let file_name = path
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let file_name = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
 
     let is_bin = rel_str.starts_with("bin/") || file_name == "main.rs";
 
@@ -349,10 +328,7 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
             }
             continue;
         }
-        if !in_block_comment
-            && !trimmed.starts_with("//")
-            && trimmed.starts_with("macro_rules!")
-        {
+        if !in_block_comment && !trimmed.starts_with("//") && trimmed.starts_with("macro_rules!") {
             in_macro_rules = true;
             macro_brace_depth = trimmed.chars().filter(|&c| c == '{').count() as i32;
             macro_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
@@ -391,6 +367,7 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
 
 fn check_switchboard_purity(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
     let mut in_block_comment = false;
+    let mut brace_depth: i32 = 0;
     for (line_no, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -409,16 +386,21 @@ fn check_switchboard_purity(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
         if trimmed.starts_with("//") {
             continue;
         }
-        let is_mod = trimmed.starts_with("mod ")
-            || trimmed.starts_with("pub mod ")
-            || trimmed.starts_with("pub(crate) mod ");
-        let is_use = trimmed.starts_with("use ")
-            || trimmed.starts_with("pub use ")
-            || trimmed.starts_with("pub(crate) use ");
+        let opens = trimmed.chars().filter(|&c| c == '{').count() as i32;
+        let closes = trimmed.chars().filter(|&c| c == '}').count() as i32;
+        if brace_depth > 0 {
+            brace_depth = (brace_depth + opens - closes).max(0);
+            continue;
+        }
+        let is_mod = trimmed.starts_with("mod ") || trimmed.starts_with("pub mod ") || trimmed.starts_with("pub(crate) mod ");
+        let is_use = trimmed.starts_with("use ") || trimmed.starts_with("pub use ") || trimmed.starts_with("pub(crate) use ");
         let is_attr = trimmed.starts_with("#[") || trimmed.starts_with("#![");
         let is_extern = trimmed.starts_with("extern crate ");
         if !is_mod && !is_use && !is_attr && !is_extern {
             hit(hits, "DECOMPOSITION:2", rel, line_no + 1);
+        }
+        if is_use {
+            brace_depth = (opens - closes).max(0);
         }
     }
 }
@@ -442,10 +424,7 @@ fn check_wildcard_match_arms(rel: &Path, line_no: usize, trimmed: &str, hits: &m
 }
 
 fn check_err_default_arms(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
-    if !(trimmed.starts_with("Err(")
-        || trimmed.starts_with("Err (")
-        || trimmed.starts_with("None =>"))
-    {
+    if !(trimmed.starts_with("Err(") || trimmed.starts_with("Err (") || trimmed.starts_with("None =>")) {
         return;
     }
     if !trimmed.contains("=>") {
@@ -481,8 +460,7 @@ fn check_empty_err_arms(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
             continue;
         }
 
-        let is_err_arm =
-            (trimmed.starts_with("Err(") || trimmed.starts_with("Err (")) && trimmed.contains("=>");
+        let is_err_arm = (trimmed.starts_with("Err(") || trimmed.starts_with("Err (")) && trimmed.contains("=>");
         if !is_err_arm {
             continue;
         }
@@ -510,10 +488,7 @@ fn check_empty_err_arms(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
 }
 
 fn check_dead_code_suppression(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
-    if trimmed.contains("#[allow(dead_code")
-        || trimmed.contains("#[allow(unused")
-        || trimmed.contains("#[allow(unreachable_code")
-    {
+    if trimmed.contains("#[allow(dead_code") || trimmed.contains("#[allow(unused") || trimmed.contains("#[allow(unreachable_code") {
         hit(hits, "DEAD:8", rel, line_no + 1);
     }
 }
@@ -526,33 +501,21 @@ fn check_commented_out_code(rel: &Path, line_no: usize, trimmed: &str, hits: &mu
     }
 
     let code_indicators = [
-        "fn ", "let ", "use ", "pub ", "struct ", "enum ", "impl ", "mod ", "match ", "if ",
-        "for ", "while ", "return ", "self.", "Self::", "crate::", "super::", ".await", "async ",
-        "mut ", "const ", "static ", "type ", "trait ", "where ", "loop ", "break", "continue",
+        "fn ", "let ", "use ", "pub ", "struct ", "enum ", "impl ", "mod ", "match ", "if ", "for ", "while ", "return ", "self.", "Self::", "crate::", "super::", ".await", "async ", "mut ", "const ", "static ",
+        "type ", "trait ", "where ", "loop ", "break", "continue",
     ];
 
-    let smells_like_code = code_indicators
-        .iter()
-        .any(|indicator| after_slashes.starts_with(indicator));
+    let smells_like_code = code_indicators.iter().any(|indicator| after_slashes.starts_with(indicator));
 
-    let has_code_punctuation = after_slashes.ends_with(';')
-        || after_slashes.ends_with('{')
-        || after_slashes.ends_with('}')
-        || after_slashes.ends_with("()")
-        || (after_slashes.contains("::") && after_slashes.contains('('));
+    let has_code_punctuation =
+        after_slashes.ends_with(';') || after_slashes.ends_with('{') || after_slashes.ends_with('}') || after_slashes.ends_with("()") || (after_slashes.contains("::") && after_slashes.contains('('));
 
     if smells_like_code || has_code_punctuation {
         hit(hits, "DEAD:9", rel, line_no + 1);
     }
 }
 
-fn check_unfinished_markers(
-    rel: &Path,
-    line_no: usize,
-    trimmed: &str,
-    is_bin: bool,
-    hits: &mut Vec<Hit>,
-) {
+fn check_unfinished_markers(rel: &Path, line_no: usize, trimmed: &str, is_bin: bool, hits: &mut Vec<Hit>) {
     if is_bin && trimmed.contains("todo!") {
         return;
     }
@@ -597,11 +560,7 @@ fn check_result_types(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
             let start_line = idx + 1;
             let mut sig = trimmed.to_string();
             let mut j = idx + 1;
-            while j < lines.len()
-                && !sig.contains('{')
-                && !sig.trim_end().ends_with(';')
-                && sig.len() < 1600
-            {
+            while j < lines.len() && !sig.contains('{') && !sig.trim_end().ends_with(';') && sig.len() < 1600 {
                 let next = lines[j].trim();
                 if !next.starts_with("//") {
                     sig.push(' ');
@@ -657,11 +616,7 @@ fn check_return_type(rel: &Path, line_no: usize, sig: &str, hits: &mut Vec<Hit>)
         return;
     }
 
-    let prefix_len = if ret.starts_with("std::result::Result<") {
-        "std::result::Result<".len()
-    } else {
-        "Result<".len()
-    };
+    let prefix_len = if ret.starts_with("std::result::Result<") { "std::result::Result<".len() } else { "Result<".len() };
     let Some(close_idx) = ret.rfind('>') else {
         hit(hits, "TYPE:7", rel, line_no);
         return;
@@ -687,11 +642,28 @@ fn is_erased_err_type(err_ty: &str) -> bool {
     }
 
     const BANNED_EXACT: &[&str] = &[
-        "String", "&str", "&'static str", "str",
-        "anyhow::Error", "eyre::Report",
-        "i8", "i16", "i32", "i64", "i128", "isize",
-        "u8", "u16", "u32", "u64", "u128", "usize",
-        "f32", "f64", "bool", "char",
+        "String",
+        "&str",
+        "&'static str",
+        "str",
+        "anyhow::Error",
+        "eyre::Report",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "isize",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "usize",
+        "f32",
+        "f64",
+        "bool",
+        "char",
     ];
     if BANNED_EXACT.iter().any(|b| *b == normalized) {
         return true;
@@ -838,8 +810,7 @@ fn check_layer_imports(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
         };
 
         let prefix_len = line.len() - rest.len();
-        let (stmt_text, line_map, lines_consumed) =
-            collect_use_statement(&lines, idx, prefix_len);
+        let (stmt_text, line_map, lines_consumed) = collect_use_statement(&lines, idx, prefix_len);
 
         let leaves = flatten_use_paths(&stmt_text, &line_map, idx + 1);
 
@@ -862,11 +833,7 @@ fn check_layer_imports(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
     }
 }
 
-fn collect_use_statement(
-    lines: &[&str],
-    start_idx: usize,
-    prefix_len: usize,
-) -> (String, Vec<usize>, usize) {
+fn collect_use_statement(lines: &[&str], start_idx: usize, prefix_len: usize) -> (String, Vec<usize>, usize) {
     let mut text = String::new();
     let mut line_map: Vec<usize> = Vec::new();
     let mut consumed = 0usize;
@@ -959,14 +926,7 @@ fn flatten_use_paths(stmt: &str, line_map: &[usize], fallback_line: usize) -> Ve
     out
 }
 
-fn parse_tree<F>(
-    chars: &[char],
-    start: usize,
-    prefix: &str,
-    line_at: F,
-    fallback_line: usize,
-    out: &mut Vec<(String, usize)>,
-) -> usize
+fn parse_tree<F>(chars: &[char], start: usize, prefix: &str, line_at: F, fallback_line: usize, out: &mut Vec<(String, usize)>) -> usize
 where
     F: Fn(usize) -> usize + Copy,
 {
@@ -1023,14 +983,7 @@ where
     i
 }
 
-fn parse_group<F>(
-    chars: &[char],
-    start: usize,
-    prefix: &str,
-    line_at: F,
-    fallback_line: usize,
-    out: &mut Vec<(String, usize)>,
-) -> usize
+fn parse_group<F>(chars: &[char], start: usize, prefix: &str, line_at: F, fallback_line: usize, out: &mut Vec<(String, usize)>) -> usize
 where
     F: Fn(usize) -> usize + Copy,
 {
@@ -1092,14 +1045,8 @@ fn build_prefix(prefix: &str, segment: &str) -> String {
     }
 }
 
-fn emit_leaf<F>(
-    prefix: &str,
-    segment: &str,
-    segment_start: Option<usize>,
-    line_at: F,
-    fallback_line: usize,
-    out: &mut Vec<(String, usize)>,
-) where
+fn emit_leaf<F>(prefix: &str, segment: &str, segment_start: Option<usize>, line_at: F, fallback_line: usize, out: &mut Vec<(String, usize)>)
+where
     F: Fn(usize) -> usize,
 {
     let cleaned = strip_alias(segment.trim()).trim().to_string();
@@ -1113,11 +1060,7 @@ fn emit_leaf<F>(
         }
         return;
     }
-    let path = if prefix.is_empty() {
-        cleaned
-    } else {
-        format!("{}::{}", prefix, cleaned)
-    };
+    let path = if prefix.is_empty() { cleaned } else { format!("{}::{}", prefix, cleaned) };
     let line = segment_start.map(line_at).unwrap_or(fallback_line);
     out.push((path, line));
 }
@@ -1134,11 +1077,7 @@ fn find_as_keyword(segment: &str) -> Option<usize> {
     let bytes = segment.as_bytes();
     let mut i = 0usize;
     while i + 4 <= bytes.len() {
-        if bytes[i] == b' '
-            && bytes[i + 1] == b'a'
-            && bytes[i + 2] == b's'
-            && (bytes[i + 3] == b' ' || bytes[i + 3] == b'\t' || bytes[i + 3] == b'\n')
-        {
+        if bytes[i] == b' ' && bytes[i + 1] == b'a' && bytes[i + 2] == b's' && (bytes[i + 3] == b' ' || bytes[i + 3] == b'\t' || bytes[i + 3] == b'\n') {
             return Some(i);
         }
         i += 1;
@@ -1334,12 +1273,7 @@ fn collect_err_arm_body(lines: &[&str], start: usize, multi_line: bool) -> Strin
 }
 
 fn err_body_logs_or_propagates(body: &str) -> bool {
-    body.contains("cata_log!(")
-        || body.contains(".log()")
-        || body.contains("return Err(")
-        || body.contains("MeltDown::")
-        || body.contains("Err(")
-        || body.contains("?")
+    body.contains("cata_log!(") || body.contains(".log()") || body.contains("return Err(") || body.contains("MeltDown::") || body.contains("Err(") || body.contains("?")
 }
 
 fn check_no_comments(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
@@ -1455,10 +1389,7 @@ fn check_no_comments(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
 
 fn is_generated_path(rel: &Path) -> bool {
     let s = rel.to_string_lossy();
-    s.contains("/generated/")
-        || s.starts_with("generated/")
-        || s.contains("\\generated\\")
-        || s.starts_with("generated\\")
+    s.contains("/generated/") || s.starts_with("generated/") || s.contains("\\generated\\") || s.starts_with("generated\\")
 }
 
 fn is_data_definition_allowed_file(rel: &Path) -> bool {
@@ -1469,16 +1400,7 @@ fn is_data_definition_allowed_file(rel: &Path) -> bool {
     if s.starts_with("testing/") || s.starts_with("testing\\") {
         return true;
     }
-    matches!(s.as_ref(),
-        "meltdown.rs"
-        | "ctx.rs"
-        | "crank.rs"
-        | "cata_log.rs"
-        | "bootstrap.rs"
-        | "lib.rs"
-        | "main.rs"
-        | "database/schema.rs"
-    )
+    matches!(s.as_ref(), "meltdown.rs" | "ctx.rs" | "crank.rs" | "cata_log.rs" | "bootstrap.rs" | "lib.rs" | "main.rs" | "database/schema.rs")
 }
 
 fn is_struct_or_enum_def(trimmed: &str) -> bool {
@@ -1534,10 +1456,7 @@ fn check_inline_data_definitions(rel: &Path, content: &str, hits: &mut Vec<Hit>)
             }
             continue;
         }
-        if !in_block_comment
-            && !trimmed.starts_with("//")
-            && trimmed.starts_with("macro_rules!")
-        {
+        if !in_block_comment && !trimmed.starts_with("//") && trimmed.starts_with("macro_rules!") {
             in_macro_rules = true;
             macro_brace_depth = trimmed.chars().filter(|&c| c == '{').count() as i32;
             macro_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
