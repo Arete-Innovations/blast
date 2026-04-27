@@ -1,3 +1,4 @@
+use crate::state::gen_level::GenLevel;
 use crate::state::names::{AuthScopeField, FieldName, ResourceName, SqlType};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,11 @@ pub struct ResourceState {
     /// Many-to-many is intentionally not modeled in v2.
     #[serde(default)]
     pub relations: BTreeMap<String, Relation>,
+    /// Per-resource codegen cut-off. Each level implies all prior levels.
+    /// Default: `Composables`. Power-users opt up to `Pages` for admin-grade
+    /// CRUD UI or down to `Struct` for data-only.
+    #[serde(default)]
+    pub gen_level: GenLevel,
 }
 
 /// A typed relation between this resource and another table.
@@ -192,6 +198,7 @@ impl ResourceState {
             singular_override: None,
             soft_delete: None,
             relations: BTreeMap::new(),
+            gen_level: GenLevel::default(),
         }
     }
 

@@ -9,14 +9,16 @@
 //! via `blast gen pages [<resource>]`, `blast gen api [<resource>]`,
 //! `blast gen types [<resource>]`. Default keeps FE side to types only.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::codegen;
+use crate::codegen::ir_loader;
 use crate::configs::Config;
 use crate::database;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::state;
+use crate::state::{GenLevel, ResourceState};
 
 #[derive(Debug, Clone)]
 pub struct Args {
@@ -80,12 +82,62 @@ pub fn run(
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
     run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
 
+    warn_on_orphan_generated(&args.project_root, sink);
+
     sink.success(format!(
         "blast gen all: {} step(s) ran, {} file(s) written, {} file(s) skipped",
         outcome.steps_run, outcome.files_written, outcome.files_skipped
     ));
 
     Ok(outcome)
+}
+
+/// Inspect each resource's `gen_level` and warn the user when generated files
+/// exist on disk for a level higher than the current cut-off. Blast does NOT
+/// auto-delete — the user must clean up manually so accidental level drops
+/// can't silently destroy work.
+fn warn_on_orphan_generated(project_root: &Path, sink: &mut dyn Sink) {
+    let resources = match ir_loader::load_resource_states(project_root) {
+        Ok(rs) => rs,
+        Err(_err) => return,
+    };
+
+    for resource in &resources {
+        warn_resource_orphans(project_root, resource, sink);
+    }
+}
+
+fn warn_resource_orphans(project_root: &Path, resource: &ResourceState, sink: &mut dyn Sink) {
+    let table = resource.name.as_str();
+    let level = resource.gen_level;
+
+    let checks: &[(GenLevel, PathBuf, &'static str)] = &[
+        (GenLevel::Model, project_root.join("src").join("models").join("generated").join(format!("{table}.rs")), "models/generated"),
+        (GenLevel::Route, project_root.join("src").join("flows").join("generated").join(table), "flows/generated"),
+        (GenLevel::Route, project_root.join("src").join("transport").join("http").join("generated").join(format!("{table}.rs")), "transport/http/generated"),
+        (GenLevel::Types, project_root.join("frontend").join("src").join("generated").join("types").join(format!("{table}.ts")), "frontend/types/generated"),
+        (GenLevel::Types, project_root.join("frontend").join("src").join("generated").join("api").join(format!("{table}.ts")), "frontend/api/generated"),
+        (GenLevel::Composables, project_root.join("frontend").join("src").join("composables").join("generated").join(format!("{table}.ts")), "frontend/composables/generated"),
+        (GenLevel::Components, project_root.join("frontend").join("src").join("components").join("generated").join("forms").join(table), "frontend/components/generated/forms"),
+        (GenLevel::Pages, project_root.join("frontend").join("src").join("pages").join(table), "frontend/pages"),
+    ];
+
+    for (required_level, path, label) in checks {
+        if level >= *required_level {
+            continue;
+        }
+        if !path.exists() {
+            continue;
+        }
+        sink.warn(format!(
+            "orphan codegen: resource '{}' is at gen_level {:?} (below {:?}); stale {} at {} will not be regenerated — delete manually",
+            table,
+            level,
+            required_level,
+            label,
+            path.display(),
+        ));
+    }
 }
 
 fn preflight_resources(project_root: &PathBuf) -> BlastResult<usize> {

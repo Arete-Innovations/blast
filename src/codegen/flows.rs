@@ -24,7 +24,7 @@ use crate::codegen::header;
 use crate::codegen::ir_loader;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::{AuthMode, ResourceState, Verb};
+use crate::state::{AuthMode, GenLevel, ResourceState, Verb};
 
 #[derive(Debug, Default)]
 pub struct EmitReport {
@@ -41,7 +41,11 @@ pub fn run(
 ) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
-    let resources = ir_loader::load_resource_states(project_root)?;
+    let all_resources = ir_loader::load_resource_states(project_root)?;
+    let resources: Vec<ResourceState> = all_resources
+        .into_iter()
+        .filter(|r| r.gen_level >= GenLevel::Route)
+        .collect();
     let mut report = EmitReport::default();
 
     if resources.is_empty() {
@@ -373,6 +377,7 @@ mod tests {
             singular_override: None,
             soft_delete: None,
             relations: std::collections::BTreeMap::new(),
+            gen_level: crate::state::GenLevel::default(),
         };
         let path = resources_dir.join(format!("{}.ron", name));
         let body = ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default())

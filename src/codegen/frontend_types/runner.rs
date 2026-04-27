@@ -12,6 +12,7 @@ use crate::codegen::header;
 use crate::codegen::ir_loader;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
+use crate::state::GenLevel;
 
 #[derive(Debug, Default, Clone)]
 pub struct EmitReport {
@@ -28,7 +29,7 @@ pub fn run(
 ) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
-    let resources = match ir_loader::load_resource_states(project_root) {
+    let all_resources = match ir_loader::load_resource_states(project_root) {
         Ok(rs) => rs,
         Err(err) => {
             let reason = err.to_string();
@@ -37,6 +38,11 @@ pub fn run(
             return Err(err);
         }
     };
+
+    let resources: Vec<_> = all_resources
+        .into_iter()
+        .filter(|r| r.gen_level >= GenLevel::Types)
+        .collect();
 
     let out_dir = types_dir(project_root);
     fs::create_dir_all(&out_dir)?;
@@ -202,6 +208,7 @@ mod tests {
             singular_override: None,
             soft_delete: None,
             relations: BTreeMap::new(),
+            gen_level: crate::state::GenLevel::default(),
         }
     }
 

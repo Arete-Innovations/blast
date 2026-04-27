@@ -1,5 +1,6 @@
 pub mod confirm;
 pub mod fields;
+pub mod gen_level;
 pub mod list;
 pub mod pick;
 pub mod run;

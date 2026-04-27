@@ -1,4 +1,5 @@
 pub mod app;
+pub mod gen_level;
 pub mod hash;
 pub mod icons;
 pub mod io;
@@ -7,6 +8,7 @@ pub mod resource;
 pub mod theme;
 pub mod upgraders;
 
+pub use gen_level::GenLevel;
 pub use app::AppPolicySection;
 pub use app::AppState;
 pub use app::DefaultsState;

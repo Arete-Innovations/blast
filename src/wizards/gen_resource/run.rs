@@ -4,7 +4,7 @@ use crate::schema_parser::{self, ParsedTable};
 use crate::state::names::{FieldName, ResourceName, SqlType};
 use crate::state::resource::{FieldState, ResourceState};
 use crate::state::{self, io as state_io};
-use crate::wizards::gen_resource::{confirm, fields, list, pick, schema_diff, verbs, ws};
+use crate::wizards::gen_resource::{confirm, fields, gen_level, list, pick, schema_diff, verbs, ws};
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -101,6 +101,10 @@ pub fn run(
     progress.step_start("ws events");
     ws::collect_ws_events(table, &mut resource)?;
     progress.step_done("ws events");
+
+    progress.step_start("gen level");
+    gen_level::collect_gen_level(&mut resource)?;
+    progress.step_done("gen level");
 
     progress.step_start("confirm");
     let confirmed = confirm::review_and_confirm(&resource, sink)?;

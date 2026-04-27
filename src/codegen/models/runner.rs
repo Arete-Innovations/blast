@@ -21,7 +21,7 @@ use crate::codegen::models::indices::{self, SystemClock};
 use crate::codegen::models::soft_delete::SoftDeleteConfig;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::ResourceState;
+use crate::state::{GenLevel, ResourceState};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -40,7 +40,7 @@ pub fn run(
 ) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
-    let resources = match ir_loader::load_resource_states(project_root) {
+    let all_resources = match ir_loader::load_resource_states(project_root) {
         Ok(rs) => rs,
         Err(err) => {
             let reason = err.to_string();
@@ -49,6 +49,11 @@ pub fn run(
             return Err(err);
         }
     };
+
+    let resources: Vec<ResourceState> = all_resources
+        .into_iter()
+        .filter(|r| r.gen_level >= GenLevel::Model)
+        .collect();
 
     let mut report = EmitReport::default();
 

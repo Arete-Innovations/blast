@@ -14,7 +14,7 @@ use crate::codegen::ir_loader;
 use crate::codegen::pages::render::pages_for_resource;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::ResourceState;
+use crate::state::{GenLevel, ResourceState};
 
 #[derive(Debug, Default, Clone)]
 pub struct EmitReport {
@@ -25,7 +25,7 @@ pub struct EmitReport {
 const STEP_LABEL: &str = "frontend pages emission";
 
 pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
-    let resources = match ir_loader::load_resource_states(project_root) {
+    let all = match ir_loader::load_resource_states(project_root) {
         Ok(rs) => rs,
         Err(err) => {
             let reason = err.to_string();
@@ -34,6 +34,7 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
             return Err(err);
         }
     };
+    let resources: Vec<ResourceState> = all.into_iter().filter(|r| r.gen_level >= GenLevel::Pages).collect();
     emit_for(project_root, &resources, sink, progress)
 }
 
@@ -42,6 +43,17 @@ pub fn run_for_resource(project_root: &Path, resource_name: &str, sink: &mut dyn
     let filtered: Vec<ResourceState> = all.into_iter().filter(|r| r.name.as_str() == resource_name).collect();
     if filtered.is_empty() {
         sink.warn(format!("no resource named '{resource_name}' found"));
+        return Ok(EmitReport::default());
+    }
+    let candidate = match filtered.first() {
+        Some(r) => r,
+        None => return Ok(EmitReport::default()),
+    };
+    if candidate.gen_level < GenLevel::Pages {
+        sink.warn(format!(
+            "resource '{}' has gen_level {:?}, which is below Pages; skipping",
+            resource_name, candidate.gen_level,
+        ));
         return Ok(EmitReport::default());
     }
     emit_for(project_root, &filtered, sink, progress)

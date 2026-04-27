@@ -244,6 +244,7 @@ fn write_minimal_users_resource(state_dir: &Path) {
         singular_override: None,
         soft_delete: None,
         relations: BTreeMap::new(),
+        gen_level: blast::state::GenLevel::default(),
     };
 
     let mut id_variants = BTreeSet::new();

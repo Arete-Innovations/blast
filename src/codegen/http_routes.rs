@@ -22,7 +22,7 @@ use crate::codegen::header;
 use crate::codegen::ir_loader;
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::{ResourceState, Verb};
+use crate::state::{GenLevel, ResourceState, Verb};
 
 #[derive(Debug, Default)]
 pub struct EmitReport {
@@ -39,7 +39,7 @@ pub fn run(
 ) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
-    let resources = match ir_loader::load_resource_states(project_root) {
+    let all_resources = match ir_loader::load_resource_states(project_root) {
         Ok(v) => v,
         Err(err) => {
             let reason = err.to_string();
@@ -48,6 +48,11 @@ pub fn run(
             return Err(err);
         }
     };
+
+    let resources: Vec<ResourceState> = all_resources
+        .into_iter()
+        .filter(|r| r.gen_level >= GenLevel::Route)
+        .collect();
 
     let mut report = EmitReport::default();
     let out_dir = generated_dir(project_root);
