@@ -20,6 +20,24 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    fuses (id) {
+        id -> Int8,
+        name -> Text,
+        flow_name -> Text,
+        schedule_kind -> Text,
+        schedule_spec -> Text,
+        enabled -> Bool,
+        last_run_at -> Nullable<Timestamptz>,
+        last_run_status -> Nullable<Text>,
+        last_error -> Nullable<Text>,
+        next_run_at -> Timestamptz,
+        run_count -> Int8,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(sessions -> users (user_id));
 
 diesel::allow_tables_to_appear_in_same_query!(sessions, users);

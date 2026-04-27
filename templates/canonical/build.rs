@@ -87,6 +87,9 @@ fn category_for(rule: &str) -> &'static str {
     if rule.starts_with("LAYER:") {
         return "LAYER";
     }
+    if rule.starts_with("STRUCTS:") {
+        return "STRUCTS";
+    }
     "OTHER"
 }
 
@@ -97,6 +100,7 @@ fn category_spirit(cat: &str) -> &'static str {
         "TYPE" => "the type signature is the contract. if the error type is erased, the contract is worthless.",
         "DEAD" => "code that isn't serving the program right now is noise. noise misleads. delete it.",
         "LAYER" => "the chain is law. transport → flow → routine → models/services → database. only models reach the basement. you may import down, never up, never sideways across siblings.",
+        "STRUCTS" => "data shapes belong in src/structs/. behavior layers are for behavior; defining types inline scatters the data model and gives codegen one more place to look.",
         _ => "",
     }
 }
@@ -192,11 +196,16 @@ fn rule_help(rule: &str) -> &'static str {
             "    names, types, and commit messages are the documentation. if a reader needs a comment to follow the code, refactor: smaller fns, better names, named constants.\n",
             "    one exception: files under a `generated/` segment may have a leading comment header (auto-gen warning + hash marker) BEFORE any non-comment code. once code starts, the rest of the file is back under the total ban.",
         ),
+        "STRUCTS:22" => concat!(
+            "data definitions (`struct`, `enum`) live in src/structs/.\n",
+            "    declaring `struct` or `enum` inside a layer dir scatters the data model. move the type to src/structs/<resource>/<file>.rs and import it where needed.\n",
+            "    exempt: src/structs/, src/meltdown.rs, src/ctx.rs, src/crank.rs, src/cata_log.rs, src/bootstrap.rs, src/lib.rs, src/main.rs.",
+        ),
         _ => "",
     }
 }
 
-const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "ERROR", "TYPE", "DEAD"];
+const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "ERROR", "TYPE", "DEAD"];
 
 fn format_report(hits: &[Hit]) -> String {
     let mut by_rule: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -377,6 +386,7 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
     check_layer_imports(rel, &content, hits);
     check_err_arm_handling(rel, &content, hits);
     check_no_comments(rel, &content, hits);
+    check_inline_data_definitions(rel, &content, hits);
 }
 
 fn check_switchboard_purity(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
@@ -1435,4 +1445,102 @@ fn is_generated_path(rel: &Path) -> bool {
         || s.starts_with("generated/")
         || s.contains("\\generated\\")
         || s.starts_with("generated\\")
+}
+
+fn is_data_definition_allowed_file(rel: &Path) -> bool {
+    let s = rel.to_string_lossy();
+    if s.starts_with("structs/") || s.starts_with("structs\\") {
+        return true;
+    }
+    if s.starts_with("testing/") || s.starts_with("testing\\") {
+        return true;
+    }
+    matches!(s.as_ref(),
+        "meltdown.rs"
+        | "ctx.rs"
+        | "crank.rs"
+        | "cata_log.rs"
+        | "bootstrap.rs"
+        | "lib.rs"
+        | "main.rs"
+    )
+}
+
+fn is_struct_or_enum_def(trimmed: &str) -> bool {
+    let mut s = trimmed;
+    for prefix in ["pub(crate) ", "pub(super) ", "pub(self) ", "pub "] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            s = rest;
+            break;
+        }
+    }
+
+    let after = if let Some(rest) = s.strip_prefix("struct ") {
+        rest
+    } else if let Some(rest) = s.strip_prefix("enum ") {
+        rest
+    } else {
+        return false;
+    };
+
+    after.chars().next().map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
+}
+
+fn check_inline_data_definitions(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if is_data_definition_allowed_file(rel) {
+        return;
+    }
+
+    let mut in_block_comment = false;
+    let mut in_test_module = false;
+    let mut in_macro_rules = false;
+    let mut macro_brace_depth: i32 = 0;
+
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+
+        if trimmed.contains("/*") {
+            in_block_comment = true;
+        }
+        if trimmed.contains("*/") {
+            in_block_comment = false;
+            continue;
+        }
+        if trimmed == "#[cfg(test)]" {
+            in_test_module = true;
+            continue;
+        }
+
+        if in_macro_rules {
+            macro_brace_depth += trimmed.chars().filter(|&c| c == '{').count() as i32;
+            macro_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+            if macro_brace_depth <= 0 {
+                in_macro_rules = false;
+            }
+            continue;
+        }
+        if !in_block_comment
+            && !trimmed.starts_with("//")
+            && trimmed.starts_with("macro_rules!")
+        {
+            in_macro_rules = true;
+            macro_brace_depth = trimmed.chars().filter(|&c| c == '{').count() as i32;
+            macro_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
+            if macro_brace_depth <= 0 {
+                in_macro_rules = false;
+            }
+            continue;
+        }
+
+        if in_block_comment || in_test_module {
+            continue;
+        }
+        if trimmed.starts_with("//") {
+            continue;
+        }
+
+        if is_struct_or_enum_def(trimmed) {
+            hit(hits, "STRUCTS:22", rel, idx + 1);
+        }
+    }
 }

@@ -7,28 +7,19 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::cata_log;
 use crate::meltdown::MeltDown;
+use crate::structs::list_query::{
+    ListQuery, ListQueryBuilder, ListResponse, ParseError, Sort, SortDirection,
+};
 
 pub const DEFAULT_PAGE: u32 = 1;
 
 pub const DEFAULT_PAGE_SIZE: u32 = 25;
 
 pub const MAX_PAGE_SIZE: u32 = 200;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Sort {
-    pub column: String,
-    pub direction: SortDirection,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SortDirection {
-    Asc,
-    Desc,
-}
 
 impl fmt::Display for SortDirection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -69,14 +60,6 @@ impl Sort {
             SortDirection::Desc => format!("-{}", self.column),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ListQuery {
-    pub page: u32,
-    pub page_size: u32,
-    pub sort: Vec<Sort>,
-    pub filter: Vec<(String, String)>,
 }
 
 impl Default for ListQuery {
@@ -121,14 +104,6 @@ where
         };
         ListQuery::from_query_str(raw)
     }
-}
-
-#[derive(Default)]
-struct ListQueryBuilder {
-    page: Option<u32>,
-    page_size: Option<u32>,
-    sort: Vec<Sort>,
-    filter: Vec<(String, String)>,
 }
 
 impl ListQueryBuilder {
@@ -257,18 +232,6 @@ fn decode(s: &str) -> String {
     out
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum ParseError {
-    NotAnInt { key: &'static str, value: String },
-    PageMustBePositive,
-    PageSizeMustBePositive,
-    EmptySortSegment,
-    InvalidColumnIdent(String),
-    MalformedFilterKey(String),
-    EmptyFilterColumn,
-    UnknownKey(String),
-}
-
 fn bad_request(e: ParseError) -> MeltDown {
     match e {
         ParseError::NotAnInt { key, value } => MeltDown::bad_request(format!(
@@ -308,15 +271,6 @@ fn bad_request(e: ParseError) -> MeltDown {
             .with_context("query_key", key)
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ListResponse<T> {
-    pub items: Vec<T>,
-    pub page: u32,
-    pub page_size: u32,
-    pub total: u64,
-    pub total_pages: u64,
 }
 
 impl<T> ListResponse<T> {

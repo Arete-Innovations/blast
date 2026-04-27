@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel_async::pooled_connection::deadpool::Pool;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
@@ -17,54 +17,8 @@ use crate::meltdown::{MeltDown, MeltType};
 
 pub type Pool_ = Pool<AsyncPgConnection>;
 
-pub(crate) mod schema {
-    diesel::table! {
-        fuses (id) {
-            id -> Int8,
-            name -> Text,
-            flow_name -> Text,
-            schedule_kind -> Text,
-            schedule_spec -> Text,
-            enabled -> Bool,
-            last_run_at -> Nullable<Timestamptz>,
-            last_run_status -> Nullable<Text>,
-            last_error -> Nullable<Text>,
-            next_run_at -> Timestamptz,
-            run_count -> Int8,
-            created_at -> Timestamptz,
-            updated_at -> Timestamptz,
-        }
-    }
-}
-
-use schema::fuses;
-
-#[derive(Debug, Clone, Queryable)]
-pub(crate) struct FuseRow {
-    pub id: i64,
-    pub name: String,
-    pub flow_name: String,
-    pub schedule_kind: String,
-    pub schedule_spec: String,
-    pub enabled: bool,
-    pub last_run_at: Option<DateTime<Utc>>,
-    pub last_run_status: Option<String>,
-    pub last_error: Option<String>,
-    pub next_run_at: DateTime<Utc>,
-    pub run_count: i64,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = fuses)]
-struct NewFuseRow<'a> {
-    name: &'a str,
-    flow_name: &'a str,
-    schedule_kind: &'a str,
-    schedule_spec: &'a str,
-    next_run_at: DateTime<Utc>,
-}
+use crate::structs::fuses::table as fuses;
+use crate::structs::fuses::{FuseRow, NewFuseRow};
 
 pub(crate) type FuseFnMap = Arc<HashMap<String, FuseFn>>;
 

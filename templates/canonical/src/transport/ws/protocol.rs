@@ -1,42 +1,6 @@
 
-use serde::{Deserialize, Serialize};
+use crate::structs::ws::{ClientMessage, ControlFrame, ServerMessage};
 use serde_json::Value;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-pub enum ClientMessage {
-    Subscribe { topic: String },
-
-    Unsubscribe { topic: String },
-
-    Ping,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ServerMessage {
-    Event {
-        topic: String,
-        #[serde(rename = "event")]
-        payload: Value,
-    },
-
-    Control(ControlFrame),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-pub enum ControlFrame {
-    Ack { topic: String },
-
-    Error {
-        #[serde(skip_serializing_if = "Option::is_none", default)]
-        topic: Option<String>,
-        reason: String,
-    },
-
-    Pong,
-}
 
 impl ServerMessage {
     pub fn ack(topic: impl Into<String>) -> Self {

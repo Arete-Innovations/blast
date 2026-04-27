@@ -5,7 +5,7 @@ use crate::{
     Ctx,
 };
 
-pub use routines::custom::auth::login::{LoginInput, LoginOutput};
+pub use crate::structs::auth::{LoginInput, LoginOutput};
 
 pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> {
     Crank::none()

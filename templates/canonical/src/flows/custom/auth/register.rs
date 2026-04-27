@@ -6,7 +6,7 @@ use crate::{
     Ctx,
 };
 
-pub use routines::custom::auth::register::RegisterInput;
+pub use crate::structs::auth::RegisterInput;
 
 pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<UserPublic, MeltDown> {
     Crank::none()

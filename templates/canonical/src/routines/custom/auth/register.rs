@@ -3,15 +3,9 @@ use crate::{
     meltdown::*,
     models::auth::users,
     services::crypto,
-    structs::UserPublic,
+    structs::{auth::RegisterInput, UserPublic},
     Ctx,
 };
-
-#[derive(Clone)]
-pub struct RegisterInput {
-    pub email: String,
-    pub password: String,
-}
 
 pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<UserPublic, MeltDown> {
     if input.email.trim().is_empty() {

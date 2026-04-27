@@ -5,34 +5,15 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{
     cata_log,
     flows::custom::auth,
     meltdown::*,
-    structs::{auth::SessionContext, UserPublic},
+    structs::{auth::{LoginBody, LoginResponse, RegisterBody, SessionContext}, UserPublic},
     transport::http::middleware::auth::session_auth_middleware,
     Ctx,
 };
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct RegisterBody {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct LoginBody {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LoginResponse {
-    pub token: String,
-    pub user: UserPublic,
-}
 
 async fn register_handler(
     State(ctx): State<Ctx>,
