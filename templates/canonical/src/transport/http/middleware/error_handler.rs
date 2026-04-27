@@ -70,28 +70,6 @@ pub async fn panic_handler(err: Box<dyn std::any::Any + Send + 'static>) -> Resp
     (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
 }
 
-pub fn create_error_response(
-    status: StatusCode,
-    error_type: &str,
-    message: &str,
-    details: Option<serde_json::Value>,
-) -> Response {
-    let mut error_json = json!({
-        "error": {
-            "code": status.as_u16(),
-            "type": error_type,
-            "message": message,
-            "timestamp": chrono::Utc::now().to_rfc3339()
-        }
-    });
-
-    details.map(|det| {
-        error_json["error"]["details"] = det;
-    });
-
-    (status, Json(error_json)).into_response()
-}
-
 fn extract_panic_message(err: &Box<dyn std::any::Any + Send + 'static>) -> String {
     let Some(s) = err.downcast_ref::<String>() else {
         let Some(s) = err.downcast_ref::<&str>() else {
@@ -100,33 +78,4 @@ fn extract_panic_message(err: &Box<dyn std::any::Any + Send + 'static>) -> Strin
         return s.to_string();
     };
     s.clone()
-}
-
-pub fn validation_error(field: &str, message: &str) -> MeltDown {
-    MeltDown::validation_failed(message)
-        .with_context("field", field)
-        .with_context("error_type", "validation")
-}
-
-pub fn auth_error(reason: &str) -> MeltDown {
-    MeltDown::new(crate::meltdown::MeltType::Unauthorized, "Authentication required")
-        .with_user_message("Please log in to access this resource")
-        .with_context("reason", reason)
-}
-
-pub fn authz_error(reason: &str) -> MeltDown {
-    MeltDown::new(crate::meltdown::MeltType::Forbidden, "Access denied")
-        .with_user_message("You don't have permission to access this resource")
-        .with_context("reason", reason)
-}
-
-pub fn not_found_error(resource: &str) -> MeltDown {
-    MeltDown::record_not_found(resource)
-        .with_user_message(&format!("{} not found", resource))
-}
-
-pub fn rate_limit_error() -> MeltDown {
-    MeltDown::new(crate::meltdown::MeltType::BadRequest, "Rate limit exceeded")
-        .with_user_message("Too many requests. Please try again later.")
-        .with_context("error_type", "rate_limit")
 }

@@ -5,5 +5,5 @@ pub mod error_handler;
 pub mod guards;
 pub mod trace;
 
-pub use api_logger::*;
-pub use error_handler::*;
+pub use api_logger::api_logger_middleware;
+pub use error_handler::{error_handling_middleware, panic_handler};
