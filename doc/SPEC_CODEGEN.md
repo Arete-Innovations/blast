@@ -49,6 +49,52 @@ The marker is parsed back at compile time by the user app's `build.rs` (template
 
 Users cannot forget to regen. Stale codegen is a compile error.
 
+## Generation Level (per-resource cut-off)
+
+Each resource declares a `gen_level` in its RON state file controlling how far codegen propagates down the pipeline. Levels are linear and monotonic — picking level N implies all levels < N. The wizard offers a single dropdown; power-users can hand-edit RON.
+
+```ron
+(
+    name: "users",
+    fields: [...],
+    verbs: [List, Get, Create, Update, Delete],
+    gen_level: Composables,  // default
+)
+```
+
+**Levels (lowest → highest, each implies prior):**
+
+| Level | Adds | Use case |
+|-------|------|----------|
+| `Struct` | `structs/generated/<r>.rs` (User, UserInsertable, UserPatch, UserPublic, UserAdmin, UserFilter — Structs v2 projections) | data shape only; user writes everything else by hand |
+| `Model` | `models/generated/<r>.rs` (Diesel CRUD + cross-resource read helpers) | persistence layer; user owns transport |
+| `Route` | `routines/generated/<r>/{list,get,create,update,delete}.rs` + `flows/generated/<r>/...` (Crank::none()) + `transport/http/generated/<r>/...` | full BE CRUD via HTTP; no FE help |
+| `Types` | `frontend/src/types/generated/<r>.ts` (TS interfaces mirroring Rust DTOs) + `frontend/src/api/generated/<r>.ts` (typed fetch wrappers) | BE + TS-typed API client; user writes own UI |
+| `Composables` | `frontend/src/composables/generated/<r>.ts` (`useUsersList`, `useUser`, `useUserCreate`, `useUserUpdate`, `useUserDelete`, `useUserForm`) + `frontend/src/validators/generated/<r>.ts` (TS validators mirroring Rust ones) | reactive Vue logic ready; user writes templates |
+| `Components` | `frontend/src/components/generated/forms/<r>/{CreateForm,EditForm}.vue` (PrimeVue form components wired to composables) | user composes own page layouts using generated forms |
+| `Pages` | `frontend/src/pages/generated/<r>/{ListPage,DetailPage,CreatePage,EditPage}.vue` + `frontend/src/router/generated/routes.ts` (auto-route table updated) + `frontend/src/nav/generated/menu.ts` (sidebar entry added) | full admin-style CRUD UI shipped — opt-in |
+
+**Default:** `Composables`. Gets typed FE access without committing to UI shape. Power-users opt into `Pages` for "admin-style ship-it" or down to `Struct` for "data only."
+
+**Page generation philosophy:** generated pages target **admin-grade / internal-tool quality**, not production user-facing UI. PrimeVue defaults handle styling. Apps with custom branding are expected to shadow generated pages — write `pages/users/ListPage.vue` at top level, route to it instead of `pages/generated/users/ListPage.vue`. Blast does NOT delete user-shadowed pages; it always rewrites `pages/generated/` wholesale on each `blast gen`.
+
+**Field-type → input-type mapping table** (drives form codegen):
+
+| Rust type | TS input |
+|-----------|----------|
+| `String` | `<InputText>` |
+| `bool` | `<Checkbox>` |
+| `i32`, `i64`, `f32`, `f64` | `<InputNumber>` |
+| `chrono::DateTime<Utc>` | `<Calendar showTime>` |
+| `chrono::NaiveDate` | `<Calendar>` |
+| `enum Role` | `<Dropdown :options="...">` |
+| FK (e.g. `user_id: i64`) | `<AutoComplete>` against parent resource's list endpoint |
+| `Option<T>` | non-required wrapper |
+
+Custom validators emit on both sides — Rust validator in route handler extractor, TS validator in form schema. Structurally mirrored, generated in the same codegen pass to keep them in sync.
+
+**Level-downgrade behavior:** if the user lowers `gen_level` (e.g. `Pages` → `Composables`), the next `blast gen` run STOPS emitting at the new level but does NOT delete files emitted at the previous level. The user must manually delete stale `pages/generated/<r>/` files. Blast warns about orphan generated dirs at higher levels than current `gen_level`.
+
 ## Outputs (Per Resource)
 
 For a resource state file declaring `users` with verbs `[list, get, update, delete]` and WS events on `role` changes:

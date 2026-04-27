@@ -329,6 +329,8 @@ ResourceState(
 
     table: "users",
 
+    gen_level: Composables,
+    
     fields: [
         FieldState(
             column: "id",
@@ -399,7 +401,21 @@ ResourceState(
 )
 ```
 
-Fields not listed in `fields` are skipped in codegen (reachable via `sql_query` / custom models). There is no `raw_rust` field — if the TUI cannot express something, the user writes Rust in `src/<layer>/custom/`.
+Fields not listed in `fields` are skipped in codegen (reachable via `sql_query` / hand-written models). There is no `raw_rust` field — if the TUI cannot express something, the user writes Rust at the top level of `src/<layer>/<resource>/`.
+
+### `gen_level` (codegen cut-off)
+
+Linear, monotonic enum controlling how far the codegen pipeline propagates per resource:
+
+```
+Struct < Model < Route < Types < Composables < Components < Pages
+```
+
+Default: `Composables`. See `SPEC_CODEGEN.md` for the full level-by-level output table and rationale. Each level implies all prior levels.
+
+Wizard exposes a single dropdown asking "how far do you want generation for this resource?" Power users hand-edit RON.
+
+Level downgrade preserves stale generated files (Blast does NOT delete on level lower); it only stops emitting. Blast warns on next `gen` about orphan dirs above current `gen_level` so the user can clean up.
 
 ## Schema Versioning
 
