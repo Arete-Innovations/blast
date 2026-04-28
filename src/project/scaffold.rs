@@ -319,13 +319,6 @@ fn substitute_path_component(rel: &Path, project_name: &str) -> PathBuf {
 }
 
 fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
-    // Substitute as bytes if the contents are utf-8; otherwise pass through
-    // (binary asset). Most vendored files are utf-8 source / config.
-    //
-    // Two substitutions:
-    //   1. `{{project_name}}` placeholders (legacy, may exist in non-Cargo files).
-    //   2. `name = "canonical"` → `name = "<project>"`. Templates use the literal `canonical` package name so `cd templates/canonical && cargo check` works in-place during iteration; on scaffold, this gets rewritten to
-    //      the user's chosen name.
     match std::str::from_utf8(raw) {
         Ok(s) => {
             let mut out = s.to_string();
@@ -334,6 +327,9 @@ fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
             }
             if out.contains("name = \"canonical\"") {
                 out = out.replace("name = \"canonical\"", &format!("name = \"{}\"", project_name));
+            }
+            if out.contains("canonical::") {
+                out = out.replace("canonical::", &format!("{}::", project_name));
             }
             out.into_bytes()
         }
