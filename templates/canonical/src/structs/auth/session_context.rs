@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::Role;
+use crate::structs::auth::Role;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionContext {

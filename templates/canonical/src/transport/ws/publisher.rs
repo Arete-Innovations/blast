@@ -2,10 +2,10 @@ use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 
-use super::protocol::ServerMessage;
 use crate::{
     cata_log,
     structs::ws::{publisher::Channel, registry::Registry},
+    transport::ws::protocol::ServerMessage,
 };
 
 pub fn publish<T: Serialize>(registry: &Registry, topic: &str, event: &T) -> usize {

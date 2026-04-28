@@ -6,7 +6,7 @@ pub mod sql_types {
 
 diesel::table! {
     use diesel::sql_types::*;
-    use super::sql_types::UserRole;
+    use crate::database::schema::sql_types::UserRole;
 
     users (id) {
         id -> Int8,

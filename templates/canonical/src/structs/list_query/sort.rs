@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::direction::SortDirection;
+use crate::structs::list_query::direction::SortDirection;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sort {

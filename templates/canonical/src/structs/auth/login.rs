@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::SessionContext;
-use crate::structs::UserPublic;
+use crate::structs::{auth::SessionContext, UserPublic};
 
 #[derive(Clone)]
 pub struct LoginInput {

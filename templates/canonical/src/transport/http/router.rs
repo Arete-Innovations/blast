@@ -3,5 +3,8 @@ use axum::Router;
 use crate::Ctx;
 
 pub fn router(ctx: Ctx) -> Router {
-    super::auth::router(ctx.clone()).merge(super::healthz::router()).merge(super::generated::router()).with_state(ctx)
+    crate::transport::http::auth::router(ctx.clone())
+        .merge(crate::transport::http::healthz::router())
+        .merge(crate::transport::http::generated::router())
+        .with_state(ctx)
 }

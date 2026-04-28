@@ -1,8 +1,7 @@
 use diesel::{prelude::*, Queryable};
 use serde::{Deserialize, Serialize};
 
-use super::Role;
-use crate::database::schema::users;
+use crate::{database::schema::users, structs::auth::Role};
 
 #[derive(Queryable, QueryableByName, Selectable, Debug, Clone, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = users)]

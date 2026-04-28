@@ -7,14 +7,14 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use tokio::sync::mpsc;
 
-use super::{
-    protocol::{ClientMessage, ServerMessage},
-    registry::{OutboundFrame, Registry, SubscriberHandle},
-};
 use crate::{
     cata_log,
     meltdown::{MeltDown, MeltType},
     structs::ws::connection::UserId,
+    transport::ws::{
+        protocol::{ClientMessage, ServerMessage},
+        registry::{OutboundFrame, Registry, SubscriberHandle},
+    },
 };
 
 pub const OUTBOUND_QUEUE_DEPTH: usize = 64;

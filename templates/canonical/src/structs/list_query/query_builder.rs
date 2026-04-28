@@ -1,4 +1,4 @@
-use super::sort::Sort;
+use crate::structs::list_query::sort::Sort;
 
 #[derive(Default)]
 pub struct ListQueryBuilder {
