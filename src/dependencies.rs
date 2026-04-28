@@ -1,8 +1,11 @@
-use crate::error::{BlastError, BlastResult};
-use crate::logger;
+use std::{collections::HashMap, process::Command};
+
 use dialoguer::Confirm;
-use std::collections::HashMap;
-use std::process::Command;
+
+use crate::{
+    error::{BlastError, BlastResult},
+    logger,
+};
 
 pub struct DependencyManager {
     dependencies: HashMap<String, String>,
@@ -32,9 +35,7 @@ impl DependencyManager {
 
         let check_result = match Command::new("which").arg(name).output() {
             Ok(output) => output.status.success(),
-            Err(_e) => {
-                false
-            }
+            Err(_e) => false, // allow: which-exec failure means not installed; caller prompts install
         };
 
         self.checked.insert(name.to_string(), check_result);
@@ -56,10 +57,7 @@ impl DependencyManager {
 
         if prompt {
             let deps_list = missing.join(", ");
-            let confirm = Confirm::new()
-                .with_prompt(format!("Missing dependencies: {}. Install now?", deps_list))
-                .default(true)
-                .interact()?;
+            let confirm = Confirm::new().with_prompt(format!("Missing dependencies: {}. Install now?", deps_list)).default(true).interact()?;
 
             if !confirm {
                 return Err(BlastError::MissingDep(deps_list));
@@ -117,14 +115,10 @@ impl DependencyManager {
 
     pub fn ensure_diesel_with_postgres_features(&mut self) -> BlastResult<()> {
         if self.is_installed("diesel") {
-            let output = Command::new("diesel")
-                .args(["--version"])
-                .output()?;
+            let output = Command::new("diesel").args(["--version"]).output()?;
 
             if output.status.success() {
-                let test_output = Command::new("diesel")
-                    .args(["print-schema", "--database-url", "postgres://fake:fake@localhost/fake"])
-                    .output()?;
+                let test_output = Command::new("diesel").args(["print-schema", "--database-url", "postgres://fake:fake@localhost/fake"]).output()?;
 
                 let stderr = String::from_utf8_lossy(&test_output.stderr);
 

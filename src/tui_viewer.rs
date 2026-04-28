@@ -1,4 +1,16 @@
-use crate::configs::Config;
+use std::{
+    collections::{HashSet, VecDeque},
+    fs,
+    io::{self, BufRead, BufReader, Seek, SeekFrom},
+    path::PathBuf,
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Arc, Mutex,
+    },
+    thread,
+    time::Duration,
+};
+
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
@@ -13,18 +25,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use std::{
-    collections::{HashSet, VecDeque},
-    fs,
-    io::{self, BufRead, BufReader, Seek, SeekFrom},
-    path::PathBuf,
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Arc, Mutex,
-    },
-    thread,
-    time::Duration,
-};
+
+use crate::configs::Config;
 
 #[derive(Debug)]
 pub enum TuiMessage {
@@ -170,18 +172,16 @@ impl TuiLogViewer {
         loop {
             let mut should_update = false;
             match self.receiver {
-                Some(ref receiver) => {
-                    loop {
-                        match receiver.try_recv() {
-                            Err(_err) => break,
-                            Ok(msg) => match msg {
-                                TuiMessage::NewLogLine(_line) => {
-                                    should_update = true;
-                                }
-                            },
-                        }
+                Some(ref receiver) => loop {
+                    match receiver.try_recv() {
+                        Err(_err) => break,
+                        Ok(msg) => match msg {
+                            TuiMessage::NewLogLine(_line) => {
+                                should_update = true;
+                            }
+                        },
                     }
-                }
+                },
                 None => {}
             }
 
@@ -240,7 +240,7 @@ impl TuiLogViewer {
                                 }
                                 KeyCode::Enter => {
                                     let selected = match self.list_state.selected() {
-                                        None => { 0 }
+                                        None => 0, // allow: empty selection defaults to first row
                                         Some(s) => s,
                                     };
                                     if selected < self.filtered_logs.len() {
@@ -360,7 +360,7 @@ impl TuiLogViewer {
         f.render_widget(input, bottom_chunks[0]);
 
         let selected_entry = match self.list_state.selected() {
-            None => { 0 }
+            None => 0, // allow: empty selection defaults to first row
             Some(s) => s,
         } + 1;
         let total_entries = self.filtered_logs.len();
@@ -371,11 +371,7 @@ impl TuiLogViewer {
         let status_text = if !self.search_input.is_empty() {
             format!(
                 "Logs: {}/{} entries (filtered by '{}') - Selected: {}/{}",
-                total_entries,
-                logs_len,
-                self.search_input,
-                selected_entry,
-                total_entries
+                total_entries, logs_len, self.search_input, selected_entry, total_entries
             )
         } else {
             format!("Logs: {} entries - Selected: {}/{}", total_entries, selected_entry, total_entries)
@@ -440,11 +436,11 @@ impl TuiLogViewer {
                     };
                     let timestamp = match self.extract_timestamp(line) {
                         Some(ts) => ts,
-                        None => { String::new() }
+                        None => String::new(), // allow: render-time degradation when line lacks timestamp
                     };
                     let level = match self.extract_log_level(line) {
                         Some(lvl) => lvl,
-                        None => "INFO".to_string(),
+                        None => "INFO".to_string(), // allow: default level for unparseable log lines
                     };
                     let (level_icon, level_color, file_color) = self.get_level_icon_and_color(&level);
 
@@ -482,11 +478,11 @@ impl TuiLogViewer {
         };
         let timestamp = match self.extract_timestamp(line) {
             Some(ts) => ts,
-            None => { String::new() }
+            None => String::new(), // allow: render-time degradation when line lacks timestamp
         };
         let level = match self.extract_log_level(line) {
             Some(lvl) => lvl,
-            None => "INFO".to_string(),
+            None => "INFO".to_string(), // allow: default level for unparseable log lines
         };
         let (level_icon, _level_color, _file_color) = self.get_level_icon_and_color(&level);
 
@@ -528,11 +524,11 @@ impl TuiLogViewer {
                         };
                         let timestamp = match self.extract_timestamp(line) {
                             Some(ts) => ts,
-                            None => { String::new() }
+                            None => String::new(), // allow: render-time degradation when line lacks timestamp
                         };
                         let level = match self.extract_log_level(line) {
                             Some(lvl) => lvl,
-                            None => "INFO".to_string(),
+                            None => "INFO".to_string(), // allow: default level for unparseable log lines
                         };
                         let (level_icon, level_color, file_color) = self.get_level_icon_and_color(&level);
 
@@ -590,11 +586,11 @@ impl TuiLogViewer {
         };
         let timestamp = match self.extract_timestamp(line) {
             Some(ts) => ts,
-            None => { String::new() }
+            None => String::new(), // allow: render-time degradation when line lacks timestamp
         };
         let level = match self.extract_log_level(line) {
             Some(lvl) => lvl,
-            None => "INFO".to_string(),
+            None => "INFO".to_string(), // allow: default level for unparseable log lines
         };
         let (level_icon, _level_color, _file_color) = self.get_level_icon_and_color(&level);
 

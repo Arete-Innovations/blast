@@ -1,11 +1,9 @@
-use crate::database::connection::establish_connection;
-use crate::progress::ProgressManager;
+use std::{collections::HashSet, fs, path::Path};
+
 use dialoguer::{theme::ColorfulTheme, Select};
-use diesel::pg::PgConnection;
-use diesel::prelude::*;
-use std::collections::HashSet;
-use std::fs;
-use std::path::Path;
+use diesel::{pg::PgConnection, prelude::*};
+
+use crate::{database::connection::establish_connection, progress::ProgressManager};
 
 pub fn get_existing_tables() -> Vec<String> {
     let migrations_dir = Path::new("src/database/migrations");
@@ -37,9 +35,7 @@ fn populate_tables_from_entries(entries: std::fs::ReadDir, tables_set: &mut Hash
 
         let is_diesel_setup = match path.file_name().and_then(|name| name.to_str()) {
             Some(s) => s.contains("diesel_initial_setup"),
-            None => {
-                false
-            }
+            None => false, // allow: missing or non-UTF-8 filename ≠ diesel migration
         };
 
         if is_diesel_setup {
@@ -74,15 +70,11 @@ fn populate_tables_from_entries(entries: std::fs::ReadDir, tables_set: &mut Hash
                 None => rest_of_line.trim(),
             };
 
-            let table_name_candidate = table_name_part
-                .split_whitespace()
-                .next()
-                .and_then(|name| name.split('.').last());
+            let table_name_candidate = table_name_part.split_whitespace().next().and_then(|name| name.split('.').last());
 
             match table_name_candidate {
                 Some(table_name) => {
-                    let clean_table_name = table_name
-                        .trim_matches(|c| c == '(' || c == '`' || c == ';' || c == '"');
+                    let clean_table_name = table_name.trim_matches(|c| c == '(' || c == '`' || c == ';' || c == '"');
                     tables_set.insert(clean_table_name.to_string());
                 }
                 None => {}
@@ -91,10 +83,7 @@ fn populate_tables_from_entries(entries: std::fs::ReadDir, tables_set: &mut Hash
     }
 }
 
-fn process_seed_files(
-    connection: &mut PgConnection,
-    seed_files: Vec<String>,
-) -> (bool, Vec<String>, Vec<String>) {
+fn process_seed_files(connection: &mut PgConnection, seed_files: Vec<String>) -> (bool, Vec<String>, Vec<String>) {
     let mut all_succeeded = true;
     let mut successful_seeds = Vec::new();
     let mut failed_seeds = Vec::new();
@@ -187,10 +176,7 @@ pub fn seed(selection: Option<usize>) -> bool {
             sorted_files
         }
         Err(e) => {
-            progress.error(&format!(
-                "Error reading seed directory: {}. Skipping seed operation.",
-                e
-            ));
+            progress.error(&format!("Error reading seed directory: {}. Skipping seed operation.", e));
             return false;
         }
     };
@@ -199,9 +185,7 @@ pub fn seed(selection: Option<usize>) -> bool {
         return run_all_seed_files(&mut connection, seed_files);
     }
 
-    let items: Vec<&str> = std::iter::once("All")
-        .chain(seed_files.iter().map(|s| s.as_str()))
-        .collect();
+    let items: Vec<&str> = std::iter::once("All").chain(seed_files.iter().map(|s| s.as_str())).collect();
 
     let chosen = match Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Select a seed file to run or choose All")
@@ -238,16 +222,11 @@ fn run_all_seed_files(connection: &mut PgConnection, seed_files: Vec<String>) ->
     let seed_progress = ProgressManager::new_spinner();
     seed_progress.set_message("Running all seed files...");
 
-    let (all_succeeded, successful_seeds, failed_seeds) =
-        process_seed_files(connection, seed_files);
+    let (all_succeeded, successful_seeds, failed_seeds) = process_seed_files(connection, seed_files);
 
     if all_succeeded {
         if !successful_seeds.is_empty() {
-            seed_progress.success(&format!(
-                "Seeded {} files: {}",
-                successful_seeds.len(),
-                successful_seeds.join(", ")
-            ));
+            seed_progress.success(&format!("Seeded {} files: {}", successful_seeds.len(), successful_seeds.join(", ")));
         } else {
             seed_progress.success("No seed files to run");
         }
@@ -308,12 +287,7 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
             }
             Err(e) => {
                 success = false;
-                let error_msg = format!(
-                    "Error: Failed to execute statement {} in seed file {}: {}",
-                    i + 1,
-                    file_name,
-                    e
-                );
+                let error_msg = format!("Error: Failed to execute statement {} in seed file {}: {}", i + 1, file_name, e);
                 if is_interactive {
                     if let Err(log_e) = crate::logger::info(&error_msg) {
                         drop(log_e);
