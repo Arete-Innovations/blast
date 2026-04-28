@@ -16,9 +16,12 @@
 //! The trailing blank line is included so callers can prepend the marker
 //! directly to their generated body.
 
-use crate::error::{BlastError, BlastResult};
-use crate::state::content_hash;
 use std::path::{Path, PathBuf};
+
+use crate::{
+    error::{BlastError, BlastResult},
+    state::content_hash,
+};
 
 const STATE_DIR_RELATIVE: &str = "storage/blast/state";
 const APP_STATE_FILE: &str = "app.ron";
@@ -57,10 +60,7 @@ pub fn marker_for_state_file(project_root: &Path, state_path: &Path) -> BlastRes
     let relative_str = match relative.to_str() {
         Some(s) => s.replace('\\', "/"),
         None => {
-            return Err(BlastError::Invalid(format!(
-                "non-utf8 state path: {}",
-                relative.display()
-            )));
+            return Err(BlastError::Invalid(format!("non-utf8 state path: {}", relative.display())));
         }
     };
     let hash = content_hash(state_path)?;
@@ -70,10 +70,7 @@ pub fn marker_for_state_file(project_root: &Path, state_path: &Path) -> BlastRes
 /// Absolute path to the per-resource state file under the conventional
 /// `storage/blast/state/resources/<table>.ron` layout.
 pub fn resource_state_path(project_root: &Path, table: &str) -> PathBuf {
-    project_root
-        .join(STATE_DIR_RELATIVE)
-        .join(RESOURCES_SUBDIR)
-        .join(format!("{}.ron", table))
+    project_root.join(STATE_DIR_RELATIVE).join(RESOURCES_SUBDIR).join(format!("{}.ron", table))
 }
 
 /// Absolute path to the app-wide state file at
@@ -122,10 +119,7 @@ mod tests {
     #[test]
     fn marker_formats_expected_shape() {
         let header = marker("storage/blast/state/resources/users.ron", "abc123");
-        let expected = "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ abc123\n\
-                        //\n\
-                        // Do not edit by hand. Run `blast gen all` after mutating state.\n\
-                        \n";
+        let expected = "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ abc123\n//\n// Do not edit by hand. Run `blast gen all` after mutating state.\n\n";
         assert_eq!(header, expected);
     }
 
@@ -146,10 +140,7 @@ mod tests {
 
     #[test]
     fn parse_marker_accepts_marker_followed_by_body() {
-        let body = format!(
-            "{header}export const FOO = 1\n",
-            header = marker("storage/blast/state/app.ron", "ff00")
-        );
+        let body = format!("{header}export const FOO = 1\n", header = marker("storage/blast/state/app.ron", "ff00"));
         match parse_marker(&body) {
             Some((p, h)) => {
                 assert_eq!(p, "storage/blast/state/app.ron");

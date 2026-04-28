@@ -1,10 +1,18 @@
-use crate::state::FeLintState;
-use crate::governor::rules::helpers::{extension_is, snippet_of};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref FN_START_RE: Regex = match Regex::new(
@@ -66,12 +74,7 @@ impl FileRule for MaxLinesPerFn {
         "MaxLinesPerFn"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        contents: &str,
-        config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
         let is_ts_or_vue = extension_is(file, "ts") || extension_is(file, "vue");
         if !is_ts_or_vue {
             return Vec::new();
@@ -87,17 +90,8 @@ impl FileRule for MaxLinesPerFn {
             let extent = function_extent(&lines, idx);
             if extent > config.max_lines_per_fn {
                 let snippet = format!("function spans {} lines", extent);
-                let suggestion = format!(
-                    "decompose this function; max is {} lines",
-                    config.max_lines_per_fn
-                );
-                out.push(Violation::new(
-                    "MaxLinesPerFn",
-                    file.to_path_buf(),
-                    idx + 1,
-                    snippet_of(&snippet),
-                    suggestion,
-                ));
+                let suggestion = format!("decompose this function; max is {} lines", config.max_lines_per_fn);
+                out.push(Violation::new("MaxLinesPerFn", file.to_path_buf(), idx + 1, snippet_of(&snippet), suggestion));
             }
             idx += extent.max(1);
         }

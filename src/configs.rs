@@ -1,8 +1,12 @@
-use crate::error::BlastResult;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
+
 use toml::Value;
+
+use crate::error::BlastResult;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -33,15 +37,8 @@ impl Config {
 
     pub fn toggle_environment(&mut self) -> BlastResult<()> {
         let old_env = self.environment.clone();
-        self.environment = if self.environment == "dev" {
-            "prod".to_string()
-        } else {
-            "dev".to_string()
-        };
-        crate::logger::success(&format!(
-            "Environment toggled from {} to {}",
-            old_env, self.environment
-        ))?;
+        self.environment = if self.environment == "dev" { "prod".to_string() } else { "dev".to_string() };
+        crate::logger::success(&format!("Environment toggled from {} to {}", old_env, self.environment))?;
         Ok(())
     }
 }
@@ -51,11 +48,7 @@ pub fn build_config(project_dir: &Path) -> BlastResult<Config> {
     let cargo_str = fs::read_to_string(&cargo_toml_path)?;
     let cargo: Value = toml::from_str(&cargo_str)?;
 
-    let project_name = match cargo
-        .get("package")
-        .and_then(|p| p.get("name"))
-        .and_then(|n| n.as_str())
-    {
+    let project_name = match cargo.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()) {
         Some(name) => name.to_string(),
         None => "Unknown".to_string(),
     };

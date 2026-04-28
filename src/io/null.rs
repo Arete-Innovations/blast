@@ -1,5 +1,7 @@
-use crate::io::events::{ProgressEvent, SinkEvent};
-use crate::io::traits::{Progress, Sink};
+use crate::io::{
+    events::{ProgressEvent, SinkEvent},
+    traits::{Progress, Sink},
+};
 
 pub struct NullSink;
 

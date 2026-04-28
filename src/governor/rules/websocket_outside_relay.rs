@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{is_comment_line, rel_path_str, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, rel_path_str, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref WS_RE: Regex = match Regex::new(r"\bnew\s+WebSocket\s*\(|\bsocket\.io\b") {
@@ -22,8 +30,7 @@ impl WebSocketOutsideRelay {
 }
 
 fn is_relay_client(file: &Path) -> bool {
-    rel_path_str(file).ends_with("frontend/src/generated/ws/client.ts")
-        || rel_path_str(file).ends_with("generated/ws/client.ts")
+    rel_path_str(file).ends_with("frontend/src/generated/ws/client.ts") || rel_path_str(file).ends_with("generated/ws/client.ts")
 }
 
 impl Rule for WebSocketOutsideRelay {
@@ -31,13 +38,7 @@ impl Rule for WebSocketOutsideRelay {
         "WebSocketOutsideRelay"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        _config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
         if is_relay_client(file) {
             return None;
         }
@@ -59,8 +60,9 @@ impl Rule for WebSocketOutsideRelay {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(file: &str, line: &str) -> Option<Violation> {
         let rule = WebSocketOutsideRelay::new();
@@ -70,28 +72,19 @@ mod tests {
 
     #[test]
     fn flags_new_websocket_in_custom() {
-        let v = run(
-            "frontend/src/composables/useFoo.ts",
-            "const ws = new WebSocket('wss://x')",
-        );
+        let v = run("frontend/src/composables/useFoo.ts", "const ws = new WebSocket('wss://x')");
         assert!(v.is_some());
     }
 
     #[test]
     fn flags_socket_io_import() {
-        let v = run(
-            "frontend/src/x.ts",
-            "import { io } from 'socket.io-client'",
-        );
+        let v = run("frontend/src/x.ts", "import { io } from 'socket.io-client'");
         assert!(v.is_some());
     }
 
     #[test]
     fn allows_in_generated_relay_client() {
-        let v = run(
-            "frontend/src/generated/ws/client.ts",
-            "const ws = new WebSocket(url)",
-        );
+        let v = run("frontend/src/generated/ws/client.ts", "const ws = new WebSocket(url)");
         assert!(v.is_none());
     }
 }

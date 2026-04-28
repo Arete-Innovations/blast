@@ -1,17 +1,11 @@
-use crate::error::BlastError;
-use crate::error::BlastResult;
-use diesel::pg::PgConnection;
-use diesel::prelude::*;
-use std::fs;
-use std::process::Command;
+use std::{fs, process::Command};
+
+use diesel::{pg::PgConnection, prelude::*};
+
+use crate::error::{BlastError, BlastResult};
 
 pub fn establish_connection() -> BlastResult<PgConnection> {
-    let env_content = fs::read_to_string(".env").map_err(|e| {
-        BlastError::NotFound(format!(
-            "Could not read .env file: {}. Make sure it exists in the project root.",
-            e
-        ))
-    })?;
+    let env_content = fs::read_to_string(".env").map_err(|e| BlastError::NotFound(format!("Could not read .env file: {}. Make sure it exists in the project root.", e)))?;
 
     let mut database_url: Option<&str> = None;
     for line in env_content.lines() {
@@ -35,8 +29,8 @@ pub fn establish_connection() -> BlastResult<PgConnection> {
             let suggestion = if postgres_available {
                 "DATABASE_URL environment variable not found in .env file. Make sure you have a .env file with DATABASE_URL=postgres://username:password@localhost/dbname"
             } else {
-                "DATABASE_URL environment variable not found in .env file and PostgreSQL might not be installed. \
-                Please install PostgreSQL and create a .env file with DATABASE_URL=postgres://username:password@localhost/dbname"
+                "DATABASE_URL environment variable not found in .env file and PostgreSQL might not be installed. Please install PostgreSQL and create a .env file with \
+                 DATABASE_URL=postgres://username:password@localhost/dbname"
             };
             return Err(BlastError::NotFound(suggestion.to_string()));
         }
@@ -58,15 +52,9 @@ pub fn establish_connection() -> BlastResult<PgConnection> {
 
         let error_message = format!("Could not connect to database via `{}`: {}", masked_url, e);
         let suggestion = if !service_running {
-            format!(
-                "{}. PostgreSQL service appears to be down. Try starting it with: sudo service postgresql start",
-                error_message
-            )
+            format!("{}. PostgreSQL service appears to be down. Try starting it with: sudo service postgresql start", error_message)
         } else {
-            format!(
-                "{}. PostgreSQL is running but connection failed. Check your credentials and database existence",
-                error_message
-            )
+            format!("{}. PostgreSQL is running but connection failed. Check your credentials and database existence", error_message)
         };
         BlastError::Project(suggestion)
     })

@@ -1,10 +1,14 @@
-use crate::state::icons::IconConfig;
-use crate::state::names::{FieldName, ResourceName};
-use crate::state::resource::SoftDeleteDefault;
-use crate::state::theme::ThemeConfig;
+use std::collections::BTreeSet;
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+
+use crate::state::{
+    icons::IconConfig,
+    names::{FieldName, ResourceName},
+    resource::SoftDeleteDefault,
+    theme::ThemeConfig,
+};
 
 // ── Nav + Pages types ────────────────────────────────────────────────────────
 
@@ -149,21 +153,11 @@ fn default_rules() -> BTreeSet<String> {
 }
 
 fn default_exempt_color_files() -> BTreeSet<String> {
-    ["src/plugins/primevue.ts"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+    ["src/plugins/primevue.ts"].iter().map(|s| s.to_string()).collect()
 }
 
 fn default_exempt_px_files() -> BTreeSet<String> {
-    [
-        "src/plugins/primevue.ts",
-        "src/styles/tokens.css",
-        "src/styles/base.css",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+    ["src/plugins/primevue.ts", "src/styles/tokens.css", "src/styles/base.css"].iter().map(|s| s.to_string()).collect()
 }
 
 fn default_max_lines_per_sfc() -> usize {
@@ -183,25 +177,11 @@ fn default_max_template_loc() -> u32 {
 }
 
 fn default_icon_class_patterns() -> BTreeSet<String> {
-    [
-        r"\bpi pi-[a-z0-9-]+\b",
-        r"\bph ph-[a-z0-9-]+\b",
-        r"\bfa fa-[a-z0-9-]+\b",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+    [r"\bpi pi-[a-z0-9-]+\b", r"\bph ph-[a-z0-9-]+\b", r"\bfa fa-[a-z0-9-]+\b"].iter().map(|s| s.to_string()).collect()
 }
 
 fn default_scan_globs() -> BTreeSet<String> {
-    [
-        "frontend/src/**/*.ts",
-        "frontend/src/**/*.vue",
-        "frontend/src/**/*.css",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+    ["frontend/src/**/*.ts", "frontend/src/**/*.vue", "frontend/src/**/*.css"].iter().map(|s| s.to_string()).collect()
 }
 
 fn default_hairline_border_rem() -> String {
@@ -383,8 +363,7 @@ impl AppPolicySection {
         match self {
             Self::FeLint(_) => {}
             Self::Admin(state) => {
-                let mut pairs: Vec<(ResourceName, BTreeSet<AdminAction>)> =
-                    state.actions.drain(..).collect();
+                let mut pairs: Vec<(ResourceName, BTreeSet<AdminAction>)> = state.actions.drain(..).collect();
                 pairs.sort_by(|a, b| a.0.cmp(&b.0));
                 for (k, v) in pairs {
                     state.actions.insert(k, v);
@@ -426,14 +405,9 @@ mod tests {
     where
         T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug,
     {
-        let config = ron::ser::PrettyConfig::new()
-            .depth_limit(64)
-            .indentor("  ".to_string())
-            .struct_names(true);
-        let s = ron::ser::to_string_pretty(value, config)
-            .unwrap_or_else(|e| panic!("serialize failed: {e}\nvalue: {value:?}"));
-        ron::from_str::<T>(&s)
-            .unwrap_or_else(|e| panic!("deserialize failed: {e}\nRON:\n{s}"))
+        let config = ron::ser::PrettyConfig::new().depth_limit(64).indentor("  ".to_string()).struct_names(true);
+        let s = ron::ser::to_string_pretty(value, config).unwrap_or_else(|e| panic!("serialize failed: {e}\nvalue: {value:?}"));
+        ron::from_str::<T>(&s).unwrap_or_else(|e| panic!("deserialize failed: {e}\nRON:\n{s}"))
     }
 
     // ── PageLayout round-trips ────────────────────────────────────────────────
@@ -514,7 +488,10 @@ mod tests {
                     icon: "home".to_string(),
                     roles: None,
                     entries: vec![
-                        Entry { route: "dashboard".to_string(), roles: None },
+                        Entry {
+                            route: "dashboard".to_string(),
+                            roles: None,
+                        },
                         Entry {
                             route: "users.list".to_string(),
                             roles: Some(vec![Role::Admin]),
@@ -526,9 +503,10 @@ mod tests {
                     label: "Operations".to_string(),
                     icon: "tools".to_string(),
                     roles: Some(vec![Role::Admin]),
-                    entries: vec![
-                        Entry { route: "fuses.list".to_string(), roles: None },
-                    ],
+                    entries: vec![Entry {
+                        route: "fuses.list".to_string(),
+                        roles: None,
+                    }],
                 },
             ],
         };
@@ -680,17 +658,13 @@ mod tests {
         // (e.g. via hand-edit), v3 → v4 must NOT clobber it with defaults.
         let mut custom_theme = crate::state::theme::ThemeConfig::default();
         // mutate one observable field so we can detect overwrite
-        custom_theme.primevue.primary.palette =
-            crate::state::theme::PaletteRef::new("emerald");
+        custom_theme.primevue.primary.palette = crate::state::theme::PaletteRef::new("emerald");
 
         let mut state = AppState {
             schema_version: 3,
             sections: IndexMap::new(),
         };
-        state.sections.insert(
-            "theme".to_string(),
-            AppPolicySection::Theme(custom_theme.clone()),
-        );
+        state.sections.insert("theme".to_string(), AppPolicySection::Theme(custom_theme.clone()));
 
         upgrade_app(&mut state).expect("upgrade_app should succeed");
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
@@ -715,10 +689,7 @@ mod tests {
         let key = crate::state::icons::IconKey::new("custom-key").expect("test key");
         let class = crate::state::icons::IconClass::new("pi pi-custom").expect("test class");
         registry.insert(key.clone(), class);
-        state.sections.insert(
-            "icons".to_string(),
-            AppPolicySection::Icons(crate::state::icons::IconConfig { registry }),
-        );
+        state.sections.insert("icons".to_string(), AppPolicySection::Icons(crate::state::icons::IconConfig { registry }));
 
         upgrade_app(&mut state).expect("upgrade_app should succeed");
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
@@ -745,14 +716,8 @@ mod tests {
         // Build a v4 state that exercises both new sections and round-trip
         // through RON twice.
         let mut state = AppState::new();
-        state.sections.insert(
-            "theme".to_string(),
-            AppPolicySection::Theme(crate::state::theme::ThemeConfig::default()),
-        );
-        state.sections.insert(
-            "icons".to_string(),
-            AppPolicySection::Icons(crate::state::icons::IconConfig::default()),
-        );
+        state.sections.insert("theme".to_string(), AppPolicySection::Theme(crate::state::theme::ThemeConfig::default()));
+        state.sections.insert("icons".to_string(), AppPolicySection::Icons(crate::state::icons::IconConfig::default()));
 
         let after_one = ron_roundtrip(&state);
         assert_eq!(state, after_one);

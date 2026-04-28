@@ -1,4 +1,9 @@
 #[cfg(test)]
+use std::io::Cursor;
+#[cfg(test)]
+use std::sync::{Arc, Mutex};
+
+#[cfg(test)]
 use crate::io::cli::{render_body, CliSink, CliSinkConfig};
 #[cfg(test)]
 use crate::io::events::{ProgressEvent, SinkEvent, SinkLevel};
@@ -8,10 +13,6 @@ use crate::io::null::{NullProgress, NullSink};
 use crate::io::recorder::{RecorderProgress, RecorderSink};
 #[cfg(test)]
 use crate::io::traits::{ProgressExt, Sink, SinkExt};
-#[cfg(test)]
-use std::io::Cursor;
-#[cfg(test)]
-use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
 struct SharedWriter(Arc<Mutex<Cursor<Vec<u8>>>>);
@@ -73,13 +74,7 @@ fn recorder_sink_take_drains_events() {
 #[test]
 fn recorder_sink_records_structured_diagnostic() {
     let mut sink = RecorderSink::new();
-    sink.diagnostic(
-        "lint.violation",
-        vec![
-            ("rule".to_string(), "ERROR:3".to_string()),
-            ("file".to_string(), "src/io/mod.rs".to_string()),
-        ],
-    );
+    sink.diagnostic("lint.violation", vec![("rule".to_string(), "ERROR:3".to_string()), ("file".to_string(), "src/io/mod.rs".to_string())]);
     let events = sink.events();
     assert_eq!(events.len(), 1);
     match &events[0] {
@@ -133,19 +128,9 @@ fn progress_ext_routes_through_emit() {
 
     let events = progress.events();
     assert_eq!(events.len(), 4);
-    assert_eq!(
-        events[0],
-        ProgressEvent::StepStart {
-            label: "compile primer".to_string(),
-        }
-    );
+    assert_eq!(events[0], ProgressEvent::StepStart { label: "compile primer".to_string() });
     assert_eq!(events[1], ProgressEvent::Tick { current: 1, total: 4 });
-    assert_eq!(
-        events[2],
-        ProgressEvent::StepDone {
-            label: "compile primer".to_string(),
-        }
-    );
+    assert_eq!(events[2], ProgressEvent::StepDone { label: "compile primer".to_string() });
     assert_eq!(
         events[3],
         ProgressEvent::StepFail {
@@ -157,46 +142,17 @@ fn progress_ext_routes_through_emit() {
 
 #[test]
 fn sink_event_level_mapping_is_total() {
-    assert_eq!(
-        SinkEvent::Info("x".to_string()).level(),
-        SinkLevel::Info
-    );
-    assert_eq!(
-        SinkEvent::Warn("x".to_string()).level(),
-        SinkLevel::Warn
-    );
-    assert_eq!(
-        SinkEvent::Error("x".to_string()).level(),
-        SinkLevel::Error
-    );
-    assert_eq!(
-        SinkEvent::Success("x".to_string()).level(),
-        SinkLevel::Success
-    );
-    assert_eq!(
-        SinkEvent::Debug("x".to_string()).level(),
-        SinkLevel::Debug
-    );
-    assert_eq!(
-        SinkEvent::StructuredDiagnostic {
-            kind: "k".to_string(),
-            fields: vec![],
-        }
-        .level(),
-        SinkLevel::Diagnostic
-    );
+    assert_eq!(SinkEvent::Info("x".to_string()).level(), SinkLevel::Info);
+    assert_eq!(SinkEvent::Warn("x".to_string()).level(), SinkLevel::Warn);
+    assert_eq!(SinkEvent::Error("x".to_string()).level(), SinkLevel::Error);
+    assert_eq!(SinkEvent::Success("x".to_string()).level(), SinkLevel::Success);
+    assert_eq!(SinkEvent::Debug("x".to_string()).level(), SinkLevel::Debug);
+    assert_eq!(SinkEvent::StructuredDiagnostic { kind: "k".to_string(), fields: vec![] }.level(), SinkLevel::Diagnostic);
 }
 
 #[test]
 fn sink_level_icon_and_label_are_total() {
-    let levels = [
-        SinkLevel::Debug,
-        SinkLevel::Info,
-        SinkLevel::Warn,
-        SinkLevel::Error,
-        SinkLevel::Success,
-        SinkLevel::Diagnostic,
-    ];
+    let levels = [SinkLevel::Debug, SinkLevel::Info, SinkLevel::Warn, SinkLevel::Error, SinkLevel::Success, SinkLevel::Diagnostic];
     for level in levels {
         assert!(!level.icon().is_empty());
         assert!(!level.label().is_empty());
@@ -213,10 +169,7 @@ fn render_body_formats_message_variants_verbatim() {
 fn render_body_formats_structured_diagnostic_with_fields() {
     let event = SinkEvent::StructuredDiagnostic {
         kind: "primer.missing".to_string(),
-        fields: vec![
-            ("resource".to_string(), "users".to_string()),
-            ("file".to_string(), "primer/src/users.rs".to_string()),
-        ],
+        fields: vec![("resource".to_string(), "users".to_string()), ("file".to_string(), "primer/src/users.rs".to_string())],
     };
     let rendered = render_body(&event);
     assert!(rendered.starts_with("primer.missing"));

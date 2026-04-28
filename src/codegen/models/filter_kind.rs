@@ -32,15 +32,7 @@ impl FilterKind {
     pub fn has_scopes(self) -> bool {
         match self {
             FilterKind::Skipped => false,
-            FilterKind::Bool
-            | FilterKind::TimestampInt64
-            | FilterKind::TimestampChrono
-            | FilterKind::Int
-            | FilterKind::Float
-            | FilterKind::Decimal
-            | FilterKind::Text
-            | FilterKind::Uuid
-            | FilterKind::Enum => true,
+            FilterKind::Bool | FilterKind::TimestampInt64 | FilterKind::TimestampChrono | FilterKind::Int | FilterKind::Float | FilterKind::Decimal | FilterKind::Text | FilterKind::Uuid | FilterKind::Enum => true,
         }
     }
 }
@@ -66,9 +58,7 @@ pub fn classify(field: &FieldState) -> FilterKind {
 fn scalar_kind(sql: &str) -> Option<FilterKind> {
     match sql {
         "bool" | "boolean" => Some(FilterKind::Bool),
-        "int2" | "smallint" | "smallserial" | "int4" | "integer" | "serial" => {
-            Some(FilterKind::Int)
-        }
+        "int2" | "smallint" | "smallserial" | "int4" | "integer" | "serial" => Some(FilterKind::Int),
         "int8" | "bigint" | "bigserial" => Some(FilterKind::Int),
         "float4" | "real" | "float8" | "double" | "double precision" => Some(FilterKind::Float),
         "numeric" | "decimal" => Some(FilterKind::Decimal),
@@ -97,15 +87,7 @@ pub fn refine_for_column(name: &str, kind: FilterKind) -> FilterKind {
             true => FilterKind::TimestampInt64,
             false => FilterKind::Int,
         },
-        FilterKind::Bool
-        | FilterKind::TimestampInt64
-        | FilterKind::TimestampChrono
-        | FilterKind::Float
-        | FilterKind::Decimal
-        | FilterKind::Text
-        | FilterKind::Uuid
-        | FilterKind::Enum
-        | FilterKind::Skipped => kind,
+        FilterKind::Bool | FilterKind::TimestampInt64 | FilterKind::TimestampChrono | FilterKind::Float | FilterKind::Decimal | FilterKind::Text | FilterKind::Uuid | FilterKind::Enum | FilterKind::Skipped => kind,
     }
 }
 
@@ -135,10 +117,10 @@ fn fk_stem_filter(stem: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::SqlType;
-    use crate::state::FieldVariant;
     use std::collections::BTreeSet;
+
+    use super::*;
+    use crate::state::{names::SqlType, FieldVariant};
 
     fn field(sql: &str) -> FieldState {
         let mut variants = BTreeSet::new();
@@ -174,27 +156,15 @@ mod tests {
 
     #[test]
     fn refine_upgrades_int8_at_columns() {
-        assert_eq!(
-            refine_for_column("created_at", FilterKind::Int),
-            FilterKind::TimestampInt64
-        );
-        assert_eq!(
-            refine_for_column("updated_at", FilterKind::Int),
-            FilterKind::TimestampInt64
-        );
-        assert_eq!(
-            refine_for_column("login_timestamp", FilterKind::Int),
-            FilterKind::TimestampInt64
-        );
+        assert_eq!(refine_for_column("created_at", FilterKind::Int), FilterKind::TimestampInt64);
+        assert_eq!(refine_for_column("updated_at", FilterKind::Int), FilterKind::TimestampInt64);
+        assert_eq!(refine_for_column("login_timestamp", FilterKind::Int), FilterKind::TimestampInt64);
         assert_eq!(refine_for_column("count", FilterKind::Int), FilterKind::Int);
     }
 
     #[test]
     fn refine_does_not_change_non_int_kinds() {
-        assert_eq!(
-            refine_for_column("created_at", FilterKind::Text),
-            FilterKind::Text
-        );
+        assert_eq!(refine_for_column("created_at", FilterKind::Text), FilterKind::Text);
     }
 
     #[test]

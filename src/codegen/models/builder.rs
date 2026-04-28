@@ -1,18 +1,16 @@
 //! Fluent query builder + paginated terminal + IntoFuture emission.
 
-use crate::codegen::models::aggregations;
-use crate::codegen::models::eager::{self, Relation};
-use crate::codegen::models::naming;
-use crate::codegen::models::scopes;
-use crate::codegen::models::soft_delete::{self, SoftDeleteConfig};
-use crate::state::ResourceState;
+use crate::{
+    codegen::models::{
+        aggregations,
+        eager::{self, Relation},
+        naming, scopes,
+        soft_delete::{self, SoftDeleteConfig},
+    },
+    state::ResourceState,
+};
 
-pub fn emit(
-    out: &mut String,
-    resource: &ResourceState,
-    relations: &[Relation],
-    soft_delete_cfg: Option<&SoftDeleteConfig>,
-) {
+pub fn emit(out: &mut String, resource: &ResourceState, relations: &[Relation], soft_delete_cfg: Option<&SoftDeleteConfig>) {
     let table = resource.name.as_str();
     let stem = naming::type_stem_for(resource);
     let q_ty = naming::query_type(&stem);
@@ -51,16 +49,7 @@ pub struct {q_ty} {{
     out.push_str("}\n");
 }
 
-fn emit_query_impl(
-    out: &mut String,
-    table: &str,
-    stem: &str,
-    q_ty: &str,
-    p_ty: &str,
-    resource: &ResourceState,
-    relations: &[Relation],
-    soft_delete_cfg: Option<&SoftDeleteConfig>,
-) {
+fn emit_query_impl(out: &mut String, table: &str, stem: &str, q_ty: &str, p_ty: &str, resource: &ResourceState, relations: &[Relation], soft_delete_cfg: Option<&SoftDeleteConfig>) {
     let header = format!("impl {q_ty} {{\n");
     out.push_str(&header);
     emit_constructor(out, table, q_ty, relations, soft_delete_cfg);
@@ -111,13 +100,7 @@ fn emit_query_impl(
     out.push_str("}\n");
 }
 
-fn emit_constructor(
-    out: &mut String,
-    table: &str,
-    q_ty: &str,
-    relations: &[Relation],
-    soft_delete_cfg: Option<&SoftDeleteConfig>,
-) {
+fn emit_constructor(out: &mut String, table: &str, q_ty: &str, relations: &[Relation], soft_delete_cfg: Option<&SoftDeleteConfig>) {
     let header = format!(
         "    /// Construct a fresh builder.
     pub fn new() -> Self {{
@@ -237,14 +220,18 @@ fn emit_into_future_for_paginated(out: &mut String, stem: &str, p_ty: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::codegen::models::soft_delete::DefaultBehavior;
-    use crate::state::names::{ResourceName, SqlType};
-    use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
-    };
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::{
+        codegen::models::soft_delete::DefaultBehavior,
+        state::{
+            names::{ResourceName, SqlType},
+            AuthMode, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
+        },
+    };
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()

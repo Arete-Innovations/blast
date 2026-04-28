@@ -1,8 +1,12 @@
-use crate::state::gen_level::GenLevel;
-use crate::state::names::{AuthScopeField, FieldName, ResourceName, SqlType};
+use std::collections::{BTreeMap, BTreeSet};
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+
+use crate::state::{
+    gen_level::GenLevel,
+    names::{AuthScopeField, FieldName, ResourceName, SqlType},
+};
 
 pub const RESOURCE_SCHEMA_VERSION: u32 = 2;
 
@@ -44,14 +48,8 @@ pub struct ResourceState {
 /// pointing back at this resource's id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Relation {
-    BelongsTo {
-        table: String,
-        fk_local_field: FieldName,
-    },
-    HasMany {
-        table: String,
-        fk_remote_field: FieldName,
-    },
+    BelongsTo { table: String, fk_local_field: FieldName },
+    HasMany { table: String, fk_remote_field: FieldName },
 }
 
 /// Soft-delete policy attached to a resource.

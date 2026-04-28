@@ -1,7 +1,6 @@
+use std::{fs::File, io::Read, path::Path};
+
 use crate::error::BlastResult;
-use std::fs::File;
-use std::io::Read;
-use std::path::Path;
 
 const READ_BUFFER_BYTES: usize = 64 * 1024;
 
@@ -18,4 +17,3 @@ pub fn content_hash(path: &Path) -> BlastResult<String> {
     }
     Ok(hasher.finalize().to_hex().to_string())
 }
-

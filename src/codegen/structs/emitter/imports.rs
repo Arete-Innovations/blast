@@ -15,14 +15,9 @@ pub fn render(resource: &ResourceState) -> String {
     out.push_str("use serde::{Deserialize, Serialize};\n");
 
     let present = util::collect_present_variants(resource);
-    let needs_diesel_table = present.contains(&FieldVariant::Db)
-        || present.contains(&FieldVariant::Insertable)
-        || present.contains(&FieldVariant::Patch);
+    let needs_diesel_table = present.contains(&FieldVariant::Db) || present.contains(&FieldVariant::Insertable) || present.contains(&FieldVariant::Patch);
     if needs_diesel_table {
-        out.push_str(&format!(
-            "use crate::database::schema::{table};\n",
-            table = table,
-        ));
+        out.push_str(&format!("use crate::database::schema::{table};\n", table = table,));
     }
 
     let mut diesel_traits: Vec<&str> = Vec::new();
@@ -40,10 +35,7 @@ pub fn render(resource: &ResourceState) -> String {
     if !diesel_traits.is_empty() {
         diesel_traits.sort();
         diesel_traits.dedup();
-        out.push_str(&format!(
-            "use diesel::{{{}}};\n",
-            diesel_traits.join(", "),
-        ));
+        out.push_str(&format!("use diesel::{{{}}};\n", diesel_traits.join(", "),));
     }
 
     // Sort enum needs FromStr; only emit the use when we actually emit

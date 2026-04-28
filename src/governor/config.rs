@@ -1,6 +1,9 @@
-use crate::error::{BlastError, BlastResult};
-use crate::state::{AppPolicySection, FeLintState};
 use std::path::Path;
+
+use crate::{
+    error::{BlastError, BlastResult},
+    state::{AppPolicySection, FeLintState},
+};
 
 pub fn load_or_default(project_root: &Path) -> BlastResult<FeLintState> {
     let state_dir = project_root.join("storage/blast/state");

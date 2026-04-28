@@ -7,10 +7,7 @@ pub enum SinkEvent {
     Error(String),
     Success(String),
     Debug(String),
-    StructuredDiagnostic {
-        kind: String,
-        fields: Vec<(String, String)>,
-    },
+    StructuredDiagnostic { kind: String, fields: Vec<(String, String)> },
 }
 
 impl SinkEvent {

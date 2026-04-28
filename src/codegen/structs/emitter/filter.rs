@@ -5,20 +5,17 @@
 //! and this module turns that into a typed struct where each field is
 //! wrapped in `Option<...>` and shaped by its `FilterKind`.
 
-use crate::codegen::structs::naming;
-use crate::codegen::structs::sql_map;
-use crate::state::{FieldName, FilterKind, ResourceState, SqlType};
 use std::collections::BTreeMap;
 
-pub fn render(
-    resource: &ResourceState,
-    filterable: &BTreeMap<FieldName, FilterKind>,
-) -> String {
+use crate::{
+    codegen::structs::{naming, sql_map},
+    state::{FieldName, FilterKind, ResourceState, SqlType},
+};
+
+pub fn render(resource: &ResourceState, filterable: &BTreeMap<FieldName, FilterKind>) -> String {
     let struct_name = naming::filter_struct_name_for_resource(resource);
     let mut out = String::new();
-    let needs_range = filterable
-        .values()
-        .any(|kind| matches!(kind, FilterKind::Range));
+    let needs_range = filterable.values().any(|kind| matches!(kind, FilterKind::Range));
     out.push_str("#[derive(Debug, Default, Clone, Deserialize)]\n");
     out.push_str(&format!("pub struct {struct_name} {{\n"));
     for (name, field) in resource.fields.iter() {

@@ -22,8 +22,10 @@
 //! The list endpoint returns `ListResponse<T>` (paginated), matching the
 //! backend's `ListResponse` type from `catalyst::transport::http::list_query`.
 
-use crate::codegen::structs::naming::type_stem_for_resource;
-use crate::state::{ResourceState, Verb};
+use crate::{
+    codegen::structs::naming::type_stem_for_resource,
+    state::{ResourceState, Verb},
+};
 
 /// Build the full TS API client file body for one resource.
 pub fn build_resource_api(resource: &ResourceState) -> String {
@@ -60,11 +62,7 @@ pub fn build_resource_api(resource: &ResourceState) -> String {
                 seen.push(item);
             }
         }
-        out.push_str(&format!(
-            "import {{ {names} }} from '@/generated/types/{table}'\n",
-            names = seen.join(", "),
-            table = table,
-        ));
+        out.push_str(&format!("import {{ {names} }} from '@/generated/types/{table}'\n", names = seen.join(", "), table = table,));
     }
 
     out.push_str("import type { MeltDownResponse } from '@/generated/types/meltdown'\n");
@@ -122,56 +120,15 @@ pub fn build_resource_api(resource: &ResourceState) -> String {
 /// to know about the pagination envelope.
 fn render_list_fn(table: &str, singular: &str, plural: &str) -> String {
     format!(
-        "interface {singular}ListEnvelope {{\n\
-  items: {singular}Public[]\n\
-  total: number\n\
-  page: number\n\
-  page_size: number\n\
-}}\n\
-\n\
-export async function list{plural}(\n\
-  params: {{ page?: number; page_size?: number; sort?: string | null; filter?: {{ [key: string]: string | number | boolean | null | undefined }} | null }},\n\
-  signal?: AbortSignal,\n\
-): ApiResult<{singular}Public[]> {{\n\
-  const url = new URL(`/api/{table}/`, window.location.origin)\n\
-  if (params.page !== undefined) {{\n\
-    url.searchParams.set('page', String(params.page))\n\
-  }}\n\
-  if (params.page_size !== undefined) {{\n\
-    url.searchParams.set('page_size', String(params.page_size))\n\
-  }}\n\
-  if (params.sort !== undefined && params.sort !== null) {{\n\
-    url.searchParams.set('sort', params.sort)\n\
-  }}\n\
-  if (params.filter !== null && params.filter !== undefined) {{\n\
-    for (const [key, val] of Object.entries(params.filter)) {{\n\
-      if (val === null || val === undefined) {{\n\
-        continue\n\
-      }}\n\
-      const serialized = typeof val === 'object' ? JSON.stringify(val) : String(val)\n\
-      url.searchParams.set(`filter[${{key}}]`, serialized)\n\
-    }}\n\
-  }}\n\
-  const path = url.pathname + url.search\n\
-  try {{\n\
-    const res = await fetch(path, {{\n\
-      headers: {{ ...auth_header(), Accept: 'application/json' }},\n\
-      signal,\n\
-    }})\n\
-    if (!res.ok) {{\n\
-      const err = (await res.json()) as MeltDownResponse\n\
-      return {{ data: null, error: err }}\n\
-    }}\n\
-    const envelope = (await res.json()) as {singular}ListEnvelope\n\
-    return {{ data: envelope.items, error: null }}\n\
-  }} catch (e) {{\n\
-    if (e instanceof DOMException && e.name === 'AbortError') {{\n\
-      return {{ data: null, error: null }}\n\
-    }}\n\
-    const err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\n\
-    return {{ data: null, error: err }}\n\
-  }}\n\
-}}\n",
+        "interface {singular}ListEnvelope {{\nitems: {singular}Public[]\ntotal: number\npage: number\npage_size: number\n}}\n\nexport async function list{plural}(\nparams: {{ page?: number; page_size?: number; sort?: \
+         string | null; filter?: {{ [key: string]: string | number | boolean | null | undefined }} | null }},\nsignal?: AbortSignal,\n): ApiResult<{singular}Public[]> {{\nconst url = new URL(`/api/{table}/`, \
+         window.location.origin)\nif (params.page !== undefined) {{\nurl.searchParams.set('page', String(params.page))\n}}\nif (params.page_size !== undefined) {{\nurl.searchParams.set('page_size', \
+         String(params.page_size))\n}}\nif (params.sort !== undefined && params.sort !== null) {{\nurl.searchParams.set('sort', params.sort)\n}}\nif (params.filter !== null && params.filter !== undefined) {{\nfor \
+         (const [key, val] of Object.entries(params.filter)) {{\nif (val === null || val === undefined) {{\ncontinue\n}}\nconst serialized = typeof val === 'object' ? JSON.stringify(val) : \
+         String(val)\nurl.searchParams.set(`filter[${{key}}]`, serialized)\n}}\n}}\nconst path = url.pathname + url.search\ntry {{\nconst res = await fetch(path, {{\nheaders: {{ ...auth_header(), Accept: \
+         'application/json' }},\nsignal,\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: null, error: err }}\n}}\nconst envelope = (await res.json()) as \
+         {singular}ListEnvelope\nreturn {{ data: envelope.items, error: null }}\n}} catch (e) {{\nif (e instanceof DOMException && e.name === 'AbortError') {{\nreturn {{ data: null, error: null }}\n}}\nconst err: \
+         MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
         table = table,
         singular = singular,
         plural = plural,
@@ -181,29 +138,10 @@ export async function list{plural}(\n\
 /// `getUser` — matches `get{} as apiGet` alias.
 fn render_get_fn(table: &str, singular: &str) -> String {
     format!(
-        "export async function get{singular}(\n\
-  id: number,\n\
-  signal?: AbortSignal,\n\
-): ApiResult<{singular}Public> {{\n\
-  try {{\n\
-    const res = await fetch(`/api/{table}/${{id}}`, {{\n\
-      headers: {{ ...auth_header(), Accept: 'application/json' }},\n\
-      signal,\n\
-    }})\n\
-    if (!res.ok) {{\n\
-      const err = (await res.json()) as MeltDownResponse\n\
-      return {{ data: null, error: err }}\n\
-    }}\n\
-    const data = (await res.json()) as {singular}Public\n\
-    return {{ data, error: null }}\n\
-  }} catch (e) {{\n\
-    if (e instanceof DOMException && e.name === 'AbortError') {{\n\
-      return {{ data: null, error: null }}\n\
-    }}\n\
-    const err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\n\
-    return {{ data: null, error: err }}\n\
-  }}\n\
-}}\n",
+        "export async function get{singular}(\nid: number,\nsignal?: AbortSignal,\n): ApiResult<{singular}Public> {{\ntry {{\nconst res = await fetch(`/api/{table}/${{id}}`, {{\nheaders: {{ ...auth_header(), Accept: \
+         'application/json' }},\nsignal,\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: null, error: err }}\n}}\nconst data = (await res.json()) as {singular}Public\nreturn \
+         {{ data, error: null }}\n}} catch (e) {{\nif (e instanceof DOMException && e.name === 'AbortError') {{\nreturn {{ data: null, error: null }}\n}}\nconst err: MeltDownResponse = {{ error: {{ code: 0, type: \
+         'NetworkError', message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
         table = table,
         singular = singular,
     )
@@ -212,26 +150,10 @@ fn render_get_fn(table: &str, singular: &str) -> String {
 /// `createUser` — matches `create{} as apiCreate` alias.
 fn render_create_fn(table: &str, singular: &str) -> String {
     format!(
-        "export async function create{singular}(\n\
-  body: {singular}Insertable,\n\
-): ApiResult<{singular}Public> {{\n\
-  try {{\n\
-    const res = await fetch(`/api/{table}/`, {{\n\
-      method: 'POST',\n\
-      headers: {{ ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\n\
-      body: JSON.stringify(body),\n\
-    }})\n\
-    if (!res.ok) {{\n\
-      const err = (await res.json()) as MeltDownResponse\n\
-      return {{ data: null, error: err }}\n\
-    }}\n\
-    const data = (await res.json()) as {singular}Public\n\
-    return {{ data, error: null }}\n\
-  }} catch (e) {{\n\
-    const err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\n\
-    return {{ data: null, error: err }}\n\
-  }}\n\
-}}\n",
+        "export async function create{singular}(\nbody: {singular}Insertable,\n): ApiResult<{singular}Public> {{\ntry {{\nconst res = await fetch(`/api/{table}/`, {{\nmethod: 'POST',\nheaders: {{ ...auth_header(), \
+         'Content-Type': 'application/json', Accept: 'application/json' }},\nbody: JSON.stringify(body),\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: null, error: err \
+         }}\n}}\nconst data = (await res.json()) as {singular}Public\nreturn {{ data, error: null }}\n}} catch (e) {{\nconst err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network \
+         error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
         table = table,
         singular = singular,
     )
@@ -240,27 +162,10 @@ fn render_create_fn(table: &str, singular: &str) -> String {
 /// `updateUser` — matches `update{} as apiUpdate` alias.
 fn render_update_fn(table: &str, singular: &str) -> String {
     format!(
-        "export async function update{singular}(\n\
-  id: number,\n\
-  patch: {singular}Patch,\n\
-): ApiResult<{singular}Public> {{\n\
-  try {{\n\
-    const res = await fetch(`/api/{table}/${{id}}`, {{\n\
-      method: 'PATCH',\n\
-      headers: {{ ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\n\
-      body: JSON.stringify(patch),\n\
-    }})\n\
-    if (!res.ok) {{\n\
-      const err = (await res.json()) as MeltDownResponse\n\
-      return {{ data: null, error: err }}\n\
-    }}\n\
-    const data = (await res.json()) as {singular}Public\n\
-    return {{ data, error: null }}\n\
-  }} catch (e) {{\n\
-    const err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\n\
-    return {{ data: null, error: err }}\n\
-  }}\n\
-}}\n",
+        "export async function update{singular}(\nid: number,\npatch: {singular}Patch,\n): ApiResult<{singular}Public> {{\ntry {{\nconst res = await fetch(`/api/{table}/${{id}}`, {{\nmethod: 'PATCH',\nheaders: {{ \
+         ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\nbody: JSON.stringify(patch),\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: \
+         null, error: err }}\n}}\nconst data = (await res.json()) as {singular}Public\nreturn {{ data, error: null }}\n}} catch (e) {{\nconst err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', \
+         message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
         table = table,
         singular = singular,
     )
@@ -269,24 +174,9 @@ fn render_update_fn(table: &str, singular: &str) -> String {
 /// `deleteUser` — matches `delete{} as apiDelete` alias.
 fn render_delete_fn(table: &str, singular: &str) -> String {
     format!(
-        "export async function delete{singular}(\n\
-  id: number,\n\
-): ApiResult<{{ id: number }}> {{\n\
-  try {{\n\
-    const res = await fetch(`/api/{table}/${{id}}`, {{\n\
-      method: 'DELETE',\n\
-      headers: {{ ...auth_header(), Accept: 'application/json' }},\n\
-    }})\n\
-    if (!res.ok) {{\n\
-      const err = (await res.json()) as MeltDownResponse\n\
-      return {{ data: null, error: err }}\n\
-    }}\n\
-    return {{ data: {{ id }}, error: null }}\n\
-  }} catch (e) {{\n\
-    const err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\n\
-    return {{ data: null, error: err }}\n\
-  }}\n\
-}}\n",
+        "export async function delete{singular}(\nid: number,\n): ApiResult<{{ id: number }}> {{\ntry {{\nconst res = await fetch(`/api/{table}/${{id}}`, {{\nmethod: 'DELETE',\nheaders: {{ ...auth_header(), Accept: \
+         'application/json' }},\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: null, error: err }}\n}}\nreturn {{ data: {{ id }}, error: null }}\n}} catch (e) {{\nconst err: \
+         MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
         table = table,
         singular = singular,
     )
@@ -326,28 +216,21 @@ fn plural_of_pascal(singular: &str, table: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{
-        AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState,
-        RESOURCE_SCHEMA_VERSION,
-    };
-    use crate::state::SqlType;
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::state::{
+        names::{FieldName, ResourceName},
+        resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+        SqlType,
+    };
 
     fn synth_resource_all_verbs() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        let all_v: BTreeSet<FieldVariant> = [
-            FieldVariant::Db,
-            FieldVariant::Insertable,
-            FieldVariant::Patch,
-            FieldVariant::Public,
-        ]
-        .into_iter()
-        .collect();
-        let id_v: BTreeSet<FieldVariant> =
-            [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
+        let all_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
+        let id_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
 
         fields.insert(
             FieldName::new("id"),
@@ -382,7 +265,13 @@ mod tests {
                 }),
                 _other => None,
             };
-            verbs.insert(v, VerbState { auth: AuthMode::Public, list_options: list_opts });
+            verbs.insert(
+                v,
+                VerbState {
+                    auth: AuthMode::Public,
+                    list_options: list_opts,
+                },
+            );
         }
 
         ResourceState {
@@ -413,14 +302,8 @@ mod tests {
     fn imports_types_from_generated_types() {
         let r = synth_resource_all_verbs();
         let body = build_resource_api(&r);
-        assert!(
-            body.contains("from '@/generated/types/users'"),
-            "must import from @/generated/types/users"
-        );
-        assert!(
-            body.contains("from '@/generated/types/meltdown'"),
-            "must import MeltDownResponse"
-        );
+        assert!(body.contains("from '@/generated/types/users'"), "must import from @/generated/types/users");
+        assert!(body.contains("from '@/generated/types/meltdown'"), "must import MeltDownResponse");
     }
 
     #[test]
@@ -435,10 +318,7 @@ mod tests {
     fn delete_fn_returns_id_shape() {
         let r = synth_resource_all_verbs();
         let body = build_resource_api(&r);
-        assert!(
-            body.contains("ApiResult<{ id: number }>"),
-            "delete must return id shape"
-        );
+        assert!(body.contains("ApiResult<{ id: number }>"), "delete must return id shape");
     }
 
     #[test]

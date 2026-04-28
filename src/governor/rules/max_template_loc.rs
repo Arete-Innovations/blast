@@ -1,10 +1,15 @@
-use crate::governor::rules::helpers::{
-    extension_is, extract_template_block, snippet_of,
-};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
 use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, extract_template_block, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub struct MaxTemplateLoc;
 
@@ -19,12 +24,7 @@ impl FileRule for MaxTemplateLoc {
         "MaxTemplateLoc"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        contents: &str,
-        config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
         if !extension_is(file, "vue") {
             return Vec::new();
         }
@@ -37,24 +37,16 @@ impl FileRule for MaxTemplateLoc {
             return Vec::new();
         }
         let snippet = format!("template has {} lines", inner_lines);
-        let suggestion = format!(
-            "split into sub-components; max template LOC is {}",
-            config.max_template_loc
-        );
-        vec![Violation::new(
-            "MaxTemplateLoc",
-            file.to_path_buf(),
-            block.start_line,
-            snippet_of(&snippet),
-            suggestion,
-        )]
+        let suggestion = format!("split into sub-components; max template LOC is {}", config.max_template_loc);
+        vec![Violation::new("MaxTemplateLoc", file.to_path_buf(), block.start_line, snippet_of(&snippet), suggestion)]
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run_with_limit(contents: &str, limit: u32) -> Vec<Violation> {
         let rule = MaxTemplateLoc::new();
@@ -89,11 +81,7 @@ mod tests {
     fn ignores_non_vue_files() {
         let rule = MaxTemplateLoc::new();
         let cfg = FeLintState::default();
-        let v = rule.check_file(
-            &PathBuf::from("frontend/src/x.ts"),
-            "<template>\n<a/>\n</template>",
-            &cfg,
-        );
+        let v = rule.check_file(&PathBuf::from("frontend/src/x.ts"), "<template>\n<a/>\n</template>", &cfg);
         assert!(v.is_empty());
     }
 }

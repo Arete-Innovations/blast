@@ -1,12 +1,14 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::codegen::header;
-use crate::codegen::ir_loader;
-use crate::codegen::pages::render::pages_for_resource;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::{GenLevel, ResourceState};
+use crate::{
+    codegen::{header, ir_loader, pages::render::pages_for_resource},
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::{GenLevel, ResourceState},
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct EmitReport {
@@ -42,10 +44,7 @@ pub fn run_for_resource(project_root: &Path, resource_name: &str, sink: &mut dyn
         None => return Ok(EmitReport::default()),
     };
     if candidate.gen_level < GenLevel::Pages {
-        sink.warn(format!(
-            "resource '{}' has gen_level {:?}, which is below Pages; skipping",
-            resource_name, candidate.gen_level,
-        ));
+        sink.warn(format!("resource '{}' has gen_level {:?}, which is below Pages; skipping", resource_name, candidate.gen_level,));
         return Ok(EmitReport::default());
     }
     emit_for(project_root, &filtered, sink, progress)
@@ -110,14 +109,20 @@ fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::{NullProgress, NullSink};
-    use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION};
-    use crate::state::{save_app, save_resource, AppState, SqlType};
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::null::{NullProgress, NullSink},
+        state::{
+            names::{FieldName, ResourceName},
+            resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+            save_app, save_resource, AppState, SqlType,
+        },
+    };
 
     fn make_users_resource() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();

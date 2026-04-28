@@ -1,10 +1,13 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use crate::codegen::header;
-use crate::error::{BlastError, BlastResult};
-use crate::state::{AppPolicySection, FeLintState};
+use crate::{
+    codegen::header,
+    error::{BlastError, BlastResult},
+    state::{AppPolicySection, FeLintState},
+};
 
 const PLUGIN_RELATIVE_PATH: &str = "frontend/scripts/governor-plugin.js";
 const WHITELIST_RELATIVE_PATH: &str = ".rule_violations_whitelist";
@@ -34,9 +37,7 @@ pub fn run(project_root: &Path) -> BlastResult<Vec<PathBuf>> {
 
 fn write_plugin(project_root: &Path) -> BlastResult<PathBuf> {
     let target = project_root.join(PLUGIN_RELATIVE_PATH);
-    let parent = target
-        .parent()
-        .ok_or_else(|| BlastError::Invalid(format!("plugin path has no parent: {}", target.display())))?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("plugin path has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
     let body = format!("{}{}", header::marker_for_app(project_root)?, PLUGIN_SOURCE);
     fs::write(&target, body)?;

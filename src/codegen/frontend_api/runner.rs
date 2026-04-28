@@ -3,15 +3,17 @@
 //!
 //! When resource_count == 0, writes a `.gitkeep` so the directory exists.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::codegen::frontend_api::render::build_resource_api;
-use crate::codegen::header;
-use crate::codegen::ir_loader;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::GenLevel;
+use crate::{
+    codegen::{frontend_api::render::build_resource_api, header, ir_loader},
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::GenLevel,
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct EmitReport {
@@ -21,11 +23,7 @@ pub struct EmitReport {
 
 const STEP_LABEL: &str = "frontend api generation";
 
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
     let all_resources = match ir_loader::load_resource_states(project_root) {
@@ -38,10 +36,7 @@ pub fn run(
         }
     };
 
-    let resources: Vec<_> = all_resources
-        .into_iter()
-        .filter(|r| r.gen_level >= GenLevel::Types)
-        .collect();
+    let resources: Vec<_> = all_resources.into_iter().filter(|r| r.gen_level >= GenLevel::Types).collect();
 
     let out_dir = api_dir(project_root);
     fs::create_dir_all(&out_dir)?;
@@ -52,9 +47,7 @@ pub fn run(
         // Emit .gitkeep so the directory exists for composables that reference it.
         let gitkeep = out_dir.join(".gitkeep");
         write_file(&gitkeep, "", &mut report)?;
-        sink.info(format!(
-            "{STEP_LABEL}: no resources declared; emitted .gitkeep"
-        ));
+        sink.info(format!("{STEP_LABEL}: no resources declared; emitted .gitkeep"));
         progress.step_done(STEP_LABEL);
         return Ok(report);
     }
@@ -68,22 +61,14 @@ pub fn run(
         sink.info(format!("emitted {}", path.display()));
     }
 
-    sink.info(format!(
-        "{STEP_LABEL}: {} written, {} skipped",
-        report.written.len(),
-        report.skipped.len()
-    ));
+    sink.info(format!("{STEP_LABEL}: {} written, {} skipped", report.written.len(), report.skipped.len()));
 
     progress.step_done(STEP_LABEL);
     Ok(report)
 }
 
 fn api_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join("frontend")
-        .join("src")
-        .join("generated")
-        .join("api")
+    project_root.join("frontend").join("src").join("generated").join("api")
 }
 
 fn read_existing(target: &Path) -> BlastResult<Option<String>> {
@@ -95,12 +80,7 @@ fn read_existing(target: &Path) -> BlastResult<Option<String>> {
 }
 
 fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult<()> {
-    let parent = target.parent().ok_or_else(|| {
-        BlastError::Invalid(format!(
-            "frontend api target has no parent: {}",
-            target.display()
-        ))
-    })?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("frontend api target has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
 
     let existing = read_existing(target)?;
@@ -122,30 +102,25 @@ fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::{NullProgress, NullSink};
-    use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{
-        AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState,
-        RESOURCE_SCHEMA_VERSION,
-    };
-    use crate::state::{save_app, save_resource, AppState, SqlType};
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::null::{NullProgress, NullSink},
+        state::{
+            names::{FieldName, ResourceName},
+            resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+            save_app, save_resource, AppState, SqlType,
+        },
+    };
 
     fn make_users_resource() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        let all_v: BTreeSet<FieldVariant> = [
-            FieldVariant::Db,
-            FieldVariant::Insertable,
-            FieldVariant::Patch,
-            FieldVariant::Public,
-        ]
-        .into_iter()
-        .collect();
-        let id_v: BTreeSet<FieldVariant> =
-            [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
+        let all_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
+        let id_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
 
         fields.insert(
             FieldName::new("id"),
@@ -257,11 +232,7 @@ mod tests {
         let _first = run(root, &mut sink, &mut progress).expect("first run");
         let second = run(root, &mut sink, &mut progress).expect("second run");
 
-        assert!(
-            second.written.is_empty(),
-            "second run wrote {:?}",
-            second.written
-        );
+        assert!(second.written.is_empty(), "second run wrote {:?}", second.written);
         assert!(!second.skipped.is_empty(), "second run must skip files");
     }
 }

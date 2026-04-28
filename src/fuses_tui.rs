@@ -1,20 +1,18 @@
-use crate::configs::Config;
-use crate::error::{BlastError, BlastResult};
-use crate::fuses::{remove_fuse, toggle_fuse, FuseInfo};
-use crate::io::traits::{SinkExt};
+use std::{io::Write, path::Path, thread, time::Duration};
+
 use console::Style;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
-use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::*;
-use diesel::{PgConnection, RunQueryDsl};
+use diesel::{prelude::*, sql_query, sql_types::*, PgConnection, RunQueryDsl};
 use dotenv::dotenv;
 use indicatif::{ProgressBar, ProgressStyle};
 use prettytable::{format, Cell, Row, Table};
-use std::io::Write;
-use std::path::Path;
-use std::thread;
-use std::time::Duration;
+
+use crate::{
+    configs::Config,
+    error::{BlastError, BlastResult},
+    fuses::{remove_fuse, toggle_fuse, FuseInfo},
+    io::traits::SinkExt,
+};
 
 pub enum FusesAction {
     List,
@@ -53,10 +51,7 @@ fn check_fuses_table(conn: &mut PgConnection) -> BlastResult<bool> {
         pub exists: bool,
     }
 
-    let results = sql_query(
-        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'fuses') as exists",
-    )
-    .load::<BoolResult>(conn)?;
+    let results = sql_query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'fuses') as exists").load::<BoolResult>(conn)?;
 
     if results.is_empty() {
         Ok(false)
@@ -80,31 +75,16 @@ fn fetch_fuses(config: &Config) -> BlastResult<Vec<FuseInfo>> {
         return Ok(Vec::new());
     }
 
-    Ok(sql_query(
-        "SELECT id, name, flow_name, schedule_kind, schedule_spec, \
-         enabled, last_run_status, last_error, run_count \
-         FROM fuses ORDER BY id",
-    )
-    .load::<FuseInfo>(&mut conn)?)
+    Ok(sql_query("SELECT id, name, flow_name, schedule_kind, schedule_spec, enabled, last_run_status, last_error, run_count FROM fuses ORDER BY id").load::<FuseInfo>(&mut conn)?)
 }
 
 fn format_job_for_display(job: &FuseInfo) -> String {
     let state = if job.enabled { "[ENABLED ]" } else { "[DISABLED]" };
-    let name_display = if job.name.len() > 22 {
-        format!("{}...", &job.name[0..19])
-    } else {
-        job.name.clone()
-    };
-    format!(
-        "{}  {:<22}  {}  {}  runs: {}",
-        state, name_display, job.schedule_kind, job.schedule_spec, job.run_count
-    )
+    let name_display = if job.name.len() > 22 { format!("{}...", &job.name[0..19]) } else { job.name.clone() };
+    format!("{}  {:<22}  {}  {}  runs: {}", state, name_display, job.schedule_kind, job.schedule_spec, job.run_count)
 }
 
-fn pick_fuse_action(
-    theme: &ColorfulTheme,
-    config: &Config,
-) -> BlastResult<FusesAction> {
+fn pick_fuse_action(theme: &ColorfulTheme, config: &Config) -> BlastResult<FusesAction> {
     let jobs = fetch_fuses(config)?;
 
     if jobs.is_empty() {
@@ -115,11 +95,7 @@ fn pick_fuse_action(
 
     let job_displays: Vec<String> = jobs.iter().map(|job| format_job_for_display(job)).collect();
 
-    let job_selection = FuzzySelect::with_theme(theme)
-        .with_prompt("Select a fuse to manage")
-        .default(0)
-        .items(&job_displays)
-        .interact()?;
+    let job_selection = FuzzySelect::with_theme(theme).with_prompt("Select a fuse to manage").default(0).items(&job_displays).interact()?;
 
     let selected_job = &jobs[job_selection];
 
@@ -143,10 +119,7 @@ fn pick_fuse_action(
         2 => Ok(FusesAction::ViewLogs { fuse_name: selected_job.name.clone() }),
         3 => {
             let confirmed = Confirm::with_theme(theme)
-                .with_prompt(format!(
-                    "Are you sure you want to remove fuse '{}'?",
-                    selected_job.name
-                ))
+                .with_prompt(format!("Are you sure you want to remove fuse '{}'?", selected_job.name))
                 .default(false)
                 .interact()?;
             if confirmed {
@@ -178,11 +151,7 @@ pub fn pick_action(config: &Config) -> BlastResult<FusesAction> {
 
     let menu_options = vec!["View Live Table", "View and Manage Fuses", "Back to Main Menu"];
 
-    let selection = FuzzySelect::with_theme(&theme)
-        .with_prompt("Select an option")
-        .default(0)
-        .items(&menu_options)
-        .interact()?;
+    let selection = FuzzySelect::with_theme(&theme).with_prompt("Select an option").default(0).items(&menu_options).interact()?;
 
     match selection {
         0 => Ok(FusesAction::LiveTable),
@@ -192,12 +161,7 @@ pub fn pick_action(config: &Config) -> BlastResult<FusesAction> {
     }
 }
 
-pub fn run(
-    action: FusesAction,
-    config: &Config,
-    sink: &mut dyn crate::io::traits::Sink,
-    _progress: &mut dyn crate::io::traits::Progress,
-) -> BlastResult<Outcome> {
+pub fn run(action: FusesAction, config: &Config, sink: &mut dyn crate::io::traits::Sink, _progress: &mut dyn crate::io::traits::Progress) -> BlastResult<Outcome> {
     match action {
         FusesAction::Exit => Ok(Outcome::Exit),
 
@@ -287,11 +251,7 @@ pub fn run(
     }
 }
 
-pub fn run_with_picker(
-    config: &Config,
-    sink: &mut dyn crate::io::traits::Sink,
-    progress: &mut dyn crate::io::traits::Progress,
-) -> BlastResult<Outcome> {
+pub fn run_with_picker(config: &Config, sink: &mut dyn crate::io::traits::Sink, progress: &mut dyn crate::io::traits::Progress) -> BlastResult<Outcome> {
     loop {
         let action = pick_action(config)?;
         let outcome = run(action, config, sink, progress)?;
@@ -406,11 +366,7 @@ fn render_table(jobs: &[FuseInfo]) -> BlastResult<Vec<String>> {
     ]));
 
     for job in jobs {
-        let enabled_cell = if job.enabled {
-            Cell::new("yes").style_spec("Fg=green")
-        } else {
-            Cell::new("no").style_spec("Fg=yellow")
-        };
+        let enabled_cell = if job.enabled { Cell::new("yes").style_spec("Fg=green") } else { Cell::new("no").style_spec("Fg=yellow") };
 
         let status_cell = match job.last_run_status.as_deref() {
             Some("ok") => Cell::new("ok").style_spec("Fg=green"),
@@ -420,17 +376,9 @@ fn render_table(jobs: &[FuseInfo]) -> BlastResult<Vec<String>> {
             None => Cell::new("-"),
         };
 
-        let name_display = if job.name.len() > 28 {
-            format!("{}...", &job.name[0..25])
-        } else {
-            job.name.clone()
-        };
+        let name_display = if job.name.len() > 28 { format!("{}...", &job.name[0..25]) } else { job.name.clone() };
 
-        let flow_display = if job.flow_name.len() > 20 {
-            format!("{}...", &job.flow_name[0..17])
-        } else {
-            job.flow_name.clone()
-        };
+        let flow_display = if job.flow_name.len() > 20 { format!("{}...", &job.flow_name[0..17]) } else { job.flow_name.clone() };
 
         table.add_row(Row::new(vec![
             Cell::new(&job.id.to_string()),
@@ -447,7 +395,6 @@ fn render_table(jobs: &[FuseInfo]) -> BlastResult<Vec<String>> {
     let mut output = Vec::new();
     table.print(&mut output)?;
 
-    let text =
-        String::from_utf8(output).map_err(|e| BlastError::Invalid(e.to_string()))?;
+    let text = String::from_utf8(output).map_err(|e| BlastError::Invalid(e.to_string()))?;
     Ok(text.lines().map(|line| line.to_string()).collect())
 }

@@ -65,13 +65,7 @@ mod tests {
     #[test]
     fn emit_methods_one_per_relation() {
         let mut out = String::new();
-        emit_methods(
-            &mut out,
-            &[
-                rel("author", "author_id", "users"),
-                rel("category", "category_id", "categories"),
-            ],
-        );
+        emit_methods(&mut out, &[rel("author", "author_id", "users"), rel("category", "category_id", "categories")]);
         assert!(out.contains("pub fn with_author(mut self) -> Self"));
         assert!(out.contains("pub fn with_category(mut self) -> Self"));
         assert!(out.contains("self.with_author = true"));

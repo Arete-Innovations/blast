@@ -82,10 +82,7 @@ mod tests {
         assert!(out.contains("pub async fn count()"));
         assert!(out.contains("::catalyst::database::pool()"));
         assert!(out.contains("MeltDown::not_found(\"users\""));
-        assert!(
-            out.contains("pub fn query() -> UserQuery"),
-            "should expose builder shortcut"
-        );
+        assert!(out.contains("pub fn query() -> UserQuery"), "should expose builder shortcut");
     }
 
     #[test]

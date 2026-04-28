@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{is_comment_line, path_contains, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, path_contains, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref FETCH_RE: Regex = match Regex::new(
@@ -32,13 +40,7 @@ impl Rule for RawFetchOutsideApi {
         "RawFetchOutsideApi"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        _config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
         if is_in_generated_api(file) {
             return None;
         }
@@ -60,8 +62,9 @@ impl Rule for RawFetchOutsideApi {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(file: &str, line: &str) -> Option<Violation> {
         let rule = RawFetchOutsideApi::new();
@@ -71,28 +74,19 @@ mod tests {
 
     #[test]
     fn flags_fetch_in_custom() {
-        let v = run(
-            "frontend/src/composables/useFoo.ts",
-            "  const r = await fetch('/api/x')",
-        );
+        let v = run("frontend/src/composables/useFoo.ts", "  const r = await fetch('/api/x')");
         assert!(v.is_some());
     }
 
     #[test]
     fn flags_axios_in_custom() {
-        let v = run(
-            "frontend/src/components/Foo.vue",
-            "axios.get('/x')",
-        );
+        let v = run("frontend/src/components/Foo.vue", "axios.get('/x')");
         assert!(v.is_some());
     }
 
     #[test]
     fn allows_fetch_in_generated_api() {
-        let v = run(
-            "frontend/src/generated/api/users.ts",
-            "  const r = await fetch('/api/x')",
-        );
+        let v = run("frontend/src/generated/api/users.ts", "  const r = await fetch('/api/x')");
         assert!(v.is_none());
     }
 }

@@ -1,12 +1,15 @@
-use crate::commands::{Command, FusesCmd, GenCmd, LogCmd, ArsenalCmd};
-use crate::configs::Config;
-use crate::dependencies::DependencyManager;
-use crate::error::BlastResult;
-use crate::logger;
+use std::{env, io::Write};
+
 use console::Style;
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
-use std::env;
-use std::io::Write;
+
+use crate::{
+    commands::{ArsenalCmd, Command, FusesCmd, GenCmd, LogCmd},
+    configs::Config,
+    dependencies::DependencyManager,
+    error::BlastResult,
+    logger,
+};
 
 const MENU_ITEMS: &[&str] = &[
     // ── scaffold ──────────────────────────────────────────────────────────────
@@ -63,23 +66,11 @@ pub fn pick_command(config: &Config) -> BlastResult<Option<Command>> {
     let dev_style = Style::new().bold().fg(console::Color::Yellow);
 
     let prompt = match config.environment.as_str() {
-        "prod" => format!(
-            "{}->[{}] ",
-            prod_style.apply_to(format!("[🚀{}]", config.environment.to_uppercase())),
-            config.project_name,
-        ),
-        _other_env => format!(
-            "{}->[{}] ",
-            dev_style.apply_to(format!("[🔧{}]", config.environment.to_uppercase())),
-            config.project_name,
-        ),
+        "prod" => format!("{}->[{}] ", prod_style.apply_to(format!("[🚀{}]", config.environment.to_uppercase())), config.project_name,),
+        _other_env => format!("{}->[{}] ", dev_style.apply_to(format!("[🔧{}]", config.environment.to_uppercase())), config.project_name,),
     };
 
-    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .items(MENU_ITEMS)
-        .default(0)
-        .interact()?;
+    let selection = FuzzySelect::with_theme(&ColorfulTheme::default()).with_prompt(prompt).items(MENU_ITEMS).default(0).interact()?;
 
     resolve_selection(MENU_ITEMS[selection])
 }
@@ -88,9 +79,7 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
     match label {
         // ── scaffold ──────────────────────────────────────────────────────────
         "[SCAFFOLD] New project" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Project name")
-                .interact_text()?;
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Project name").interact_text()?;
             Ok(Some(Command::New {
                 name,
                 dev: false,
@@ -121,33 +110,29 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
 
         // ── codegen ───────────────────────────────────────────────────────────
         "[CODEGEN] Gen All (full pipeline)" => Ok(Some(Command::Gen { cmd: Some(GenCmd::All) })),
-        "[CODEGEN] Gen Resource (wizard)" => {
-            Ok(Some(Command::Gen { cmd: Some(GenCmd::Resource { name: None }) }))
-        }
+        "[CODEGEN] Gen Resource (wizard)" => Ok(Some(Command::Gen {
+            cmd: Some(GenCmd::Resource { name: None }),
+        })),
         "[CODEGEN] Schema" => Ok(Some(Command::Schema)),
         "[CODEGEN] Structs" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Structs) })),
         "[CODEGEN] Models" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Models) })),
         "[CODEGEN] Gen Table (wizard)" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Table) })),
         "[CODEGEN] Gen Migration (--custom)" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Migration name (snake_case)")
-                .interact_text()?;
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Migration name (snake_case)").interact_text()?;
             Ok(Some(Command::Gen {
                 cmd: Some(GenCmd::Migration { custom: true, name: Some(name) }),
             }))
         }
-        "[CODEGEN] Gen Types" => {
-            Ok(Some(Command::Gen { cmd: Some(GenCmd::Types { resource: None }) }))
-        }
-        "[CODEGEN] Gen API" => {
-            Ok(Some(Command::Gen { cmd: Some(GenCmd::Api { resource: None }) }))
-        }
-        "[CODEGEN] Gen Pages" => {
-            Ok(Some(Command::Gen { cmd: Some(GenCmd::Pages { resource: None }) }))
-        }
-        "[CODEGEN] Gen Governor Plugin" => {
-            Ok(Some(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) }))
-        }
+        "[CODEGEN] Gen Types" => Ok(Some(Command::Gen {
+            cmd: Some(GenCmd::Types { resource: None }),
+        })),
+        "[CODEGEN] Gen API" => Ok(Some(Command::Gen {
+            cmd: Some(GenCmd::Api { resource: None }),
+        })),
+        "[CODEGEN] Gen Pages" => Ok(Some(Command::Gen {
+            cmd: Some(GenCmd::Pages { resource: None }),
+        })),
+        "[CODEGEN] Gen Governor Plugin" => Ok(Some(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) })),
 
         // ── database ──────────────────────────────────────────────────────────
         "[DB] New Migration" => Ok(Some(Command::Migration)),
@@ -156,31 +141,21 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
         "[DB] Seed" => Ok(Some(Command::Seed { file: None })),
 
         // ── fuses ─────────────────────────────────────────────────────────────
-        "[FUSES] Manage fuses (TUI)" => {
-            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) }))
-        }
+        "[FUSES] Manage fuses (TUI)" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) })),
         "[FUSES] List fuses" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::List) })),
         "[FUSES] Toggle fuse" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Fuse name")
-                .interact_text()?;
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Fuse name").interact_text()?;
             Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Toggle { name }) }))
         }
         "[FUSES] Run fuse now" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Fuse name")
-                .interact_text()?;
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Fuse name").interact_text()?;
             Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Run { name }) }))
         }
         "[FUSES] Fuse logs" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Fuse name")
-                .interact_text()?;
+            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Fuse name").interact_text()?;
             Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Logs { name }) }))
         }
-        "[FUSES] Live fuses table" => {
-            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) }))
-        }
+        "[FUSES] Live fuses table" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) })),
 
         // ── logs ──────────────────────────────────────────────────────────────
         "[LOG] View logs" => {
@@ -190,9 +165,7 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
                 .interact_text()?;
             Ok(Some(Command::Log { cmd: LogCmd::View { level } }))
         }
-        "[LOG] Truncate Logs" => {
-            Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } }))
-        }
+        "[LOG] Truncate Logs" => Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } })),
 
         // ── lint ──────────────────────────────────────────────────────────────
         "[LINT] Governor Check" => Ok(Some(Command::Check { verbose: false })),
@@ -200,24 +173,16 @@ fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
 
         // ── arsenal ───────────────────────────────────────────────────────────
         "[ARSENAL] Scan & Write JSON" => Ok(Some(Command::Arsenal { cmd: None })),
-        "[ARSENAL] Serve MCP (stdio)" => {
-            Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))
-        }
+        "[ARSENAL] Serve MCP (stdio)" => Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) })),
 
         // ── exit ──────────────────────────────────────────────────────────────
         "[Exit] Kill Session" => Ok(None),
 
-        unknown => Err(crate::error::BlastError::Invalid(format!(
-            "unknown menu selection: {}",
-            unknown
-        ))),
+        unknown => Err(crate::error::BlastError::Invalid(format!("unknown menu selection: {}", unknown))),
     }
 }
 
-pub fn run_interactive_loop(
-    config: &mut Config,
-    dep_manager: &mut DependencyManager,
-) -> BlastResult<()> {
+pub fn run_interactive_loop(config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
     logger::setup_for_mode(config, true)?;
 
     env::set_var("BLAST_INTERACTIVE", "1");
@@ -241,11 +206,7 @@ pub fn run_interactive_loop(
             None => {
                 logger::info("Killing Zellij session...")?;
                 drop(std::process::Command::new("zellij").args(["kill-session"]).spawn());
-                drop(
-                    std::process::Command::new("zellij")
-                        .args(["kill-all-sessions", "-y"])
-                        .spawn(),
-                );
+                drop(std::process::Command::new("zellij").args(["kill-all-sessions", "-y"]).spawn());
                 break;
             }
         };
@@ -338,26 +299,14 @@ mod tests {
             "[LOG] View logs",
         ];
 
-        let all_handled: Vec<&str> = non_interactive
-            .iter()
-            .chain(interactive_labels.iter())
-            .copied()
-            .collect();
+        let all_handled: Vec<&str> = non_interactive.iter().chain(interactive_labels.iter()).copied().collect();
 
         for label in MENU_ITEMS {
-            assert!(
-                all_handled.contains(label),
-                "MENU_ITEMS label {:?} is not tracked in the parity test — add it",
-                label
-            );
+            assert!(all_handled.contains(label), "MENU_ITEMS label {:?} is not tracked in the parity test — add it", label);
         }
 
         for label in all_handled.iter() {
-            assert!(
-                MENU_ITEMS.contains(label),
-                "parity test lists {:?} but it is not in MENU_ITEMS",
-                label
-            );
+            assert!(MENU_ITEMS.contains(label), "parity test lists {:?} but it is not in MENU_ITEMS", label);
         }
     }
 
@@ -365,45 +314,20 @@ mod tests {
     /// expected Command variants.
     #[test]
     fn spot_check_command_routing() {
-        assert!(matches!(
-            resolve_selection("[APP] Run Server (dev)"),
-            Ok(Some(Command::Run))
-        ));
-        assert!(matches!(
-            resolve_selection("[APP] Run Server (prod)"),
-            Ok(Some(Command::RunProd))
-        ));
-        assert!(matches!(
-            resolve_selection("[CODEGEN] Gen All (full pipeline)"),
-            Ok(Some(Command::Gen { cmd: Some(GenCmd::All) }))
-        ));
+        assert!(matches!(resolve_selection("[APP] Run Server (dev)"), Ok(Some(Command::Run))));
+        assert!(matches!(resolve_selection("[APP] Run Server (prod)"), Ok(Some(Command::RunProd))));
+        assert!(matches!(resolve_selection("[CODEGEN] Gen All (full pipeline)"), Ok(Some(Command::Gen { cmd: Some(GenCmd::All) }))));
         assert!(matches!(
             resolve_selection("[CODEGEN] Gen Resource (wizard)"),
-            Ok(Some(Command::Gen { cmd: Some(GenCmd::Resource { name: None }) }))
+            Ok(Some(Command::Gen {
+                cmd: Some(GenCmd::Resource { name: None })
+            }))
         ));
-        assert!(matches!(
-            resolve_selection("[FUSES] Manage fuses (TUI)"),
-            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) }))
-        ));
-        assert!(matches!(
-            resolve_selection("[FUSES] Live fuses table"),
-            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) }))
-        ));
-        assert!(matches!(
-            resolve_selection("[LOG] Truncate Logs"),
-            Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } }))
-        ));
-        assert!(matches!(
-            resolve_selection("[LINT] Governor Check (verbose)"),
-            Ok(Some(Command::Check { verbose: true }))
-        ));
-        assert!(matches!(
-            resolve_selection("[ARSENAL] Serve MCP (stdio)"),
-            Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))
-        ));
-        assert!(matches!(
-            resolve_selection("[Exit] Kill Session"),
-            Ok(None)
-        ));
+        assert!(matches!(resolve_selection("[FUSES] Manage fuses (TUI)"), Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) }))));
+        assert!(matches!(resolve_selection("[FUSES] Live fuses table"), Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) }))));
+        assert!(matches!(resolve_selection("[LOG] Truncate Logs"), Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } }))));
+        assert!(matches!(resolve_selection("[LINT] Governor Check (verbose)"), Ok(Some(Command::Check { verbose: true }))));
+        assert!(matches!(resolve_selection("[ARSENAL] Serve MCP (stdio)"), Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))));
+        assert!(matches!(resolve_selection("[Exit] Kill Session"), Ok(None)));
     }
 }

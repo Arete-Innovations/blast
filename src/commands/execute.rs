@@ -1,11 +1,15 @@
-use crate::commands::cli::{ArsenalCmd, Cli, Command, FusesCmd, GenCmd, LogCmd};
-use crate::configs::Config;
-use crate::dependencies::DependencyManager;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::SinkExt;
-use crate::logger;
-use clap::CommandFactory;
 use std::io::Write;
+
+use clap::CommandFactory;
+
+use crate::{
+    commands::cli::{ArsenalCmd, Cli, Command, FusesCmd, GenCmd, LogCmd},
+    configs::Config,
+    dependencies::DependencyManager,
+    error::{BlastError, BlastResult},
+    io::traits::SinkExt,
+    logger,
+};
 
 pub fn print_help() -> BlastResult<()> {
     let mut cmd = Cli::command();

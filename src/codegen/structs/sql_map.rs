@@ -83,14 +83,8 @@ mod tests {
 
     #[test]
     fn maps_temporal_types() {
-        assert_eq!(
-            rust_base_type(&SqlType::new("Timestamptz")),
-            "chrono::DateTime<chrono::Utc>"
-        );
-        assert_eq!(
-            rust_base_type(&SqlType::new("Timestamp")),
-            "chrono::NaiveDateTime"
-        );
+        assert_eq!(rust_base_type(&SqlType::new("Timestamptz")), "chrono::DateTime<chrono::Utc>");
+        assert_eq!(rust_base_type(&SqlType::new("Timestamp")), "chrono::NaiveDateTime");
         assert_eq!(rust_base_type(&SqlType::new("Date")), "chrono::NaiveDate");
         assert_eq!(rust_base_type(&SqlType::new("Time")), "chrono::NaiveTime");
     }

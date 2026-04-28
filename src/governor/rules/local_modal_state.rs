@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{extension_is, snippet_of};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     /// Captures the v-model:visible identifier on a modal-overlay element.
@@ -29,10 +37,7 @@ impl LocalModalState {
 fn is_local_ref_decl(script: &str, ident: &str) -> bool {
     // Match `const showEdit = ref(...)`, `let showEdit = reactive(...)`,
     // ignoring useQuery* composables.
-    let pat = format!(
-        r"\b(?:const|let|var)\s+{}\s*=\s*(ref|reactive|shallowRef)\s*\(",
-        regex::escape(ident)
-    );
+    let pat = format!(r"\b(?:const|let|var)\s+{}\s*=\s*(ref|reactive|shallowRef)\s*\(", regex::escape(ident));
     let re = match Regex::new(&pat) {
         Ok(r) => r,
         Err(_compile_err) => return false,
@@ -68,12 +73,7 @@ impl FileRule for LocalModalState {
         "LocalModalState"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        contents: &str,
-        _config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, contents: &str, _config: &FeLintState) -> Vec<Violation> {
         if !extension_is(file, "vue") {
             return Vec::new();
         }
@@ -113,8 +113,9 @@ impl FileRule for LocalModalState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(contents: &str) -> Vec<Violation> {
         let rule = LocalModalState::new();

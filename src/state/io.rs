@@ -1,12 +1,15 @@
-use crate::error::{BlastError, BlastResult};
-use crate::state::app::AppState;
-use crate::state::names::ResourceName;
-use crate::state::resource::ResourceState;
-use crate::state::upgraders;
+use std::{
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+};
+
 use ron::ser::PrettyConfig;
-use std::ffi::OsStr;
-use std::fs;
-use std::path::{Path, PathBuf};
+
+use crate::{
+    error::{BlastError, BlastResult},
+    state::{app::AppState, names::ResourceName, resource::ResourceState, upgraders},
+};
 
 pub const APP_FILE: &str = "app.ron";
 pub const RESOURCES_DIR: &str = "resources";
@@ -69,12 +72,7 @@ pub fn list_resources(state_dir: &Path) -> BlastResult<Vec<ResourceName>> {
         };
         let stem_str = match stem.to_str() {
             Some(s) => s,
-            None => {
-                return Err(BlastError::Invalid(format!(
-                    "non-utf8 resource filename: {}",
-                    path.display()
-                )))
-            }
+            None => return Err(BlastError::Invalid(format!("non-utf8 resource filename: {}", path.display()))),
         };
         names.push(ResourceName::new(stem_str));
     }
@@ -100,10 +98,7 @@ pub fn save_resource(state_dir: &Path, res: &ResourceState) -> BlastResult<()> {
 }
 
 fn serialize_pretty<T: serde::Serialize>(value: &T) -> BlastResult<String> {
-    let config = PrettyConfig::new()
-        .depth_limit(64)
-        .indentor("  ".to_string())
-        .struct_names(true);
+    let config = PrettyConfig::new().depth_limit(64).indentor("  ".to_string()).struct_names(true);
     let body = ron::ser::to_string_pretty(value, config)?;
     Ok(format!("{body}\n"))
 }
@@ -111,23 +106,13 @@ fn serialize_pretty<T: serde::Serialize>(value: &T) -> BlastResult<String> {
 fn write_atomic(target: &Path, bytes: &[u8]) -> BlastResult<()> {
     let parent = match target.parent() {
         Some(p) => p,
-        None => {
-            return Err(BlastError::Invalid(format!(
-                "target path has no parent: {}",
-                target.display()
-            )))
-        }
+        None => return Err(BlastError::Invalid(format!("target path has no parent: {}", target.display()))),
     };
     fs::create_dir_all(parent)?;
 
     let file_name = match target.file_name().and_then(OsStr::to_str) {
         Some(name) => name,
-        None => {
-            return Err(BlastError::Invalid(format!(
-                "target path has no filename: {}",
-                target.display()
-            )))
-        }
+        None => return Err(BlastError::Invalid(format!("target path has no filename: {}", target.display()))),
     };
     let temp = parent.join(format!(".{file_name}.tmp"));
     fs::write(&temp, bytes)?;

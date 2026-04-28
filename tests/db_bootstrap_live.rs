@@ -9,9 +9,9 @@
 //!   BLAST_TEST_DB_URL=postgres://postgres:postgres@localhost:5432/postgres \
 //!     cargo test --test db_bootstrap_live -- --nocapture
 
-use blast::io::null::NullSink;
-use blast::project::db_bootstrap::{
-    self, BootstrapArgs, DbAction, RealDbAdmin,
+use blast::{
+    io::null::NullSink,
+    project::db_bootstrap::{self, BootstrapArgs, DbAction, RealDbAdmin},
 };
 
 fn admin_url() -> Option<String> {
@@ -39,16 +39,8 @@ fn live_bootstrap_creates_and_drops_dbs() {
         let parsed = db_bootstrap::parse_url(&target_url).expect("parse");
         let admin_target = db_bootstrap::admin_url(&parsed);
         let mut admin = RealDbAdmin;
-        let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(
-            &mut admin,
-            &admin_target,
-            project,
-        );
-        let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(
-            &mut admin,
-            &admin_target,
-            &format!("{}_test", project),
-        );
+        let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(&mut admin, &admin_target, project);
+        let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(&mut admin, &admin_target, &format!("{}_test", project));
     }
 
     let mut admin = RealDbAdmin;
@@ -87,16 +79,8 @@ fn live_bootstrap_creates_and_drops_dbs() {
     // Cleanup.
     let parsed = db_bootstrap::parse_url(&target_url).expect("parse");
     let admin_target = db_bootstrap::admin_url(&parsed);
-    let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(
-        &mut admin,
-        &admin_target,
-        project,
-    );
-    let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(
-        &mut admin,
-        &admin_target,
-        &format!("{}_test", project),
-    );
+    let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(&mut admin, &admin_target, project);
+    let _ = <RealDbAdmin as db_bootstrap::DbAdmin>::drop_database(&mut admin, &admin_target, &format!("{}_test", project));
 }
 
 #[test]
@@ -120,9 +104,5 @@ fn live_bootstrap_fails_fast_on_unreachable_postgres() {
     )
     .expect_err("must fail");
     let msg = format!("{}", err);
-    assert!(
-        msg.contains("could not connect to Postgres"),
-        "msg = {}",
-        msg
-    );
+    assert!(msg.contains("could not connect to Postgres"), "msg = {}", msg);
 }

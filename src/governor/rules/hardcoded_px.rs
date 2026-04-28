@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{file_in_list, is_comment_line, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{file_in_list, is_comment_line, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref PX_RE: Regex = match Regex::new(r"\b\d+(\.\d+)?px\b") {
@@ -40,13 +48,7 @@ impl Rule for HardcodedPx {
         "HardcodedPx"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, config: &FeLintState) -> Option<Violation> {
         if file_in_list(file, &config.exempt_px_files) {
             return None;
         }

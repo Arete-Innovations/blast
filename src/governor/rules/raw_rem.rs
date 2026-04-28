@@ -1,10 +1,18 @@
-use crate::state::FeLintState;
-use crate::governor::rules::helpers::{is_comment_line, rel_path_str, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, rel_path_str, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref REM_RE: Regex = match Regex::new(r"\b\d+(\.\d+)?rem\b") {
@@ -13,17 +21,7 @@ lazy_static! {
     };
 }
 
-const ALLOW_CONTEXTS: &[&str] = &[
-    "minmax(",
-    "@media",
-    "letter-spacing",
-    "filter:",
-    "filter ",
-    "blur(",
-    "backdrop-filter",
-    "background-size",
-    "box-shadow",
-];
+const ALLOW_CONTEXTS: &[&str] = &["minmax(", "@media", "letter-spacing", "filter:", "filter ", "blur(", "backdrop-filter", "background-size", "box-shadow"];
 
 pub struct RawRemOutsideTokens;
 
@@ -48,13 +46,7 @@ impl Rule for RawRemOutsideTokens {
         "RawRemOutsideTokens"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, config: &FeLintState) -> Option<Violation> {
         if is_in_tokens_file(file, &config.tokens_file) {
             return None;
         }

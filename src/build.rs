@@ -1,7 +1,10 @@
-use crate::configs::Config;
-use crate::error::{BlastError, BlastResult};
-use crate::logger;
 use std::process::{Command, Stdio};
+
+use crate::{
+    configs::Config,
+    error::{BlastError, BlastResult},
+    logger,
+};
 
 pub fn run_build(config: &Config) -> BlastResult<()> {
     logger::info("info: governor not yet implemented; skipping lint")?;
@@ -9,16 +12,10 @@ pub fn run_build(config: &Config) -> BlastResult<()> {
     let frontend_dir = config.project_dir.join("frontend");
     if frontend_dir.exists() {
         logger::info("Building frontend with npm run build...")?;
-        let output = Command::new("npm")
-            .args(["run", "build"])
-            .current_dir(&frontend_dir)
-            .output()?;
+        let output = Command::new("npm").args(["run", "build"]).current_dir(&frontend_dir).output()?;
         if !output.status.success() {
             let detail = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(BlastError::Subprocess {
-                cmd: "npm run build".to_string(),
-                detail,
-            });
+            return Err(BlastError::Subprocess { cmd: "npm run build".to_string(), detail });
         }
         logger::success("Frontend build complete")?;
     }
@@ -45,17 +42,10 @@ pub fn run_build(config: &Config) -> BlastResult<()> {
 }
 
 pub fn run_package(config: &Config) -> BlastResult<()> {
-    let binary_path = config
-        .project_dir
-        .join("target")
-        .join("release")
-        .join(&config.project_name);
+    let binary_path = config.project_dir.join("target").join("release").join(&config.project_name);
 
     if !binary_path.exists() {
-        return Err(BlastError::NotFound(format!(
-            "release binary not found at {}; run `blast build` first",
-            binary_path.display()
-        )));
+        return Err(BlastError::NotFound(format!("release binary not found at {}; run `blast build` first", binary_path.display())));
     }
 
     let dist_dir = config.project_dir.join("frontend").join("dist");
@@ -68,11 +58,7 @@ pub fn run_package(config: &Config) -> BlastResult<()> {
     let archive_path = config.project_dir.join(&archive_name);
 
     let binary_rel = format!("target/release/{}", config.project_name);
-    let mut tar_args: Vec<String> = vec![
-        "-czf".to_string(),
-        archive_path.to_string_lossy().to_string(),
-        binary_rel,
-    ];
+    let mut tar_args: Vec<String> = vec!["-czf".to_string(), archive_path.to_string_lossy().to_string(), binary_rel];
 
     if dist_dir.exists() {
         tar_args.push("frontend/dist".to_string());
@@ -83,19 +69,12 @@ pub fn run_package(config: &Config) -> BlastResult<()> {
         tar_args.push(".env.example".to_string());
     }
 
-    let service_file = config
-        .project_dir
-        .join("deploy")
-        .join("systemd")
-        .join(format!("{}.service", config.project_name));
+    let service_file = config.project_dir.join("deploy").join("systemd").join(format!("{}.service", config.project_name));
     if service_file.exists() {
         tar_args.push(format!("deploy/systemd/{}.service", config.project_name));
     }
 
-    let status = Command::new("tar")
-        .args(&tar_args)
-        .current_dir(&config.project_dir)
-        .status()?;
+    let status = Command::new("tar").args(&tar_args).current_dir(&config.project_dir).status()?;
 
     if !status.success() {
         return Err(BlastError::Subprocess {

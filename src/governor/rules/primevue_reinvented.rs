@@ -1,8 +1,15 @@
-use crate::governor::rules::helpers::{extension_is, path_contains, rel_path_str, snippet_of};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
 use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, path_contains, rel_path_str, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 const PRIMEVUE_PRIMITIVES: &[&str] = &[
     "Button",
@@ -57,12 +64,7 @@ impl FileRule for PrimeVueReinvented {
         "PrimeVueReinvented"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        _contents: &str,
-        _config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, _contents: &str, _config: &FeLintState) -> Vec<Violation> {
         if !extension_is(file, "vue") {
             return Vec::new();
         }
@@ -88,8 +90,9 @@ impl FileRule for PrimeVueReinvented {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(file: &str) -> Vec<Violation> {
         let rule = PrimeVueReinvented::new();

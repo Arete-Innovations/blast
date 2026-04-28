@@ -3,11 +3,8 @@
 //! `ThemeConfig` is the state-side source of truth for two FE files that
 //! are emitted by Blast's codegen pipeline (Wave B owns the codegen lane):
 //!
-//! - `frontend/src/styles/tokens.css` — CSS custom properties for fonts,
-//!   spacing, icon sizes, container widths, responsive clamps, z-indices,
-//!   transitions, and border radii.
-//! - `frontend/src/plugins/primevue.ts` — PrimeVue Aura preset overlay
-//!   defining the semantic primary scale and light/dark surface scales.
+//! - `frontend/src/styles/tokens.css` — CSS custom properties for fonts, spacing, icon sizes, container widths, responsive clamps, z-indices, transitions, and border radii.
+//! - `frontend/src/plugins/primevue.ts` — PrimeVue Aura preset overlay defining the semantic primary scale and light/dark surface scales.
 //!
 //! Defaults here MUST round-trip to byte-identical output against the
 //! current static `TOKENS_CSS` and `PRIMEVUE_TS` constants in
@@ -17,19 +14,16 @@
 //!
 //! Typing rules (binding):
 //!
-//! - No `BTreeMap<String, String>` value bags. Where a small finite set
-//!   of size keys is in play (`2xs`..`5xl`, `xs`..`2xl`, etc.), use the
-//!   `SizeKey` enum.
-//! - Numeric dimension values use `DimValue` so callers cannot smuggle
-//!   raw strings ("999px-ish") through serialization.
-//! - Color references inside the PrimeVue preset use `PaletteRef` for
-//!   the curly-brace `{violet.500}` form; literal hex is permitted only
-//!   for the surface-zero swatches because the preset file is
-//!   lint-exempt for `RawColorOutsidePreset`.
+//! - No `BTreeMap<String, String>` value bags. Where a small finite set of size keys is in play (`2xs`..`5xl`, `xs`..`2xl`, etc.), use the `SizeKey` enum.
+//! - Numeric dimension values use `DimValue` so callers cannot smuggle raw strings ("999px-ish") through serialization.
+//! - Color references inside the PrimeVue preset use `PaletteRef` for the curly-brace `{violet.500}` form; literal hex is permitted only for the surface-zero swatches because the preset file is lint-exempt for
+//!   `RawColorOutsidePreset`.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
 
 use crate::error::{BlastError, BlastResult};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 // ── Atomic value types ───────────────────────────────────────────────────
 
@@ -46,7 +40,8 @@ pub enum DimValue {
     Zero,
 }
 
-impl Eq for DimValue {}
+impl Eq for DimValue {
+}
 
 impl DimValue {
     /// Render the value as a CSS string. Used by Wave B's codegen lane.
@@ -83,16 +78,12 @@ pub struct ClampValue {
     pub max: DimValue,
 }
 
-impl Eq for ClampValue {}
+impl Eq for ClampValue {
+}
 
 impl ClampValue {
     pub fn to_css(&self) -> String {
-        format!(
-            "clamp({}, {}vw, {})",
-            self.min.to_css(),
-            trim_rem(self.vw),
-            self.max.to_css()
-        )
+        format!("clamp({}, {}vw, {})", self.min.to_css(), trim_rem(self.vw), self.max.to_css())
     }
 }
 
@@ -107,22 +98,13 @@ impl HexColor {
     pub fn new<S: Into<String>>(s: S) -> BlastResult<Self> {
         let s = s.into();
         if s.len() != 4 && s.len() != 7 {
-            return Err(BlastError::Invalid(format!(
-                "hex color must be #rgb (len 4) or #rrggbb (len 7), got {:?}",
-                s
-            )));
+            return Err(BlastError::Invalid(format!("hex color must be #rgb (len 4) or #rrggbb (len 7), got {:?}", s)));
         }
         if !s.starts_with('#') {
-            return Err(BlastError::Invalid(format!(
-                "hex color must start with '#', got {:?}",
-                s
-            )));
+            return Err(BlastError::Invalid(format!("hex color must start with '#', got {:?}", s)));
         }
         if !s[1..].chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(BlastError::Invalid(format!(
-                "hex color contains non-hex char: {:?}",
-                s
-            )));
+            return Err(BlastError::Invalid(format!("hex color contains non-hex char: {:?}", s)));
         }
         Ok(Self(s))
     }
@@ -230,7 +212,8 @@ pub struct TokenCatalog {
     pub border_radii: BTreeMap<String, DimValue>,
 }
 
-impl Eq for TokenCatalog {}
+impl Eq for TokenCatalog {
+}
 
 impl Default for TokenCatalog {
     fn default() -> Self {
@@ -309,31 +292,59 @@ fn default_responsive_font_sizes() -> BTreeMap<String, ClampValue> {
     let mut m = BTreeMap::new();
     m.insert(
         "body-resp".into(),
-        ClampValue { min: DimValue::Rem(0.9375), vw: 1.5, max: DimValue::Rem(1.125) },
+        ClampValue {
+            min: DimValue::Rem(0.9375),
+            vw: 1.5,
+            max: DimValue::Rem(1.125),
+        },
     );
     m.insert(
         "sub-resp".into(),
-        ClampValue { min: DimValue::Rem(1.125), vw: 1.7, max: DimValue::Rem(1.375) },
+        ClampValue {
+            min: DimValue::Rem(1.125),
+            vw: 1.7,
+            max: DimValue::Rem(1.375),
+        },
     );
     m.insert(
         "h3-resp".into(),
-        ClampValue { min: DimValue::Rem(1.25), vw: 2.5, max: DimValue::Rem(1.75) },
+        ClampValue {
+            min: DimValue::Rem(1.25),
+            vw: 2.5,
+            max: DimValue::Rem(1.75),
+        },
     );
     m.insert(
         "h2-resp".into(),
-        ClampValue { min: DimValue::Rem(1.5), vw: 2.6, max: DimValue::Rem(2.0) },
+        ClampValue {
+            min: DimValue::Rem(1.5),
+            vw: 2.6,
+            max: DimValue::Rem(2.0),
+        },
     );
     m.insert(
         "h1-resp".into(),
-        ClampValue { min: DimValue::Rem(1.5), vw: 3.0, max: DimValue::Rem(2.25) },
+        ClampValue {
+            min: DimValue::Rem(1.5),
+            vw: 3.0,
+            max: DimValue::Rem(2.25),
+        },
     );
     m.insert(
         "display-sm".into(),
-        ClampValue { min: DimValue::Rem(1.75), vw: 4.0, max: DimValue::Rem(2.75) },
+        ClampValue {
+            min: DimValue::Rem(1.75),
+            vw: 4.0,
+            max: DimValue::Rem(2.75),
+        },
     );
     m.insert(
         "display-lg".into(),
-        ClampValue { min: DimValue::Rem(2.25), vw: 6.0, max: DimValue::Rem(4.5) },
+        ClampValue {
+            min: DimValue::Rem(2.25),
+            vw: 6.0,
+            max: DimValue::Rem(4.5),
+        },
     );
     m
 }
@@ -342,15 +353,27 @@ fn default_responsive_padding() -> BTreeMap<String, ClampValue> {
     let mut m = BTreeMap::new();
     m.insert(
         "section-sm".into(),
-        ClampValue { min: DimValue::Rem(3.0), vw: 8.0, max: DimValue::Rem(5.0) },
+        ClampValue {
+            min: DimValue::Rem(3.0),
+            vw: 8.0,
+            max: DimValue::Rem(5.0),
+        },
     );
     m.insert(
         "section-md".into(),
-        ClampValue { min: DimValue::Rem(4.0), vw: 10.0, max: DimValue::Rem(7.5) },
+        ClampValue {
+            min: DimValue::Rem(4.0),
+            vw: 10.0,
+            max: DimValue::Rem(7.5),
+        },
     );
     m.insert(
         "section-lg".into(),
-        ClampValue { min: DimValue::Rem(5.0), vw: 12.0, max: DimValue::Rem(10.0) },
+        ClampValue {
+            min: DimValue::Rem(5.0),
+            vw: 12.0,
+            max: DimValue::Rem(10.0),
+        },
     );
     m
 }
@@ -439,16 +462,10 @@ impl ColorScaleRef {
     /// (`(50, 950), (100, 900), ...`).
     pub fn pairs(&self) -> Vec<(u32, u32)> {
         match self.direction {
-            SurfaceDirection::Forward => {
-                Self::SHADES.iter().map(|s| (*s, *s)).collect()
-            }
+            SurfaceDirection::Forward => Self::SHADES.iter().map(|s| (*s, *s)).collect(),
             SurfaceDirection::Reversed => {
                 let len = Self::SHADES.len();
-                Self::SHADES
-                    .iter()
-                    .enumerate()
-                    .map(|(i, k)| (*k, Self::SHADES[len - 1 - i]))
-                    .collect()
+                Self::SHADES.iter().enumerate().map(|(i, k)| (*k, Self::SHADES[len - 1 - i])).collect()
             }
         }
     }
@@ -487,10 +504,8 @@ impl Default for PrimeVuePreset {
                 palette: PaletteRef::new("slate"),
                 direction: SurfaceDirection::Reversed,
             },
-            light_surface_zero: HexColor::new("#ffffff")
-                .expect("hard-coded light surface zero hex literal"), // allow: validated literal in default impl
-            dark_surface_zero: HexColor::new("#0a0a0a")
-                .expect("hard-coded dark surface zero hex literal"), // allow: validated literal in default impl
+            light_surface_zero: HexColor::new("#ffffff").expect("hard-coded light surface zero hex literal"), // allow: validated literal in default impl
+            dark_surface_zero: HexColor::new("#0a0a0a").expect("hard-coded dark surface zero hex literal"),   // allow: validated literal in default impl
         }
     }
 }
@@ -513,14 +528,9 @@ mod tests {
     where
         T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug,
     {
-        let config = ron::ser::PrettyConfig::new()
-            .depth_limit(64)
-            .indentor("  ".to_string())
-            .struct_names(true);
-        let s = ron::ser::to_string_pretty(value, config)
-            .unwrap_or_else(|e| panic!("serialize failed: {e}\nvalue: {value:?}"));
-        ron::from_str::<T>(&s)
-            .unwrap_or_else(|e| panic!("deserialize failed: {e}\nRON:\n{s}"))
+        let config = ron::ser::PrettyConfig::new().depth_limit(64).indentor("  ".to_string()).struct_names(true);
+        let s = ron::ser::to_string_pretty(value, config).unwrap_or_else(|e| panic!("serialize failed: {e}\nvalue: {value:?}"));
+        ron::from_str::<T>(&s).unwrap_or_else(|e| panic!("deserialize failed: {e}\nRON:\n{s}"))
     }
 
     #[test]
@@ -627,36 +637,23 @@ mod tests {
     fn font_sizes_cover_static_tokens_css_keys() {
         let cat = TokenCatalog::default();
         // Keys as they appear in static TOKENS_CSS lines `--app-fs-<key>:`.
-        let static_fs_keys = [
-            "2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl",
-        ];
+        let static_fs_keys = ["2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl"];
         for k in static_fs_keys {
             let found = cat.font_sizes.iter().any(|(sk, _)| sk.css_suffix() == k);
             assert!(found, "catalog missing font-size key {k}");
         }
-        assert_eq!(
-            cat.font_sizes.len(),
-            static_fs_keys.len(),
-            "catalog font_sizes count drifted from static TOKENS_CSS"
-        );
+        assert_eq!(cat.font_sizes.len(), static_fs_keys.len(), "catalog font_sizes count drifted from static TOKENS_CSS");
     }
 
     #[test]
     fn spacing_keys_match_static_tokens_css() {
         let cat = TokenCatalog::default();
-        let static_space_keys = [
-            "0", "3xs", "2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl",
-            "5xl", "6xl", "7xl",
-        ];
+        let static_space_keys = ["0", "3xs", "2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"];
         for k in static_space_keys {
             let found = cat.spacing.iter().any(|(sk, _)| sk.css_suffix() == k);
             assert!(found, "catalog missing spacing key {k}");
         }
-        assert_eq!(
-            cat.spacing.len(),
-            static_space_keys.len(),
-            "catalog spacing count drifted from static TOKENS_CSS"
-        );
+        assert_eq!(cat.spacing.len(), static_space_keys.len(), "catalog spacing count drifted from static TOKENS_CSS");
     }
 
     #[test]
@@ -674,10 +671,7 @@ mod tests {
         let cat = TokenCatalog::default();
         let static_keys = ["xs", "sm", "md", "lg", "xl", "2xl"];
         for k in static_keys {
-            let found = cat
-                .container_widths
-                .iter()
-                .any(|(sk, _)| sk.css_suffix() == k);
+            let found = cat.container_widths.iter().any(|(sk, _)| sk.css_suffix() == k);
             assert!(found, "catalog missing container width {k}");
         }
     }
@@ -685,20 +679,9 @@ mod tests {
     #[test]
     fn responsive_font_sizes_keys_match_static() {
         let cat = TokenCatalog::default();
-        let expected = [
-            "body-resp",
-            "sub-resp",
-            "h3-resp",
-            "h2-resp",
-            "h1-resp",
-            "display-sm",
-            "display-lg",
-        ];
+        let expected = ["body-resp", "sub-resp", "h3-resp", "h2-resp", "h1-resp", "display-sm", "display-lg"];
         for k in expected {
-            assert!(
-                cat.responsive_font_sizes.contains_key(k),
-                "catalog missing responsive font key {k}"
-            );
+            assert!(cat.responsive_font_sizes.contains_key(k), "catalog missing responsive font key {k}");
         }
     }
 
@@ -706,10 +689,7 @@ mod tests {
     fn responsive_padding_keys_match_static() {
         let cat = TokenCatalog::default();
         for k in ["section-sm", "section-md", "section-lg"] {
-            assert!(
-                cat.responsive_padding.contains_key(k),
-                "catalog missing responsive padding key {k}"
-            );
+            assert!(cat.responsive_padding.contains_key(k), "catalog missing responsive padding key {k}");
         }
     }
 
@@ -725,10 +705,7 @@ mod tests {
     fn transition_keys_match_static() {
         let cat = TokenCatalog::default();
         for k in ["fast", "med", "slow"] {
-            assert!(
-                cat.transitions.contains_key(k),
-                "catalog missing transition {k}"
-            );
+            assert!(cat.transitions.contains_key(k), "catalog missing transition {k}");
         }
     }
 
@@ -736,10 +713,7 @@ mod tests {
     fn border_radii_keys_match_static() {
         let cat = TokenCatalog::default();
         for k in ["sm", "md", "lg", "xl", "pill"] {
-            assert!(
-                cat.border_radii.contains_key(k),
-                "catalog missing radius {k}"
-            );
+            assert!(cat.border_radii.contains_key(k), "catalog missing radius {k}");
         }
         // pill is a px value, the rest are rem
         match cat.border_radii.get("pill") {

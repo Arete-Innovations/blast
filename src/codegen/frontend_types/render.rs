@@ -5,10 +5,14 @@
 //!
 //! Convention: snake_case field names, per Governor rule.
 
-use crate::codegen::components::input_map::{enum_meta, enum_options_const_name, enum_type_alias};
-use crate::codegen::enums::ParsedEnum;
-use crate::codegen::structs::naming::{filter_struct_name_for_resource, type_stem_for_resource};
-use crate::state::{FieldState, FieldVariant, FilterKind, ResourceState, SqlType, Verb};
+use crate::{
+    codegen::{
+        components::input_map::{enum_meta, enum_options_const_name, enum_type_alias},
+        enums::ParsedEnum,
+        structs::naming::{filter_struct_name_for_resource, type_stem_for_resource},
+    },
+    state::{FieldState, FieldVariant, FilterKind, ResourceState, SqlType, Verb},
+};
 
 /// Map a Diesel SQL type to its TypeScript type.
 /// Case-insensitive, same catalogue as `sql_map::rust_base_type`.
@@ -16,17 +20,8 @@ pub fn ts_base_type(sql: &SqlType) -> &'static str {
     let lowered = sql.as_str().to_ascii_lowercase();
     match lowered.as_str() {
         "bool" | "boolean" => "boolean",
-        "int2" | "smallint" | "smallserial"
-        | "int4" | "integer" | "serial"
-        | "int8" | "bigint" | "bigserial"
-        | "float4" | "real"
-        | "float8" | "double" | "double precision"
-        | "numeric" | "decimal" => "number",
-        "text" | "varchar" | "bpchar" | "char" | "citext"
-        | "uuid"
-        | "bytea"
-        | "timestamp" | "timestamptz"
-        | "date" | "time" => "string",
+        "int2" | "smallint" | "smallserial" | "int4" | "integer" | "serial" | "int8" | "bigint" | "bigserial" | "float4" | "real" | "float8" | "double" | "double precision" | "numeric" | "decimal" => "number",
+        "text" | "varchar" | "bpchar" | "char" | "citext" | "uuid" | "bytea" | "timestamp" | "timestamptz" | "date" | "time" => "string",
         "json" | "jsonb" => "unknown",
         // Unknown types fall back to string (matches sql_map.rs fallback).
         _other => "string",
@@ -93,17 +88,9 @@ pub fn build_enum_module(name: &str, variants: &[String]) -> String {
     let union = if variants.is_empty() {
         "never".to_string()
     } else {
-        variants
-            .iter()
-            .map(|v| format!("'{}'", escape_single_quotes(v)))
-            .collect::<Vec<_>>()
-            .join(" | ")
+        variants.iter().map(|v| format!("'{}'", escape_single_quotes(v))).collect::<Vec<_>>().join(" | ")
     };
-    let array_body = variants
-        .iter()
-        .map(|v| format!("'{}'", escape_single_quotes(v)))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let array_body = variants.iter().map(|v| format!("'{}'", escape_single_quotes(v))).collect::<Vec<_>>().join(", ");
     let mut out = String::new();
     out.push_str(&format!("export type {alias} = {union}\n\n"));
     out.push_str(&format!("export const {const_name}: readonly {alias}[] = [{array_body}] as const\n"));
@@ -130,11 +117,7 @@ pub fn build_resource_types(resource: &ResourceState, enums: &[ParsedEnum]) -> S
     }
 
     // --- Db struct (only if Db fields exist) ---
-    let db_fields: Vec<_> = resource
-        .fields
-        .iter()
-        .filter(|(_, f)| f.variants.contains(&FieldVariant::Db))
-        .collect();
+    let db_fields: Vec<_> = resource.fields.iter().filter(|(_, f)| f.variants.contains(&FieldVariant::Db)).collect();
     if !db_fields.is_empty() {
         out.push_str(&format!("export interface {stem} {{\n"));
         for (name, field) in &db_fields {
@@ -145,11 +128,7 @@ pub fn build_resource_types(resource: &ResourceState, enums: &[ParsedEnum]) -> S
     }
 
     // --- Insertable ---
-    let insertable_fields: Vec<_> = resource
-        .fields
-        .iter()
-        .filter(|(_, f)| f.variants.contains(&FieldVariant::Insertable))
-        .collect();
+    let insertable_fields: Vec<_> = resource.fields.iter().filter(|(_, f)| f.variants.contains(&FieldVariant::Insertable)).collect();
     if !insertable_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Insertable {{\n"));
         for (name, field) in &insertable_fields {
@@ -160,11 +139,7 @@ pub fn build_resource_types(resource: &ResourceState, enums: &[ParsedEnum]) -> S
     }
 
     // --- Patch (all fields optional) ---
-    let patch_fields: Vec<_> = resource
-        .fields
-        .iter()
-        .filter(|(_, f)| f.variants.contains(&FieldVariant::Patch))
-        .collect();
+    let patch_fields: Vec<_> = resource.fields.iter().filter(|(_, f)| f.variants.contains(&FieldVariant::Patch)).collect();
     if !patch_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Patch {{\n"));
         for (name, field) in &patch_fields {
@@ -175,11 +150,7 @@ pub fn build_resource_types(resource: &ResourceState, enums: &[ParsedEnum]) -> S
     }
 
     // --- Public ---
-    let public_fields: Vec<_> = resource
-        .fields
-        .iter()
-        .filter(|(_, f)| f.variants.contains(&FieldVariant::Public))
-        .collect();
+    let public_fields: Vec<_> = resource.fields.iter().filter(|(_, f)| f.variants.contains(&FieldVariant::Public)).collect();
     if !public_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Public {{\n"));
         for (name, field) in &public_fields {
@@ -190,11 +161,7 @@ pub fn build_resource_types(resource: &ResourceState, enums: &[ParsedEnum]) -> S
     }
 
     // --- Admin ---
-    let admin_fields: Vec<_> = resource
-        .fields
-        .iter()
-        .filter(|(_, f)| f.variants.contains(&FieldVariant::Admin))
-        .collect();
+    let admin_fields: Vec<_> = resource.fields.iter().filter(|(_, f)| f.variants.contains(&FieldVariant::Admin)).collect();
     if !admin_fields.is_empty() {
         out.push_str(&format!("export interface {stem}Admin {{\n"));
         for (name, field) in &admin_fields {
@@ -237,42 +204,26 @@ fn emit_filter_interface(resource: &ResourceState, enums: &[ParsedEnum], out: &m
 }
 
 pub fn meltdown_ts() -> &'static str {
-    "export interface MeltDownError {\n\
-  code: number\n\
-  type: string\n\
-  message: string\n\
-  context: Record<string, string> | null\n\
-}\n\
-\n\
-export interface MeltDownResponse {\n\
-  error: MeltDownError\n\
-}\n"
+    "export interface MeltDownError {\ncode: number\ntype: string\nmessage: string\ncontext: Record<string, string> | null\n}\n\nexport interface MeltDownResponse {\nerror: MeltDownError\n}\n"
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{
-        AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb,
-        VerbState, RESOURCE_SCHEMA_VERSION,
-    };
-    use crate::state::SqlType;
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::state::{
+        names::{FieldName, ResourceName},
+        resource::{AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+        SqlType,
+    };
 
     fn synth_resource() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        let all_v: BTreeSet<FieldVariant> = [
-            FieldVariant::Db,
-            FieldVariant::Insertable,
-            FieldVariant::Patch,
-            FieldVariant::Public,
-        ]
-        .into_iter()
-        .collect();
-        let id_v: BTreeSet<FieldVariant> =
-            [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
+        let all_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
+        let id_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public].into_iter().collect();
 
         fields.insert(
             FieldName::new("id"),
@@ -363,10 +314,7 @@ mod tests {
         let enums: Vec<ParsedEnum> = Vec::new();
         let body = build_resource_types(&r, &enums);
         assert!(body.contains("export interface UserInsertable {"), "UserInsertable missing");
-        assert!(
-            !body.contains("  id: number\nexport interface UserInsertable"),
-            "id should not be in insertable"
-        );
+        assert!(!body.contains("  id: number\nexport interface UserInsertable"), "id should not be in insertable");
     }
 
     #[test]

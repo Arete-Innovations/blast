@@ -1,11 +1,17 @@
-use crate::governor::rules::helpers::{is_comment_line, rel_path_str, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::{collections::BTreeSet, path::Path, sync::Mutex};
+
 use regex::Regex;
-use std::collections::BTreeSet;
-use std::path::Path;
-use std::sync::Mutex;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, rel_path_str, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub struct IconClassOutsideIconsFile {
     compiled: Mutex<Option<Vec<Regex>>>,
@@ -13,9 +19,7 @@ pub struct IconClassOutsideIconsFile {
 
 impl IconClassOutsideIconsFile {
     pub fn new() -> Self {
-        Self {
-            compiled: Mutex::new(None),
-        }
+        Self { compiled: Mutex::new(None) }
     }
 
     fn ensure_compiled(&self, patterns: &BTreeSet<String>) -> Vec<Regex> {
@@ -51,13 +55,7 @@ impl Rule for IconClassOutsideIconsFile {
         "IconClassOutsideIconsFile"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, config: &FeLintState) -> Option<Violation> {
         if is_icons_file(file, &config.icons_file) {
             return None;
         }

@@ -29,11 +29,7 @@ pub fn variant_name(variant: &str) -> String {
 /// marker — the runner prepends it).
 pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     let type_name = enum_type_name(&parsed.name);
-    let variants: Vec<(String, String)> = parsed
-        .variants
-        .iter()
-        .map(|v| (variant_name(v), v.clone()))
-        .collect();
+    let variants: Vec<(String, String)> = parsed.variants.iter().map(|v| (variant_name(v), v.clone())).collect();
 
     let mut out = String::new();
 
@@ -44,14 +40,10 @@ pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     out.push_str("use diesel::pg::Pg;\n");
     out.push_str("use diesel::serialize::{self, IsNull, Output, ToSql};\n");
     out.push_str("use serde::{Deserialize, Serialize};\n\n");
-    out.push_str(&format!(
-        "use crate::database::schema::sql_types::{type_name};\n"
-    ));
+    out.push_str(&format!("use crate::database::schema::sql_types::{type_name};\n"));
     out.push_str("use crate::meltdown::*;\n\n");
 
-    out.push_str(
-        "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]\n",
-    );
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]\n");
     out.push_str(&format!("#[diesel(sql_type = {type_name})]\n"));
     out.push_str(&format!("pub enum {type_name} {{\n"));
     for (rust, _sql) in &variants {
@@ -63,10 +55,7 @@ pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     out.push_str("    pub fn as_str(&self) -> &'static str {\n");
     out.push_str("        match self {\n");
     for (rust, sql) in &variants {
-        out.push_str(&format!(
-            "            {type_name}::{rust} => \"{sql}\",\n",
-            sql = escape_str(sql)
-        ));
+        out.push_str(&format!("            {type_name}::{rust} => \"{sql}\",\n", sql = escape_str(sql)));
     }
     out.push_str("        }\n");
     out.push_str("    }\n\n");
@@ -74,29 +63,18 @@ pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     out.push_str("    pub fn parse(s: &str) -> Result<Self, MeltDown> {\n");
     out.push_str("        match s {\n");
     for (rust, sql) in &variants {
-        out.push_str(&format!(
-            "            \"{sql}\" => Ok({type_name}::{rust}),\n",
-            sql = escape_str(sql)
-        ));
+        out.push_str(&format!("            \"{sql}\" => Ok({type_name}::{rust}),\n", sql = escape_str(sql)));
     }
-    out.push_str(&format!(
-        "            other => Err(MeltDown::validation_failed(format!(\"unknown {snake}: {{}}\", other))),\n",
-        snake = parsed.name
-    ));
+    out.push_str(&format!("            other => Err(MeltDown::validation_failed(format!(\"unknown {snake}: {{}}\", other))),\n", snake = parsed.name));
     out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
-    out.push_str(&format!(
-        "impl FromSql<{type_name}, Pg> for {type_name} {{\n"
-    ));
+    out.push_str(&format!("impl FromSql<{type_name}, Pg> for {type_name} {{\n"));
     out.push_str("    fn from_sql(bytes: <Pg as Backend>::RawValue<'_>) -> deserialize::Result<Self> {\n");
     out.push_str("        match bytes.as_bytes() {\n");
     for (rust, sql) in &variants {
-        out.push_str(&format!(
-            "            b\"{sql}\" => Ok({type_name}::{rust}),\n",
-            sql = escape_str(sql)
-        ));
+        out.push_str(&format!("            b\"{sql}\" => Ok({type_name}::{rust}),\n", sql = escape_str(sql)));
     }
     out.push_str(&format!(
         "            other => Err(format!(\"unknown {snake}: {{}}\", String::from_utf8_lossy(other)).into()),\n",
@@ -106,9 +84,7 @@ pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
-    out.push_str(&format!(
-        "impl ToSql<{type_name}, Pg> for {type_name} {{\n"
-    ));
+    out.push_str(&format!("impl ToSql<{type_name}, Pg> for {type_name} {{\n"));
     out.push_str("    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {\n");
     out.push_str("        out.write_all(self.as_str().as_bytes())?;\n");
     out.push_str("        Ok(IsNull::No)\n");
@@ -124,8 +100,9 @@ fn escape_str(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn fixture(name: &str, variants: &[&str]) -> ParsedEnum {
         ParsedEnum {

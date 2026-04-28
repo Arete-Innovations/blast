@@ -1,14 +1,18 @@
-use crate::database::connection::mask_url;
-use crate::database::migrations::ensure_diesel_postgres;
-use crate::progress::ProgressManager;
-use crate::logger;
-use diesel::pg::PgConnection;
-use diesel::prelude::*;
-use std::fs;
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::{
+    fs,
+    fs::File,
+    io::Write,
+    path::Path,
+    process::{Command, Stdio},
+};
+
+use diesel::{pg::PgConnection, prelude::*};
+
+use crate::{
+    database::{connection::mask_url, migrations::ensure_diesel_postgres},
+    logger,
+    progress::ProgressManager,
+};
 
 fn log_info(msg: &str) {
     if let Err(e) = logger::info(msg) {
@@ -37,17 +41,9 @@ fn read_database_url() -> Option<String> {
 
 fn write_schema_file(database_url: &str, schema_file: &str) -> bool {
     let progress = ProgressManager::new_spinner();
-    progress.set_message(&format!(
-        "Running diesel print-schema with --database-url = {}",
-        mask_url(database_url)
-    ));
+    progress.set_message(&format!("Running diesel print-schema with --database-url = {}", mask_url(database_url)));
 
-    let output = match Command::new("diesel")
-        .args(["print-schema", "--database-url", database_url])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-    {
+    let output = match Command::new("diesel").args(["print-schema", "--database-url", database_url]).stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
         Ok(o) => o,
         Err(e) => {
             progress.error(&format!("Failed to execute diesel command: {}", e));
@@ -140,10 +136,7 @@ pub fn generate_schema() -> bool {
     log_info(&format!("Using database URL: {} for schema generation", masked_url));
 
     if let Err(e) = PgConnection::establish(&database_url) {
-        progress.error(&format!(
-            "Database connection failed: {}. Is PostgreSQL running?",
-            e
-        ));
+        progress.error(&format!("Database connection failed: {}. Is PostgreSQL running?", e));
         return false;
     }
     log_info("Connection successful, continuing with schema generation");
@@ -155,4 +148,3 @@ pub fn generate_schema() -> bool {
     update_schema_mod_file();
     true
 }
-

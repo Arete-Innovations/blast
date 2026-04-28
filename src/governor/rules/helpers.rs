@@ -1,5 +1,4 @@
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 pub fn rel_path_str(file: &Path) -> String {
     file.to_string_lossy().replace('\\', "/")

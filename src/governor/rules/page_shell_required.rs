@@ -1,10 +1,15 @@
-use crate::governor::rules::helpers::{
-    extension_is, extract_template_block, path_contains, snippet_of,
-};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
 use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, extract_template_block, path_contains, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub struct PageShellRequired;
 
@@ -75,12 +80,7 @@ impl FileRule for PageShellRequired {
         "PageShellRequired"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        contents: &str,
-        _config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, contents: &str, _config: &FeLintState) -> Vec<Violation> {
         if !is_page_file(file) {
             return Vec::new();
         }
@@ -123,8 +123,9 @@ impl FileRule for PageShellRequired {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(file: &str, contents: &str) -> Vec<Violation> {
         let rule = PageShellRequired::new();

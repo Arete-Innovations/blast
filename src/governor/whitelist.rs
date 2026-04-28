@@ -1,5 +1,6 @@
-use crate::error::BlastResult;
 use std::path::Path;
+
+use crate::error::BlastResult;
 
 pub struct WhitelistEntry {
     pub file_glob: String,
@@ -24,10 +25,7 @@ impl Whitelist {
             }
             let parts: Vec<&str> = trimmed.splitn(2, ':').collect();
             let file_glob = parts[0].trim().to_string();
-            let snippet = parts
-                .get(1)
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
+            let snippet = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
             entries.push(WhitelistEntry { file_glob, snippet });
         }
         Ok(Self { entries })
@@ -76,10 +74,7 @@ fn glob_match(pattern: &str, target: &str) -> bool {
             idx += 1;
             continue;
         }
-        if matches!(
-            c,
-            '.' | '+' | '(' | ')' | '|' | '^' | '$' | '{' | '}' | '[' | ']' | '?' | '\\'
-        ) {
+        if matches!(c, '.' | '+' | '(' | ')' | '|' | '^' | '$' | '{' | '}' | '[' | ']' | '?' | '\\') {
             regex.push('\\');
         }
         regex.push(c);

@@ -10,13 +10,7 @@ pub struct Violation {
 }
 
 impl Violation {
-    pub fn new(
-        rule: impl Into<String>,
-        file: PathBuf,
-        line_no: usize,
-        snippet: impl Into<String>,
-        suggestion: impl Into<String>,
-    ) -> Self {
+    pub fn new(rule: impl Into<String>, file: PathBuf, line_no: usize, snippet: impl Into<String>, suggestion: impl Into<String>) -> Self {
         Self {
             rule: rule.into(),
             file,

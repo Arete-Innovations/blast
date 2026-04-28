@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use quote::ToTokens;
 use serde::{Deserialize, Serialize};
@@ -8,14 +7,7 @@ use walkdir::WalkDir;
 
 use crate::error::{BlastError, BlastResult};
 
-const SCANNED_LAYERS: &[&str] = &[
-    "services",
-    "routines",
-    "models",
-    "flows",
-    "transport",
-    "routes",
-];
+const SCANNED_LAYERS: &[&str] = &["services", "routines", "models", "flows", "transport", "routes"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
@@ -48,10 +40,7 @@ pub struct ArsenalReport {
 pub fn scan(project_root: &Path) -> BlastResult<ArsenalReport> {
     let src_dir = project_root.join("src");
     if !src_dir.is_dir() {
-        return Err(BlastError::NotFound(format!(
-            "src/ not found under {}",
-            project_root.display()
-        )));
+        return Err(BlastError::NotFound(format!("src/ not found under {}", project_root.display())));
     }
 
     let mut layers: BTreeMap<String, Vec<Entry>> = BTreeMap::new();
@@ -79,11 +68,7 @@ pub fn scan(project_root: &Path) -> BlastResult<ArsenalReport> {
 
     let generated_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
 
-    Ok(ArsenalReport {
-        generated_at,
-        layers,
-        routes,
-    })
+    Ok(ArsenalReport { generated_at, layers, routes })
 }
 
 fn scan_layer(layer: &str, src_dir: &Path, layer_dir: &Path) -> BlastResult<Vec<Entry>> {
@@ -121,21 +106,13 @@ fn scan_file(layer: &str, src_dir: &Path, path: &Path) -> BlastResult<Vec<Entry>
     let parsed = match syn::parse_file(&content) {
         Ok(file) => file,
         Err(err) => {
-            return Err(BlastError::Invalid(format!(
-                "syn parse {}: {}",
-                path.display(),
-                err
-            )));
+            return Err(BlastError::Invalid(format!("syn parse {}: {}", path.display(), err)));
         }
     };
 
     let module_path = derive_module_path(src_dir, path)?;
     let module_label = module_path_label(layer, &module_path);
-    let origin = if path.to_string_lossy().contains("/generated/") {
-        "generated".to_string()
-    } else {
-        "custom".to_string()
-    };
+    let origin = if path.to_string_lossy().contains("/generated/") { "generated".to_string() } else { "custom".to_string() };
 
     let side_effects = detect_side_effects(&parsed);
     let rel_path = match path.strip_prefix(src_dir) {
@@ -370,7 +347,9 @@ fn scan_routes(src_dir: &Path, layer_dir: &Path) -> BlastResult<Vec<RouteEntry>>
 fn is_rust_file(path: &Path) -> bool {
     let ext = match path.extension() {
         Some(e) => e,
-        None => { return false; }
+        None => {
+            return false;
+        }
     };
     ext == "rs"
 }
@@ -435,9 +414,11 @@ impl LineLookup {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::tempdir;
+
+    use super::*;
 
     #[test]
     fn scans_pub_fn_in_services() {
@@ -445,10 +426,7 @@ mod tests {
         let services = dir.path().join("src/services");
         std::fs::create_dir_all(&services).expect("create");
         let mut f = std::fs::File::create(services.join("email.rs")).expect("create");
-        let src = "use diesel::prelude::*;\n\
-/// Sends plain-text email via SMTP.\n\
-pub async fn send(to: &str, subject: &str, body: &str) -> Result<(), String> { Ok(()) }\n\
-fn private_helper() {}\n";
+        let src = "use diesel::prelude::*;\n/// Sends plain-text email via SMTP.\npub async fn send(to: &str, subject: &str, body: &str) -> Result<(), String> { Ok(()) }\nfn private_helper() {}\n";
         f.write_all(src.as_bytes()).expect("write");
 
         let report = scan(dir.path()).expect("scan");
@@ -485,11 +463,7 @@ fn private_helper() {}\n";
         let routes_dir = dir.path().join("src/routes");
         std::fs::create_dir_all(&routes_dir).expect("create");
         let mut f = std::fs::File::create(routes_dir.join("auth.rs")).expect("create");
-        let src = "pub fn router() -> Router {\n\
-    Router::new().route(\"/auth/login\", post(login)).route(\"/auth/me\", get(me))\n\
-}\n\
-pub async fn login() {}\n\
-pub async fn me() {}\n";
+        let src = "pub fn router() -> Router {\nRouter::new().route(\"/auth/login\", post(login)).route(\"/auth/me\", get(me))\n}\npub async fn login() {}\npub async fn me() {}\n";
         f.write_all(src.as_bytes()).expect("write");
 
         let report = scan(dir.path()).expect("scan");

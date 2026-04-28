@@ -7,8 +7,10 @@
 //! Postgres — the user gets a clear "install X" message and an empty
 //! filesystem / database.
 
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Sink, SinkExt};
+use crate::{
+    error::{BlastError, BlastResult},
+    io::traits::{Sink, SinkExt},
+};
 
 /// One binary the scaffold pipeline expects on PATH.
 pub struct BinCheck {
@@ -72,16 +74,10 @@ pub fn run_with(checks: &[BinCheck], sink: &mut dyn Sink) -> BlastResult<()> {
             }
             Err(_lookup_err) => {
                 if check.required {
-                    sink.error(format!(
-                        "  MISSING {} (required) — {}",
-                        check.name, check.install_hint
-                    ));
+                    sink.error(format!("  MISSING {} (required) — {}", check.name, check.install_hint));
                     missing_required.push(check);
                 } else {
-                    sink.warn(format!(
-                        "  missing {} (optional) — {}",
-                        check.name, check.install_hint
-                    ));
+                    sink.warn(format!("  missing {} (optional) — {}", check.name, check.install_hint));
                     missing_optional.push(check);
                 }
             }
@@ -90,10 +86,7 @@ pub fn run_with(checks: &[BinCheck], sink: &mut dyn Sink) -> BlastResult<()> {
 
     if !missing_required.is_empty() {
         let names: Vec<&str> = missing_required.iter().map(|c| c.name).collect();
-        return Err(BlastError::Project(format!(
-            "missing required binaries: {}; install via package manager",
-            names.join(", ")
-        )));
+        return Err(BlastError::Project(format!("missing required binaries: {}; install via package manager", names.join(", "))));
     }
 
     Ok(())
@@ -135,16 +128,8 @@ mod tests {
         let mut sink = NullSink;
         let err = run_with(&checks, &mut sink).expect_err("must fail");
         let msg = format!("{}", err);
-        assert!(
-            msg.contains("missing required binaries"),
-            "msg = {}",
-            msg
-        );
-        assert!(
-            msg.contains("definitely-not-a-real-binary-xyzzy"),
-            "msg = {}",
-            msg
-        );
+        assert!(msg.contains("missing required binaries"), "msg = {}", msg);
+        assert!(msg.contains("definitely-not-a-real-binary-xyzzy"), "msg = {}", msg);
     }
 
     #[test]

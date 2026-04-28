@@ -6,19 +6,11 @@
 //!
 //! 1. Creates a fresh temp directory.
 //! 2. Runs `blast new test_app --dev` to scaffold a Catablast app.
-//! 3. Patches the scaffolded `Cargo.toml` to depend on the local catalyst
-//!    checkout (instead of crates.io / git) so we test against the same
-//!    catalyst we develop against.
-//! 4. Manually writes a minimal `users` resource to
-//!    `storage/blast/state/resources/users.ron` using the typed
-//!    `blast::state::save_resource` API. (Doing this via the TUI wizard
-//!    would require driving stdin keystrokes — too brittle for a smoke
-//!    test.)
-//! 5. Runs `blast gen all` to drive the full codegen pipeline (schema →
-//!    structs → models → flows → http → frontend → ws → vue → env-example
-//!    → governor-plugin → test-scaffolds).
-//! 6. Runs `cargo build` inside the generated app to prove the emitted
-//!    Rust compiles against catalyst.
+//! 3. Patches the scaffolded `Cargo.toml` to depend on the local catalyst checkout (instead of crates.io / git) so we test against the same catalyst we develop against.
+//! 4. Manually writes a minimal `users` resource to `storage/blast/state/resources/users.ron` using the typed `blast::state::save_resource` API. (Doing this via the TUI wizard would require driving stdin keystrokes —
+//!    too brittle for a smoke test.)
+//! 5. Runs `blast gen all` to drive the full codegen pipeline (schema → structs → models → flows → http → frontend → ws → vue → env-example → governor-plugin → test-scaffolds).
+//! 6. Runs `cargo build` inside the generated app to prove the emitted Rust compiles against catalyst.
 //!
 //! ## Status (2026-04-26)
 //!
@@ -43,39 +35,29 @@
 //!
 //! ## Open TODOs to actually pass
 //!
-//! - **catalyst**: ship `Ctx::require_admin`, `Ctx::require_roles`,
-//!   `catalyst::transport::http::list_query` module, and the catalyst-side
-//!   testing harness used by scaffolded test files.
+//! - **catalyst**: ship `Ctx::require_admin`, `Ctx::require_roles`, `catalyst::transport::http::list_query` module, and the catalyst-side testing harness used by scaffolded test files.
 //! - **blast**: structs.rs codegen v2 (per-variant projections).
-//! - **blast new --dev template**: switch the cloned template from the
-//!   legacy Rocket-based catalyst (`catalyst/dev`) to a thin scaffold that
-//!   depends on the new axum catalyst as a Cargo dependency. Until then
-//!   the patch step below is a stopgap: it inserts a `[patch.crates-io]`
-//!   stanza pointing catalyst at the local checkout, but the cloned
-//!   template still IS catalyst so the patch is a no-op until the
-//!   template is rewritten.
+//! - **blast new --dev template**: switch the cloned template from the legacy Rocket-based catalyst (`catalyst/dev`) to a thin scaffold that depends on the new axum catalyst as a Cargo dependency. Until then the patch
+//!   step below is a stopgap: it inserts a `[patch.crates-io]` stanza pointing catalyst at the local checkout, but the cloned template still IS catalyst so the patch is a no-op until the template is rewritten.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-
-use indexmap::IndexMap;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+    process::{Command, Output},
+};
 
 use blast::state::{
     self,
     names::{FieldName, ResourceName, SqlType},
-    resource::{
-        AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb,
-        VerbState,
-    },
+    resource::{AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb, VerbState},
 };
+use indexmap::IndexMap;
 
 /// Replace the dbname segment of a Postgres URL. Used by the e2e harness
 /// to scrub the user-supplied admin URL into a per-test sentinel before
 /// `blast new` creates databases.
 fn swap_dbname(template: &str, new_dbname: &str) -> String {
-    let parsed = blast::project::db_bootstrap::parse_url(template)
-        .expect("BLAST_TEST_DB_URL must be a valid Postgres URL");
+    let parsed = blast::project::db_bootstrap::parse_url(template).expect("BLAST_TEST_DB_URL must be a valid Postgres URL");
     parsed.with_dbname(new_dbname).rebuild()
 }
 
@@ -96,10 +78,7 @@ fn local_catalyst_path() -> PathBuf {
         }
         match probe.parent() {
             Some(parent) => probe = parent.to_path_buf(),
-            None => panic!(
-                "could not find catalyst checkout above blast manifest dir {}",
-                manifest_dir.display()
-            ),
+            None => panic!("could not find catalyst checkout above blast manifest dir {}", manifest_dir.display()),
         }
     }
 }
@@ -130,33 +109,16 @@ fn full_blast_lifecycle_smokes() {
         }
     };
     let db_url = swap_dbname(&db_template, "test_app_e2e");
-    let new_out = run_blast(
-        blast_bin,
-        workspace,
-        &["new", project_name, "--dev", "--db-url", &db_url, "--force"],
-    );
+    let new_out = run_blast(blast_bin, workspace, &["new", project_name, "--dev", "--db-url", &db_url, "--force"]);
     assert_step_succeeded("blast new", &new_out);
-    assert!(
-        project_dir.is_dir(),
-        "blast new did not create project dir at {}",
-        project_dir.display()
-    );
+    assert!(project_dir.is_dir(), "blast new did not create project dir at {}", project_dir.display());
 
-    // 3. Patch Cargo.toml so the scaffolded app uses the local catalyst
-    //    checkout instead of whatever crates.io / git source the template
-    //    declared. Inserts a `[patch.crates-io]` stanza pointing
-    //    `catalyst` at the local path. Idempotent: if the section already
-    //    exists we leave it alone and append our entry.
+    // 3. Patch Cargo.toml so the scaffolded app uses the local catalyst checkout instead of whatever crates.io / git source the template declared. Inserts a `[patch.crates-io]` stanza pointing `catalyst` at the local
+    //    path. Idempotent: if the section already exists we leave it alone and append our entry.
     patch_cargo_toml_for_local_catalyst(&project_dir, &catalyst_path);
 
-    // 4. Manually author a minimal `users` resource via the typed state
-    //    API. Doing this through the TUI (`blast gen resource users`)
-    //    would require driving stdin keystrokes — out of scope for a
-    //    smoke test.
-    let state_dir = project_dir
-        .join("storage")
-        .join("blast")
-        .join("state");
+    // 4. Manually author a minimal `users` resource via the typed state API. Doing this through the TUI (`blast gen resource users`) would require driving stdin keystrokes — out of scope for a smoke test.
+    let state_dir = project_dir.join("storage").join("blast").join("state");
     write_minimal_users_resource(&state_dir);
 
     // 5. blast gen all (full pipeline).
@@ -164,11 +126,7 @@ fn full_blast_lifecycle_smokes() {
     assert_step_succeeded("blast gen all", &gen_out);
 
     // 6. cargo build (verify generated code compiles).
-    let build_out = run_cmd(
-        Command::new("cargo")
-            .arg("build")
-            .current_dir(&project_dir),
-    );
+    let build_out = run_cmd(Command::new("cargo").arg("build").current_dir(&project_dir));
     assert_step_succeeded("cargo build", &build_out);
 
     // tempdir's Drop handles cleanup automatically; no explicit teardown
@@ -178,9 +136,7 @@ fn full_blast_lifecycle_smokes() {
 /// Run a command and capture stdout/stderr without inheriting parent's
 /// stdin (so any interactive prompt the child issues falls through).
 fn run_cmd(cmd: &mut Command) -> Output {
-    cmd.stdin(std::process::Stdio::null())
-        .output()
-        .expect("spawn child process")
+    cmd.stdin(std::process::Stdio::null()).output().expect("spawn child process")
 }
 
 /// Convenience: run the blast binary with the given args in the given cwd.
@@ -215,15 +171,9 @@ fn assert_step_succeeded(label: &str, out: &Output) {
 /// the template rewrite — see TODO in the file header).
 fn patch_cargo_toml_for_local_catalyst(project_dir: &Path, catalyst_path: &Path) {
     let cargo_toml = project_dir.join("Cargo.toml");
-    let original = std::fs::read_to_string(&cargo_toml)
-        .expect("read scaffolded Cargo.toml");
-    let catalyst_str = catalyst_path
-        .to_str()
-        .expect("catalyst path is utf-8");
-    let patch_stanza = format!(
-        "\n[patch.crates-io]\ncatalyst = {{ path = \"{}\" }}\n",
-        catalyst_str
-    );
+    let original = std::fs::read_to_string(&cargo_toml).expect("read scaffolded Cargo.toml");
+    let catalyst_str = catalyst_path.to_str().expect("catalyst path is utf-8");
+    let patch_stanza = format!("\n[patch.crates-io]\ncatalyst = {{ path = \"{}\" }}\n", catalyst_str);
     let patched = match original.contains("[patch.crates-io]") {
         true => original, // leave the existing stanza alone; smoke harness is best-effort
         false => format!("{}{}", original.trim_end(), patch_stanza),

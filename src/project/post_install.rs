@@ -3,8 +3,7 @@
 //! Steps, in order:
 //!   1. `npm install` in `<project_root>/frontend`
 //!   2. `npm run build` in `<project_root>/frontend`
-//!   3. `exec` into a fresh `blast` invocation (no args) at `<project_root>`,
-//!      which lands the user in the zellij dashboard.
+//!   3. `exec` into a fresh `blast` invocation (no args) at `<project_root>`, which lands the user in the zellij dashboard.
 //!
 //! Step 3 replaces the running blast process via the `exec` syscall —
 //! when the dashboard exits, the user is dropped back at their original
@@ -17,11 +16,16 @@
 //! inspect what broke. If `npm install` fails, ditto: we surface the
 //! error but leave the partial state for inspection.
 
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::{
+    io::{BufRead, BufReader},
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
+
+use crate::{
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+};
 
 /// Env var that, when set to `1`, skips the auto-TUI exec step. Used by
 /// the wave11 verification scripts so they don't block forever in a
@@ -36,18 +40,10 @@ const SKIP_TUI_ENV: &str = "BLAST_NO_TUI_FOR_TESTS";
 /// When `no_warmup` is true, ALL heavy steps are skipped: npm install,
 /// npm run build, and the auto-TUI exec. The function returns Ok
 /// immediately so the caller can print next-steps and exit.
-pub fn run(
-    project_root: &Path,
-    no_warmup: bool,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<()> {
+pub fn run(project_root: &Path, no_warmup: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<()> {
     let frontend_dir = project_root.join("frontend");
     if !frontend_dir.is_dir() {
-        return Err(BlastError::Project(format!(
-            "post-install: expected frontend dir at {} but none found",
-            frontend_dir.display()
-        )));
+        return Err(BlastError::Project(format!("post-install: expected frontend dir at {} but none found", frontend_dir.display())));
     }
 
     if no_warmup {
@@ -75,11 +71,7 @@ pub fn run(
             // Per spec: log loudly, do NOT remove the project dir, surface
             // as error so caller can decide whether to abort the auto-TUI.
             progress.step_fail("frontend: npm run build", format!("{}", e));
-            sink.error(format!(
-                "npm run build failed; project dir kept at {} for inspection: {}",
-                project_root.display(),
-                e
-            ));
+            sink.error(format!("npm run build failed; project dir kept at {} for inspection: {}", project_root.display(), e));
             return Err(e);
         }
     }
@@ -101,11 +93,9 @@ fn run_npm(cwd: &Path, args: &[&str], sink: &mut dyn Sink) -> BlastResult<()> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            BlastError::Subprocess {
-                cmd: display_cmd.clone(),
-                detail: format!("spawn failed: {}", e),
-            }
+        .map_err(|e| BlastError::Subprocess {
+            cmd: display_cmd.clone(),
+            detail: format!("spawn failed: {}", e),
         })?;
 
     // Drain stdout. We take it before stderr so the read order is
@@ -162,19 +152,8 @@ fn run_npm(cwd: &Path, args: &[&str], sink: &mut dyn Sink) -> BlastResult<()> {
         // Some npm-driven tools (vue-tsc, vite) emit diagnostics on
         // stdout, not stderr. If stderr is empty we fall back to
         // stdout's tail so the user gets something actionable.
-        let tail_source = if stderr_collected.is_empty() {
-            &stdout_collected
-        } else {
-            &stderr_collected
-        };
-        let tail: String = tail_source
-            .iter()
-            .rev()
-            .take(30)
-            .rev()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
+        let tail_source = if stderr_collected.is_empty() { &stdout_collected } else { &stderr_collected };
+        let tail: String = tail_source.iter().rev().take(30).rev().cloned().collect::<Vec<_>>().join("\n");
         let code_str = match status.code() {
             Some(c) => c.to_string(),
             None => "?".to_string(),
@@ -212,20 +191,12 @@ fn exec_into_tui(project_root: &Path, sink: &mut dyn Sink) -> BlastResult<()> {
         Err(_unset) => false, // allow: env var unset is the normal real-user case; not an error
     };
     if skip {
-        sink.info(format!(
-            "{}=1 set; skipping auto-TUI exec (project ready at {})",
-            SKIP_TUI_ENV,
-            project_root.display()
-        ));
+        sink.info(format!("{}=1 set; skipping auto-TUI exec (project ready at {})", SKIP_TUI_ENV, project_root.display()));
         return Ok(());
     }
 
     let self_exe: PathBuf = std::env::current_exe()?;
-    sink.info(format!(
-        "launching dashboard via {} in {}",
-        self_exe.display(),
-        project_root.display()
-    ));
+    sink.info(format!("launching dashboard via {} in {}", self_exe.display(), project_root.display()));
 
     use std::os::unix::process::CommandExt;
     let err = Command::new(&self_exe)
@@ -233,10 +204,7 @@ fn exec_into_tui(project_root: &Path, sink: &mut dyn Sink) -> BlastResult<()> {
         .env_remove(SKIP_TUI_ENV) // belt-and-braces: the child shouldn't inherit a stale opt-out
         .exec();
     // exec() only returns on error.
-    Err(BlastError::Project(format!(
-        "failed to exec into TUI: {}",
-        err
-    )))
+    Err(BlastError::Project(format!("failed to exec into TUI: {}", err)))
 }
 
 #[cfg(test)]

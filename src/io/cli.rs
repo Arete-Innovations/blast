@@ -1,13 +1,21 @@
-use crate::error::BlastResult;
-use crate::io::events::{ProgressEvent, SinkEvent, SinkLevel};
-use crate::io::traits::{Progress, Sink};
+use std::{
+    fs::OpenOptions,
+    io::{self, Write},
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
 use chrono::Local;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::fs::OpenOptions;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+
+use crate::{
+    error::BlastResult,
+    io::{
+        events::{ProgressEvent, SinkEvent, SinkLevel},
+        traits::{Progress, Sink},
+    },
+};
 
 pub struct CliSink {
     out: Box<dyn Write + Send>,
@@ -48,11 +56,7 @@ impl CliSink {
         }
     }
 
-    pub fn with_writers(
-        out: Box<dyn Write + Send>,
-        err: Box<dyn Write + Send>,
-        cfg: CliSinkConfig,
-    ) -> Self {
+    pub fn with_writers(out: Box<dyn Write + Send>, err: Box<dyn Write + Send>, cfg: CliSinkConfig) -> Self {
         Self {
             out,
             err,
@@ -101,11 +105,7 @@ impl CliSink {
         } else {
             format!("{} {}", icon, body)
         };
-        let writer: &mut dyn Write = if target_is_err {
-            &mut *self.err
-        } else {
-            &mut *self.out
-        };
+        let writer: &mut dyn Write = if target_is_err { &mut *self.err } else { &mut *self.out };
         writeln!(writer, "{}", line)?;
         writer.flush()
     }
@@ -154,11 +154,7 @@ impl Sink for CliSink {
 
 pub fn render_body(event: &SinkEvent) -> String {
     match event {
-        SinkEvent::Info(msg)
-        | SinkEvent::Warn(msg)
-        | SinkEvent::Error(msg)
-        | SinkEvent::Success(msg)
-        | SinkEvent::Debug(msg) => msg.clone(),
+        SinkEvent::Info(msg) | SinkEvent::Warn(msg) | SinkEvent::Error(msg) | SinkEvent::Success(msg) | SinkEvent::Debug(msg) => msg.clone(),
         SinkEvent::StructuredDiagnostic { kind, fields } => {
             let mut buf = String::new();
             buf.push_str(kind);
@@ -184,21 +180,14 @@ pub struct CliProgressConfig {
 
 impl Default for CliProgressConfig {
     fn default() -> Self {
-        Self {
-            total: None,
-            quiet: false,
-        }
+        Self { total: None, quiet: false }
     }
 }
 
 impl CliProgress {
     pub fn new(cfg: CliProgressConfig) -> Self {
         let bar = build_bar(cfg.total);
-        Self {
-            bar,
-            total: cfg.total,
-            quiet: cfg.quiet,
-        }
+        Self { bar, total: cfg.total, quiet: cfg.quiet }
     }
 
     pub fn set_quiet(&mut self, quiet: bool) {
@@ -239,11 +228,7 @@ impl CliProgress {
         }
         self.bar.finish_and_clear();
         let formatted = format!("{}: {}", label, reason);
-        eprintln!(
-            "{} {}",
-            SinkLevel::Error.icon(),
-            style(formatted).red().bold()
-        );
+        eprintln!("{} {}", SinkLevel::Error.icon(), style(formatted).red().bold());
         self.bar = build_bar(self.total);
     }
 
@@ -272,8 +257,7 @@ fn build_bar(total: Option<u64>) -> ProgressBar {
     match total {
         Some(steps) => {
             let pb = ProgressBar::new(steps);
-            let style_result = ProgressStyle::default_bar()
-                .template("{spinner:.green} {wide_msg} [{pos}/{len}]");
+            let style_result = ProgressStyle::default_bar().template("{spinner:.green} {wide_msg} [{pos}/{len}]");
             let style = match style_result {
                 Ok(s) => s.progress_chars("=>-"),
                 Err(err) => {
@@ -286,8 +270,7 @@ fn build_bar(total: Option<u64>) -> ProgressBar {
         }
         None => {
             let pb = ProgressBar::new_spinner();
-            let style_result =
-                ProgressStyle::default_spinner().template("{spinner:.green} {wide_msg}");
+            let style_result = ProgressStyle::default_spinner().template("{spinner:.green} {wide_msg}");
             let style = match style_result {
                 Ok(s) => s,
                 Err(err) => {
@@ -312,8 +295,5 @@ pub fn cli_sink(verbose: bool, log_file: Option<&Path>) -> CliSink {
 }
 
 pub fn cli_progress(steps: Option<u64>) -> CliProgress {
-    CliProgress::new(CliProgressConfig {
-        total: steps,
-        quiet: false,
-    })
+    CliProgress::new(CliProgressConfig { total: steps, quiet: false })
 }

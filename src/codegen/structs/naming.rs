@@ -22,9 +22,9 @@
 //! `UserPublicRow`); aligning them to the canonical names is a follow-up
 //! lane and is explicitly out of scope here.
 
+use inflector::{cases::classcase::to_class_case, string::singularize::to_singular};
+
 use crate::state::{FieldVariant, ResourceState};
-use inflector::cases::classcase::to_class_case;
-use inflector::string::singularize::to_singular;
 
 /// English singularization via Inflector. `users` -> `user`,
 /// `categories` -> `category`, `addresses` -> `address`.
@@ -104,10 +104,7 @@ pub fn struct_name_for_variant(table: &str, variant: FieldVariant) -> String {
 
 /// Final emitted struct name for a given variant, honoring the
 /// resource's optional `singular_override`.
-pub fn struct_name_for_variant_resource(
-    resource: &ResourceState,
-    variant: FieldVariant,
-) -> String {
+pub fn struct_name_for_variant_resource(resource: &ResourceState, variant: FieldVariant) -> String {
     format!("{}{}", type_stem_for_resource(resource), variant_suffix(variant))
 }
 
@@ -218,40 +215,19 @@ mod tests {
 
     #[test]
     fn struct_name_for_variant_drops_suffix_for_db() {
-        assert_eq!(
-            struct_name_for_variant("users", FieldVariant::Db),
-            "User"
-        );
-        assert_eq!(
-            struct_name_for_variant("users", FieldVariant::Insertable),
-            "UserInsertable"
-        );
-        assert_eq!(
-            struct_name_for_variant("users", FieldVariant::Patch),
-            "UserPatch"
-        );
-        assert_eq!(
-            struct_name_for_variant("users", FieldVariant::Public),
-            "UserPublic"
-        );
-        assert_eq!(
-            struct_name_for_variant("users", FieldVariant::Admin),
-            "UserAdmin"
-        );
+        assert_eq!(struct_name_for_variant("users", FieldVariant::Db), "User");
+        assert_eq!(struct_name_for_variant("users", FieldVariant::Insertable), "UserInsertable");
+        assert_eq!(struct_name_for_variant("users", FieldVariant::Patch), "UserPatch");
+        assert_eq!(struct_name_for_variant("users", FieldVariant::Public), "UserPublic");
+        assert_eq!(struct_name_for_variant("users", FieldVariant::Admin), "UserAdmin");
     }
 
     #[test]
     fn struct_name_for_variant_resource_honors_override() {
         let mut resource = ResourceState::new(ResourceName::new("data"));
         resource.singular_override = Some("datum".to_string());
-        assert_eq!(
-            struct_name_for_variant_resource(&resource, FieldVariant::Public),
-            "DatumPublic"
-        );
-        assert_eq!(
-            struct_name_for_variant_resource(&resource, FieldVariant::Db),
-            "Datum"
-        );
+        assert_eq!(struct_name_for_variant_resource(&resource, FieldVariant::Public), "DatumPublic");
+        assert_eq!(struct_name_for_variant_resource(&resource, FieldVariant::Db), "Datum");
     }
 
     #[test]

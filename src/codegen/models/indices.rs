@@ -1,9 +1,15 @@
-use crate::error::BlastResult;
-use crate::state::{ListOptions, ResourceState, Verb};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+};
+
 use chrono::{TimeZone, Utc};
-use std::collections::BTreeSet;
-use std::fs;
-use std::path::{Path, PathBuf};
+
+use crate::{
+    error::BlastResult,
+    state::{ListOptions, ResourceState, Verb},
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct IndexReport {
@@ -26,11 +32,7 @@ impl Clock for SystemClock {
     }
 }
 
-pub fn run(
-    project_root: &Path,
-    resources: &[ResourceState],
-    clock: &dyn Clock,
-) -> BlastResult<IndexReport> {
+pub fn run(project_root: &Path, resources: &[ResourceState], clock: &dyn Clock) -> BlastResult<IndexReport> {
     let migrations_dir = canonical_migrations_dir(project_root);
     fs::create_dir_all(&migrations_dir)?;
 
@@ -203,14 +205,16 @@ fn render_down_sql(table: &str, col: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+    use tempfile::TempDir;
+
     use super::*;
-    use crate::state::names::{FieldName, ResourceName, SqlType};
     use crate::state::{
+        names::{FieldName, ResourceName, SqlType},
         AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, Verb, VerbState,
     };
-    use indexmap::IndexMap;
-    use std::collections::{BTreeMap, BTreeSet};
-    use tempfile::TempDir;
 
     struct PinnedClock(u64);
     impl Clock for PinnedClock {
@@ -277,11 +281,7 @@ mod tests {
             assert!(dir.join("down.sql").is_file(), "missing down.sql in {}", dir.display());
         }
 
-        let names: Vec<String> = report
-            .written
-            .iter()
-            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
-            .collect();
+        let names: Vec<String> = report.written.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect();
         assert!(names.iter().any(|n| n.contains("idx_users_email")));
         assert!(names.iter().any(|n| n.contains("idx_users_active")));
     }

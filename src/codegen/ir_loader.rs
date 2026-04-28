@@ -1,7 +1,6 @@
-use crate::error::BlastResult;
-use crate::state;
-use crate::state::ResourceState;
 use std::path::Path;
+
+use crate::{error::BlastResult, state, state::ResourceState};
 
 pub fn load_resource_states(project_root: &Path) -> BlastResult<Vec<ResourceState>> {
     let state_dir = project_root.join("storage").join("blast").join("state");

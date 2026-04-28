@@ -1,13 +1,18 @@
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::schema_parser::{self, ParsedTable};
-use crate::state::names::{FieldName, ResourceName, SqlType};
-use crate::state::resource::{FieldState, ResourceState};
-use crate::state::{self, io as state_io};
-use crate::wizards::gen_resource::{confirm, fields, gen_level, list, pick, schema_diff, verbs, ws};
+use std::{collections::BTreeSet, path::PathBuf};
+
 use dialoguer::{theme::ColorfulTheme, Confirm};
-use std::collections::BTreeSet;
-use std::path::PathBuf;
+
+use crate::{
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    schema_parser::{self, ParsedTable},
+    state::{
+        self, io as state_io,
+        names::{FieldName, ResourceName, SqlType},
+        resource::{FieldState, ResourceState},
+    },
+    wizards::gen_resource::{confirm, fields, gen_level, list, pick, schema_diff, verbs, ws},
+};
 
 pub struct Args {
     pub project_root: PathBuf,
@@ -26,33 +31,20 @@ pub enum WriteAction {
 }
 
 pub fn pick_args_with_name(project_root: PathBuf, name: Option<String>) -> BlastResult<Args> {
-    Ok(Args {
-        project_root,
-        resource_name: name,
-    })
+    Ok(Args { project_root, resource_name: name })
 }
 
-pub fn run(
-    args: Args,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
+pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
     let state_dir = args.project_root.join("storage").join("blast").join("state");
     let schema_path = args.project_root.join("src").join("database").join("schema.rs");
 
     if !schema_path.is_file() {
-        return Err(BlastError::NotFound(format!(
-            "schema.rs not found at {}",
-            schema_path.display()
-        )));
+        return Err(BlastError::NotFound(format!("schema.rs not found at {}", schema_path.display())));
     }
 
     let tables = schema_parser::parse_schema(&schema_path)?;
     if tables.is_empty() {
-        return Err(BlastError::Invalid(format!(
-            "no tables found in {}",
-            schema_path.display()
-        )));
+        return Err(BlastError::Invalid(format!("no tables found in {}", schema_path.display())));
     }
 
     progress.step_start("pick table");
@@ -64,15 +56,9 @@ pub fn run(
     let was_existing = existing.is_some();
 
     if was_existing {
-        sink.info(format!(
-            "editing existing resource state for `{}`",
-            resource_name
-        ));
+        sink.info(format!("editing existing resource state for `{}`", resource_name));
     } else {
-        sink.info(format!(
-            "authoring new resource state for `{}`",
-            resource_name
-        ));
+        sink.info(format!("authoring new resource state for `{}`", resource_name));
     }
 
     let mut resource = match existing {
@@ -122,20 +108,13 @@ pub fn run(
     state::save_resource(&state_dir, &resource)?;
     progress.step_done("write state file");
 
-    let action = if was_existing {
-        WriteAction::Updated
-    } else {
-        WriteAction::Created
-    };
+    let action = if was_existing { WriteAction::Updated } else { WriteAction::Created };
     let state_file = state_io::resource_path(&state_dir, &resource.name);
     sink.success(format!("wrote {}", state_file.display()));
     Ok(Outcome { state_file, action })
 }
 
-fn load_existing_or_none(
-    state_dir: &std::path::Path,
-    name: &ResourceName,
-) -> BlastResult<Option<ResourceState>> {
+fn load_existing_or_none(state_dir: &std::path::Path, name: &ResourceName) -> BlastResult<Option<ResourceState>> {
     let path = state_io::resource_path(state_dir, name);
     if !path.is_file() {
         return Ok(None);
@@ -144,16 +123,8 @@ fn load_existing_or_none(
     Ok(Some(loaded))
 }
 
-fn detect_and_apply_drift(
-    table: &ParsedTable,
-    resource: &mut ResourceState,
-    sink: &mut dyn Sink,
-) -> BlastResult<()> {
-    let schema_columns: Vec<(String, String)> = table
-        .columns
-        .iter()
-        .map(|c| (c.name.clone(), c.diesel_type.clone()))
-        .collect();
+fn detect_and_apply_drift(table: &ParsedTable, resource: &mut ResourceState, sink: &mut dyn Sink) -> BlastResult<()> {
+    let schema_columns: Vec<(String, String)> = table.columns.iter().map(|c| (c.name.clone(), c.diesel_type.clone())).collect();
 
     let diff = schema_diff::compute(&schema_columns, resource);
     if schema_diff::is_empty(&diff) {
@@ -173,10 +144,7 @@ fn detect_and_apply_drift(
         diff.type_changes.len(),
     );
 
-    let apply = Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .default(true)
-        .interact()?;
+    let apply = Confirm::with_theme(&ColorfulTheme::default()).with_prompt(prompt).default(true).interact()?;
 
     if !apply {
         return Ok(());
@@ -186,16 +154,9 @@ fn detect_and_apply_drift(
     Ok(())
 }
 
-fn apply_added_columns(
-    table: &ParsedTable,
-    added: &[(FieldName, SqlType)],
-    resource: &mut ResourceState,
-) {
+fn apply_added_columns(table: &ParsedTable, added: &[(FieldName, SqlType)], resource: &mut ResourceState) {
     for (field_name, sql_type) in added {
-        let column_match = table
-            .columns
-            .iter()
-            .find(|col| col.name == field_name.as_str());
+        let column_match = table.columns.iter().find(|col| col.name == field_name.as_str());
         let Some(column) = column_match else {
             continue;
         };

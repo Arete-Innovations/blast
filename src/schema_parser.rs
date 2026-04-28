@@ -1,8 +1,10 @@
 use std::path::Path;
 
-use syn::parse::{Parse, ParseStream};
-use syn::punctuated::Punctuated;
-use syn::{Item, Token, Type};
+use syn::{
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    Item, Token, Type,
+};
 
 use crate::error::{BlastError, BlastResult};
 
@@ -20,8 +22,7 @@ pub struct ParsedColumn {
 
 pub fn parse_schema(path: &Path) -> BlastResult<Vec<ParsedTable>> {
     let content = std::fs::read_to_string(path)?;
-    let file = syn::parse_file(&content)
-        .map_err(|e| BlastError::Invalid(format!("schema parse {}: {}", path.display(), e)))?;
+    let file = syn::parse_file(&content).map_err(|e| BlastError::Invalid(format!("schema parse {}: {}", path.display(), e)))?;
 
     let mut tables: Vec<ParsedTable> = Vec::new();
 
@@ -47,16 +48,10 @@ pub fn parse_schema(path: &Path) -> BlastResult<Vec<ParsedTable>> {
     Ok(tables)
 }
 
-fn parse_table_body(
-    path: &Path,
-    tokens: proc_macro2::TokenStream,
-) -> BlastResult<ParsedTable> {
-    let parser = |input: ParseStream| -> syn::Result<ParsedTable> {
-        parse_table_tokens(input)
-    };
+fn parse_table_body(path: &Path, tokens: proc_macro2::TokenStream) -> BlastResult<ParsedTable> {
+    let parser = |input: ParseStream| -> syn::Result<ParsedTable> { parse_table_tokens(input) };
 
-    syn::parse::Parser::parse2(parser, tokens)
-        .map_err(|e| BlastError::Invalid(format!("unexpected table! shape in {}: {}", path.display(), e)))
+    syn::parse::Parser::parse2(parser, tokens).map_err(|e| BlastError::Invalid(format!("unexpected table! shape in {}: {}", path.display(), e)))
 }
 
 fn parse_table_tokens(input: ParseStream) -> syn::Result<ParsedTable> {
@@ -66,8 +61,7 @@ fn parse_table_tokens(input: ParseStream) -> syn::Result<ParsedTable> {
     let primary_key = if input.peek(syn::token::Paren) {
         let content;
         syn::parenthesized!(content in input);
-        let pk_list: Punctuated<syn::Ident, Token![,]> =
-            content.parse_terminated(syn::Ident::parse, Token![,])?;
+        let pk_list: Punctuated<syn::Ident, Token![,]> = content.parse_terminated(syn::Ident::parse, Token![,])?;
         pk_list.into_iter().map(|i| i.to_string()).collect()
     } else {
         Vec::new()
@@ -78,11 +72,7 @@ fn parse_table_tokens(input: ParseStream) -> syn::Result<ParsedTable> {
 
     let columns = parse_columns(&body)?;
 
-    Ok(ParsedTable {
-        name,
-        primary_key,
-        columns,
-    })
+    Ok(ParsedTable { name, primary_key, columns })
 }
 
 fn parse_columns(input: ParseStream) -> syn::Result<Vec<ParsedColumn>> {
@@ -141,30 +131,21 @@ fn extract_nullable_inner(args: &syn::PathArguments) -> syn::Result<String> {
     let angle_args = match args {
         syn::PathArguments::AngleBracketed(a) => a,
         _other => {
-            return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "Nullable must have angle-bracketed generic args",
-            ));
+            return Err(syn::Error::new(proc_macro2::Span::call_site(), "Nullable must have angle-bracketed generic args"));
         }
     };
 
     let first_arg = match angle_args.args.first() {
         Some(a) => a,
         None => {
-            return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "Nullable<> has no inner type",
-            ));
+            return Err(syn::Error::new(proc_macro2::Span::call_site(), "Nullable<> has no inner type"));
         }
     };
 
     let inner_ty = match first_arg {
         syn::GenericArgument::Type(t) => t,
         _other => {
-            return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "Nullable inner arg must be a type",
-            ));
+            return Err(syn::Error::new(proc_macro2::Span::call_site(), "Nullable inner arg must be a type"));
         }
     };
 
@@ -187,8 +168,9 @@ fn extract_nullable_inner(args: &syn::PathArguments) -> syn::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
+    use super::*;
 
     fn temp_schema(content: &str) -> std::io::Result<tempfile::NamedTempFile> {
         let mut f = tempfile::NamedTempFile::new()?;
@@ -279,9 +261,7 @@ mod tests {
 
     #[test]
     fn parses_real_catalyst_schema() {
-        let path = std::path::Path::new(
-            "/home/tragdate/codumeu/catablast/catalyst/src/database/schema.rs",
-        );
+        let path = std::path::Path::new("/home/tragdate/codumeu/catablast/catalyst/src/database/schema.rs");
         let tables = parse_schema(path).expect("parse catalyst schema");
         assert!(!tables.is_empty(), "expected at least one table");
         for t in &tables {

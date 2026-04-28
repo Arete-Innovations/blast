@@ -9,9 +9,11 @@
 //!   - the per-enum Rust struct + Diesel `FromSql`/`ToSql` codegen
 //!   - the (future) FE codegen that emits matching TS enum literal unions
 
-use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use regex::Regex;
 
@@ -65,10 +67,7 @@ pub fn pascalize(input: &str) -> String {
 /// the same statement into two migrations — we surface a soft warning
 /// via the returned `dups` list rather than erroring.
 pub fn scan_project_enums(project_root: &Path) -> BlastResult<ScanReport> {
-    let migrations_dir = project_root
-        .join("src")
-        .join("database")
-        .join("migrations");
+    let migrations_dir = project_root.join("src").join("database").join("migrations");
     if !migrations_dir.is_dir() {
         return Ok(ScanReport::default());
     }
@@ -104,10 +103,7 @@ pub fn scan_project_enums(project_root: &Path) -> BlastResult<ScanReport> {
     let mut enums: Vec<ParsedEnum> = by_name.into_values().collect();
     enums.sort_by(|a, b| a.name.cmp(&b.name));
 
-    Ok(ScanReport {
-        enums,
-        duplicates: dups,
-    })
+    Ok(ScanReport { enums, duplicates: dups })
 }
 
 /// Result of [`scan_project_enums`].
@@ -131,34 +127,21 @@ pub fn parse_enums_in_sql(body: &str, source: &Path) -> BlastResult<Vec<ParsedEn
         let name = match caps.get(1) {
             Some(m) => m.as_str().trim().to_string(),
             None => {
-                return Err(BlastError::Invalid(format!(
-                    "CREATE TYPE in {} is missing a type name (regex group 1 absent)",
-                    source.display()
-                )));
+                return Err(BlastError::Invalid(format!("CREATE TYPE in {} is missing a type name (regex group 1 absent)", source.display())));
             }
         };
         let body_str = match caps.get(2) {
             Some(m) => m.as_str().to_string(),
             None => {
-                return Err(BlastError::Invalid(format!(
-                    "CREATE TYPE in {} is missing a variant list (regex group 2 absent)",
-                    source.display()
-                )));
+                return Err(BlastError::Invalid(format!("CREATE TYPE in {} is missing a variant list (regex group 2 absent)", source.display())));
             }
         };
         if name.is_empty() {
-            return Err(BlastError::Invalid(format!(
-                "CREATE TYPE in {} is missing a type name",
-                source.display()
-            )));
+            return Err(BlastError::Invalid(format!("CREATE TYPE in {} is missing a type name", source.display())));
         }
         let variants = parse_variant_list(&body_str, source, &name)?;
         if variants.is_empty() {
-            return Err(BlastError::Invalid(format!(
-                "CREATE TYPE {} in {} declared with zero variants",
-                name,
-                source.display()
-            )));
+            return Err(BlastError::Invalid(format!("CREATE TYPE {} in {} declared with zero variants", name, source.display())));
         }
         out.push(ParsedEnum {
             name,
@@ -170,8 +153,7 @@ pub fn parse_enums_in_sql(body: &str, source: &Path) -> BlastResult<Vec<ParsedEn
 }
 
 fn enum_regex() -> BlastResult<Regex> {
-    Regex::new(r"(?is)create\s+type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+as\s+enum\s*\(([^)]*)\)")
-        .map_err(BlastError::from)
+    Regex::new(r"(?is)create\s+type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+as\s+enum\s*\(([^)]*)\)").map_err(BlastError::from)
 }
 
 fn parse_variant_list(body: &str, source: &Path, type_name: &str) -> BlastResult<Vec<String>> {
@@ -185,12 +167,7 @@ fn parse_variant_list(body: &str, source: &Path, type_name: &str) -> BlastResult
             continue;
         }
         if ch != '\'' {
-            return Err(BlastError::Invalid(format!(
-                "CREATE TYPE {} in {}: expected single-quoted variant, found `{}`",
-                type_name,
-                source.display(),
-                ch
-            )));
+            return Err(BlastError::Invalid(format!("CREATE TYPE {} in {}: expected single-quoted variant, found `{}`", type_name, source.display(), ch)));
         }
         idx += 1;
         let start = idx;
@@ -253,9 +230,11 @@ fn find_line_comment_start(line: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn write_migration(root: &Path, dir: &str, body: &str) {
         let mig = root.join("src/database/migrations").join(dir);
@@ -330,16 +309,8 @@ mod tests {
     fn project_scan_finds_enums_across_migrations() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
-        write_migration(
-            root,
-            "2026-01-01-000001_a",
-            "CREATE TYPE user_role AS ENUM ('admin','member');",
-        );
-        write_migration(
-            root,
-            "2026-01-02-000002_b",
-            "CREATE TYPE post_status AS ENUM ('draft','live','hidden');",
-        );
+        write_migration(root, "2026-01-01-000001_a", "CREATE TYPE user_role AS ENUM ('admin','member');");
+        write_migration(root, "2026-01-02-000002_b", "CREATE TYPE post_status AS ENUM ('draft','live','hidden');");
 
         let report = scan_project_enums(root).expect("scan");
         assert_eq!(report.enums.len(), 2);
@@ -352,16 +323,8 @@ mod tests {
     fn project_scan_records_duplicates() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
-        write_migration(
-            root,
-            "2026-01-01-000001_a",
-            "CREATE TYPE x AS ENUM ('a','b');",
-        );
-        write_migration(
-            root,
-            "2026-01-02-000002_b",
-            "CREATE TYPE x AS ENUM ('c');",
-        );
+        write_migration(root, "2026-01-01-000001_a", "CREATE TYPE x AS ENUM ('a','b');");
+        write_migration(root, "2026-01-02-000002_b", "CREATE TYPE x AS ENUM ('c');");
 
         let report = scan_project_enums(root).expect("scan");
         assert_eq!(report.enums.len(), 1);

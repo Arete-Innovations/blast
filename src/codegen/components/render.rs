@@ -1,7 +1,11 @@
-use crate::codegen::components::input_map::{self, enum_meta, enum_options_const_name, enum_type_alias};
-use crate::codegen::enums::ParsedEnum;
-use crate::codegen::structs::naming::type_stem_for_resource;
-use crate::state::{FieldName, FieldState, FieldVariant, ResourceState, SqlType};
+use crate::{
+    codegen::{
+        components::input_map::{self, enum_meta, enum_options_const_name, enum_type_alias},
+        enums::ParsedEnum,
+        structs::naming::type_stem_for_resource,
+    },
+    state::{FieldName, FieldState, FieldVariant, ResourceState, SqlType},
+};
 
 pub fn forms_for_resource(resource: &ResourceState, enums: &[ParsedEnum]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
@@ -32,63 +36,15 @@ pub fn build_create_form(resource: &ResourceState, fields: &[(&FieldName, &Field
     let serialize_block = render_serialize_block(fields);
 
     format!(
-        "<script setup lang=\"ts\">\n\
-import {{ ref, reactive }} from 'vue'\n\
-import Button from 'primevue/button'\n\
-{imports_block}import {{ create{stem} }} from '@/generated/api/{table}'\n\
-import type {{ {dto} }} from '@/generated/types/{table}'\n\
-{enum_imports_block}\n\
-const emit = defineEmits<{{\n\
-  (event: 'created', payload: {dto}): void\n\
-  (event: 'cancel'): void\n\
-}}>()\n\
-\n\
-{initial_block}\n\
-const submitting = ref<boolean>(false)\n\
-const error_message = ref<string | null>(null)\n\
-\n\
-async function on_submit(): Promise<void> {{\n\
-  submitting.value = true\n\
-  error_message.value = null\n\
-{serialize_block}  const result = await create{stem}(payload as {dto})\n\
-  submitting.value = false\n\
-  if (result.error !== null) {{\n\
-    error_message.value = result.error.error.message\n\
-    return\n\
-  }}\n\
-  emit('created', payload as {dto})\n\
-}}\n\
-</script>\n\
-\n\
-<template>\n\
-  <form class=\"{table}-create-form\" novalidate @submit.prevent=\"on_submit\">\n\
-{template_fields}    <div v-if=\"error_message !== null\" class=\"{table}-create-form-error\" role=\"alert\">\n\
-      {{{{ error_message }}}}\n\
-    </div>\n\
-    <div class=\"{table}-create-form-actions\">\n\
-      <Button type=\"button\" label=\"Cancel\" severity=\"secondary\" :disabled=\"submitting\" @click=\"emit('cancel')\" />\n\
-      <Button type=\"submit\" label=\"Create\" :loading=\"submitting\" :disabled=\"submitting\" />\n\
-    </div>\n\
-  </form>\n\
-</template>\n\
-\n\
-<style scoped>\n\
-@layer app {{\n\
-  .{table}-create-form {{\n\
-    display: flex;\n\
-    flex-direction: column;\n\
-    gap: var(--app-space-md);\n\
-  }}\n\
-  .{table}-create-form-actions {{\n\
-    display: flex;\n\
-    gap: var(--app-space-sm);\n\
-    justify-content: flex-end;\n\
-  }}\n\
-  .{table}-create-form-error {{\n\
-    color: var(--p-message-error-color, var(--app-color-danger, #b00020));\n\
-  }}\n\
-}}\n\
-</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ ref, reactive }} from 'vue'\nimport Button from 'primevue/button'\n{imports_block}import {{ create{stem} }} from '@/generated/api/{table}'\nimport type {{ {dto} }} from \
+         '@/generated/types/{table}'\n{enum_imports_block}\nconst emit = defineEmits<{{\n(event: 'created', payload: {dto}): void\n(event: 'cancel'): void\n}}>()\n\n{initial_block}\nconst submitting = \
+         ref<boolean>(false)\nconst error_message = ref<string | null>(null)\n\nasync function on_submit(): Promise<void> {{\nsubmitting.value = true\nerror_message.value = null\n{serialize_block}  const result = \
+         await create{stem}(payload as {dto})\nsubmitting.value = false\nif (result.error !== null) {{\nerror_message.value = result.error.error.message\nreturn\n}}\nemit('created', payload as \
+         {dto})\n}}\n</script>\n\n<template>\n<form class=\"{table}-create-form\" novalidate @submit.prevent=\"on_submit\">\n{template_fields}    <div v-if=\"error_message !== null\" \
+         class=\"{table}-create-form-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div class=\"{table}-create-form-actions\">\n<Button type=\"button\" label=\"Cancel\" severity=\"secondary\" \
+         :disabled=\"submitting\" @click=\"emit('cancel')\" />\n<Button type=\"submit\" label=\"Create\" :loading=\"submitting\" :disabled=\"submitting\" />\n</div>\n</form>\n</template>\n\n<style scoped>\n@layer app \
+         {{\n.{table}-create-form {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-md);\n}}\n.{table}-create-form-actions {{\ndisplay: flex;\ngap: var(--app-space-sm);\njustify-content: \
+         flex-end;\n}}\n.{table}-create-form-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         dto = dto,
@@ -113,68 +69,16 @@ pub fn build_edit_form(resource: &ResourceState, fields: &[(&FieldName, &FieldSt
     let serialize_block = render_serialize_block(fields);
 
     format!(
-        "<script setup lang=\"ts\">\n\
-import {{ ref, reactive, watch }} from 'vue'\n\
-import Button from 'primevue/button'\n\
-{imports_block}import {{ update{stem} }} from '@/generated/api/{table}'\n\
-import type {{ {public}, {patch} }} from '@/generated/types/{table}'\n\
-{enum_imports_block}\n\
-const props = defineProps<{{ entity: {public} }}>()\n\
-const emit = defineEmits<{{\n\
-  (event: 'updated', payload: {patch}): void\n\
-  (event: 'cancel'): void\n\
-}}>()\n\
-\n\
-{initial_block}\n\
-const submitting = ref<boolean>(false)\n\
-const error_message = ref<string | null>(null)\n\
-\n\
-watch(() => props.entity, (next) => {{\n\
-  reset_form(next as unknown as {{ [key: string]: unknown }})\n\
-}}, {{ deep: true }})\n\
-\n\
-async function on_submit(): Promise<void> {{\n\
-  submitting.value = true\n\
-  error_message.value = null\n\
-{serialize_block}  const result = await update{stem}((props.entity as unknown as {{ id: number }}).id, payload as {patch})\n\
-  submitting.value = false\n\
-  if (result.error !== null) {{\n\
-    error_message.value = result.error.error.message\n\
-    return\n\
-  }}\n\
-  emit('updated', payload as {patch})\n\
-}}\n\
-</script>\n\
-\n\
-<template>\n\
-  <form class=\"{table}-edit-form\" novalidate @submit.prevent=\"on_submit\">\n\
-{template_fields}    <div v-if=\"error_message !== null\" class=\"{table}-edit-form-error\" role=\"alert\">\n\
-      {{{{ error_message }}}}\n\
-    </div>\n\
-    <div class=\"{table}-edit-form-actions\">\n\
-      <Button type=\"button\" label=\"Cancel\" severity=\"secondary\" :disabled=\"submitting\" @click=\"emit('cancel')\" />\n\
-      <Button type=\"submit\" label=\"Save\" :loading=\"submitting\" :disabled=\"submitting\" />\n\
-    </div>\n\
-  </form>\n\
-</template>\n\
-\n\
-<style scoped>\n\
-@layer app {{\n\
-  .{table}-edit-form {{\n\
-    display: flex;\n\
-    flex-direction: column;\n\
-    gap: var(--app-space-md);\n\
-  }}\n\
-  .{table}-edit-form-actions {{\n\
-    display: flex;\n\
-    gap: var(--app-space-sm);\n\
-    justify-content: flex-end;\n\
-  }}\n\
-  .{table}-edit-form-error {{\n\
-    color: var(--p-message-error-color, var(--app-color-danger, #b00020));\n\
-  }}\n\
-}}\n\
-</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ ref, reactive, watch }} from 'vue'\nimport Button from 'primevue/button'\n{imports_block}import {{ update{stem} }} from '@/generated/api/{table}'\nimport type {{ \
+         {public}, {patch} }} from '@/generated/types/{table}'\n{enum_imports_block}\nconst props = defineProps<{{ entity: {public} }}>()\nconst emit = defineEmits<{{\n(event: 'updated', payload: {patch}): \
+         void\n(event: 'cancel'): void\n}}>()\n\n{initial_block}\nconst submitting = ref<boolean>(false)\nconst error_message = ref<string | null>(null)\n\nwatch(() => props.entity, (next) => {{\nreset_form(next as \
+         unknown as {{ [key: string]: unknown }})\n}}, {{ deep: true }})\n\nasync function on_submit(): Promise<void> {{\nsubmitting.value = true\nerror_message.value = null\n{serialize_block}  const result = await \
+         update{stem}((props.entity as unknown as {{ id: number }}).id, payload as {patch})\nsubmitting.value = false\nif (result.error !== null) {{\nerror_message.value = \
+         result.error.error.message\nreturn\n}}\nemit('updated', payload as {patch})\n}}\n</script>\n\n<template>\n<form class=\"{table}-edit-form\" novalidate @submit.prevent=\"on_submit\">\n{template_fields}    <div \
+         v-if=\"error_message !== null\" class=\"{table}-edit-form-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div class=\"{table}-edit-form-actions\">\n<Button type=\"button\" label=\"Cancel\" \
+         severity=\"secondary\" :disabled=\"submitting\" @click=\"emit('cancel')\" />\n<Button type=\"submit\" label=\"Save\" :loading=\"submitting\" :disabled=\"submitting\" />\n</div>\n</form>\n</template>\n\n<style \
+         scoped>\n@layer app {{\n.{table}-edit-form {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-md);\n}}\n.{table}-edit-form-actions {{\ndisplay: flex;\ngap: \
+         var(--app-space-sm);\njustify-content: flex-end;\n}}\n.{table}-edit-form-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         public = public,
@@ -308,7 +212,10 @@ fn render_serialize_block(fields: &[(&FieldName, &FieldState)]) -> String {
         if input_map::is_calendar(&field.sql_type) {
             s.push_str(&format!("  payload['{key}'] = form['{key}'] instanceof Date ? (form['{key}'] as Date).toISOString() : form['{key}']\n"));
         } else if input_map::is_json(&field.sql_type) {
-            s.push_str(&format!("  if (typeof form['{key}'] === 'string' && form['{key}'] !== '') {{\n    try {{\n      payload['{key}'] = JSON.parse(form['{key}'] as string)\n    }} catch (_e) {{\n      submitting.value = false\n      error_message.value = 'Invalid JSON in {key}.'\n      return\n    }}\n  }} else {{\n    payload['{key}'] = form['{key}']\n  }}\n"));
+            s.push_str(&format!(
+                    "  if (typeof form['{key}'] === 'string' && form['{key}'] !== '') {{\n    try {{\n      payload['{key}'] = JSON.parse(form['{key}'] as string)\n    }} catch (_e) {{\n      submitting.value = \
+                     false\n      error_message.value = 'Invalid JSON in {key}.'\n      return\n    }}\n  }} else {{\n    payload['{key}'] = form['{key}']\n  }}\n"
+                ));
         } else {
             s.push_str(&format!("  payload['{key}'] = form['{key}']\n"));
         }
@@ -370,11 +277,15 @@ fn humanize(snake: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION};
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::state::{
+        names::{FieldName, ResourceName},
+        resource::{AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+    };
 
     fn synth_resource() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();

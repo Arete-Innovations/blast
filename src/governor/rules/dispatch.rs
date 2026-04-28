@@ -1,35 +1,20 @@
-use crate::governor::rules::traits::{FileRule, Rule};
-use crate::state::FeLintState;
-use crate::governor::violation::Violation;
 use std::path::Path;
 
-use super::console_log::ConsoleLog;
-use super::hardcoded_px::HardcodedPx;
-use super::hardcoded_route_path::HardcodedRoutePath;
-use super::icon_class::IconClassOutsideIconsFile;
-use super::inline_layout_props::InlineLayoutProps;
-use super::inline_style::InlineStyle;
-use super::loading_spinner::LoadingSpinnerAfterFirstLoad;
-use super::local_list_state::LocalListState;
-use super::local_modal_state::LocalModalState;
-use super::local_storage_outside_persistence::LocalStorageOutsidePersistence;
-use super::max_lines_per_fn::MaxLinesPerFn;
-use super::max_lines_per_sfc::MaxLinesPerSfc;
-use super::max_template_depth::MaxTemplateDepth;
-use super::max_template_loc::MaxTemplateLoc;
-use super::optimistic_update::OptimisticUpdateInCustom;
-use super::page_shell_required::PageShellRequired;
-use super::pinia_import::PiniaImport;
-use super::primevue_config::PrimeVueConfigImportOutsidePresetFile;
-use super::primevue_reinvented::PrimeVueReinvented;
-use super::raw_color::RawColorOutsidePreset;
-use super::raw_fetch::RawFetchOutsideApi;
-use super::raw_rem::RawRemOutsideTokens;
-use super::silent_fallback::SilentFallback;
-use super::snake_case_interface_fields::SnakeCaseInterfaceFields;
-use super::ts_ignore::TsIgnore;
-use super::type_any::TypeAny;
-use super::websocket_outside_relay::WebSocketOutsideRelay;
+use super::{
+    console_log::ConsoleLog, hardcoded_px::HardcodedPx, hardcoded_route_path::HardcodedRoutePath, icon_class::IconClassOutsideIconsFile, inline_layout_props::InlineLayoutProps, inline_style::InlineStyle,
+    loading_spinner::LoadingSpinnerAfterFirstLoad, local_list_state::LocalListState, local_modal_state::LocalModalState, local_storage_outside_persistence::LocalStorageOutsidePersistence,
+    max_lines_per_fn::MaxLinesPerFn, max_lines_per_sfc::MaxLinesPerSfc, max_template_depth::MaxTemplateDepth, max_template_loc::MaxTemplateLoc, optimistic_update::OptimisticUpdateInCustom,
+    page_shell_required::PageShellRequired, pinia_import::PiniaImport, primevue_config::PrimeVueConfigImportOutsidePresetFile, primevue_reinvented::PrimeVueReinvented, raw_color::RawColorOutsidePreset,
+    raw_fetch::RawFetchOutsideApi, raw_rem::RawRemOutsideTokens, silent_fallback::SilentFallback, snake_case_interface_fields::SnakeCaseInterfaceFields, ts_ignore::TsIgnore, type_any::TypeAny,
+    websocket_outside_relay::WebSocketOutsideRelay,
+};
+use crate::{
+    governor::{
+        rules::traits::{FileRule, Rule},
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub fn run_all(file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
     let line_rules = build_line_rules();

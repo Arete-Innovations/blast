@@ -12,19 +12,18 @@
 //! schema_gen pass requires a live Postgres + diesel print-schema, which is
 //! out of scope for a focused codegen smoke.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::Path;
-
-use indexmap::IndexMap;
-
-use blast::codegen;
-use blast::io::{NullProgress, NullSink};
-use blast::state::{
-    save_app, save_resource, AppState, AuthMode, FieldName, FieldState, FieldVariant, GenLevel,
-    ResourceName, ResourceState, SqlType, Verb, VerbState,
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
 };
-use blast::state::resource::RESOURCE_SCHEMA_VERSION;
+
+use blast::{
+    codegen,
+    io::{NullProgress, NullSink},
+    state::{resource::RESOURCE_SCHEMA_VERSION, save_app, save_resource, AppState, AuthMode, FieldName, FieldState, FieldVariant, GenLevel, ResourceName, ResourceState, SqlType, Verb, VerbState},
+};
+use indexmap::IndexMap;
 
 fn write_file(path: &Path, body: &str) {
     if let Some(parent) = path.parent() {
@@ -65,14 +64,7 @@ fn seed_resource(root: &Path) {
         },
     );
 
-    let title_variants: BTreeSet<FieldVariant> = [
-        FieldVariant::Db,
-        FieldVariant::Insertable,
-        FieldVariant::Patch,
-        FieldVariant::Public,
-    ]
-    .into_iter()
-    .collect();
+    let title_variants: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
     fields.insert(
         FieldName::new("title"),
         FieldState {
@@ -84,14 +76,7 @@ fn seed_resource(root: &Path) {
         },
     );
 
-    let status_variants: BTreeSet<FieldVariant> = [
-        FieldVariant::Db,
-        FieldVariant::Insertable,
-        FieldVariant::Patch,
-        FieldVariant::Public,
-    ]
-    .into_iter()
-    .collect();
+    let status_variants: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
     fields.insert(
         FieldName::new("status"),
         FieldState {
@@ -147,11 +132,7 @@ fn enum_codegen_chain_threads_be_to_fe_for_dropdown_field() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
 
-    seed_migration(
-        root,
-        "2026-04-26-000001_tasks",
-        "CREATE TYPE task_status AS ENUM ('pending', 'active', 'done');\n",
-    );
+    seed_migration(root, "2026-04-26-000001_tasks", "CREATE TYPE task_status AS ENUM ('pending', 'active', 'done');\n");
     seed_schema_stub(root);
     seed_app_state(root);
     seed_resource(root);
@@ -177,10 +158,7 @@ fn enum_codegen_chain_threads_be_to_fe_for_dropdown_field() {
     let ts_enum = root.join("frontend/src/generated/types/task_status.ts");
     assert!(ts_enum.exists(), "task_status.ts must exist");
     let ts_body = fs::read_to_string(&ts_enum).expect("read task_status.ts");
-    assert!(
-        ts_body.contains("export type TaskStatus = 'pending' | 'active' | 'done'"),
-        "TS string-literal union missing: {ts_body}"
-    );
+    assert!(ts_body.contains("export type TaskStatus = 'pending' | 'active' | 'done'"), "TS string-literal union missing: {ts_body}");
     assert!(
         ts_body.contains("export const TASK_STATUS_VALUES: readonly TaskStatus[] = ['pending', 'active', 'done'] as const"),
         "TS values const missing: {ts_body}"
@@ -193,36 +171,21 @@ fn enum_codegen_chain_threads_be_to_fe_for_dropdown_field() {
         ts_resource_body.contains("import type { TaskStatus } from './task_status'"),
         "tasks.ts must import TaskStatus alias: {ts_resource_body}"
     );
-    assert!(
-        ts_resource_body.contains("  status: TaskStatus"),
-        "status field must use TaskStatus alias: {ts_resource_body}"
-    );
+    assert!(ts_resource_body.contains("  status: TaskStatus"), "status field must use TaskStatus alias: {ts_resource_body}");
 
     let create_form = root.join("frontend/src/components/generated/forms/tasks/CreateForm.vue");
     assert!(create_form.exists(), "CreateForm.vue must exist");
     let create_body = fs::read_to_string(&create_form).expect("read CreateForm.vue");
-    assert!(
-        create_body.contains("from 'primevue/dropdown'"),
-        "Dropdown import missing: {create_body}"
-    );
+    assert!(create_body.contains("from 'primevue/dropdown'"), "Dropdown import missing: {create_body}");
     assert!(
         create_body.contains("import { TASK_STATUS_VALUES } from '@/generated/types/task_status'"),
         "TASK_STATUS_VALUES import missing: {create_body}"
     );
-    assert!(
-        create_body.contains(":options=\"TASK_STATUS_VALUES\""),
-        "Dropdown options binding missing: {create_body}"
-    );
+    assert!(create_body.contains(":options=\"TASK_STATUS_VALUES\""), "Dropdown options binding missing: {create_body}");
 
     let edit_form = root.join("frontend/src/components/generated/forms/tasks/EditForm.vue");
     assert!(edit_form.exists(), "EditForm.vue must exist");
     let edit_body = fs::read_to_string(&edit_form).expect("read EditForm.vue");
-    assert!(
-        edit_body.contains("from 'primevue/dropdown'"),
-        "Dropdown import missing in EditForm: {edit_body}"
-    );
-    assert!(
-        edit_body.contains(":options=\"TASK_STATUS_VALUES\""),
-        "Dropdown options binding missing in EditForm: {edit_body}"
-    );
+    assert!(edit_body.contains("from 'primevue/dropdown'"), "Dropdown import missing in EditForm: {edit_body}");
+    assert!(edit_body.contains(":options=\"TASK_STATUS_VALUES\""), "Dropdown options binding missing in EditForm: {edit_body}");
 }

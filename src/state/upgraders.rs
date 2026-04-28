@@ -4,13 +4,9 @@
 //! files forward without breaking on disk. Two flavors of upgrader live
 //! here:
 //!
-//! - **Typed app upgraders** (`AppUpgrader`): operate on a fully
-//!   deserialized `AppState`. Suitable when v(N) → v(N+1) only adds
-//!   optional fields covered by `#[serde(default)]`.
-//! - **Raw-text resource upgraders** (`ResourceRawUpgrader`): operate on
-//!   the raw RON string before deserialization. Required when a step
-//!   reshapes a field type (e.g. `BTreeSet` → `BTreeMap`) so the v(N)
-//!   bytes can no longer round-trip through the v(N+1) types.
+//! - **Typed app upgraders** (`AppUpgrader`): operate on a fully deserialized `AppState`. Suitable when v(N) → v(N+1) only adds optional fields covered by `#[serde(default)]`.
+//! - **Raw-text resource upgraders** (`ResourceRawUpgrader`): operate on the raw RON string before deserialization. Required when a step reshapes a field type (e.g. `BTreeSet` → `BTreeMap`) so the v(N) bytes can no
+//!   longer round-trip through the v(N+1) types.
 //!
 //! Resource upgraders run inside the `load_resource` IO entry point —
 //! see the `state::io` module — producing the bumped raw text that is
@@ -18,29 +14,27 @@
 //! entry point exists for tests and is a no-op once the typed
 //! `schema_version` already equals `RESOURCE_SCHEMA_VERSION`.
 
-use crate::error::{BlastError, BlastResult};
-use crate::state::app::{
-    AppPolicySection, AppState, APP_SCHEMA_VERSION, ICONS_SECTION_KEY, THEME_SECTION_KEY,
-};
-use crate::state::icons::IconConfig;
-use crate::state::resource::{ResourceState, RESOURCE_SCHEMA_VERSION};
-use crate::state::theme::ThemeConfig;
 use regex::Regex;
+
+use crate::{
+    error::{BlastError, BlastResult},
+    state::{
+        app::{AppPolicySection, AppState, APP_SCHEMA_VERSION, ICONS_SECTION_KEY, THEME_SECTION_KEY},
+        icons::IconConfig,
+        resource::{ResourceState, RESOURCE_SCHEMA_VERSION},
+        theme::ThemeConfig,
+    },
+};
 
 type AppUpgrader = fn(&mut AppState) -> BlastResult<()>;
 type ResourceRawUpgrader = fn(&str) -> BlastResult<String>;
 
-const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[
-    (1, upgrade_app_v1_to_v2),
-    (2, upgrade_app_v2_to_v3),
-    (3, upgrade_app_v3_to_v4),
-];
+const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[(1, upgrade_app_v1_to_v2), (2, upgrade_app_v2_to_v3), (3, upgrade_app_v3_to_v4)];
 
 /// Raw-text upgraders, indexed by `from_version`. Each entry takes the
 /// RON text at `from_version` and returns the text at `from_version+1`,
 /// including a bumped `schema_version` field.
-const RESOURCE_RAW_UPGRADERS: &[(u32, ResourceRawUpgrader)] =
-    &[(1, upgrade_resource_v1_to_v2)];
+const RESOURCE_RAW_UPGRADERS: &[(u32, ResourceRawUpgrader)] = &[(1, upgrade_resource_v1_to_v2)];
 
 /// v1 → v2: purely additive. No fields were added to `AppState` between v1
 /// and v2 that require migration — the bump just advances the version token.
@@ -63,16 +57,10 @@ fn upgrade_app_v2_to_v3(state: &mut AppState) -> BlastResult<()> {
 fn upgrade_app_v3_to_v4(state: &mut AppState) -> BlastResult<()> {
     state.schema_version = 4;
     if !state.sections.contains_key(THEME_SECTION_KEY) {
-        state.sections.insert(
-            THEME_SECTION_KEY.to_string(),
-            AppPolicySection::Theme(ThemeConfig::default()),
-        );
+        state.sections.insert(THEME_SECTION_KEY.to_string(), AppPolicySection::Theme(ThemeConfig::default()));
     }
     if !state.sections.contains_key(ICONS_SECTION_KEY) {
-        state.sections.insert(
-            ICONS_SECTION_KEY.to_string(),
-            AppPolicySection::Icons(IconConfig::default()),
-        );
+        state.sections.insert(ICONS_SECTION_KEY.to_string(), AppPolicySection::Icons(IconConfig::default()));
     }
     Ok(())
 }
@@ -83,24 +71,15 @@ pub fn upgrade_app(state: &mut AppState) -> BlastResult<()> {
         let entry = APP_UPGRADERS.iter().find(|(v, _)| *v == from);
         let upgrader = match entry {
             Some((_, f)) => f,
-            None => {
-                return Err(BlastError::Invalid(format!(
-                    "no app upgrader registered for schema_version={from}"
-                )))
-            }
+            None => return Err(BlastError::Invalid(format!("no app upgrader registered for schema_version={from}"))),
         };
         upgrader(state)?;
         if state.schema_version <= from {
-            return Err(BlastError::Invalid(format!(
-                "app upgrader for v{from} did not bump schema_version"
-            )));
+            return Err(BlastError::Invalid(format!("app upgrader for v{from} did not bump schema_version")));
         }
     }
     if state.schema_version > APP_SCHEMA_VERSION {
-        return Err(BlastError::Invalid(format!(
-            "app schema_version={} newer than supported {}",
-            state.schema_version, APP_SCHEMA_VERSION
-        )));
+        return Err(BlastError::Invalid(format!("app schema_version={} newer than supported {}", state.schema_version, APP_SCHEMA_VERSION)));
     }
     Ok(())
 }
@@ -110,15 +89,11 @@ pub fn upgrade_app(state: &mut AppState) -> BlastResult<()> {
 /// done at the raw-text layer in `upgrade_resource_raw`.
 pub fn upgrade_resource(state: &mut ResourceState) -> BlastResult<()> {
     if state.schema_version > RESOURCE_SCHEMA_VERSION {
-        return Err(BlastError::Invalid(format!(
-            "resource schema_version={} newer than supported {}",
-            state.schema_version, RESOURCE_SCHEMA_VERSION
-        )));
+        return Err(BlastError::Invalid(format!("resource schema_version={} newer than supported {}", state.schema_version, RESOURCE_SCHEMA_VERSION)));
     }
     if state.schema_version < RESOURCE_SCHEMA_VERSION {
         return Err(BlastError::Invalid(format!(
-            "resource schema_version={} not migrated; load_resource() should have \
-             upgraded the raw RON before deserialize",
+            "resource schema_version={} not migrated; load_resource() should have upgraded the raw RON before deserialize",
             state.schema_version,
         )));
     }
@@ -136,27 +111,19 @@ pub fn upgrade_resource_raw(raw: &str) -> BlastResult<String> {
         let entry = RESOURCE_RAW_UPGRADERS.iter().find(|(v, _)| *v == version);
         let upgrader = match entry {
             Some((_, f)) => f,
-            None => {
-                return Err(BlastError::Invalid(format!(
-                    "no raw resource upgrader registered for schema_version={version}"
-                )))
-            }
+            None => return Err(BlastError::Invalid(format!("no raw resource upgrader registered for schema_version={version}"))),
         };
         let next = upgrader(&current)?;
         let next_version = parse_resource_schema_version(&next)?;
         if next_version <= version {
-            return Err(BlastError::Invalid(format!(
-                "raw resource upgrader for v{version} did not bump schema_version (still {next_version})"
-            )));
+            return Err(BlastError::Invalid(format!("raw resource upgrader for v{version} did not bump schema_version (still {next_version})")));
         }
         current = next;
         version = next_version;
     }
 
     if version > RESOURCE_SCHEMA_VERSION {
-        return Err(BlastError::Invalid(format!(
-            "resource schema_version={version} newer than supported {RESOURCE_SCHEMA_VERSION}"
-        )));
+        return Err(BlastError::Invalid(format!("resource schema_version={version} newer than supported {RESOURCE_SCHEMA_VERSION}")));
     }
 
     Ok(current)
@@ -167,23 +134,13 @@ fn parse_resource_schema_version(raw: &str) -> BlastResult<u32> {
     let re = Regex::new(r"\bschema_version\s*:\s*(\d+)").map_err(BlastError::from)?;
     let captures = match re.captures(raw) {
         Some(c) => c,
-        None => {
-            return Err(BlastError::Invalid(
-                "resource RON missing schema_version field".to_string(),
-            ))
-        }
+        None => return Err(BlastError::Invalid("resource RON missing schema_version field".to_string())),
     };
     let raw_num = match captures.get(1) {
         Some(m) => m.as_str(),
-        None => {
-            return Err(BlastError::Invalid(
-                "schema_version regex matched but capture group 1 absent".to_string(),
-            ))
-        }
+        None => return Err(BlastError::Invalid("schema_version regex matched but capture group 1 absent".to_string())),
     };
-    raw_num.parse::<u32>().map_err(|err| {
-        BlastError::Invalid(format!("schema_version not a u32: {raw_num}: {err}"))
-    })
+    raw_num.parse::<u32>().map_err(|err| BlastError::Invalid(format!("schema_version not a u32: {raw_num}: {err}")))
 }
 
 /// v1 → v2: reshape `filterable_columns` from `BTreeSet<FieldName>` (a
@@ -196,23 +153,19 @@ fn upgrade_resource_v1_to_v2(raw: &str) -> BlastResult<String> {
 
     // Match: filterable_columns: [ ... ]   (allowing nested whitespace/newlines)
     // The contents can include quoted strings ("email", "title", ...).
-    let re = Regex::new(r"(?s)filterable_columns\s*:\s*\[([^\]]*)\]")
-        .map_err(BlastError::from)?;
+    let re = Regex::new(r"(?s)filterable_columns\s*:\s*\[([^\]]*)\]").map_err(BlastError::from)?;
 
-    bumped = re.replace_all(&bumped, |caps: &regex::Captures| {
-        let inner = &caps[1];
-        let entries: Vec<String> = inner
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(|col| format!("{col}: Eq"))
-            .collect();
-        if entries.is_empty() {
-            "filterable_columns: {}".to_string()
-        } else {
-            format!("filterable_columns: {{{}}}", entries.join(", "))
-        }
-    }).into_owned();
+    bumped = re
+        .replace_all(&bumped, |caps: &regex::Captures| {
+            let inner = &caps[1];
+            let entries: Vec<String> = inner.split(',').map(str::trim).filter(|s| !s.is_empty()).map(|col| format!("{col}: Eq")).collect();
+            if entries.is_empty() {
+                "filterable_columns: {}".to_string()
+            } else {
+                format!("filterable_columns: {{{}}}", entries.join(", "))
+            }
+        })
+        .into_owned();
 
     Ok(bumped)
 }
@@ -242,14 +195,10 @@ fn bump_schema_version(raw: &str, from: u32, to: u32) -> BlastResult<String> {
         format!("{prefix}{to}")
     });
     if !found {
-        return Err(BlastError::Invalid(
-            "raw RON missing schema_version for upgrader bump".to_string(),
-        ));
+        return Err(BlastError::Invalid("raw RON missing schema_version for upgrader bump".to_string()));
     }
     match mismatch {
-        Some(actual) => Err(BlastError::Invalid(format!(
-            "schema_version mismatch in upgrader: expected {from}, found {actual}"
-        ))),
+        Some(actual) => Err(BlastError::Invalid(format!("schema_version mismatch in upgrader: expected {from}, found {actual}"))),
         None => Ok(bumped.into_owned()),
     }
 }

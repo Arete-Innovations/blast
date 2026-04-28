@@ -1,7 +1,9 @@
-use crate::error::{BlastError, BlastResult};
-use crate::state::gen_level::GenLevel;
-use crate::state::resource::ResourceState;
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
+
+use crate::{
+    error::{BlastError, BlastResult},
+    state::{gen_level::GenLevel, resource::ResourceState},
+};
 
 pub fn collect_gen_level(resource: &mut ResourceState) -> BlastResult<()> {
     let theme = ColorfulTheme::default();

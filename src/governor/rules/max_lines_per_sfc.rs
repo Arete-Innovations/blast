@@ -1,8 +1,15 @@
-use crate::state::FeLintState;
-use crate::governor::rules::helpers::{extension_is, snippet_of};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
 use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub struct MaxLinesPerSfc;
 
@@ -17,12 +24,7 @@ impl FileRule for MaxLinesPerSfc {
         "MaxLinesPerSfc"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        contents: &str,
-        config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
         if !extension_is(file, "vue") {
             return Vec::new();
         }
@@ -31,16 +33,7 @@ impl FileRule for MaxLinesPerSfc {
             return Vec::new();
         }
         let snippet = format!("SFC has {} lines", line_count);
-        let suggestion = format!(
-            "split this SFC; max is {} lines",
-            config.max_lines_per_sfc
-        );
-        vec![Violation::new(
-            "MaxLinesPerSfc",
-            file.to_path_buf(),
-            line_count,
-            snippet_of(&snippet),
-            suggestion,
-        )]
+        let suggestion = format!("split this SFC; max is {} lines", config.max_lines_per_sfc);
+        vec![Violation::new("MaxLinesPerSfc", file.to_path_buf(), line_count, snippet_of(&snippet), suggestion)]
     }
 }

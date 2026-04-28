@@ -19,8 +19,7 @@ use crate::state::IconConfig;
 pub fn emit_icons_ts(cfg: &IconConfig) -> String {
     let mut out = String::new();
     out.push_str("export const IC = {\n");
-    let entries: Vec<(&crate::state::IconKey, &crate::state::IconClass)> =
-        cfg.registry.iter().collect();
+    let entries: Vec<(&crate::state::IconKey, &crate::state::IconClass)> = cfg.registry.iter().collect();
     let last_idx = entries.len().saturating_sub(1);
     let key_pad = longest_key(&entries);
     for (i, (key, class)) in entries.iter().enumerate() {
@@ -28,13 +27,7 @@ pub fn emit_icons_ts(cfg: &IconConfig) -> String {
         let key_str = key.as_str();
         let pad_len = key_pad - key_str.len() + 1;
         let pad = " ".repeat(pad_len);
-        out.push_str(&format!(
-            "  {}:{}'{}'{}\n",
-            key_str,
-            pad,
-            class.as_str(),
-            comma,
-        ));
+        out.push_str(&format!("  {}:{}'{}'{}\n", key_str, pad, class.as_str(), comma,));
     }
     out.push_str("} as const\n");
     out.push('\n');
@@ -55,9 +48,10 @@ fn longest_key(entries: &[(&crate::state::IconKey, &crate::state::IconClass)]) -
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::state::{IconClass, IconConfig, IconKey};
-    use std::collections::BTreeMap;
 
     /// Static reference body — copy of the current ICONS_TS_BODY constant
     /// in `src/codegen/fe_runtime_extras.rs`. Used to assert the (key →
@@ -112,11 +106,7 @@ export type IconName = keyof typeof IC;
                 continue;
             }
             // Skip the `} as const` and `export const IC` and similar lines.
-            let starts_with_lower = trimmed
-                .chars()
-                .next()
-                .map(|c| c.is_ascii_lowercase())
-                .unwrap_or(false);
+            let starts_with_lower = trimmed.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false);
             if !starts_with_lower {
                 continue;
             }
@@ -177,10 +167,7 @@ export type IconName = keyof typeof IC;
         ];
         for (k, v) in expected {
             let needle = format!("'{}'", v);
-            assert!(
-                body.contains(&needle),
-                "expected emitted body to contain {needle}"
-            );
+            assert!(body.contains(&needle), "expected emitted body to contain {needle}");
             assert!(body.contains(k), "expected emitted body to contain key {k}");
         }
     }
@@ -190,10 +177,7 @@ export type IconName = keyof typeof IC;
         let emitted = emit_icons_ts(&IconConfig::default());
         let lhs = parse_ic_entries(&emitted);
         let rhs = parse_ic_entries(REFERENCE_ICONS_TS);
-        assert_eq!(
-            lhs, rhs,
-            "icons.ts entry set drifted from static reference\nlhs: {lhs:#?}\nrhs: {rhs:#?}"
-        );
+        assert_eq!(lhs, rhs, "icons.ts entry set drifted from static reference\nlhs: {lhs:#?}\nrhs: {rhs:#?}");
     }
 
     #[test]
@@ -205,9 +189,7 @@ export type IconName = keyof typeof IC;
 
     #[test]
     fn empty_registry_produces_well_formed_output() {
-        let cfg = IconConfig {
-            registry: BTreeMap::new(),
-        };
+        let cfg = IconConfig { registry: BTreeMap::new() };
         let body = emit_icons_ts(&cfg);
         assert!(body.contains("export const IC = {\n} as const"));
         assert!(body.contains("export type IconName = keyof typeof IC"));
@@ -216,10 +198,7 @@ export type IconName = keyof typeof IC;
     #[test]
     fn single_entry_has_no_trailing_comma() {
         let mut registry = BTreeMap::new();
-        registry.insert(
-            IconKey::new("home").unwrap(),
-            IconClass::new("pi pi-home").unwrap(),
-        );
+        registry.insert(IconKey::new("home").unwrap(), IconClass::new("pi pi-home").unwrap());
         let body = emit_icons_ts(&IconConfig { registry });
         assert!(body.contains("  home: 'pi pi-home'\n} as const"));
     }

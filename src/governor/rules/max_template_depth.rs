@@ -1,10 +1,15 @@
-use crate::governor::rules::helpers::{
-    extension_is, extract_template_block, snippet_of,
-};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
 use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, extract_template_block, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub struct MaxTemplateDepth;
 
@@ -47,11 +52,7 @@ fn max_depth(body: &str) -> u32 {
             continue;
         }
         // We have a `<`. Determine if it's a tag, end-tag, or junk.
-        let next = if i + 1 < bytes.len() {
-            bytes[i + 1]
-        } else {
-            0
-        };
+        let next = if i + 1 < bytes.len() { bytes[i + 1] } else { 0 };
         let is_end_tag = next == b'/';
         // Find the closing `>` for this tag.
         let rest = &body[i + 1..];
@@ -60,14 +61,12 @@ fn max_depth(body: &str) -> u32 {
             None => return max_d as u32,
         };
         let inner = &rest[..gt_rel]; // does not include '<' or '>'
-        // Self-closing if inner ends with '/'.
+                                     // Self-closing if inner ends with '/'.
         let trimmed = inner.trim_end();
         let self_closing = trimmed.ends_with('/');
 
         // Check the first char after '<' is alpha — otherwise it's noise (e.g. `<` in expressions).
-        let starts_with_alpha = next.is_ascii_alphabetic() || (is_end_tag
-            && i + 2 < bytes.len()
-            && bytes[i + 2].is_ascii_alphabetic());
+        let starts_with_alpha = next.is_ascii_alphabetic() || (is_end_tag && i + 2 < bytes.len() && bytes[i + 2].is_ascii_alphabetic());
 
         if starts_with_alpha {
             if is_end_tag {
@@ -90,12 +89,7 @@ impl FileRule for MaxTemplateDepth {
         "MaxTemplateDepth"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        contents: &str,
-        config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, contents: &str, config: &FeLintState) -> Vec<Violation> {
         if !extension_is(file, "vue") {
             return Vec::new();
         }
@@ -108,24 +102,16 @@ impl FileRule for MaxTemplateDepth {
             return Vec::new();
         }
         let snippet = format!("template depth {} exceeds limit", depth);
-        let suggestion = format!(
-            "extract a sub-component; max template depth is {}",
-            config.max_template_depth
-        );
-        vec![Violation::new(
-            "MaxTemplateDepth",
-            file.to_path_buf(),
-            block.start_line,
-            snippet_of(&snippet),
-            suggestion,
-        )]
+        let suggestion = format!("extract a sub-component; max template depth is {}", config.max_template_depth);
+        vec![Violation::new("MaxTemplateDepth", file.to_path_buf(), block.start_line, snippet_of(&snippet), suggestion)]
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(contents: &str) -> Vec<Violation> {
         let rule = MaxTemplateDepth::new();

@@ -2,8 +2,10 @@ use std::io::{BufRead, BufReader, Write};
 
 use serde_json::{json, Value};
 
-use crate::arsenal::scanner::{ArsenalReport, Entry};
-use crate::error::{BlastError, BlastResult};
+use crate::{
+    arsenal::scanner::{ArsenalReport, Entry},
+    error::{BlastError, BlastResult},
+};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "blast-arsenal";
@@ -85,11 +87,7 @@ fn handle_message(report: &ArsenalReport, msg: &Value) -> Outcome {
             if is_notification {
                 Outcome::Quiet
             } else {
-                Outcome::Reply(error_response(
-                    id,
-                    -32601,
-                    &format!("method not found: {}", method),
-                ))
+                Outcome::Reply(error_response(id, -32601, &format!("method not found: {}", method)))
             }
         }
     }
@@ -200,7 +198,9 @@ fn tool_list(report: &ArsenalReport, args: &Value) -> Value {
 fn layer_matches(filter: Option<&str>, layer: &str) -> bool {
     match filter {
         Some(f) => f == layer,
-        None => { return true; }
+        None => {
+            return true;
+        }
     }
 }
 
@@ -212,12 +212,7 @@ fn tool_search(report: &ArsenalReport, args: &Value) -> BlastResult<Value> {
     let mut hits: Vec<&Entry> = Vec::new();
     for entries in report.layers.values() {
         for entry in entries {
-            let blob = format!(
-                "{} {} {}",
-                entry.name.to_lowercase(),
-                entry.fqn.to_lowercase(),
-                entry.doc.to_lowercase()
-            );
+            let blob = format!("{} {} {}", entry.name.to_lowercase(), entry.fqn.to_lowercase(), entry.doc.to_lowercase());
             if blob.contains(&query) {
                 hits.push(entry);
             }
@@ -274,9 +269,10 @@ fn write_message<W: Write>(writer: &mut W, msg: &Value) -> BlastResult<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::arsenal::scanner::{Entry, RouteEntry};
-    use std::collections::BTreeMap;
 
     fn fixture() -> ArsenalReport {
         let mut layers: BTreeMap<String, Vec<Entry>> = BTreeMap::new();

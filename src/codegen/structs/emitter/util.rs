@@ -4,11 +4,12 @@
 //! list-options lookup, derive lists, table attributes, type rendering)
 //! live in one place rather than being duplicated per emitter.
 
-use crate::codegen::structs::sql_map;
-use crate::state::{
-    FieldName, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState,
-};
 use std::collections::BTreeSet;
+
+use crate::{
+    codegen::structs::sql_map,
+    state::{FieldName, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState},
+};
 
 /// Walk the resource's fields and return every `FieldVariant` that
 /// appears at least once. Drives the "should we emit this struct?"
@@ -31,15 +32,8 @@ pub fn list_options(resource: &ResourceState) -> Option<&ListOptions> {
 
 /// Filter the resource's fields to those carrying a given variant, in
 /// the canonical iteration order (lexical post-`canonicalize`).
-pub fn fields_for_variant<'a>(
-    resource: &'a ResourceState,
-    variant: FieldVariant,
-) -> Vec<(&'a FieldName, &'a FieldState)> {
-    resource
-        .fields
-        .iter()
-        .filter(|(_, field)| field.variants.contains(&variant))
-        .collect()
+pub fn fields_for_variant<'a>(resource: &'a ResourceState, variant: FieldVariant) -> Vec<(&'a FieldName, &'a FieldState)> {
+    resource.fields.iter().filter(|(_, field)| field.variants.contains(&variant)).collect()
 }
 
 /// Returns `true` when every field in `variant` also carries the `Db`
@@ -62,9 +56,7 @@ pub fn projection_is_db_subset(resource: &ResourceState, variant: FieldVariant) 
 /// `Insertable` / `AsChangeset`; `Public` / `Admin` are pure data.
 pub fn derives_for_variant(variant: FieldVariant) -> &'static str {
     match variant {
-        FieldVariant::Db => {
-            "Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize"
-        }
+        FieldVariant::Db => "Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize",
         FieldVariant::Insertable => "Debug, Clone, Insertable, Serialize, Deserialize",
         FieldVariant::Patch => "Debug, Default, Clone, AsChangeset, Serialize, Deserialize",
         FieldVariant::Public => "Debug, Clone, Serialize, Deserialize",
@@ -77,9 +69,7 @@ pub fn derives_for_variant(variant: FieldVariant) -> &'static str {
 /// table and therefore do not get the attribute.
 pub fn table_attr_for_variant(variant: FieldVariant, table: &str) -> Option<String> {
     match variant {
-        FieldVariant::Db | FieldVariant::Insertable | FieldVariant::Patch => {
-            Some(format!("#[diesel(table_name = {table})]"))
-        }
+        FieldVariant::Db | FieldVariant::Insertable | FieldVariant::Patch => Some(format!("#[diesel(table_name = {table})]")),
         FieldVariant::Public | FieldVariant::Admin => None,
     }
 }
@@ -89,9 +79,6 @@ pub fn table_attr_for_variant(variant: FieldVariant, table: &str) -> Option<Stri
 pub fn field_type_for_variant(field: &FieldState, variant: FieldVariant) -> String {
     match variant {
         FieldVariant::Patch => sql_map::rust_type_always_optional(&field.sql_type),
-        FieldVariant::Db
-        | FieldVariant::Insertable
-        | FieldVariant::Public
-        | FieldVariant::Admin => sql_map::rust_type(&field.sql_type, field.nullable),
+        FieldVariant::Db | FieldVariant::Insertable | FieldVariant::Public | FieldVariant::Admin => sql_map::rust_type(&field.sql_type, field.nullable),
     }
 }

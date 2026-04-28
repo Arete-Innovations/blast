@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{is_comment_line, path_contains, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, path_contains, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     /// Matches `const page = ref(...)`, `const sort = ref(...)`,
@@ -42,13 +50,7 @@ impl Rule for LocalListState {
         "LocalListState"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        _config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
         if is_comment_line(line) {
             return None;
         }
@@ -70,8 +72,9 @@ impl Rule for LocalListState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(file: &str, line: &str) -> Option<Violation> {
         let rule = LocalListState::new();
@@ -81,37 +84,25 @@ mod tests {
 
     #[test]
     fn flags_local_page_ref_in_list_page() {
-        let v = run(
-            "frontend/src/pages/UsersListPage.vue",
-            "const page = ref(1)",
-        );
+        let v = run("frontend/src/pages/UsersListPage.vue", "const page = ref(1)");
         assert!(v.is_some(), "expected violation, got none");
     }
 
     #[test]
     fn flags_local_sort_ref_in_list_page() {
-        let v = run(
-            "frontend/src/pages/OrdersListPage.vue",
-            "const sort = ref('-created_at')",
-        );
+        let v = run("frontend/src/pages/OrdersListPage.vue", "const sort = ref('-created_at')");
         assert!(v.is_some(), "expected violation, got none");
     }
 
     #[test]
     fn ignores_local_page_outside_list_page() {
-        let v = run(
-            "frontend/src/components/Pager.vue",
-            "const page = ref(1)",
-        );
+        let v = run("frontend/src/components/Pager.vue", "const page = ref(1)");
         assert!(v.is_none(), "non-list page should not trigger, got {:?}", v);
     }
 
     #[test]
     fn ignores_destructure_from_composable() {
-        let v = run(
-            "frontend/src/pages/UsersListPage.vue",
-            "const { data, page, sort, filter } = useUsersList()",
-        );
+        let v = run("frontend/src/pages/UsersListPage.vue", "const { data, page, sort, filter } = useUsersList()");
         assert!(v.is_none(), "destructure from composable should be clean");
     }
 }

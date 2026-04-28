@@ -1,18 +1,28 @@
-use crate::configs::Config;
-use crate::error::{BlastError, BlastResult};
-use crate::io::cli::{render_body, CliSink, CliSinkConfig};
-use crate::io::events::{ProgressEvent, SinkEvent, SinkLevel};
-use crate::io::traits::{Progress as ProgressTrait, Sink as SinkTrait};
+use std::{
+    env,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex, OnceLock,
+    },
+    thread,
+    time::Duration,
+};
+
 use chrono::Local;
 use console::style;
-use std::env;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
-use std::thread;
-use std::time::Duration;
+
+use crate::{
+    configs::Config,
+    error::{BlastError, BlastResult},
+    io::{
+        cli::{render_body, CliSink, CliSinkConfig},
+        events::{ProgressEvent, SinkEvent, SinkLevel},
+        traits::{Progress as ProgressTrait, Sink as SinkTrait},
+    },
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeMode {
@@ -51,13 +61,7 @@ impl LogLevel {
     }
 }
 
-pub const STANDARD_LOG_FILES: [&str; 5] = [
-    "server.log",
-    "error.log",
-    "info.log",
-    "debug.log",
-    "warning.log",
-];
+pub const STANDARD_LOG_FILES: [&str; 5] = ["server.log", "error.log", "info.log", "debug.log", "warning.log"];
 
 static RUNTIME_MODE: OnceLock<Mutex<RuntimeMode>> = OnceLock::new();
 static LOG_FILE_PATH: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
@@ -87,10 +91,7 @@ pub fn init(mode: RuntimeMode, log_path: Option<&Path>) -> BlastResult<()> {
         None => {}
     }
 
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
 
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
     writeln!(file, "\n--- New Blast Session: {} ---", timestamp)?;
@@ -224,12 +225,7 @@ impl Progress {
             return self;
         }
         if !is_quiet() {
-            ProgressTrait::emit(
-                &mut self.inner,
-                ProgressEvent::StepStart {
-                    label: msg.to_string(),
-                },
-            );
+            ProgressTrait::emit(&mut self.inner, ProgressEvent::StepStart { label: msg.to_string() });
         }
         self
     }
@@ -250,12 +246,7 @@ impl Progress {
             return;
         }
         if !is_quiet() {
-            ProgressTrait::emit(
-                &mut self.inner,
-                ProgressEvent::StepDone {
-                    label: msg.to_string(),
-                },
-            );
+            ProgressTrait::emit(&mut self.inner, ProgressEvent::StepDone { label: msg.to_string() });
         }
     }
 
@@ -331,17 +322,9 @@ pub fn setup_for_mode(config: &Config, interactive: bool) -> BlastResult<()> {
     };
 
     let log_path = if interactive {
-        config
-            .project_dir
-            .join("storage")
-            .join("blast")
-            .join("blast.log")
+        config.project_dir.join("storage").join("blast").join("blast.log")
     } else {
-        config
-            .project_dir
-            .join("storage")
-            .join("logs")
-            .join("info.log")
+        config.project_dir.join("storage").join("logs").join("info.log")
     };
 
     init(mode, Some(&log_path))?;
@@ -378,11 +361,7 @@ pub fn get_log_files(config: &Config) -> Vec<PathBuf> {
 pub fn truncate_log_file(log_path: &Path) -> BlastResult<()> {
     info(&format!("Truncating log file: {}", log_path.display()))?;
 
-    let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(log_path)?;
+    let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(log_path)?;
 
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
     writeln!(file, "--- Log file truncated at {} ---", timestamp)?;
@@ -419,18 +398,9 @@ pub fn truncate_specific_log(config: &Config, file_name: Option<String>) -> Blas
     let logs_dir = config.project_dir.join("storage").join("logs");
     let blast_dir = config.project_dir.join("storage").join("blast");
 
-    let with_ext = if file_name.ends_with(".log") {
-        file_name.clone()
-    } else {
-        format!("{}.log", file_name)
-    };
+    let with_ext = if file_name.ends_with(".log") { file_name.clone() } else { format!("{}.log", file_name) };
 
-    let paths = [
-        logs_dir.join(&file_name),
-        blast_dir.join(&file_name),
-        logs_dir.join(&with_ext),
-        blast_dir.join(&with_ext),
-    ];
+    let paths = [logs_dir.join(&file_name), blast_dir.join(&file_name), logs_dir.join(&with_ext), blast_dir.join(&with_ext)];
 
     for path in paths.iter() {
         if path.exists() {
@@ -438,10 +408,7 @@ pub fn truncate_specific_log(config: &Config, file_name: Option<String>) -> Blas
         }
     }
 
-    Err(BlastError::NotFound(format!(
-        "log file not found: {}",
-        file_name
-    )))
+    Err(BlastError::NotFound(format!("log file not found: {}", file_name)))
 }
 
 pub fn view_logs_enhanced(level: &str, config: &Config) -> BlastResult<()> {
@@ -450,10 +417,7 @@ pub fn view_logs_enhanced(level: &str, config: &Config) -> BlastResult<()> {
     let log_path = logs_dir.join(&log_file);
 
     if !log_path.exists() {
-        return Err(BlastError::NotFound(format!(
-            "log file not found: {}",
-            log_file
-        )));
+        return Err(BlastError::NotFound(format!("log file not found: {}", log_file)));
     }
 
     info(&format!("Following {} logs (Ctrl+C to stop)...", level))?;
@@ -466,12 +430,7 @@ pub fn view_logs_enhanced(level: &str, config: &Config) -> BlastResult<()> {
                 Err(e) => return Err(BlastError::Io(e)),
             };
             if !content.trim().is_empty() {
-                println!(
-                    "{}",
-                    style(format!("=== {} LOGS ===", level.to_uppercase()))
-                        .bold()
-                        .cyan()
-                );
+                println!("{}", style(format!("=== {} LOGS ===", level.to_uppercase())).bold().cyan());
                 println!();
                 for line in content.lines() {
                     if line.trim().is_empty() || line.starts_with("---") {
@@ -524,8 +483,7 @@ fn format_log_entry(line: &str) {
         return;
     };
 
-    let file_location =
-        &line[second_bracket_start + 3..second_bracket_start + 3 + second_bracket_end];
+    let file_location = &line[second_bracket_start + 3..second_bracket_start + 3 + second_bracket_end];
     let rest = &line[second_bracket_start + 3 + second_bracket_end + 1..].trim();
 
     let parts: Vec<&str> = rest.split(" → ").collect();
@@ -540,17 +498,8 @@ fn format_log_entry(line: &str) {
 
         for (i, trace_item) in trace_items.iter().enumerate() {
             let indent = " ".repeat(i + 1);
-            let connector = if i == trace_items.len() - 1 {
-                "┗━╾"
-            } else {
-                "┗┳╾"
-            };
-            println!(
-                "{}{} {}",
-                indent,
-                style(connector).dim(),
-                style(trace_item).yellow()
-            );
+            let connector = if i == trace_items.len() - 1 { "┗━╾" } else { "┗┳╾" };
+            println!("{}{} {}", indent, style(connector).dim(), style(trace_item).yellow());
         }
     } else if parts.len() == 2 {
         let message = parts[0];

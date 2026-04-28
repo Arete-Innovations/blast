@@ -20,12 +20,7 @@ pub fn emit_tokens_css(theme: &ThemeConfig) -> String {
     emit_size_group(&mut out, "fs", &theme.tokens.font_sizes, font_size_order());
     emit_size_group(&mut out, "space", &theme.tokens.spacing, spacing_order());
     emit_size_group(&mut out, "icon", &theme.tokens.icon_sizes, icon_size_order());
-    emit_size_group(
-        &mut out,
-        "container",
-        &theme.tokens.container_widths,
-        container_order(),
-    );
+    emit_size_group(&mut out, "container", &theme.tokens.container_widths, container_order());
     emit_clamp_group(&mut out, "fs", &theme.tokens.responsive_font_sizes, responsive_fs_order());
     emit_clamp_group(&mut out, "pad", &theme.tokens.responsive_padding, responsive_pad_order());
     emit_z_index(&mut out, &theme.tokens);
@@ -42,22 +37,12 @@ fn emit_fonts(out: &mut String, cat: &TokenCatalog) {
     out.push('\n');
 }
 
-fn emit_size_group(
-    out: &mut String,
-    prefix: &str,
-    map: &std::collections::BTreeMap<SizeKey, crate::state::theme::DimValue>,
-    order: &[SizeKey],
-) {
+fn emit_size_group(out: &mut String, prefix: &str, map: &std::collections::BTreeMap<SizeKey, crate::state::theme::DimValue>, order: &[SizeKey]) {
     let mut wrote = false;
     for key in order {
         match map.get(key) {
             Some(value) => {
-                out.push_str(&format!(
-                    "    --app-{}-{}: {};\n",
-                    prefix,
-                    key.css_suffix(),
-                    value.to_css()
-                ));
+                out.push_str(&format!("    --app-{}-{}: {};\n", prefix, key.css_suffix(), value.to_css()));
                 wrote = true;
             }
             None => {}
@@ -68,12 +53,7 @@ fn emit_size_group(
     }
 }
 
-fn emit_clamp_group(
-    out: &mut String,
-    prefix: &str,
-    map: &std::collections::BTreeMap<String, crate::state::theme::ClampValue>,
-    order: &[&str],
-) {
+fn emit_clamp_group(out: &mut String, prefix: &str, map: &std::collections::BTreeMap<String, crate::state::theme::ClampValue>, order: &[&str]) {
     let mut wrote = false;
     for key in order {
         match map.get(*key) {
@@ -204,37 +184,15 @@ fn spacing_order() -> &'static [SizeKey] {
 }
 
 fn icon_size_order() -> &'static [SizeKey] {
-    &[
-        SizeKey::Xs,
-        SizeKey::Sm,
-        SizeKey::Md,
-        SizeKey::Lg,
-        SizeKey::Xl,
-        SizeKey::Size2Xl,
-    ]
+    &[SizeKey::Xs, SizeKey::Sm, SizeKey::Md, SizeKey::Lg, SizeKey::Xl, SizeKey::Size2Xl]
 }
 
 fn container_order() -> &'static [SizeKey] {
-    &[
-        SizeKey::Xs,
-        SizeKey::Sm,
-        SizeKey::Md,
-        SizeKey::Lg,
-        SizeKey::Xl,
-        SizeKey::Size2Xl,
-    ]
+    &[SizeKey::Xs, SizeKey::Sm, SizeKey::Md, SizeKey::Lg, SizeKey::Xl, SizeKey::Size2Xl]
 }
 
 fn responsive_fs_order() -> &'static [&'static str] {
-    &[
-        "body-resp",
-        "sub-resp",
-        "h3-resp",
-        "h2-resp",
-        "h1-resp",
-        "display-sm",
-        "display-lg",
-    ]
+    &["body-resp", "sub-resp", "h3-resp", "h2-resp", "h1-resp", "display-sm", "display-lg"]
 }
 
 fn responsive_pad_order() -> &'static [&'static str] {
@@ -243,8 +201,9 @@ fn responsive_pad_order() -> &'static [&'static str] {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::BTreeMap;
+
+    use super::*;
 
     /// Static reference body — copy of the current `TOKENS_CSS` constant
     /// in `src/codegen/frontend_scaffold.rs`. The parity test below proves
@@ -368,10 +327,7 @@ mod tests {
         let emitted = emit_tokens_css(&theme);
         let lhs = parse_vars(&emitted);
         let rhs = parse_vars(REFERENCE_TOKENS_CSS);
-        assert_eq!(
-            lhs, rhs,
-            "codegen tokens.css var set drifted from static reference\nlhs: {lhs:#?}\nrhs: {rhs:#?}"
-        );
+        assert_eq!(lhs, rhs, "codegen tokens.css var set drifted from static reference\nlhs: {lhs:#?}\nrhs: {rhs:#?}");
     }
 
     #[test]
@@ -389,10 +345,7 @@ mod tests {
             "--app-fs-4xl",
             "--app-fs-5xl",
         ] {
-            assert!(
-                body.contains(key),
-                "expected emitted body to contain {key}\nbody:\n{body}"
-            );
+            assert!(body.contains(key), "expected emitted body to contain {key}\nbody:\n{body}");
         }
     }
 
@@ -412,12 +365,8 @@ mod tests {
     #[test]
     fn emits_font_family_strings_verbatim() {
         let body = emit_tokens_css(&ThemeConfig::default());
-        assert!(body.contains(
-            "--app-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;"
-        ));
-        assert!(body.contains(
-            "--app-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;"
-        ));
+        assert!(body.contains("--app-font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;"));
+        assert!(body.contains("--app-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;"));
     }
 
     #[test]

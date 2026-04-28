@@ -1,11 +1,14 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::codegen::header;
-use crate::codegen::ir_loader;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::{GenLevel, ResourceState, Verb};
+use crate::{
+    codegen::{header, ir_loader},
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::{GenLevel, ResourceState, Verb},
+};
 
 #[derive(Debug, Default)]
 pub struct EmitReport {
@@ -15,11 +18,7 @@ pub struct EmitReport {
 
 const STEP_LABEL: &str = "http routes generation";
 
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
     let all_resources = match ir_loader::load_resource_states(project_root) {
@@ -32,10 +31,7 @@ pub fn run(
         }
     };
 
-    let resources: Vec<ResourceState> = all_resources
-        .into_iter()
-        .filter(|r| r.gen_level >= GenLevel::Route)
-        .collect();
+    let resources: Vec<ResourceState> = all_resources.into_iter().filter(|r| r.gen_level >= GenLevel::Route).collect();
 
     let mut report = EmitReport::default();
     let out_dir = generated_dir(project_root);
@@ -60,9 +56,7 @@ pub fn run(
 }
 
 fn write_file(target: &Path, bytes: &[u8], report: &mut EmitReport) -> BlastResult<()> {
-    let parent = target.parent().ok_or_else(|| {
-        BlastError::Invalid(format!("http route target has no parent: {}", target.display()))
-    })?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("http route target has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
     fs::write(target, bytes)?;
     report.written.push(target.to_path_buf());
@@ -70,11 +64,7 @@ fn write_file(target: &Path, bytes: &[u8], report: &mut EmitReport) -> BlastResu
 }
 
 fn generated_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join("src")
-        .join("transport")
-        .join("http")
-        .join("generated")
+    project_root.join("src").join("transport").join("http").join("generated")
 }
 
 fn build_resource_file(r: &ResourceState) -> String {
@@ -90,15 +80,8 @@ fn build_resource_file(r: &ResourceState) -> String {
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str("use crate::transport::http::list_query::{ListQuery, ListResponse};\n");
     out.push('\n');
-    out.push_str(&format!(
-        "use crate::flows::generated::{table} as flow;\n",
-        table = table,
-    ));
-    out.push_str(&format!(
-        "use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}Public}};\n",
-        table = table,
-        ty = type_name,
-    ));
+    out.push_str(&format!("use crate::flows::generated::{table} as flow;\n", table = table,));
+    out.push_str(&format!("use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}Public}};\n", table = table, ty = type_name,));
     out.push('\n');
 
     for verb in r.verbs.keys() {
@@ -122,66 +105,39 @@ fn handler_for_verb(verb: Verb, type_name: &str) -> String {
 
 fn list_handler(type_name: &str) -> String {
     format!(
-        "pub async fn list(\n\
-        \x20   State(ctx): State<Ctx>,\n\
-        \x20   Query(params): Query<ListQuery>,\n\
-        ) -> Result<Json<ListResponse<{ty}Public>>, MeltDown> {{\n\
-        \x20   let result = flow::list::run(&ctx, params).await?;\n\
-        \x20   Ok(Json(result))\n\
-        }}\n",
+        "pub async fn list(\n\x20   State(ctx): State<Ctx>,\n\x20   Query(params): Query<ListQuery>,\n) -> Result<Json<ListResponse<{ty}Public>>, MeltDown> {{\n\x20   let result = flow::list::run(&ctx, \
+         params).await?;\n\x20   Ok(Json(result))\n}}\n",
         ty = type_name,
     )
 }
 
 fn get_handler(type_name: &str) -> String {
     format!(
-        "pub async fn get_one(\n\
-        \x20   State(ctx): State<Ctx>,\n\
-        \x20   Path(id): Path<i64>,\n\
-        ) -> Result<Json<{ty}Public>, MeltDown> {{\n\
-        \x20   let result = flow::get::run(&ctx, id).await?;\n\
-        \x20   Ok(Json(result))\n\
-        }}\n",
+        "pub async fn get_one(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n\x20   let result = flow::get::run(&ctx, id).await?;\n\x20   \
+         Ok(Json(result))\n}}\n",
         ty = type_name,
     )
 }
 
 fn create_handler(type_name: &str) -> String {
     format!(
-        "pub async fn create(\n\
-        \x20   State(ctx): State<Ctx>,\n\
-        \x20   Json(input): Json<{ty}Insertable>,\n\
-        ) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n\
-        \x20   let result = flow::create::run(&ctx, input).await?;\n\
-        \x20   Ok((StatusCode::CREATED, Json(result)))\n\
-        }}\n",
+        "pub async fn create(\n\x20   State(ctx): State<Ctx>,\n\x20   Json(input): Json<{ty}Insertable>,\n) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n\x20   let result = flow::create::run(&ctx, \
+         input).await?;\n\x20   Ok((StatusCode::CREATED, Json(result)))\n}}\n",
         ty = type_name,
     )
 }
 
 fn update_handler(type_name: &str) -> String {
     format!(
-        "pub async fn update(\n\
-        \x20   State(ctx): State<Ctx>,\n\
-        \x20   Path(id): Path<i64>,\n\
-        \x20   Json(patch): Json<{ty}Patch>,\n\
-        ) -> Result<Json<{ty}Public>, MeltDown> {{\n\
-        \x20   let result = flow::update::run(&ctx, id, patch).await?;\n\
-        \x20   Ok(Json(result))\n\
-        }}\n",
+        "pub async fn update(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n\x20   Json(patch): Json<{ty}Patch>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n\x20   let result = flow::update::run(&ctx, \
+         id, patch).await?;\n\x20   Ok(Json(result))\n}}\n",
         ty = type_name,
     )
 }
 
 fn delete_handler() -> String {
     String::from(
-        "pub async fn delete_one(\n\
-        \x20   State(ctx): State<Ctx>,\n\
-        \x20   Path(id): Path<i64>,\n\
-        ) -> Result<StatusCode, MeltDown> {\n\
-        \x20   flow::delete::run(&ctx, id).await?;\n\
-        \x20   Ok(StatusCode::NO_CONTENT)\n\
-        }\n",
+        "pub async fn delete_one(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n) -> Result<StatusCode, MeltDown> {\n\x20   flow::delete::run(&ctx, id).await?;\n\x20   Ok(StatusCode::NO_CONTENT)\n}\n",
     )
 }
 
@@ -192,15 +148,8 @@ fn router_fn(r: &ResourceState) -> String {
     let has_update = r.verbs.contains_key(&Verb::Update);
     let has_delete = r.verbs.contains_key(&Verb::Delete);
 
-    let collection_chain = build_method_chain(&[
-        (has_list, "get", "list"),
-        (has_create, "post", "create"),
-    ]);
-    let item_chain = build_method_chain(&[
-        (has_get, "get", "get_one"),
-        (has_update, "patch", "update"),
-        (has_delete, "delete", "delete_one"),
-    ]);
+    let collection_chain = build_method_chain(&[(has_list, "get", "list"), (has_create, "post", "create")]);
+    let item_chain = build_method_chain(&[(has_get, "get", "get_one"), (has_update, "patch", "update"), (has_delete, "delete", "delete_one")]);
 
     let mut out = String::new();
     out.push_str("pub fn router() -> Router<Ctx> {\n");
@@ -219,11 +168,7 @@ fn router_fn(r: &ResourceState) -> String {
 }
 
 fn build_method_chain(entries: &[(bool, &str, &str)]) -> Option<String> {
-    let active: Vec<(&str, &str)> = entries
-        .iter()
-        .filter(|(enabled, _, _)| *enabled)
-        .map(|(_, method, handler)| (*method, *handler))
-        .collect();
+    let active: Vec<(&str, &str)> = entries.iter().filter(|(enabled, _, _)| *enabled).map(|(_, method, handler)| (*method, *handler)).collect();
     if active.is_empty() {
         return None;
     }
@@ -254,10 +199,7 @@ fn build_barrel(resources: &[ResourceState]) -> String {
     out.push_str("pub fn router() -> Router<Ctx> {\n");
     out.push_str("    let mut router = Router::new();\n");
     for name in &names {
-        out.push_str(&format!(
-            "    router = router.nest(\"/{name}\", {name}::router());\n",
-            name = name,
-        ));
+        out.push_str(&format!("    router = router.nest(\"/{name}\", {name}::router());\n", name = name,));
     }
     out.push_str("    router\n");
     out.push_str("}\n");
@@ -302,22 +244,19 @@ fn pascal_case(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::{NullProgress, NullSink};
-    use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, ResourceName, ResourceState, SqlType,
-        Verb, VerbState,
-    };
-    use indexmap::IndexMap;
     use std::collections::BTreeSet;
+
+    use indexmap::IndexMap;
     use tempfile::TempDir;
 
+    use super::*;
+    use crate::{
+        io::null::{NullProgress, NullSink},
+        state::{AuthMode, FieldName, FieldState, FieldVariant, ResourceName, ResourceState, SqlType, Verb, VerbState},
+    };
+
     fn write_state(project_root: &Path, table: &str) -> std::io::Result<()> {
-        let resources_dir = project_root
-            .join("storage")
-            .join("blast")
-            .join("state")
-            .join("resources");
+        let resources_dir = project_root.join("storage").join("blast").join("state").join("resources");
         fs::create_dir_all(&resources_dir)?;
 
         let mut field_variants = BTreeSet::new();
@@ -377,8 +316,7 @@ mod tests {
         let mut progress = NullProgress;
         let report = run(root, &mut sink, &mut progress).expect("http routes generation");
 
-        let resource_file = root
-            .join("src/transport/http/generated/users.rs");
+        let resource_file = root.join("src/transport/http/generated/users.rs");
         let barrel = root.join("src/transport/http/generated/mod.rs");
         assert!(resource_file.exists(), "per-resource file missing");
         assert!(barrel.exists(), "barrel mod.rs missing");
@@ -391,25 +329,13 @@ mod tests {
         assert!(body.contains("pub async fn create("), "create handler missing");
         assert!(body.contains("pub async fn update("), "update handler missing");
         assert!(body.contains("pub async fn delete_one("), "delete handler missing");
-        assert!(
-            body.contains("pub fn router() -> Router<Ctx>"),
-            "router fn missing",
-        );
-        assert!(
-            body.contains(".route(\"/\","),
-            "collection route missing",
-        );
-        assert!(
-            body.contains(".route(\"/:id\","),
-            "item route missing",
-        );
+        assert!(body.contains("pub fn router() -> Router<Ctx>"), "router fn missing",);
+        assert!(body.contains(".route(\"/\","), "collection route missing",);
+        assert!(body.contains(".route(\"/:id\","), "item route missing",);
 
         let barrel_body = fs::read_to_string(&barrel).expect("read barrel");
         assert!(barrel_body.contains("pub mod users;"), "barrel module missing");
-        assert!(
-            barrel_body.contains(".nest(\"/users\", users::router())"),
-            "barrel nest missing",
-        );
+        assert!(barrel_body.contains(".nest(\"/users\", users::router())"), "barrel nest missing",);
     }
 
     #[test]
@@ -417,8 +343,7 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
 
-        let resources_dir = root
-            .join("storage/blast/state/resources");
+        let resources_dir = root.join("storage/blast/state/resources");
         fs::create_dir_all(&resources_dir).expect("mkdir");
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -440,8 +365,7 @@ mod tests {
         let mut progress = NullProgress;
         run(root, &mut sink, &mut progress).expect("http routes generation");
 
-        let body = fs::read_to_string(root.join("src/transport/http/generated/logs.rs"))
-            .expect("read");
+        let body = fs::read_to_string(root.join("src/transport/http/generated/logs.rs")).expect("read");
         assert!(body.contains("pub async fn list("));
         assert!(!body.contains("pub async fn create("));
         assert!(!body.contains("pub async fn delete_one("));

@@ -1,8 +1,6 @@
-use crate::database::write_migration;
-use crate::error::BlastResult;
-use crate::logger;
-use std::env;
-use std::process::Command;
+use std::{env, process::Command};
+
+use crate::{database::write_migration, error::BlastResult, logger};
 
 const UP_SKELETON: &str = "-- Write your custom up migration here.\n";
 const DOWN_SKELETON: &str = "-- Write your custom down migration here.\n";
@@ -20,27 +18,20 @@ pub fn run_custom(name: &str) -> BlastResult<()> {
         Ok(v) => v,
         Err(e) => {
             drop(e);
-            logger::warning(
-                "$EDITOR is not set; edit the up.sql / down.sql files manually with your editor of choice.",
-            )?;
+            logger::warning("$EDITOR is not set; edit the up.sql / down.sql files manually with your editor of choice.")?;
             return Ok(());
         }
     };
 
     if editor.trim().is_empty() {
-        logger::warning(
-            "$EDITOR is empty; edit the up.sql / down.sql files manually with your editor of choice.",
-        )?;
+        logger::warning("$EDITOR is empty; edit the up.sql / down.sql files manually with your editor of choice.")?;
         return Ok(());
     }
 
     logger::info(&format!("Opening {} in {}...", up_path.display(), editor))?;
     let status = Command::new(&editor).arg(&up_path).status()?;
     if !status.success() {
-        logger::warning(&format!(
-            "{} exited with status {:?}; migration files were still written.",
-            editor, status
-        ))?;
+        logger::warning(&format!("{} exited with status {:?}; migration files were still written.", editor, status))?;
     }
 
     Ok(())

@@ -1,24 +1,17 @@
-use crate::governor::violation::Violation;
+use std::{collections::BTreeMap, path::PathBuf};
+
 use console::style;
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+
+use crate::governor::violation::Violation;
 
 pub fn format_report(violations: &[Violation], files_scanned: usize, verbose: bool) -> String {
     let mut out = String::new();
     if violations.is_empty() {
-        out.push_str(&format!(
-            "{} governor: clean ({} files scanned)\n",
-            style("✓").green(),
-            files_scanned
-        ));
+        out.push_str(&format!("{} governor: clean ({} files scanned)\n", style("✓").green(), files_scanned));
         return out;
     }
 
-    out.push_str(&format!(
-        "{} {} governor violations\n\n",
-        style("✗").red(),
-        violations.len()
-    ));
+    out.push_str(&format!("{} {} governor violations\n\n", style("✗").red(), violations.len()));
 
     let mut by_file: BTreeMap<PathBuf, Vec<&Violation>> = BTreeMap::new();
     for v in violations {
@@ -27,14 +20,7 @@ pub fn format_report(violations: &[Violation], files_scanned: usize, verbose: bo
 
     for (file, list) in &by_file {
         for v in list {
-            out.push_str(&format!(
-                "{}:{}\n    [{}]  {}\n    → {}\n\n",
-                file.display(),
-                v.line_no,
-                style(&v.rule).yellow(),
-                v.snippet,
-                v.suggestion
-            ));
+            out.push_str(&format!("{}:{}\n    [{}]  {}\n    → {}\n\n", file.display(), v.line_no, style(&v.rule).yellow(), v.snippet, v.suggestion));
         }
     }
 

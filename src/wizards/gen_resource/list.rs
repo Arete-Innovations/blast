@@ -1,14 +1,17 @@
-use crate::error::BlastResult;
-use crate::schema_parser::ParsedTable;
-use crate::state::names::FieldName;
-use crate::state::resource::{FilterKind, ListOptions, ResourceState, Verb};
-use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub fn collect_list_options(
-    table: &ParsedTable,
-    resource: &mut ResourceState,
-) -> BlastResult<()> {
+use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect};
+
+use crate::{
+    error::BlastResult,
+    schema_parser::ParsedTable,
+    state::{
+        names::FieldName,
+        resource::{FilterKind, ListOptions, ResourceState, Verb},
+    },
+};
+
+pub fn collect_list_options(table: &ParsedTable, resource: &mut ResourceState) -> BlastResult<()> {
     let Some(list_state) = resource.verbs.get(&Verb::List).cloned() else {
         return Ok(());
     };
@@ -17,17 +20,11 @@ pub fn collect_list_options(
     let prev = list_state.list_options.clone();
     let prev_paginated = pagination_default(prev.as_ref());
 
-    let paginated = Confirm::with_theme(&theme)
-        .with_prompt("List endpoint paginated?")
-        .default(prev_paginated)
-        .interact()?;
+    let paginated = Confirm::with_theme(&theme).with_prompt("List endpoint paginated?").default(prev_paginated).interact()?;
 
     let column_names: Vec<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
     let prev_filterable = previous_filterable(prev.as_ref());
-    let pre_filterable: Vec<bool> = column_names
-        .iter()
-        .map(|n| prev_filterable.contains(*n))
-        .collect();
+    let pre_filterable: Vec<bool> = column_names.iter().map(|n| prev_filterable.contains(*n)).collect();
 
     let filter_picks = MultiSelect::with_theme(&theme)
         .with_prompt("Filterable columns (?filter[col]=val)")
@@ -38,10 +35,7 @@ pub fn collect_list_options(
     let filterable_columns = collect_filterable_map(&column_names, &filter_picks);
 
     let prev_sortable = previous_sortable(prev.as_ref());
-    let pre_sortable: Vec<bool> = column_names
-        .iter()
-        .map(|n| prev_sortable.contains(*n))
-        .collect();
+    let pre_sortable: Vec<bool> = column_names.iter().map(|n| prev_sortable.contains(*n)).collect();
 
     let sort_picks = MultiSelect::with_theme(&theme)
         .with_prompt("Sortable columns (?sort=-col)")
@@ -86,10 +80,7 @@ fn collect_field_names(column_names: &[&str], picks: &[usize]) -> BTreeSet<Field
 /// shape, defaulting every entry to `FilterKind::Eq`. The TUI does not yet
 /// prompt for per-column FilterKind — operators get tuned by hand or via a
 /// later wizard pass.
-fn collect_filterable_map(
-    column_names: &[&str],
-    picks: &[usize],
-) -> BTreeMap<FieldName, FilterKind> {
+fn collect_filterable_map(column_names: &[&str], picks: &[usize]) -> BTreeMap<FieldName, FilterKind> {
     let mut out: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
     for idx in picks {
         let name = column_names.get(*idx);
@@ -114,20 +105,14 @@ fn previous_filterable(prev: Option<&ListOptions>) -> BTreeSet<String> {
     let Some(opts) = prev else {
         return BTreeSet::new();
     };
-    opts.filterable_columns
-        .keys()
-        .map(|f| f.as_str().to_string())
-        .collect()
+    opts.filterable_columns.keys().map(|f| f.as_str().to_string()).collect()
 }
 
 fn previous_sortable(prev: Option<&ListOptions>) -> BTreeSet<String> {
     let Some(opts) = prev else {
         return BTreeSet::new();
     };
-    opts.sortable_columns
-        .iter()
-        .map(|f| f.as_str().to_string())
-        .collect()
+    opts.sortable_columns.iter().map(|f| f.as_str().to_string()).collect()
 }
 
 fn previous_default_sort(prev: Option<&ListOptions>) -> Option<FieldName> {

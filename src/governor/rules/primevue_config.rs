@@ -1,8 +1,15 @@
-use crate::state::FeLintState;
-use crate::governor::rules::helpers::{is_comment_line, rel_path_str, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
 use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, rel_path_str, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub struct PrimeVueConfigImportOutsidePresetFile;
 
@@ -23,9 +30,7 @@ fn line_imports_primevue_config(line: &str) -> bool {
     if !stripped.starts_with("import ") && !stripped.contains(" from ") && !line.contains("require(") {
         return false;
     }
-    line.contains("primevue.config")
-        || line.contains("PrimeVueConfig")
-        || line.contains("primevue/config")
+    line.contains("primevue.config") || line.contains("PrimeVueConfig") || line.contains("primevue/config")
 }
 
 impl Rule for PrimeVueConfigImportOutsidePresetFile {
@@ -33,13 +38,7 @@ impl Rule for PrimeVueConfigImportOutsidePresetFile {
         "PrimeVueConfigImportOutsidePresetFile"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, config: &FeLintState) -> Option<Violation> {
         if is_preset_file(file, &config.primevue_preset_file) {
             return None;
         }

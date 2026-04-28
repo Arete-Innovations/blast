@@ -1,8 +1,12 @@
-use crate::state::FeLintState;
-use crate::governor::rules::helpers::snippet_of;
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
 use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{helpers::snippet_of, traits::Rule},
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 pub struct TsIgnore;
 
@@ -17,13 +21,7 @@ impl Rule for TsIgnore {
         "TsIgnore"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        _config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
         if !line.contains("@ts-ignore") && !line.contains("@ts-nocheck") {
             return None;
         }

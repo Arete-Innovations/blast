@@ -1,10 +1,16 @@
-use crate::error::BlastResult;
-use crate::schema_parser::{ParsedColumn, ParsedTable};
-use crate::state::names::{FieldName, SqlType};
-use crate::state::resource::{FieldState, FieldVariant, ResourceState};
+use std::collections::BTreeSet;
+
 use dialoguer::{theme::ColorfulTheme, MultiSelect};
 use indexmap::IndexMap;
-use std::collections::BTreeSet;
+
+use crate::{
+    error::BlastResult,
+    schema_parser::{ParsedColumn, ParsedTable},
+    state::{
+        names::{FieldName, SqlType},
+        resource::{FieldState, FieldVariant, ResourceState},
+    },
+};
 
 const VARIANT_LABELS: &[(&str, FieldVariant)] = &[
     ("Db", FieldVariant::Db),
@@ -56,30 +62,13 @@ fn previous_variants(previous: Option<&FieldState>, fallback: BTreeSet<FieldVari
     prev.variants.clone()
 }
 
-fn prompt_variants(
-    theme: &ColorfulTheme,
-    column: &ParsedColumn,
-    is_pk: bool,
-    previous: Option<&FieldState>,
-) -> BlastResult<BTreeSet<FieldVariant>> {
+fn prompt_variants(theme: &ColorfulTheme, column: &ParsedColumn, is_pk: bool, previous: Option<&FieldState>) -> BlastResult<BTreeSet<FieldVariant>> {
     let defaults = previous_variants(previous, smart_defaults(&column.name, is_pk));
-    let pre_selected: Vec<bool> = VARIANT_LABELS
-        .iter()
-        .map(|(_, v)| defaults.contains(v))
-        .collect();
+    let pre_selected: Vec<bool> = VARIANT_LABELS.iter().map(|(_, v)| defaults.contains(v)).collect();
     let labels: Vec<&str> = VARIANT_LABELS.iter().map(|(l, _)| *l).collect();
 
-    let prompt = format!(
-        "Field `{}` ({}{}) — pick variants",
-        column.name,
-        column.diesel_type,
-        if column.nullable { "?" } else { "" },
-    );
-    let picks = MultiSelect::with_theme(theme)
-        .with_prompt(prompt)
-        .items(&labels)
-        .defaults(&pre_selected)
-        .interact()?;
+    let prompt = format!("Field `{}` ({}{}) — pick variants", column.name, column.diesel_type, if column.nullable { "?" } else { "" },);
+    let picks = MultiSelect::with_theme(theme).with_prompt(prompt).items(&labels).defaults(&pre_selected).interact()?;
 
     let mut chosen: BTreeSet<FieldVariant> = BTreeSet::new();
     for idx in picks {
@@ -123,9 +112,7 @@ pub fn smart_defaults(column_name: &str, is_pk: bool) -> BTreeSet<FieldVariant> 
 }
 
 fn is_secret(column_name: &str) -> bool {
-    column_name == "password_hash"
-        || column_name.ends_with("_secret")
-        || column_name.ends_with("_token_hash")
+    column_name == "password_hash" || column_name.ends_with("_secret") || column_name.ends_with("_token_hash")
 }
 
 fn is_timestamp_audit(column_name: &str) -> bool {

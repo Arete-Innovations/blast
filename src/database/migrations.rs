@@ -1,8 +1,9 @@
-use crate::database::connection::establish_connection;
-use crate::progress::ProgressManager;
-use crate::logger;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::{
+    path::Path,
+    process::{Command, Stdio},
+};
+
+use crate::{database::connection::establish_connection, logger, progress::ProgressManager};
 
 pub fn ensure_diesel_postgres() {
     let mut dep_manager = crate::dependencies::DependencyManager::new();
@@ -69,12 +70,7 @@ fn run_diesel_migration(args: &[&str], progress_msg: &str) -> bool {
         }
     }
 
-    let output = match Command::new("diesel")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-    {
+    let output = match Command::new("diesel").args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
         Ok(output) => output,
         Err(e) => {
             progress.error(&format!("Failed to execute command: {}", e));
@@ -113,12 +109,7 @@ pub fn migrate() -> bool {
         }
     }
 
-    let output = match Command::new("diesel")
-        .args(["migration", "run"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-    {
+    let output = match Command::new("diesel").args(["migration", "run"]).stdout(Stdio::piped()).stderr(Stdio::piped()).output() {
         Ok(output) => output,
         Err(e) => {
             progress.error(&format!("Error executing diesel migration run: {}", e));
@@ -132,11 +123,7 @@ pub fn migrate() -> bool {
     let migrations: Vec<String> = stdout
         .lines()
         .filter(|line| line.contains("Running migration"))
-        .filter_map(|line| {
-            line.split("Running migration")
-                .nth(1)
-                .map(|name| name.trim().to_string())
-        })
+        .filter_map(|line| line.split("Running migration").nth(1).map(|name| name.trim().to_string()))
         .collect();
 
     let has_output = stdout.lines().next().is_some();
@@ -164,8 +151,7 @@ pub fn migrate() -> bool {
                             let name_str = name.to_string_lossy();
 
                             let parts: Vec<&str> = name_str.split('_').collect();
-                            let name_valid = parts.len() >= 2
-                                && parts[0].chars().all(|c| c.is_ascii_digit());
+                            let name_valid = parts.len() >= 2 && parts[0].chars().all(|c| c.is_ascii_digit());
 
                             let up_sql_path = entry.path().join("up.sql");
                             let has_up_sql = up_sql_path.exists();
@@ -207,24 +193,15 @@ pub fn migrate() -> bool {
 
     match (has_output, has_errors, migrations.is_empty()) {
         (false, false, _) => progress.success("No migrations to run"),
-        (_, false, false) => progress.success(&format!(
-            "Ran {} migrations: {}",
-            migrations.len(),
-            migrations.join(", ")
-        )),
+        (_, false, false) => progress.success(&format!("Ran {} migrations: {}", migrations.len(), migrations.join(", "))),
         (_, false, true) => progress.success("Migrations completed successfully"),
         (_, true, _) => {
             if !errors.is_empty() {
                 if is_verbose {
                     progress.error("Migration errors: See detailed diagnostics above");
-                    eprintln!(
-                        "\x1b[1;33mCheck the VERBOSE MIGRATION DIAGNOSTICS section above for detailed error information.\x1b[0m"
-                    );
+                    eprintln!("\x1b[1;33mCheck the VERBOSE MIGRATION DIAGNOSTICS section above for detailed error information.\x1b[0m");
                 } else {
-                    progress.error(&format!(
-                        "Migration errors: {}. Use -v for more details.",
-                        errors.join(", ")
-                    ));
+                    progress.error(&format!("Migration errors: {}. Use -v for more details.", errors.join(", ")));
                 }
             } else {
                 progress.error("Some migrations failed");

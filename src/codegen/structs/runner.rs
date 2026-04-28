@@ -1,23 +1,24 @@
 //! Orchestration + file I/O for `blast gen structs` (v2 emitter).
 //!
 //! For every resource state file under `storage/blast/state/resources/`:
-//!   1. emit `<project_root>/src/structs/generated/<table>.rs` carrying
-//!      the per-variant projection structs (see `emitter.rs`)
+//!   1. emit `<project_root>/src/structs/generated/<table>.rs` carrying the per-variant projection structs (see `emitter.rs`)
 //!   2. maintain a barrel `mod.rs` next to the per-resource files
 //!
 //! Every emitted file is prepended with a state-hash marker so the user
 //! app's `build.rs` will refuse to compile if the on-disk state changed
 //! since the last `blast gen all`.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::codegen::header;
-use crate::codegen::ir_loader;
-use crate::codegen::structs::emitter;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::ResourceState;
+use crate::{
+    codegen::{header, ir_loader, structs::emitter},
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::ResourceState,
+};
 
 #[derive(Debug, Default)]
 pub struct EmitReport {
@@ -27,11 +28,7 @@ pub struct EmitReport {
 
 const STEP_LABEL: &str = "structs: emit per-resource projections";
 
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
     let resources = match ir_loader::load_resource_states(project_root) {
@@ -47,9 +44,7 @@ pub fn run(
     let mut report = EmitReport::default();
 
     if resources.is_empty() {
-        sink.info(format!(
-            "{STEP_LABEL}: no resources declared; nothing to emit"
-        ));
+        sink.info(format!("{STEP_LABEL}: no resources declared; nothing to emit"));
         progress.step_done(STEP_LABEL);
         return Ok(report);
     }
@@ -60,10 +55,7 @@ pub fn run(
     let total = resources.len() as u64;
     for (idx, resource) in resources.iter().enumerate() {
         emit_resource(project_root, resource, &out_dir, &mut report)?;
-        sink.info(format!(
-            "structs: emitted {}",
-            resource_target(&out_dir, resource).display()
-        ));
+        sink.info(format!("structs: emitted {}", resource_target(&out_dir, resource).display()));
         progress.tick(idx as u64 + 1, total);
     }
 
@@ -77,12 +69,7 @@ pub fn run(
     Ok(report)
 }
 
-fn emit_resource(
-    project_root: &Path,
-    resource: &ResourceState,
-    out_dir: &Path,
-    report: &mut EmitReport,
-) -> BlastResult<()> {
+fn emit_resource(project_root: &Path, resource: &ResourceState, out_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
     let target = resource_target(out_dir, resource);
     let marker = header::marker_for_resource(project_root, resource.name.as_str())?;
     let body = format!("{}{}", marker, emitter::render_resource_body(resource));
@@ -94,19 +81,11 @@ fn resource_target(out_dir: &Path, resource: &ResourceState) -> PathBuf {
 }
 
 fn generated_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join("src")
-        .join("structs")
-        .join("generated")
+    project_root.join("src").join("structs").join("generated")
 }
 
 fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult<()> {
-    let parent = target.parent().ok_or_else(|| {
-        BlastError::Invalid(format!(
-            "structs target has no parent: {}",
-            target.display()
-        ))
-    })?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("structs target has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
     fs::write(target, body)?;
     report.written.push(target.to_path_buf());
@@ -127,16 +106,16 @@ fn render_barrel(resources: &[ResourceState]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::{NullProgress, NullSink};
-    use crate::state::names::ResourceName;
-    use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType,
-        Verb, VerbState,
-    };
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::null::{NullProgress, NullSink},
+        state::{names::ResourceName, AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType, Verb, VerbState},
+    };
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -148,11 +127,7 @@ mod tests {
             FieldName::new("id"),
             FieldState {
                 sql_type: SqlType::new("Int8"),
-                variants: variants(&[
-                    FieldVariant::Db,
-                    FieldVariant::Public,
-                    FieldVariant::Admin,
-                ]),
+                variants: variants(&[FieldVariant::Db, FieldVariant::Public, FieldVariant::Admin]),
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
@@ -162,13 +137,7 @@ mod tests {
             FieldName::new("email"),
             FieldState {
                 sql_type: SqlType::new("Varchar"),
-                variants: variants(&[
-                    FieldVariant::Db,
-                    FieldVariant::Insertable,
-                    FieldVariant::Patch,
-                    FieldVariant::Public,
-                    FieldVariant::Admin,
-                ]),
+                variants: variants(&[FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public, FieldVariant::Admin]),
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
@@ -222,15 +191,8 @@ mod tests {
         assert!(report.written.contains(&barrel));
 
         let body = fs::read_to_string(&target).expect("read body");
-        assert!(
-            body.starts_with("// AUTO-GENERATED from "),
-            "missing marker header in {}",
-            target.display(),
-        );
-        assert!(
-            body.contains("storage/blast/state/resources/users.ron"),
-            "marker should reference state path",
-        );
+        assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker header in {}", target.display(),);
+        assert!(body.contains("storage/blast/state/resources/users.ron"), "marker should reference state path",);
         assert!(body.contains("pub struct User {"));
         assert!(body.contains("pub struct UserInsertable {"));
         assert!(body.contains("pub struct UserPatch {"));
@@ -240,18 +202,14 @@ mod tests {
 
         let barrel_body = fs::read_to_string(&barrel).expect("read barrel");
         assert!(barrel_body.contains("pub mod users;"));
-        assert!(
-            barrel_body.starts_with("// AUTO-GENERATED from "),
-            "barrel missing marker header",
-        );
+        assert!(barrel_body.starts_with("// AUTO-GENERATED from "), "barrel missing marker header",);
     }
 
     #[test]
     fn empty_state_emits_nothing() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
-        fs::create_dir_all(root.join("storage/blast/state/resources"))
-            .expect("mkdir state");
+        fs::create_dir_all(root.join("storage/blast/state/resources")).expect("mkdir state");
 
         let mut sink = NullSink;
         let mut progress = NullProgress;
@@ -271,8 +229,7 @@ mod tests {
         let mut progress = NullProgress;
         run(root, &mut sink, &mut progress).expect("structs codegen ok");
 
-        let barrel = fs::read_to_string(root.join("src/structs/generated/mod.rs"))
-            .expect("read barrel");
+        let barrel = fs::read_to_string(root.join("src/structs/generated/mod.rs")).expect("read barrel");
         let apples_idx = barrel.find("pub mod apples;").expect("apples present");
         let zebras_idx = barrel.find("pub mod zebras;").expect("zebras present");
         assert!(apples_idx < zebras_idx, "barrel must be lexical");

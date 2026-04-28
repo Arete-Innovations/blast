@@ -5,16 +5,13 @@
 //! into a single Rust file body. The runner prepends the codegen marker
 //! and writes it to `src/models/generated/<table>.rs`.
 
-use crate::codegen::models::{aggregations, auto_conn, builder, eager::Relation, module_fns, naming};
-use crate::codegen::models::soft_delete::SoftDeleteConfig;
-use crate::state::ResourceState;
+use crate::{
+    codegen::models::{aggregations, auto_conn, builder, eager::Relation, module_fns, naming, soft_delete::SoftDeleteConfig},
+    state::ResourceState,
+};
 
 /// Render a full per-resource file body (no marker — caller prepends).
-pub fn render_resource_body(
-    resource: &ResourceState,
-    relations: &[Relation],
-    soft_delete: Option<&SoftDeleteConfig>,
-) -> String {
+pub fn render_resource_body(resource: &ResourceState, relations: &[Relation], soft_delete: Option<&SoftDeleteConfig>) -> String {
     let table = resource.name.as_str();
     let stem = naming::type_stem_for(resource);
 
@@ -46,22 +43,24 @@ fn imports_block(table: &str, stem: &str) -> String {
     out.push_str("//! the fluent query builder, and auto-conn convenience wrappers.\n\n");
     out.push_str("#![allow(unused_imports, dead_code, clippy::needless_borrow)]\n\n");
     out.push_str("use ::diesel::prelude::*;\n");
-    out.push_str(&format!(
-        "use crate::structs::generated::{table}::{{{stem}, {insertable}, {patch}}};\n",
-    ));
+    out.push_str(&format!("use crate::structs::generated::{table}::{{{stem}, {insertable}, {patch}}};\n",));
     out
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::codegen::models::soft_delete::DefaultBehavior;
-    use crate::state::names::{ResourceName, SqlType};
-    use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
-    };
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::{
+        codegen::models::soft_delete::DefaultBehavior,
+        state::{
+            names::{ResourceName, SqlType},
+            AuthMode, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
+        },
+    };
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -151,14 +150,7 @@ mod tests {
     #[test]
     fn body_includes_all_module_fns_and_impl_block() {
         let body = render_resource_body(&resource_with_columns(), &[], None);
-        for needle in [
-            "pub async fn list(",
-            "pub async fn get(",
-            "pub async fn create(",
-            "pub async fn update(",
-            "pub async fn delete(",
-            "impl User {",
-        ] {
+        for needle in ["pub async fn list(", "pub async fn get(", "pub async fn create(", "pub async fn update(", "pub async fn delete(", "impl User {"] {
             assert!(body.contains(needle), "missing {needle}\n---\n{body}");
         }
     }

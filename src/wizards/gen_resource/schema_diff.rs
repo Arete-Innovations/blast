@@ -1,6 +1,9 @@
-use crate::state::names::{FieldName, SqlType};
-use crate::state::resource::ResourceState;
 use std::collections::BTreeSet;
+
+use crate::state::{
+    names::{FieldName, SqlType},
+    resource::ResourceState,
+};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct SchemaDiff {
@@ -10,8 +13,7 @@ pub struct SchemaDiff {
 }
 
 pub fn compute(schema_columns: &[(String, String)], state: &ResourceState) -> SchemaDiff {
-    let schema_names: BTreeSet<&str> =
-        schema_columns.iter().map(|(name, _)| name.as_str()).collect();
+    let schema_names: BTreeSet<&str> = schema_columns.iter().map(|(name, _)| name.as_str()).collect();
 
     let mut added_columns: Vec<(FieldName, SqlType)> = Vec::new();
     let mut type_changes: Vec<(FieldName, SqlType, SqlType)> = Vec::new();
@@ -25,11 +27,7 @@ pub fn compute(schema_columns: &[(String, String)], state: &ResourceState) -> Sc
             }
             Some(field_state) => {
                 if field_state.sql_type.as_str() != col_sql_type.as_str() {
-                    type_changes.push((
-                        field_name,
-                        field_state.sql_type.clone(),
-                        SqlType::new(col_sql_type.clone()),
-                    ));
+                    type_changes.push((field_name, field_state.sql_type.clone(), SqlType::new(col_sql_type.clone())));
                 }
             }
         }
@@ -50,9 +48,7 @@ pub fn compute(schema_columns: &[(String, String)], state: &ResourceState) -> Sc
 }
 
 pub fn is_empty(diff: &SchemaDiff) -> bool {
-    diff.added_columns.is_empty()
-        && diff.removed_columns.is_empty()
-        && diff.type_changes.is_empty()
+    diff.added_columns.is_empty() && diff.removed_columns.is_empty() && diff.type_changes.is_empty()
 }
 
 pub fn render(diff: &SchemaDiff) -> String {
@@ -90,10 +86,13 @@ pub fn render(diff: &SchemaDiff) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::ResourceName;
-    use crate::state::resource::{FieldState, FieldVariant};
     use indexmap::IndexMap;
+
+    use super::*;
+    use crate::state::{
+        names::ResourceName,
+        resource::{FieldState, FieldVariant},
+    };
 
     fn field(sql_type: &str) -> FieldState {
         let mut variants: BTreeSet<FieldVariant> = BTreeSet::new();
@@ -118,9 +117,7 @@ mod tests {
     }
 
     fn schema(cols: &[(&str, &str)]) -> Vec<(String, String)> {
-        cols.iter()
-            .map(|(n, t)| ((*n).to_string(), (*t).to_string()))
-            .collect()
+        cols.iter().map(|(n, t)| ((*n).to_string(), (*t).to_string())).collect()
     }
 
     #[test]
@@ -170,16 +167,8 @@ mod tests {
 
     #[test]
     fn mixed_changes() {
-        let s = state_with(&[
-            ("id", "Integer"),
-            ("legacy", "Text"),
-            ("count", "Integer"),
-        ]);
-        let cols = schema(&[
-            ("id", "Integer"),
-            ("count", "BigInt"),
-            ("email", "Text"),
-        ]);
+        let s = state_with(&[("id", "Integer"), ("legacy", "Text"), ("count", "Integer")]);
+        let cols = schema(&[("id", "Integer"), ("count", "BigInt"), ("email", "Text")]);
         let diff = compute(&cols, &s);
         assert_eq!(diff.added_columns.len(), 1);
         assert_eq!(diff.removed_columns.len(), 1);

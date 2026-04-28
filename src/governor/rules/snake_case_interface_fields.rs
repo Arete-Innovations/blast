@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{extension_is, path_contains, snippet_of};
-use crate::governor::rules::traits::FileRule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{extension_is, path_contains, snippet_of},
+            traits::FileRule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     /// Match an interface or type-alias declaration opening brace.
@@ -44,12 +52,7 @@ impl FileRule for SnakeCaseInterfaceFields {
         "SnakeCaseInterfaceFields"
     }
 
-    fn check_file(
-        &self,
-        file: &Path,
-        contents: &str,
-        _config: &FeLintState,
-    ) -> Vec<Violation> {
+    fn check_file(&self, file: &Path, contents: &str, _config: &FeLintState) -> Vec<Violation> {
         if !extension_is(file, "ts") {
             return Vec::new();
         }
@@ -113,8 +116,9 @@ impl FileRule for SnakeCaseInterfaceFields {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(file: &str, contents: &str) -> Vec<Violation> {
         let rule = SnakeCaseInterfaceFields::new();

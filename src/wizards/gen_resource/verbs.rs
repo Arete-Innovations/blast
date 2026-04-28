@@ -1,26 +1,20 @@
-use crate::error::{BlastError, BlastResult};
-use crate::schema_parser::ParsedTable;
-use crate::state::names::AuthScopeField;
-use crate::state::resource::{AuthMode, ResourceState, Verb, VerbState};
-use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, MultiSelect};
-use indexmap::IndexMap;
 use std::collections::BTreeSet;
 
-const ALL_VERBS: &[Verb] = &[
-    Verb::List,
-    Verb::Get,
-    Verb::Create,
-    Verb::Update,
-    Verb::Delete,
-];
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, MultiSelect};
+use indexmap::IndexMap;
 
-const AUTH_LABELS: &[&str] = &[
-    "Public",
-    "AuthRequired",
-    "AdminOnly",
-    "ScopedTo(<field>)",
-    "Roles([..])",
-];
+use crate::{
+    error::{BlastError, BlastResult},
+    schema_parser::ParsedTable,
+    state::{
+        names::AuthScopeField,
+        resource::{AuthMode, ResourceState, Verb, VerbState},
+    },
+};
+
+const ALL_VERBS: &[Verb] = &[Verb::List, Verb::Get, Verb::Create, Verb::Update, Verb::Delete];
+
+const AUTH_LABELS: &[&str] = &["Public", "AuthRequired", "AdminOnly", "ScopedTo(<field>)", "Roles([..])"];
 
 pub fn collect_verbs(table: &ParsedTable, resource: &mut ResourceState) -> BlastResult<()> {
     let theme = ColorfulTheme::default();
@@ -30,10 +24,7 @@ pub fn collect_verbs(table: &ParsedTable, resource: &mut ResourceState) -> Blast
         let previous = resource.verbs.get(verb).cloned();
         let was_enabled = previous.is_some();
 
-        let enable = Confirm::with_theme(&theme)
-            .with_prompt(format!("Enable verb `{}`?", verb_label(verb)))
-            .default(was_enabled)
-            .interact()?;
+        let enable = Confirm::with_theme(&theme).with_prompt(format!("Enable verb `{}`?", verb_label(verb))).default(was_enabled).interact()?;
         if !enable {
             continue;
         }
@@ -49,12 +40,7 @@ pub fn collect_verbs(table: &ParsedTable, resource: &mut ResourceState) -> Blast
     Ok(())
 }
 
-fn prompt_auth_mode(
-    theme: &ColorfulTheme,
-    verb: &Verb,
-    table: &ParsedTable,
-    previous: Option<&VerbState>,
-) -> BlastResult<AuthMode> {
+fn prompt_auth_mode(theme: &ColorfulTheme, verb: &Verb, table: &ParsedTable, previous: Option<&VerbState>) -> BlastResult<AuthMode> {
     let default_idx = previous_auth_default(previous);
     let idx = FuzzySelect::with_theme(theme)
         .with_prompt(format!("Auth for `{}`", verb_label(verb)))
@@ -68,9 +54,7 @@ fn prompt_auth_mode(
         2 => Ok(AuthMode::AdminOnly),
         3 => prompt_scoped_to(theme, table, previous),
         4 => prompt_roles(theme, previous),
-        n => Err(BlastError::Invalid(format!(
-            "auth FuzzySelect returned out-of-range index {n}"
-        ))),
+        n => Err(BlastError::Invalid(format!("auth FuzzySelect returned out-of-range index {n}"))),
     }
 }
 
@@ -84,16 +68,10 @@ fn auth_label_index(auth: &AuthMode) -> usize {
     }
 }
 
-fn prompt_scoped_to(
-    theme: &ColorfulTheme,
-    table: &ParsedTable,
-    previous: Option<&VerbState>,
-) -> BlastResult<AuthMode> {
+fn prompt_scoped_to(theme: &ColorfulTheme, table: &ParsedTable, previous: Option<&VerbState>) -> BlastResult<AuthMode> {
     let names: Vec<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
     if names.is_empty() {
-        return Err(BlastError::Invalid(
-            "no columns available to scope auth to".to_string(),
-        ));
+        return Err(BlastError::Invalid("no columns available to scope auth to".to_string()));
     }
     let prev_field = previous_scoped_field(previous);
     let target = match prev_field.as_deref() {
@@ -102,24 +80,15 @@ fn prompt_scoped_to(
     };
     let default_idx = position_or_zero(&names, target);
 
-    let idx = FuzzySelect::with_theme(theme)
-        .with_prompt("Scope auth to which field?")
-        .items(&names)
-        .default(default_idx)
-        .interact()?;
+    let idx = FuzzySelect::with_theme(theme).with_prompt("Scope auth to which field?").items(&names).default(default_idx).interact()?;
     let chosen = names.get(idx);
     match chosen {
         Some(name) => Ok(AuthMode::ScopedTo(AuthScopeField::new(name.to_string()))),
-        None => Err(BlastError::Invalid(format!(
-            "scope FuzzySelect returned out-of-range index {idx}"
-        ))),
+        None => Err(BlastError::Invalid(format!("scope FuzzySelect returned out-of-range index {idx}"))),
     }
 }
 
-fn prompt_roles(
-    theme: &ColorfulTheme,
-    previous: Option<&VerbState>,
-) -> BlastResult<AuthMode> {
+fn prompt_roles(theme: &ColorfulTheme, previous: Option<&VerbState>) -> BlastResult<AuthMode> {
     let prev_roles = previous_roles(previous);
 
     let known = known_role_palette(&prev_roles);
@@ -142,10 +111,7 @@ fn prompt_roles(
         }
     }
 
-    let extra: String = Input::with_theme(theme)
-        .with_prompt("Additional roles (comma-separated, leave empty to skip)")
-        .allow_empty(true)
-        .interact_text()?;
+    let extra: String = Input::with_theme(theme).with_prompt("Additional roles (comma-separated, leave empty to skip)").allow_empty(true).interact_text()?;
     for raw in extra.split(',') {
         let trimmed = raw.trim();
         if !trimmed.is_empty() {
@@ -154,19 +120,14 @@ fn prompt_roles(
     }
 
     if chosen.is_empty() {
-        return Err(BlastError::Invalid(
-            "Roles auth mode requires at least one role".to_string(),
-        ));
+        return Err(BlastError::Invalid("Roles auth mode requires at least one role".to_string()));
     }
 
     Ok(AuthMode::Roles(chosen))
 }
 
 fn known_role_palette(prev_roles: &BTreeSet<String>) -> Vec<String> {
-    let mut roles: BTreeSet<String> = ["admin", "staff", "moderator", "user"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let mut roles: BTreeSet<String> = ["admin", "staff", "moderator", "user"].iter().map(|s| s.to_string()).collect();
     for role in prev_roles {
         roles.insert(role.clone());
     }
@@ -184,9 +145,7 @@ fn position_or_zero(names: &[&str], target: &str) -> usize {
     idx
 }
 
-fn carry_list_options(
-    prev: Option<VerbState>,
-) -> Option<crate::state::resource::ListOptions> {
+fn carry_list_options(prev: Option<VerbState>) -> Option<crate::state::resource::ListOptions> {
     let Some(state) = prev else {
         return None;
     };

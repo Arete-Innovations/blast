@@ -11,13 +11,12 @@
 //! logic can be unit-tested with an in-memory fake. The real implementation
 //! lives in `RealDbAdmin` and uses diesel's `PgConnection` + `sql_query`.
 
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Sink, SinkExt};
-use diesel::prelude::*;
-use diesel::sql_types::BigInt;
-use diesel::QueryableByName;
-use diesel::pg::PgConnection;
-use diesel::sql_query;
+use diesel::{pg::PgConnection, prelude::*, sql_query, sql_types::BigInt, QueryableByName};
+
+use crate::{
+    error::{BlastError, BlastResult},
+    io::traits::{Sink, SinkExt},
+};
 
 const ADMIN_DB: &str = "postgres";
 
@@ -88,26 +87,17 @@ pub fn parse_url(url: &str) -> BlastResult<ParsedUrl> {
         return Err(BlastError::Invalid("database URL is empty".to_string()));
     }
     if !trimmed.starts_with("postgres://") && !trimmed.starts_with("postgresql://") {
-        return Err(BlastError::Invalid(format!(
-            "database URL must start with `postgres://` or `postgresql://`: `{}`",
-            mask_for_error(trimmed)
-        )));
+        return Err(BlastError::Invalid(format!("database URL must start with `postgres://` or `postgresql://`: `{}`", mask_for_error(trimmed))));
     }
-    let scheme_end = trimmed
-        .find("://")
-        .ok_or_else(|| BlastError::Invalid("malformed scheme".to_string()))?
-        + 3;
+    let scheme_end = trimmed.find("://").ok_or_else(|| BlastError::Invalid("malformed scheme".to_string()))? + 3;
     let after_scheme = &trimmed[scheme_end..];
 
     // dbname starts after the LAST `/` and runs until `?` or end. We look
     // only at characters after the scheme so we don't accidentally hit the
     // `://` slashes.
-    let last_slash = after_scheme.rfind('/').ok_or_else(|| {
-        BlastError::Invalid(format!(
-            "database URL has no dbname segment: `{}`",
-            mask_for_error(trimmed)
-        ))
-    })?;
+    let last_slash = after_scheme
+        .rfind('/')
+        .ok_or_else(|| BlastError::Invalid(format!("database URL has no dbname segment: `{}`", mask_for_error(trimmed))))?;
 
     let prefix_end = scheme_end + last_slash + 1; // include the slash
     let prefix = trimmed[..prefix_end].to_string();
@@ -118,10 +108,7 @@ pub fn parse_url(url: &str) -> BlastResult<ParsedUrl> {
     };
 
     if dbname.is_empty() {
-        return Err(BlastError::Invalid(format!(
-            "database URL has empty dbname: `{}`",
-            mask_for_error(trimmed)
-        )));
+        return Err(BlastError::Invalid(format!("database URL has empty dbname: `{}`", mask_for_error(trimmed))));
     }
 
     Ok(ParsedUrl { prefix, dbname, query })
@@ -202,31 +189,20 @@ impl DbAdmin for RealDbAdmin {
 
     fn db_exists(&mut self, admin_url: &str, dbname: &str) -> BlastResult<bool> {
         let mut conn = open(admin_url)?;
-        let q = format!(
-            "SELECT count(*) AS count FROM pg_database WHERE datname = '{}'",
-            escape_sql_literal(dbname)
-        );
+        let q = format!("SELECT count(*) AS count FROM pg_database WHERE datname = '{}'", escape_sql_literal(dbname));
         let rows: Vec<CountRow> = sql_query(q).load(&mut conn)?;
         match rows.first() {
             Some(row) => Ok(row.count > 0),
-            None => Err(BlastError::Project(
-                "pg_database count query returned zero rows".to_string(),
-            )),
+            None => Err(BlastError::Project("pg_database count query returned zero rows".to_string())),
         }
     }
 
     fn count_public_tables(&mut self, target_url: &str) -> BlastResult<i64> {
         let mut conn = open(target_url)?;
-        let rows: Vec<CountRow> = sql_query(
-            "SELECT count(*) AS count FROM information_schema.tables \
-             WHERE table_schema = 'public'",
-        )
-        .load(&mut conn)?;
+        let rows: Vec<CountRow> = sql_query("SELECT count(*) AS count FROM information_schema.tables WHERE table_schema = 'public'").load(&mut conn)?;
         match rows.first() {
             Some(row) => Ok(row.count),
-            None => Err(BlastError::Project(
-                "information_schema.tables count query returned zero rows".to_string(),
-            )),
+            None => Err(BlastError::Project("information_schema.tables count query returned zero rows".to_string())),
         }
     }
 
@@ -244,8 +220,7 @@ impl DbAdmin for RealDbAdmin {
         // no backends to terminate or we lacked the privilege; either way,
         // the subsequent DROP DATABASE will report the real problem.
         let term = format!(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
-             WHERE datname = '{}' AND pid <> pg_backend_pid()",
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{}' AND pid <> pg_backend_pid()",
             escape_sql_literal(dbname)
         );
         match sql_query(term).execute(&mut conn) {
@@ -260,13 +235,7 @@ impl DbAdmin for RealDbAdmin {
 }
 
 fn open(url: &str) -> BlastResult<PgConnection> {
-    PgConnection::establish(url).map_err(|e| {
-        BlastError::Project(format!(
-            "could not connect to Postgres at `{}`: {}",
-            mask_for_error(url),
-            e
-        ))
-    })
+    PgConnection::establish(url).map_err(|e| BlastError::Project(format!("could not connect to Postgres at `{}`: {}", mask_for_error(url), e)))
 }
 
 fn escape_ident(s: &str) -> String {
@@ -289,18 +258,11 @@ fn escape_sql_literal(s: &str) -> String {
 /// 2. ping the admin DB (fails fast if Postgres unreachable)
 /// 3. ensure the primary DB is empty / created (or recreated under `--force`)
 /// 4. same for the test DB unless `--no-test-db`
-pub fn bootstrap(
-    args: &BootstrapArgs,
-    admin: &mut dyn DbAdmin,
-    sink: &mut dyn Sink,
-) -> BlastResult<BootstrapOutcome> {
+pub fn bootstrap(args: &BootstrapArgs, admin: &mut dyn DbAdmin, sink: &mut dyn Sink) -> BlastResult<BootstrapOutcome> {
     let parsed = parse_url(&args.db_url)?;
     let admin_target = admin_url(&parsed);
 
-    sink.info(format!(
-        "verifying Postgres reachable at {}",
-        mask_for_error(&parsed.rebuild())
-    ));
+    sink.info(format!("verifying Postgres reachable at {}", mask_for_error(&parsed.rebuild())));
     admin.ping(&admin_target)?;
 
     let primary_action = ensure_clean_db(&parsed, args.force, admin, sink)?;
@@ -321,12 +283,7 @@ pub fn bootstrap(
     })
 }
 
-fn ensure_clean_db(
-    parsed: &ParsedUrl,
-    force: bool,
-    admin: &mut dyn DbAdmin,
-    sink: &mut dyn Sink,
-) -> BlastResult<DbAction> {
+fn ensure_clean_db(parsed: &ParsedUrl, force: bool, admin: &mut dyn DbAdmin, sink: &mut dyn Sink) -> BlastResult<DbAction> {
     let admin_target = admin_url(parsed);
     let target_url = parsed.rebuild();
     let dbname = &parsed.dbname;
@@ -348,17 +305,12 @@ fn ensure_clean_db(
     // DB exists with tables. Refuse without --force.
     if !force {
         return Err(BlastError::Project(format!(
-            "database `{}` exists and has {} table(s). \
-             Was this a typo? Re-run with `--force` to drop and recreate, \
-             or pass `--db-url` with a different database name.",
+            "database `{}` exists and has {} table(s). Was this a typo? Re-run with `--force` to drop and recreate, or pass `--db-url` with a different database name.",
             dbname, table_count
         )));
     }
 
-    sink.warn(format!(
-        "--force: dropping and recreating database `{}` ({} table(s) destroyed)",
-        dbname, table_count
-    ));
+    sink.warn(format!("--force: dropping and recreating database `{}` ({} table(s) destroyed)", dbname, table_count));
     admin.drop_database(&admin_target, dbname)?;
     admin.create_database(&admin_target, dbname)?;
     Ok(DbAction::Recreated)
@@ -370,9 +322,10 @@ fn ensure_clean_db(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::io::null::NullSink;
-    use std::collections::HashMap;
 
     #[test]
     fn parse_url_extracts_dbname() {
@@ -428,18 +381,12 @@ mod tests {
 
     #[test]
     fn default_url_uses_project_name() {
-        assert_eq!(
-            default_url_for("acme"),
-            "postgres://postgres:postgres@localhost:5432/acme"
-        );
+        assert_eq!(default_url_for("acme"), "postgres://postgres:postgres@localhost:5432/acme");
     }
 
     #[test]
     fn mask_for_error_redacts_password() {
-        assert_eq!(
-            mask_for_error("postgres://user:secret@host/db"),
-            "postgres://<masked>@host/db"
-        );
+        assert_eq!(mask_for_error("postgres://user:secret@host/db"), "postgres://<masked>@host/db");
     }
 
     // ---- fake admin for orchestrator tests --------------------------------

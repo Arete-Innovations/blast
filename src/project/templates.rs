@@ -3,21 +3,11 @@
 //! framework itself belongs in `templates/canonical/`, not here.
 
 pub fn env_example(database_url: &str) -> String {
-    format!(
-        "DATABASE_URL={url}\n\
-         BLAST_ENV=dev\n\
-         RUST_LOG=info\n",
-        url = database_url,
-    )
+    format!("DATABASE_URL={url}\nBLAST_ENV=dev\nRUST_LOG=info\n", url = database_url,)
 }
 
 pub fn env_test_example(database_url: &str) -> String {
-    format!(
-        "DATABASE_URL={url}\n\
-         BLAST_ENV=test\n\
-         RUST_LOG=warn\n",
-        url = database_url,
-    )
+    format!("DATABASE_URL={url}\nBLAST_ENV=test\nRUST_LOG=warn\n", url = database_url,)
 }
 
 /// Zellij dashboard layout. Lives outside the vendored framework because

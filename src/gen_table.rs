@@ -1,10 +1,13 @@
-use crate::database::write_migration;
-use crate::error::BlastResult;
-use crate::io::{Progress, Sink, SinkExt};
-use crate::logger;
-use crate::schema_parser;
-use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, MultiSelect};
 use std::path::{Path, PathBuf};
+
+use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, MultiSelect};
+
+use crate::{
+    database::write_migration,
+    error::BlastResult,
+    io::{Progress, Sink, SinkExt},
+    logger, schema_parser,
+};
 
 // ── public surface ────────────────────────────────────────────────────────────
 
@@ -47,14 +50,8 @@ pub fn pick_args(project_root: &Path) -> BlastResult<Args> {
     raw_cols.push(ColumnDef::primary_key());
 
     loop {
-        let prompt_msg = format!(
-            "Columns so far: {}. Add another column?",
-            describe_columns(&raw_cols)
-        );
-        let add_more = Confirm::with_theme(&theme)
-            .with_prompt(prompt_msg)
-            .default(true)
-            .interact()?;
+        let prompt_msg = format!("Columns so far: {}. Add another column?", describe_columns(&raw_cols));
+        let add_more = Confirm::with_theme(&theme).with_prompt(prompt_msg).default(true).interact()?;
         if !add_more {
             break;
         }
@@ -101,18 +98,10 @@ pub fn pick_args(project_root: &Path) -> BlastResult<Args> {
         })
         .collect();
 
-    Ok(Args {
-        table_name,
-        columns,
-        indexes,
-    })
+    Ok(Args { table_name, columns, indexes })
 }
 
-pub fn run(
-    args: Args,
-    sink: &mut dyn Sink,
-    _progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
+pub fn run(args: Args, sink: &mut dyn Sink, _progress: &mut dyn Progress) -> BlastResult<Outcome> {
     let col_defs = args_to_col_defs(&args);
     let idx_defs = args_to_idx_defs(&args);
 
@@ -137,11 +126,7 @@ pub fn run(
     })
 }
 
-pub fn run_with_picker(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
+pub fn run_with_picker(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
     let theme = ColorfulTheme::default();
 
     let args = pick_args(project_root)?;
@@ -156,10 +141,7 @@ pub fn run_with_picker(
     logger::info(&format!("down.sql:\n{}", down_sql))?;
     logger::info("===================================\n")?;
 
-    let confirmed = Confirm::with_theme(&theme)
-        .with_prompt("Write this migration?")
-        .default(true)
-        .interact()?;
+    let confirmed = Confirm::with_theme(&theme).with_prompt("Write this migration?").default(true).interact()?;
 
     if !confirmed {
         logger::info("Migration discarded; nothing written.")?;
@@ -224,10 +206,7 @@ struct IndexDef {
 
 fn fk_from_args(fk_table: &Option<String>, fk_column: &Option<String>) -> Option<ForeignKey> {
     match (fk_table, fk_column) {
-        (Some(t), Some(col)) => Some(ForeignKey {
-            table: t.clone(),
-            column: col.clone(),
-        }),
+        (Some(t), Some(col)) => Some(ForeignKey { table: t.clone(), column: col.clone() }),
         (Some(_t), None) => None,
         (None, Some(_col)) => None,
         (None, None) => None,
@@ -260,11 +239,7 @@ fn args_to_idx_defs(args: &Args) -> Vec<IndexDef> {
 }
 
 fn describe_columns(columns: &[ColumnDef]) -> String {
-    columns
-        .iter()
-        .map(|c| c.name.clone())
-        .collect::<Vec<_>>()
-        .join(", ")
+    columns.iter().map(|c| c.name.clone()).collect::<Vec<_>>().join(", ")
 }
 
 fn prompt_table_name(theme: &ColorfulTheme) -> BlastResult<String> {
@@ -290,30 +265,12 @@ fn is_snake_case(s: &str) -> bool {
     if !first.is_ascii_lowercase() {
         return false;
     }
-    trimmed
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    trimmed.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
-const COLUMN_TYPES: &[&str] = &[
-    "BIGSERIAL PK",
-    "BIGINT",
-    "INTEGER",
-    "TEXT",
-    "TEXT NOT NULL",
-    "BOOLEAN",
-    "TIMESTAMPTZ",
-    "JSONB",
-    "UUID",
-    "BYTEA",
-    "NUMERIC(p,s)",
-];
+const COLUMN_TYPES: &[&str] = &["BIGSERIAL PK", "BIGINT", "INTEGER", "TEXT", "TEXT NOT NULL", "BOOLEAN", "TIMESTAMPTZ", "JSONB", "UUID", "BYTEA", "NUMERIC(p,s)"];
 
-fn collect_column(
-    theme: &ColorfulTheme,
-    current_table: &str,
-    project_root: &Path,
-) -> BlastResult<ColumnDef> {
+fn collect_column(theme: &ColorfulTheme, current_table: &str, project_root: &Path) -> BlastResult<ColumnDef> {
     let name: String = Input::with_theme(theme)
         .with_prompt("Column name (snake_case)")
         .validate_with(|input: &String| -> Result<(), &str> {
@@ -325,11 +282,7 @@ fn collect_column(
         })
         .interact_text()?;
 
-    let type_idx = FuzzySelect::with_theme(theme)
-        .with_prompt(format!("Type for '{}'", name))
-        .items(COLUMN_TYPES)
-        .default(3)
-        .interact()?;
+    let type_idx = FuzzySelect::with_theme(theme).with_prompt(format!("Type for '{}'", name)).items(COLUMN_TYPES).default(3).interact()?;
     let type_label = COLUMN_TYPES[type_idx];
 
     let mut sql_type;
@@ -347,14 +300,8 @@ fn collect_column(
             forced_not_null = true;
         }
         "NUMERIC(p,s)" => {
-            let precision: u32 = Input::with_theme(theme)
-                .with_prompt("Precision (total digits)")
-                .default(12)
-                .interact_text()?;
-            let scale: u32 = Input::with_theme(theme)
-                .with_prompt("Scale (decimal digits)")
-                .default(2)
-                .interact_text()?;
+            let precision: u32 = Input::with_theme(theme).with_prompt("Precision (total digits)").default(12).interact_text()?;
+            let scale: u32 = Input::with_theme(theme).with_prompt("Scale (decimal digits)").default(2).interact_text()?;
             sql_type = format!("NUMERIC({},{})", precision, scale);
         }
         other => {
@@ -365,33 +312,15 @@ fn collect_column(
     let nullable = if forced_not_null {
         false
     } else {
-        Confirm::with_theme(theme)
-            .with_prompt(format!("Is '{}' nullable?", name))
-            .default(false)
-            .interact()?
+        Confirm::with_theme(theme).with_prompt(format!("Is '{}' nullable?", name)).default(false).interact()?
     };
 
-    let default_raw: String = Input::with_theme(theme)
-        .with_prompt(format!("Default for '{}' (leave empty for none)", name))
-        .allow_empty(true)
-        .interact_text()?;
-    let default = if default_raw.trim().is_empty() {
-        None
-    } else {
-        Some(default_raw.trim().to_string())
-    };
+    let default_raw: String = Input::with_theme(theme).with_prompt(format!("Default for '{}' (leave empty for none)", name)).allow_empty(true).interact_text()?;
+    let default = if default_raw.trim().is_empty() { None } else { Some(default_raw.trim().to_string()) };
 
-    let want_fk = !is_pk
-        && Confirm::with_theme(theme)
-            .with_prompt(format!("Add foreign key for '{}'?", name))
-            .default(false)
-            .interact()?;
+    let want_fk = !is_pk && Confirm::with_theme(theme).with_prompt(format!("Add foreign key for '{}'?", name)).default(false).interact()?;
 
-    let fk = if want_fk {
-        pick_fk_target(theme, current_table, project_root)?
-    } else {
-        None
-    };
+    let fk = if want_fk { pick_fk_target(theme, current_table, project_root)? } else { None };
 
     if sql_type.as_str() == "BIGSERIAL" && !is_pk {
         sql_type = "BIGSERIAL".to_string();
@@ -407,30 +336,17 @@ fn collect_column(
     })
 }
 
-fn pick_fk_target(
-    theme: &ColorfulTheme,
-    current_table: &str,
-    project_root: &Path,
-) -> BlastResult<Option<ForeignKey>> {
+fn pick_fk_target(theme: &ColorfulTheme, current_table: &str, project_root: &Path) -> BlastResult<Option<ForeignKey>> {
     let tables = discover_tables(current_table, project_root);
     if tables.is_empty() {
-        logger::warning(
-            "No tables found in src/database/schema.rs or migrations/. Skipping FK.",
-        )?;
+        logger::warning("No tables found in src/database/schema.rs or migrations/. Skipping FK.")?;
         return Ok(None);
     }
 
-    let target_idx = FuzzySelect::with_theme(theme)
-        .with_prompt("Referenced table")
-        .items(&tables)
-        .default(0)
-        .interact()?;
+    let target_idx = FuzzySelect::with_theme(theme).with_prompt("Referenced table").items(&tables).default(0).interact()?;
     let target_table = tables[target_idx].clone();
 
-    let target_column: String = Input::with_theme(theme)
-        .with_prompt("Referenced column")
-        .default("id".to_string())
-        .interact_text()?;
+    let target_column: String = Input::with_theme(theme).with_prompt("Referenced column").default("id".to_string()).interact_text()?;
 
     Ok(Some(ForeignKey {
         table: target_table,
@@ -465,26 +381,15 @@ fn discover_tables(current_table: &str, project_root: &Path) -> Vec<String> {
     tables
 }
 
-fn prompt_indexes(
-    theme: &ColorfulTheme,
-    table_name: &str,
-    columns: &[ColumnDef],
-) -> BlastResult<Vec<IndexDef>> {
+fn prompt_indexes(theme: &ColorfulTheme, table_name: &str, columns: &[ColumnDef]) -> BlastResult<Vec<IndexDef>> {
     let mut indexes: Vec<IndexDef> = Vec::new();
 
-    let want = Confirm::with_theme(theme)
-        .with_prompt("Create any indexes?")
-        .default(false)
-        .interact()?;
+    let want = Confirm::with_theme(theme).with_prompt("Create any indexes?").default(false).interact()?;
     if !want {
         return Ok(indexes);
     }
 
-    let candidate_names: Vec<String> = columns
-        .iter()
-        .filter(|c| !c.is_primary_key)
-        .map(|c| c.name.clone())
-        .collect();
+    let candidate_names: Vec<String> = columns.iter().filter(|c| !c.is_primary_key).map(|c| c.name.clone()).collect();
     if candidate_names.is_empty() {
         logger::warning("No non-PK columns available for indexing.")?;
         return Ok(indexes);
@@ -499,32 +404,16 @@ fn prompt_indexes(
         if picks.is_empty() {
             logger::info("No columns selected — skipping index.")?;
         } else {
-            let cols: Vec<String> = picks
-                .into_iter()
-                .map(|i| candidate_names[i].clone())
-                .collect();
+            let cols: Vec<String> = picks.into_iter().map(|i| candidate_names[i].clone()).collect();
             let suggested_name = format!("idx_{}_{}", table_name, cols.join("_"));
-            let name: String = Input::with_theme(theme)
-                .with_prompt("Index name")
-                .default(suggested_name)
-                .interact_text()?;
+            let name: String = Input::with_theme(theme).with_prompt("Index name").default(suggested_name).interact_text()?;
 
-            let unique = Confirm::with_theme(theme)
-                .with_prompt("Unique index?")
-                .default(false)
-                .interact()?;
+            let unique = Confirm::with_theme(theme).with_prompt("Unique index?").default(false).interact()?;
 
-            indexes.push(IndexDef {
-                name,
-                columns: cols,
-                unique,
-            });
+            indexes.push(IndexDef { name, columns: cols, unique });
         }
 
-        let add_more = Confirm::with_theme(theme)
-            .with_prompt("Add another index?")
-            .default(false)
-            .interact()?;
+        let add_more = Confirm::with_theme(theme).with_prompt("Add another index?").default(false).interact()?;
         if !add_more {
             break;
         }
@@ -562,13 +451,7 @@ fn render_up_sql(table: &str, columns: &[ColumnDef], indexes: &[IndexDef]) -> St
 
     for idx in indexes {
         let unique_kw = if idx.unique { "UNIQUE " } else { "" };
-        out.push_str(&format!(
-            "CREATE {}INDEX {} ON {} ({});\n",
-            unique_kw,
-            idx.name,
-            table,
-            idx.columns.join(", ")
-        ));
+        out.push_str(&format!("CREATE {}INDEX {} ON {} ({});\n", unique_kw, idx.name, table, idx.columns.join(", ")));
     }
 
     out

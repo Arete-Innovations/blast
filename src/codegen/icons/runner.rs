@@ -4,16 +4,19 @@
 //! `frontend/src/generated/icons.ts` with the standard hash-marker
 //! header. Falls back to a default registry when the section is absent.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use crate::codegen::header;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state;
-use crate::state::{AppPolicySection, AppState, IconConfig};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::emit::emit_icons_ts;
+use crate::{
+    codegen::header,
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state,
+    state::{AppPolicySection, AppState, IconConfig},
+};
 
 /// Report of the file written during an icons codegen run.
 #[derive(Debug, Default)]
@@ -27,11 +30,7 @@ const ICONS_RELATIVE: &str = "frontend/src/generated/icons.ts";
 /// Top-level entry point. Reads `app.ron`, extracts the `Icons` section,
 /// and writes the registry file with the marker header. Falls back to a
 /// default registry when no `Icons` section is present.
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
     let result = run_inner(project_root, sink);
     match &result {
@@ -52,12 +51,7 @@ fn run_inner(project_root: &Path, sink: &mut dyn Sink) -> BlastResult<EmitReport
     let target = project_root.join(ICONS_RELATIVE);
     let parent = match target.parent() {
         Some(p) => p,
-        None => {
-            return Err(BlastError::Invalid(format!(
-                "icons codegen target has no parent: {}",
-                target.display()
-            )))
-        }
+        None => return Err(BlastError::Invalid(format!("icons codegen target has no parent: {}", target.display()))),
     };
     fs::create_dir_all(parent)?;
     fs::write(&target, body)?;
@@ -96,26 +90,22 @@ fn extract_icons(app: &AppState) -> IconConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::NullProgress;
-    use crate::io::recorder::RecorderSink;
-    use crate::state::{AppPolicySection, AppState};
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::{null::NullProgress, recorder::RecorderSink},
+        state::{AppPolicySection, AppState},
+    };
 
     fn write_app_ron_with_default_icons(dir: &TempDir) {
         let mut state = AppState::new();
-        state.sections.insert(
-            crate::state::app::ICONS_SECTION_KEY.to_string(),
-            AppPolicySection::Icons(IconConfig::default()),
-        );
+        state.sections.insert(crate::state::app::ICONS_SECTION_KEY.to_string(), AppPolicySection::Icons(IconConfig::default()));
         let state_dir = dir.path().join("storage/blast/state");
         fs::create_dir_all(&state_dir).unwrap();
-        let ron = ron::ser::to_string_pretty(
-            &state,
-            ron::ser::PrettyConfig::new().struct_names(true),
-        )
-        .unwrap();
+        let ron = ron::ser::to_string_pretty(&state, ron::ser::PrettyConfig::new().struct_names(true)).unwrap();
         fs::write(state_dir.join("app.ron"), ron).unwrap();
     }
 
@@ -144,11 +134,7 @@ mod tests {
         let state = AppState::new();
         let state_dir = dir.path().join("storage/blast/state");
         fs::create_dir_all(&state_dir).unwrap();
-        let ron = ron::ser::to_string_pretty(
-            &state,
-            ron::ser::PrettyConfig::new().struct_names(true),
-        )
-        .unwrap();
+        let ron = ron::ser::to_string_pretty(&state, ron::ser::PrettyConfig::new().struct_names(true)).unwrap();
         fs::write(state_dir.join("app.ron"), ron).unwrap();
 
         let mut sink = RecorderSink::new();

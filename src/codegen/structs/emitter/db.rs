@@ -5,9 +5,10 @@
 //! `FieldVariant::Db`.
 
 use super::util;
-use crate::codegen::structs::naming;
-use crate::codegen::structs::sql_map;
-use crate::state::{FieldVariant, ResourceState};
+use crate::{
+    codegen::structs::{naming, sql_map},
+    state::{FieldVariant, ResourceState},
+};
 
 pub fn render(resource: &ResourceState) -> String {
     let table = resource.name.as_str();

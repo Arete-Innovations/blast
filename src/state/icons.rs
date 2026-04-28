@@ -14,9 +14,11 @@
 //! current static `ICONS_TS` constant in `src/codegen/fe_runtime_extras.rs`.
 //! Wave B's codegen lane consumes this catalog and emits the file.
 
-use crate::error::{BlastError, BlastResult};
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::{BlastError, BlastResult};
 
 /// Friendly identifier-like icon key. Validated to be `[a-z][a-z0-9_-]*`
 /// so it can safely appear as a TypeScript object literal property
@@ -33,24 +35,14 @@ impl IconKey {
         let mut chars = s.chars();
         let first = match chars.next() {
             Some(c) => c,
-            None => {
-                return Err(BlastError::Invalid(
-                    "icon key must have a first char".into(),
-                ))
-            }
+            None => return Err(BlastError::Invalid("icon key must have a first char".into())),
         };
         if !first.is_ascii_lowercase() {
-            return Err(BlastError::Invalid(format!(
-                "icon key must start with [a-z], got {:?}",
-                s
-            )));
+            return Err(BlastError::Invalid(format!("icon key must start with [a-z], got {:?}", s)));
         }
         for c in chars {
             if !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-') {
-                return Err(BlastError::Invalid(format!(
-                    "icon key {:?} contains invalid char {:?}",
-                    s, c
-                )));
+                return Err(BlastError::Invalid(format!("icon key {:?} contains invalid char {:?}", s, c)));
             }
         }
         Ok(Self(s))
@@ -73,25 +65,15 @@ impl IconClass {
     pub fn new<S: Into<String>>(s: S) -> BlastResult<Self> {
         let s = s.into();
         if !s.starts_with(Self::PRIMEICONS_PREFIX) {
-            return Err(BlastError::Invalid(format!(
-                "icon class must start with {:?}, got {:?}",
-                Self::PRIMEICONS_PREFIX,
-                s
-            )));
+            return Err(BlastError::Invalid(format!("icon class must start with {:?}, got {:?}", Self::PRIMEICONS_PREFIX, s)));
         }
         let suffix = &s[Self::PRIMEICONS_PREFIX.len()..];
         if suffix.is_empty() {
-            return Err(BlastError::Invalid(format!(
-                "icon class {:?} has empty icon name",
-                s
-            )));
+            return Err(BlastError::Invalid(format!("icon class {:?} has empty icon name", s)));
         }
         for c in suffix.chars() {
             if !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-                return Err(BlastError::Invalid(format!(
-                    "icon class {:?} suffix has invalid char {:?}",
-                    s, c
-                )));
+                return Err(BlastError::Invalid(format!("icon class {:?} suffix has invalid char {:?}", s, c)));
             }
         }
         Ok(Self(s))
@@ -158,14 +140,9 @@ mod tests {
     where
         T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug,
     {
-        let config = ron::ser::PrettyConfig::new()
-            .depth_limit(64)
-            .indentor("  ".to_string())
-            .struct_names(true);
-        let s = ron::ser::to_string_pretty(value, config)
-            .unwrap_or_else(|e| panic!("serialize failed: {e}\nvalue: {value:?}"));
-        ron::from_str::<T>(&s)
-            .unwrap_or_else(|e| panic!("deserialize failed: {e}\nRON:\n{s}"))
+        let config = ron::ser::PrettyConfig::new().depth_limit(64).indentor("  ".to_string()).struct_names(true);
+        let s = ron::ser::to_string_pretty(value, config).unwrap_or_else(|e| panic!("serialize failed: {e}\nvalue: {value:?}"));
+        ron::from_str::<T>(&s).unwrap_or_else(|e| panic!("deserialize failed: {e}\nRON:\n{s}"))
     }
 
     #[test]
@@ -214,10 +191,7 @@ mod tests {
         let cfg = IconConfig::default();
         for k in ["home", "dashboard", "settings", "cog", "user", "users", "tools"] {
             let key = IconKey::new(k).expect("test key");
-            assert!(
-                cfg.registry.contains_key(&key),
-                "default registry missing {k}"
-            );
+            assert!(cfg.registry.contains_key(&key), "default registry missing {k}");
         }
     }
 
@@ -226,10 +200,7 @@ mod tests {
         let cfg = IconConfig::default();
         for k in ["add", "edit", "delete", "save", "cancel", "back"] {
             let key = IconKey::new(k).expect("test key");
-            assert!(
-                cfg.registry.contains_key(&key),
-                "default registry missing {k}"
-            );
+            assert!(cfg.registry.contains_key(&key), "default registry missing {k}");
         }
     }
 
@@ -239,12 +210,7 @@ mod tests {
         // catch typo drift in either side. The full string-by-string
         // parity test lives in Wave B's codegen lane.
         let cfg = IconConfig::default();
-        let expected: &[(&str, &str)] = &[
-            ("home", "pi pi-home"),
-            ("dashboard", "pi pi-th-large"),
-            ("warning", "pi pi-exclamation-triangle"),
-            ("refresh", "pi pi-refresh"),
-        ];
+        let expected: &[(&str, &str)] = &[("home", "pi pi-home"), ("dashboard", "pi pi-th-large"), ("warning", "pi pi-exclamation-triangle"), ("refresh", "pi pi-refresh")];
         for (k, v) in expected {
             let key = IconKey::new(*k).expect("test key");
             let class = cfg.registry.get(&key).expect("present");

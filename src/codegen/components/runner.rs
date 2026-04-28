@@ -1,13 +1,18 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::codegen::components::render::forms_for_resource;
-use crate::codegen::enums::scan::{scan_project_enums, ParsedEnum};
-use crate::codegen::header;
-use crate::codegen::ir_loader;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::ResourceState;
+use crate::{
+    codegen::{
+        components::render::forms_for_resource,
+        enums::scan::{scan_project_enums, ParsedEnum},
+        header, ir_loader,
+    },
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::ResourceState,
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct EmitReport {
@@ -110,14 +115,20 @@ fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::{NullProgress, NullSink};
-    use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION};
-    use crate::state::{save_app, save_resource, AppState, SqlType};
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::null::{NullProgress, NullSink},
+        state::{
+            names::{FieldName, ResourceName},
+            resource::{AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+            save_app, save_resource, AppState, SqlType,
+        },
+    };
 
     fn make_users_resource() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();

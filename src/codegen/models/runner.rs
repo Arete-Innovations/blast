@@ -2,28 +2,33 @@
 //!
 //! For every resource state file under `storage/blast/state/resources/`:
 //!
-//!   1. emit `<project_root>/src/models/generated/<table>.rs` carrying the
-//!      module-level fns + auto-conn `impl <Type>` wrappers + the fluent
-//!      `<Type>Query` builder + IntoFuture impls (see `emitter.rs`)
+//!   1. emit `<project_root>/src/models/generated/<table>.rs` carrying the module-level fns + auto-conn `impl <Type>` wrappers + the fluent `<Type>Query` builder + IntoFuture impls (see `emitter.rs`)
 //!   2. maintain a barrel `mod.rs` next to the per-resource files
-//!   3. emit `CREATE INDEX` migrations for every `(filterable, sortable)`
-//!      column pair declared (see `indices.rs`)
+//!   3. emit `CREATE INDEX` migrations for every `(filterable, sortable)` column pair declared (see `indices.rs`)
 //!
 //! Every emitted file carries a state-hash marker so the user app's
 //! `build.rs` will refuse to compile if the on-disk state changed since the
 //! last `blast gen all` run.
 
-use crate::codegen::header;
-use crate::codegen::ir_loader;
-use crate::codegen::models::eager::Relation;
-use crate::codegen::models::emitter;
-use crate::codegen::models::indices::{self, SystemClock};
-use crate::codegen::models::soft_delete::SoftDeleteConfig;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::{GenLevel, ResourceState};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use crate::{
+    codegen::{
+        header, ir_loader,
+        models::{
+            eager::Relation,
+            emitter,
+            indices::{self, SystemClock},
+            soft_delete::SoftDeleteConfig,
+        },
+    },
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::{GenLevel, ResourceState},
+};
 
 #[derive(Debug, Default)]
 pub struct EmitReport {
@@ -33,11 +38,7 @@ pub struct EmitReport {
 
 const STEP_LABEL: &str = "models: emit per-resource model layer";
 
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
     let all_resources = match ir_loader::load_resource_states(project_root) {
@@ -50,17 +51,12 @@ pub fn run(
         }
     };
 
-    let resources: Vec<ResourceState> = all_resources
-        .into_iter()
-        .filter(|r| r.gen_level >= GenLevel::Model)
-        .collect();
+    let resources: Vec<ResourceState> = all_resources.into_iter().filter(|r| r.gen_level >= GenLevel::Model).collect();
 
     let mut report = EmitReport::default();
 
     if resources.is_empty() {
-        sink.info(format!(
-            "{STEP_LABEL}: no resources declared; nothing to emit"
-        ));
+        sink.info(format!("{STEP_LABEL}: no resources declared; nothing to emit"));
         progress.step_done(STEP_LABEL);
         return Ok(report);
     }
@@ -71,10 +67,7 @@ pub fn run(
     let total = resources.len() as u64;
     for (idx, resource) in resources.iter().enumerate() {
         emit_resource(project_root, resource, &out_dir, &mut report)?;
-        sink.info(format!(
-            "models: emitted {}",
-            resource_target(&out_dir, resource).display()
-        ));
+        sink.info(format!("models: emitted {}", resource_target(&out_dir, resource).display()));
         progress.tick(idx as u64 + 1, total);
     }
 
@@ -98,10 +91,7 @@ pub fn run(
             }
         }
         Err(err) => {
-            sink.warn(format!(
-                "models: index migration emission failed: {} (continuing)",
-                err
-            ));
+            sink.warn(format!("models: index migration emission failed: {} (continuing)", err));
         }
     }
 
@@ -109,21 +99,12 @@ pub fn run(
     Ok(report)
 }
 
-fn emit_resource(
-    project_root: &Path,
-    resource: &ResourceState,
-    out_dir: &Path,
-    report: &mut EmitReport,
-) -> BlastResult<()> {
+fn emit_resource(project_root: &Path, resource: &ResourceState, out_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
     let target = resource_target(out_dir, resource);
     let marker = header::marker_for_resource(project_root, resource.name.as_str())?;
     let relations: Vec<Relation> = relations_for(resource);
     let soft_delete = soft_delete_for(resource);
-    let body = format!(
-        "{}{}",
-        marker,
-        emitter::render_resource_body(resource, &relations, soft_delete.as_ref()),
-    );
+    let body = format!("{}{}", marker, emitter::render_resource_body(resource, &relations, soft_delete.as_ref()),);
     write_file(&target, &body, report)
 }
 
@@ -136,12 +117,7 @@ fn generated_dir(project_root: &Path) -> PathBuf {
 }
 
 fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult<()> {
-    let parent = target.parent().ok_or_else(|| {
-        BlastError::Invalid(format!(
-            "models target has no parent: {}",
-            target.display()
-        ))
-    })?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("models target has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
     fs::write(target, body)?;
     report.written.push(target.to_path_buf());
@@ -173,15 +149,19 @@ fn soft_delete_for(_resource: &ResourceState) -> Option<SoftDeleteConfig> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::{NullProgress, NullSink};
-    use crate::state::names::{ResourceName, SqlType};
-    use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, Verb, VerbState,
-    };
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::null::{NullProgress, NullSink},
+        state::{
+            names::{ResourceName, SqlType},
+            AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, Verb, VerbState,
+        },
+    };
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -193,11 +173,7 @@ mod tests {
             FieldName::new("id"),
             FieldState {
                 sql_type: SqlType::new("Int8"),
-                variants: variants(&[
-                    FieldVariant::Db,
-                    FieldVariant::Public,
-                    FieldVariant::Admin,
-                ]),
+                variants: variants(&[FieldVariant::Db, FieldVariant::Public, FieldVariant::Admin]),
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
@@ -217,12 +193,7 @@ mod tests {
             FieldName::new("email"),
             FieldState {
                 sql_type: SqlType::new("Varchar"),
-                variants: variants(&[
-                    FieldVariant::Db,
-                    FieldVariant::Insertable,
-                    FieldVariant::Patch,
-                    FieldVariant::Public,
-                ]),
+                variants: variants(&[FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public]),
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
@@ -273,18 +244,8 @@ mod tests {
         assert!(report.written.iter().any(|p| p == &target));
 
         let body = fs::read_to_string(&target).expect("read");
-        assert!(
-            body.starts_with("// AUTO-GENERATED from "),
-            "missing marker header"
-        );
-        for needle in [
-            "pub async fn list(",
-            "pub async fn get(",
-            "pub async fn create(",
-            "pub async fn update(",
-            "pub async fn delete(",
-            "impl User {",
-        ] {
+        assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker header");
+        for needle in ["pub async fn list(", "pub async fn get(", "pub async fn create(", "pub async fn update(", "pub async fn delete(", "impl User {"] {
             assert!(body.contains(needle), "missing {needle}\n{body}");
         }
     }
@@ -316,10 +277,7 @@ mod tests {
         run(root, &mut sink, &mut progress).expect("ok");
 
         let body = fs::read_to_string(root.join("src/models/generated/users.rs")).unwrap();
-        assert!(
-            body.contains("::catalyst::database::pool()"),
-            "auto-conn wrappers must call catalyst::database::pool()"
-        );
+        assert!(body.contains("::catalyst::database::pool()"), "auto-conn wrappers must call catalyst::database::pool()");
     }
 
     #[test]

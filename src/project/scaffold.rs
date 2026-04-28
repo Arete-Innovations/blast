@@ -7,23 +7,26 @@
 //! own source tree. There is no `catalyst = { path = ... }` or
 //! `catalyst = { git = ... }` resolution. Forking-by-default.
 
-use crate::codegen::build_rs_template;
-use crate::codegen::{icons as icons_codegen, theme as theme_codegen};
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::project::db_bootstrap::{
-    self, BootstrapArgs, BootstrapOutcome, RealDbAdmin,
+use std::{
+    fs,
+    path::{Path, PathBuf},
 };
-use crate::project::post_install;
-use crate::project::preflight;
-use crate::project::templates;
-use crate::state::{
-    app::{ICONS_SECTION_KEY, THEME_SECTION_KEY},
-    save_app, AppPolicySection, AppState, IconConfig, ThemeConfig,
-};
+
 use include_dir::{include_dir, Dir};
-use std::fs;
-use std::path::{Path, PathBuf};
+
+use crate::{
+    codegen::{build_rs_template, icons as icons_codegen, theme as theme_codegen},
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    project::{
+        db_bootstrap::{self, BootstrapArgs, BootstrapOutcome, RealDbAdmin},
+        post_install, preflight, templates,
+    },
+    state::{
+        app::{ICONS_SECTION_KEY, THEME_SECTION_KEY},
+        save_app, AppPolicySection, AppState, IconConfig, ThemeConfig,
+    },
+};
 
 /// Framework source tree, baked into the blast binary at compile time.
 /// `templates/canonical/` is the source of truth — edit there directly.
@@ -70,20 +73,12 @@ pub struct Outcome {
 }
 
 /// Scaffold a brand-new project at `<cwd>/<project_name>/`.
-pub fn create_new_project_with_opts(
-    project_name: &str,
-    opts: NewOptions,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
+pub fn create_new_project_with_opts(project_name: &str, opts: NewOptions, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
     let cwd = std::env::current_dir()?;
     let project_root = cwd.join(project_name);
 
     if project_root.exists() {
-        return Err(BlastError::Project(format!(
-            "directory `{}` already exists",
-            project_root.display()
-        )));
+        return Err(BlastError::Project(format!("directory `{}` already exists", project_root.display())));
     }
 
     create_with_target(project_name, project_root, opts, sink, progress)
@@ -91,52 +86,30 @@ pub fn create_new_project_with_opts(
 
 /// Scaffold IN PLACE at the given target dir. Used by `blast init`. The
 /// dir must either be empty or `--force` must be set.
-pub fn init_in_place_with_opts(
-    project_name: &str,
-    target_dir: PathBuf,
-    opts: NewOptions,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
+pub fn init_in_place_with_opts(project_name: &str, target_dir: PathBuf, opts: NewOptions, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
     if target_dir.exists() {
         let is_empty = match fs::read_dir(&target_dir) {
             Ok(mut iter) => iter.next().is_none(),
             Err(e) => return Err(BlastError::Io(e)),
         };
         if !is_empty && !opts.force {
-            return Err(BlastError::Project(format!(
-                "target directory `{}` is not empty (pass --force to overwrite)",
-                target_dir.display()
-            )));
+            return Err(BlastError::Project(format!("target directory `{}` is not empty (pass --force to overwrite)", target_dir.display())));
         }
     }
     create_with_target(project_name, target_dir, opts, sink, progress)
 }
 
-fn create_with_target(
-    project_name: &str,
-    project_root: PathBuf,
-    opts: NewOptions,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
+fn create_with_target(project_name: &str, project_root: PathBuf, opts: NewOptions, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
     // The cargo package name must be the leaf directory name, not the full
     // path the user typed (`blast new /tmp/foo` → package `foo`, dir `/tmp/foo`).
     let package_name = match project_root.file_name().and_then(|n| n.to_str()) {
         Some(n) => n.to_string(),
         None => {
-            return Err(BlastError::Project(format!(
-                "could not derive a package name from `{}`",
-                project_name
-            )));
+            return Err(BlastError::Project(format!("could not derive a package name from `{}`", project_name)));
         }
     };
 
-    sink.info(format!(
-        "scaffolding `{}` at {}",
-        project_name,
-        project_root.display()
-    ));
+    sink.info(format!("scaffolding `{}` at {}", project_name, project_root.display()));
     sink.info("framework: vendored canonical (no `catalyst` dep)");
 
     // Preflight FIRST: verify required binaries are on PATH before we do
@@ -153,10 +126,7 @@ fn create_with_target(
     progress.step_done("bootstrap database");
 
     let env_body = templates::env_example(&bootstrap.primary_url);
-    let env_test_body = bootstrap
-        .test_url
-        .as_deref()
-        .map(templates::env_test_example);
+    let env_test_body = bootstrap.test_url.as_deref().map(templates::env_test_example);
 
     let args = Args {
         project_name: package_name,
@@ -167,12 +137,7 @@ fn create_with_target(
 
     match run(args, sink, progress) {
         Ok(mut out) => {
-            sink.success(format!(
-                "project `{}` created at {} ({} files written)",
-                project_name,
-                out.project_root.display(),
-                out.files_written
-            ));
+            sink.success(format!("project `{}` created at {} ({} files written)", project_name, out.project_root.display(), out.files_written));
 
             // Phase 12: optional post-seed pipeline (codegen + cargo
             // pre-compile) injected from the binary layer. Lives outside
@@ -217,11 +182,7 @@ fn create_with_target(
             sink.error(format!("scaffolding failed: {}", e));
             if project_root.exists() {
                 if let Err(cleanup_err) = fs::remove_dir_all(&project_root) {
-                    sink.warn(format!(
-                        "failed to clean up partial project dir {}: {}",
-                        project_root.display(),
-                        cleanup_err
-                    ));
+                    sink.warn(format!("failed to clean up partial project dir {}: {}", project_root.display(), cleanup_err));
                 }
             }
             Err(e)
@@ -232,11 +193,7 @@ fn create_with_target(
 /// Resolve the DB URL (CLI arg or interactive prompt), then run the DB
 /// bootstrap orchestrator. Split out from `create_with_target` so the
 /// file-writing `run()` path stays testable without a live Postgres.
-fn pre_create_db(
-    project_name: &str,
-    opts: &NewOptions,
-    sink: &mut dyn Sink,
-) -> BlastResult<BootstrapOutcome> {
+fn pre_create_db(project_name: &str, opts: &NewOptions, sink: &mut dyn Sink) -> BlastResult<BootstrapOutcome> {
     let db_url = match &opts.db_url {
         Some(u) => u.clone(),
         None => resolve_db_url_default(project_name, sink)?,
@@ -259,20 +216,13 @@ fn pre_create_db(
 /// sink so the user can override later via `.env`.
 fn resolve_db_url_default(project_name: &str, sink: &mut dyn Sink) -> BlastResult<String> {
     let derived = db_bootstrap::default_url_for(project_name);
-    sink.info(format!(
-        "no --db-url supplied; defaulting to `{}` (override later via .env)",
-        derived
-    ));
+    sink.info(format!("no --db-url supplied; defaulting to `{}` (override later via .env)", derived));
     Ok(derived)
 }
 
 /// File-writing core. Receives fully-resolved Args (no DB I/O, no prompts).
 /// Reusable from tests with a NullSink/NullProgress.
-pub fn run(
-    args: Args,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
+pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
     let mut count: usize = 0;
 
     progress.step_start("create project root");
@@ -302,19 +252,13 @@ pub fn run(
     }
 
     progress.step_start("emit build.rs hash check");
-    let build_outcome = build_rs_template::run(build_rs_template::Args {
-        project_root: args.project_root.clone(),
-    })?;
+    let build_outcome = build_rs_template::run(build_rs_template::Args { project_root: args.project_root.clone() })?;
     sink.debug(format!("build.rs -> {}", build_outcome.written.display()));
     count += 1;
     progress.step_done("emit build.rs hash check");
 
     progress.step_start("seed dashboard.kdl");
-    let dashboard_path = args
-        .project_root
-        .join("storage")
-        .join("blast")
-        .join("dashboard.kdl");
+    let dashboard_path = args.project_root.join("storage").join("blast").join("dashboard.kdl");
     if !dashboard_path.exists() {
         match dashboard_path.parent() {
             Some(parent) => fs::create_dir_all(parent)?,
@@ -340,25 +284,18 @@ fn write_canonical(project_root: &Path, project_name: &str) -> BlastResult<usize
     Ok(count)
 }
 
-fn write_dir_recursive(
-    dir: &Dir<'_>,
-    project_root: &Path,
-    project_name: &str,
-    count: &mut usize,
-) -> BlastResult<()> {
+fn write_dir_recursive(dir: &Dir<'_>, project_root: &Path, project_name: &str, count: &mut usize) -> BlastResult<()> {
     for entry in dir.entries() {
         match entry {
             include_dir::DirEntry::Dir(d) => {
                 let rel = d.path();
-                let dest_path =
-                    project_root.join(substitute_path_component(rel, project_name));
+                let dest_path = project_root.join(substitute_path_component(rel, project_name));
                 fs::create_dir_all(&dest_path)?;
                 write_dir_recursive(d, project_root, project_name, count)?;
             }
             include_dir::DirEntry::File(f) => {
                 let rel = f.path();
-                let dest_path =
-                    project_root.join(substitute_path_component(rel, project_name));
+                let dest_path = project_root.join(substitute_path_component(rel, project_name));
                 match dest_path.parent() {
                     Some(parent) => fs::create_dir_all(parent)?,
                     None => {} // allow: dest_path always has a parent (project_root.join(rel)), nothing to create
@@ -387,9 +324,7 @@ fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
     //
     // Two substitutions:
     //   1. `{{project_name}}` placeholders (legacy, may exist in non-Cargo files).
-    //   2. `name = "canonical"` → `name = "<project>"`. Templates use the literal
-    //      `canonical` package name so `cd templates/canonical && cargo check`
-    //      works in-place during iteration; on scaffold, this gets rewritten to
+    //   2. `name = "canonical"` → `name = "<project>"`. Templates use the literal `canonical` package name so `cd templates/canonical && cargo check` works in-place during iteration; on scaffold, this gets rewritten to
     //      the user's chosen name.
     match std::str::from_utf8(raw) {
         Ok(s) => {
@@ -408,14 +343,8 @@ fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
 
 fn seed_default_app_state(project_root: &Path) -> BlastResult<()> {
     let mut state = AppState::new();
-    state.sections.insert(
-        THEME_SECTION_KEY.to_string(),
-        AppPolicySection::Theme(ThemeConfig::default()),
-    );
-    state.sections.insert(
-        ICONS_SECTION_KEY.to_string(),
-        AppPolicySection::Icons(IconConfig::default()),
-    );
+    state.sections.insert(THEME_SECTION_KEY.to_string(), AppPolicySection::Theme(ThemeConfig::default()));
+    state.sections.insert(ICONS_SECTION_KEY.to_string(), AppPolicySection::Icons(IconConfig::default()));
     let state_dir = project_root.join("storage").join("blast").join("state");
     save_app(&state_dir, &state)
 }
@@ -423,10 +352,7 @@ fn seed_default_app_state(project_root: &Path) -> BlastResult<()> {
 fn write_env_files(args: &Args, count: &mut usize) -> BlastResult<()> {
     let env_body = match &args.env_body {
         Some(body) => body.clone(),
-        None => templates::env_example(&format!(
-            "postgres://postgres:postgres@localhost/{}",
-            args.project_name
-        )),
+        None => templates::env_example(&format!("postgres://postgres:postgres@localhost/{}", args.project_name)),
     };
     write_file(&args.project_root.join(".env.example"), &env_body, count)?;
     write_file(&args.project_root.join(".env"), &env_body, count)?;
@@ -438,9 +364,7 @@ fn write_env_files(args: &Args, count: &mut usize) -> BlastResult<()> {
 }
 
 fn write_file(target: &Path, body: &str, count: &mut usize) -> BlastResult<()> {
-    let parent = target
-        .parent()
-        .ok_or_else(|| BlastError::Invalid(format!("path has no parent: {}", target.display())))?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("path has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
     fs::write(target, body)?;
     *count += 1;
@@ -490,48 +414,20 @@ mod tests {
         // Sentinel files lifted from current catalyst master. If the
         // canonical layout shifts, refresh these.
         let root = &outcome.project_root;
-        assert!(
-            root.join("src").join("lib.rs").is_file(),
-            "src/lib.rs not vendored"
-        );
-        assert!(
-            root.join("src").join("bootstrap.rs").is_file(),
-            "src/bootstrap.rs not vendored"
-        );
-        assert!(
-            root.join("src").join("meltdown.rs").is_file(),
-            "src/meltdown.rs not vendored"
-        );
-        assert!(
-            root.join("src")
-                .join("database")
-                .join("migrations")
-                .is_dir(),
-            "src/database/migrations not vendored"
-        );
-        assert!(
-            root.join("frontend").is_dir(),
-            "frontend dir not vendored"
-        );
+        assert!(root.join("src").join("lib.rs").is_file(), "src/lib.rs not vendored");
+        assert!(root.join("src").join("bootstrap.rs").is_file(), "src/bootstrap.rs not vendored");
+        assert!(root.join("src").join("meltdown.rs").is_file(), "src/meltdown.rs not vendored");
+        assert!(root.join("src").join("database").join("migrations").is_dir(), "src/database/migrations not vendored");
+        assert!(root.join("frontend").is_dir(), "frontend dir not vendored");
     }
 
     #[test]
     fn scaffold_substitutes_project_name_in_cargo_toml() {
         let (_dir, outcome) = run_in_tempdir("myapp");
-        let body =
-            fs::read_to_string(outcome.project_root.join("Cargo.toml")).expect("read Cargo.toml");
-        assert!(
-            body.contains(r#"name = "myapp""#),
-            "expected name = \"myapp\" in Cargo.toml, got:\n{body}"
-        );
-        assert!(
-            !body.contains("{{project_name}}"),
-            "Cargo.toml still has unsubstituted placeholder"
-        );
-        assert!(
-            !body.contains(r#"name = "catalyst""#),
-            "Cargo.toml still labelled as catalyst"
-        );
+        let body = fs::read_to_string(outcome.project_root.join("Cargo.toml")).expect("read Cargo.toml");
+        assert!(body.contains(r#"name = "myapp""#), "expected name = \"myapp\" in Cargo.toml, got:\n{body}");
+        assert!(!body.contains("{{project_name}}"), "Cargo.toml still has unsubstituted placeholder");
+        assert!(!body.contains(r#"name = "catalyst""#), "Cargo.toml still labelled as catalyst");
     }
 
     #[test]
@@ -564,11 +460,7 @@ mod tests {
     #[test]
     fn dashboard_kdl_is_seeded() {
         let (_dir, outcome) = run_in_tempdir("acme");
-        let path = outcome
-            .project_root
-            .join("storage")
-            .join("blast")
-            .join("dashboard.kdl");
+        let path = outcome.project_root.join("storage").join("blast").join("dashboard.kdl");
         assert!(path.is_file(), "dashboard.kdl not seeded at {}", path.display());
     }
 
@@ -616,8 +508,7 @@ mod tests {
             no_warmup: false,
             post_seed: None,
         };
-        let result =
-            init_in_place_with_opts("workspace", target, opts, &mut sink, &mut progress);
+        let result = init_in_place_with_opts("workspace", target, opts, &mut sink, &mut progress);
         assert!(result.is_err());
     }
 }

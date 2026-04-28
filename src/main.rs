@@ -1,5 +1,6 @@
-use clap::Parser;
 use std::process;
+
+use clap::Parser;
 
 mod arsenal;
 mod build;
@@ -60,12 +61,7 @@ fn main() {
             }
         }
         Err(e) => {
-            if matches!(
-                cmd,
-                commands::Command::New { .. }
-                    | commands::Command::Init { .. }
-                    | commands::Command::Help
-            ) {
+            if matches!(cmd, commands::Command::New { .. } | commands::Command::Init { .. } | commands::Command::Help) {
                 let cwd = match std::env::current_dir() {
                     Ok(c) => c,
                     Err(io_err) => {

@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{is_comment_line, path_contains, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, path_contains, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref STORAGE_RE: Regex = match Regex::new(
@@ -32,13 +40,7 @@ impl Rule for LocalStorageOutsidePersistence {
         "LocalStorageOutsidePersistence"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        _config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
         if is_persistence_dir(file) {
             return None;
         }
@@ -60,8 +62,9 @@ impl Rule for LocalStorageOutsidePersistence {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(file: &str, line: &str) -> Option<Violation> {
         let rule = LocalStorageOutsidePersistence::new();
@@ -71,46 +74,31 @@ mod tests {
 
     #[test]
     fn flags_localstorage_in_component() {
-        let v = run(
-            "frontend/src/components/Foo.vue",
-            "localStorage.setItem('k','v')",
-        );
+        let v = run("frontend/src/components/Foo.vue", "localStorage.setItem('k','v')");
         assert!(v.is_some());
     }
 
     #[test]
     fn flags_sessionstorage_in_composable() {
-        let v = run(
-            "frontend/src/composables/useX.ts",
-            "  const x = sessionStorage.getItem('k')",
-        );
+        let v = run("frontend/src/composables/useX.ts", "  const x = sessionStorage.getItem('k')");
         assert!(v.is_some());
     }
 
     #[test]
     fn allows_in_persistence_dir() {
-        let v = run(
-            "frontend/src/persistence/local.ts",
-            "localStorage.setItem('k','v')",
-        );
+        let v = run("frontend/src/persistence/local.ts", "localStorage.setItem('k','v')");
         assert!(v.is_none());
     }
 
     #[test]
     fn allows_in_generated_persistence_dir() {
-        let v = run(
-            "frontend/src/generated/persistence/store.ts",
-            "indexedDB.open('db')",
-        );
+        let v = run("frontend/src/generated/persistence/store.ts", "indexedDB.open('db')");
         assert!(v.is_none());
     }
 
     #[test]
     fn allows_in_auth_composable() {
-        let v = run(
-            "frontend/src/composables/auth.ts",
-            "localStorage.setItem('auth_token', token)",
-        );
+        let v = run("frontend/src/composables/auth.ts", "localStorage.setItem('auth_token', token)");
         assert!(v.is_none());
     }
 }

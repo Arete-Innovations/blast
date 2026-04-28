@@ -1,12 +1,15 @@
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
-use crate::codegen::header;
-use crate::codegen::ir_loader;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state::{AuthMode, GenLevel, ResourceState, Verb};
+use crate::{
+    codegen::{header, ir_loader},
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::{AuthMode, GenLevel, ResourceState, Verb},
+};
 
 #[derive(Debug, Default)]
 pub struct EmitReport {
@@ -16,18 +19,11 @@ pub struct EmitReport {
 
 const STEP_LABEL: &str = "flows: emit per-resource stubs";
 
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
     let all_resources = ir_loader::load_resource_states(project_root)?;
-    let resources: Vec<ResourceState> = all_resources
-        .into_iter()
-        .filter(|r| r.gen_level >= GenLevel::Route)
-        .collect();
+    let resources: Vec<ResourceState> = all_resources.into_iter().filter(|r| r.gen_level >= GenLevel::Route).collect();
     let mut report = EmitReport::default();
 
     if resources.is_empty() {
@@ -42,21 +38,13 @@ pub fn run(
         progress.tick(idx as u64 + 1, total);
     }
 
-    sink.info(format!(
-        "flows: {} file(s) written across {} resource(s)",
-        report.written.len(),
-        resources.len()
-    ));
+    sink.info(format!("flows: {} file(s) written across {} resource(s)", report.written.len(), resources.len()));
 
     progress.step_done(STEP_LABEL);
     Ok(report)
 }
 
-fn emit_resource(
-    project_root: &Path,
-    resource: &ResourceState,
-    report: &mut EmitReport,
-) -> BlastResult<()> {
+fn emit_resource(project_root: &Path, resource: &ResourceState, report: &mut EmitReport) -> BlastResult<()> {
     let table = resource.name.as_str();
     let resource_dir = flows_generated_dir(project_root).join(table);
     fs::create_dir_all(&resource_dir)?;
@@ -65,28 +53,17 @@ fn emit_resource(
 
     let verbs: Vec<Verb> = resource.verbs.keys().copied().collect();
 
-    write_file(
-        &resource_dir.join("mod.rs"),
-        &format!("{}{}", marker, barrel_body(&verbs)),
-        report,
-    )?;
+    write_file(&resource_dir.join("mod.rs"), &format!("{}{}", marker, barrel_body(&verbs)), report)?;
 
     for verb in &verbs {
         let auth = match resource.verbs.get(verb) {
             Some(verb_state) => &verb_state.auth,
             None => {
-                return Err(BlastError::Invalid(format!(
-                    "verb {:?} vanished from resource {} between iter and lookup",
-                    verb, table
-                )));
+                return Err(BlastError::Invalid(format!("verb {:?} vanished from resource {} between iter and lookup", verb, table)));
             }
         };
         let body = verb_stub_body(table, *verb, auth);
-        write_file(
-            &resource_dir.join(format!("{}.rs", verb_module(*verb))),
-            &format!("{}{}", marker, body),
-            report,
-        )?;
+        write_file(&resource_dir.join(format!("{}.rs", verb_module(*verb))), &format!("{}{}", marker, body), report)?;
     }
 
     Ok(())
@@ -97,12 +74,7 @@ fn flows_generated_dir(project_root: &Path) -> PathBuf {
 }
 
 fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult<()> {
-    let parent = target.parent().ok_or_else(|| {
-        BlastError::Invalid(format!(
-            "flow target has no parent: {}",
-            target.display()
-        ))
-    })?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("flow target has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
     let mut file = fs::File::create(target)?;
     file.write_all(body.as_bytes())?;
@@ -143,9 +115,7 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
     out.push_str("::*;\n");
     out.push_str("use crate::Ctx;\n\n");
 
-    out.push_str(&format!(
-        "pub async fn run(ctx: &Ctx{args_sig}) -> Result<{ret_ty}, MeltDown> {{\n"
-    ));
+    out.push_str(&format!("pub async fn run(ctx: &Ctx{args_sig}) -> Result<{ret_ty}, MeltDown> {{\n"));
     if !auth_block.is_empty() {
         for line in auth_block.lines() {
             out.push_str("    ");
@@ -154,9 +124,7 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
         }
     }
     out.push_str("    let mut conn = ctx.conn().await?;\n");
-    out.push_str(&format!(
-        "    let out = models::{table}::{model_call}(&mut conn{args_call}).await?;\n"
-    ));
+    out.push_str(&format!("    let out = models::{table}::{model_call}(&mut conn{args_call}).await?;\n"));
     out.push_str("    Ok(out.into())\n");
     out.push_str("}\n");
 
@@ -171,30 +139,10 @@ fn verb_signature(verb: Verb, type_stem: &str) -> (String, String, String, Strin
             format!("catalyst::transport::http::list_query::ListResponse<{type_stem}Public>"),
             String::from("list"),
         ),
-        Verb::Get => (
-            String::from(", id: i64"),
-            String::from(", id"),
-            format!("{type_stem}Public"),
-            String::from("get"),
-        ),
-        Verb::Create => (
-            format!(", input: {type_stem}Insertable"),
-            String::from(", &input"),
-            format!("{type_stem}Public"),
-            String::from("create"),
-        ),
-        Verb::Update => (
-            format!(", id: i64, patch: {type_stem}Patch"),
-            String::from(", id, &patch"),
-            format!("{type_stem}Public"),
-            String::from("update"),
-        ),
-        Verb::Delete => (
-            String::from(", id: i64"),
-            String::from(", id"),
-            String::from("()"),
-            String::from("delete"),
-        ),
+        Verb::Get => (String::from(", id: i64"), String::from(", id"), format!("{type_stem}Public"), String::from("get")),
+        Verb::Create => (format!(", input: {type_stem}Insertable"), String::from(", &input"), format!("{type_stem}Public"), String::from("create")),
+        Verb::Update => (format!(", id: i64, patch: {type_stem}Patch"), String::from(", id, &patch"), format!("{type_stem}Public"), String::from("update")),
+        Verb::Delete => (String::from(", id: i64"), String::from(", id"), String::from("()"), String::from("delete")),
     }
 }
 
@@ -206,20 +154,13 @@ fn auth_check_block(auth: &AuthMode) -> String {
         AuthMode::ScopedTo(field) => {
             let mut out = String::new();
             out.push_str("ctx.require_session()?;\n");
-            out.push_str(&format!(
-                "// TODO(catalyst): verify resource.{} matches session.user_id (needs catalyst scope-check API)",
-                field.as_str()
-            ));
+            out.push_str(&format!("// TODO(catalyst): verify resource.{} matches session.user_id (needs catalyst scope-check API)", field.as_str()));
             out
         }
         AuthMode::Roles(roles) => {
             let mut sorted: Vec<&str> = roles.iter().map(|s| s.as_str()).collect();
             sorted.sort();
-            let formatted = sorted
-                .iter()
-                .map(|r| format!("\"{}\"", r))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let formatted = sorted.iter().map(|r| format!("\"{}\"", r)).collect::<Vec<_>>().join(", ");
             format!("ctx.require_roles(&[{formatted}])?;")
         }
     }
@@ -263,17 +204,16 @@ fn pascal_case(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::events::{ProgressEvent, SinkEvent};
-    use crate::state::resource::RESOURCE_SCHEMA_VERSION;
-    use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, ResourceName, ResourceState,
-        SqlType, Verb, VerbState,
-    };
+    use std::{collections::BTreeSet, fs as stdfs};
+
     use indexmap::IndexMap;
-    use std::collections::BTreeSet;
-    use std::fs as stdfs;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::events::{ProgressEvent, SinkEvent},
+        state::{resource::RESOURCE_SCHEMA_VERSION, AuthMode, FieldName, FieldState, FieldVariant, ResourceName, ResourceState, SqlType, Verb, VerbState},
+    };
 
     struct CapturingSink {
         events: Vec<SinkEvent>,
@@ -362,8 +302,7 @@ mod tests {
             gen_level: crate::state::GenLevel::default(),
         };
         let path = resources_dir.join(format!("{}.ron", name));
-        let body = ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default())
-            .expect("serialize resource");
+        let body = ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default()).expect("serialize resource");
         stdfs::write(&path, body).expect("write resource ron");
     }
 
@@ -389,51 +328,26 @@ mod tests {
         for p in &expected {
             assert!(p.exists(), "missing emitted file: {}", p.display());
             let body = stdfs::read_to_string(p).expect("read emitted file");
-            assert!(
-                body.starts_with("// AUTO-GENERATED from "),
-                "missing marker in {}",
-                p.display()
-            );
-            assert!(
-                body.contains("storage/blast/state/resources/users.ron"),
-                "marker should reference state path in {}",
-                p.display()
-            );
+            assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker in {}", p.display());
+            assert!(body.contains("storage/blast/state/resources/users.ron"), "marker should reference state path in {}", p.display());
         }
         assert_eq!(report.written.len(), expected.len());
 
         let list_body = stdfs::read_to_string(users_dir.join("list.rs")).expect("read list");
-        assert!(
-            list_body.contains("ctx.require_session()?;"),
-            "AuthRequired should emit require_session check"
-        );
+        assert!(list_body.contains("ctx.require_session()?;"), "AuthRequired should emit require_session check");
 
         let get_body = stdfs::read_to_string(users_dir.join("get.rs")).expect("read get");
-        assert!(
-            !get_body.contains("require_session"),
-            "Public verb must not emit auth check"
-        );
+        assert!(!get_body.contains("require_session"), "Public verb must not emit auth check");
 
         let create_body = stdfs::read_to_string(users_dir.join("create.rs")).expect("read create");
-        assert!(
-            create_body.contains("ctx.require_admin()?;"),
-            "AdminOnly should emit require_admin check"
-        );
+        assert!(create_body.contains("ctx.require_admin()?;"), "AdminOnly should emit require_admin check");
 
         let update_body = stdfs::read_to_string(users_dir.join("update.rs")).expect("read update");
-        assert!(
-            update_body.contains("ctx.require_roles(&[\"admin\", \"editor\"])?;"),
-            "Roles should emit sorted role list, got: {}",
-            update_body
-        );
+        assert!(update_body.contains("ctx.require_roles(&[\"admin\", \"editor\"])?;"), "Roles should emit sorted role list, got: {}", update_body);
 
         let mod_body = stdfs::read_to_string(users_dir.join("mod.rs")).expect("read mod");
         for v in ["list", "get", "create", "update", "delete"] {
-            assert!(
-                mod_body.contains(&format!("pub mod {};", v)),
-                "barrel missing pub mod {}",
-                v
-            );
+            assert!(mod_body.contains(&format!("pub mod {};", v)), "barrel missing pub mod {}", v);
         }
     }
 
@@ -441,8 +355,7 @@ mod tests {
     fn empty_state_emits_no_files() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
-        stdfs::create_dir_all(root.join("storage/blast/state/resources"))
-            .expect("mkdir state");
+        stdfs::create_dir_all(root.join("storage/blast/state/resources")).expect("mkdir state");
 
         let mut sink = CapturingSink { events: Vec::new() };
         let mut progress = CapturingProgress { events: Vec::new() };
@@ -454,24 +367,13 @@ mod tests {
     #[test]
     fn auth_check_block_handles_all_modes() {
         assert!(auth_check_block(&AuthMode::Public).is_empty());
-        assert_eq!(
-            auth_check_block(&AuthMode::AuthRequired),
-            "ctx.require_session()?;"
-        );
-        assert_eq!(
-            auth_check_block(&AuthMode::AdminOnly),
-            "ctx.require_admin()?;"
-        );
+        assert_eq!(auth_check_block(&AuthMode::AuthRequired), "ctx.require_session()?;");
+        assert_eq!(auth_check_block(&AuthMode::AdminOnly), "ctx.require_admin()?;");
         let mut roles = BTreeSet::new();
         roles.insert(String::from("zeta"));
         roles.insert(String::from("alpha"));
-        assert_eq!(
-            auth_check_block(&AuthMode::Roles(roles)),
-            "ctx.require_roles(&[\"alpha\", \"zeta\"])?;"
-        );
-        let scoped = auth_check_block(&AuthMode::ScopedTo(
-            crate::state::AuthScopeField::new("owner_id"),
-        ));
+        assert_eq!(auth_check_block(&AuthMode::Roles(roles)), "ctx.require_roles(&[\"alpha\", \"zeta\"])?;");
+        let scoped = auth_check_block(&AuthMode::ScopedTo(crate::state::AuthScopeField::new("owner_id")));
         assert!(scoped.contains("owner_id"));
         assert!(scoped.contains("require_session()?;"));
     }

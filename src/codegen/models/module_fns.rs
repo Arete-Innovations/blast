@@ -5,15 +5,12 @@
 //! inside transactions. The auto-conn wrappers in `auto_conn.rs` cover
 //! the 95% callsite that just wants a one-shot acquire from the pool.
 
-use crate::codegen::models::naming;
-use crate::codegen::models::soft_delete::{self, SoftDeleteConfig};
+use crate::codegen::models::{
+    naming,
+    soft_delete::{self, SoftDeleteConfig},
+};
 
-pub fn emit_all(
-    out: &mut String,
-    table: &str,
-    stem: &str,
-    soft_delete_cfg: Option<&SoftDeleteConfig>,
-) {
+pub fn emit_all(out: &mut String, table: &str, stem: &str, soft_delete_cfg: Option<&SoftDeleteConfig>) {
     emit_list(out, table, stem);
     out.push('\n');
     emit_get(out, table, stem);
@@ -238,13 +235,7 @@ mod tests {
     fn emit_all_emits_all_five_fns() {
         let mut out = String::new();
         emit_all(&mut out, "users", "User", None);
-        for sig in [
-            "pub async fn list(",
-            "pub async fn get(",
-            "pub async fn create(",
-            "pub async fn update(",
-            "pub async fn delete(",
-        ] {
+        for sig in ["pub async fn list(", "pub async fn get(", "pub async fn create(", "pub async fn update(", "pub async fn delete("] {
             assert!(out.contains(sig), "module_fns missing: {sig}\n{out}");
         }
     }

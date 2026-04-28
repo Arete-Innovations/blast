@@ -1,11 +1,13 @@
-use crate::error::BlastResult;
-use crate::governor::rules;
-use crate::governor::violation::Violation;
-use crate::governor::whitelist::Whitelist;
-use crate::state::FeLintState;
-use rayon::prelude::*;
 use std::path::{Path, PathBuf};
+
+use rayon::prelude::*;
 use walkdir::WalkDir;
+
+use crate::{
+    error::BlastResult,
+    governor::{rules, violation::Violation, whitelist::Whitelist},
+    state::FeLintState,
+};
 
 pub struct ScanReport {
     pub violations: Vec<Violation>,
@@ -20,23 +22,12 @@ pub fn scan_project(root: &Path, config: &FeLintState) -> BlastResult<ScanReport
     let files_scanned = targets.len();
 
     let root_buf = root.to_path_buf();
-    let violations: Vec<Violation> = targets
-        .par_iter()
-        .flat_map(|path| scan_one(path, &root_buf, config, &whitelist))
-        .collect();
+    let violations: Vec<Violation> = targets.par_iter().flat_map(|path| scan_one(path, &root_buf, config, &whitelist)).collect();
 
-    Ok(ScanReport {
-        violations,
-        files_scanned,
-    })
+    Ok(ScanReport { violations, files_scanned })
 }
 
-fn scan_one(
-    path: &Path,
-    root: &Path,
-    config: &FeLintState,
-    whitelist: &Whitelist,
-) -> Vec<Violation> {
+fn scan_one(path: &Path, root: &Path, config: &FeLintState, whitelist: &Whitelist) -> Vec<Violation> {
     let raw = match std::fs::read_to_string(path) {
         Ok(v) => v,
         Err(_read_failed) => return Vec::new(),
@@ -78,8 +69,5 @@ fn is_target_file(path: &Path) -> bool {
 }
 
 fn is_globally_whitelisted(snippet: &str, config: &FeLintState) -> bool {
-    config
-        .whitelist_snippets
-        .iter()
-        .any(|w| snippet.contains(w))
+    config.whitelist_snippets.iter().any(|w| snippet.contains(w))
 }

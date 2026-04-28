@@ -49,42 +49,19 @@ fn emit_primary(out: &mut String, primary: &ColorScaleRef) {
     let last_idx = pairs.len() - 1;
     for (i, (surface_key, palette_shade)) in pairs.iter().enumerate() {
         let comma = if i == last_idx { "" } else { "," };
-        out.push_str(&format!(
-            "      {}'{}'{}\n",
-            aligned_shade_key(*surface_key),
-            primary.palette.brace(*palette_shade),
-            comma,
-        ));
+        out.push_str(&format!("      {}'{}'{}\n", aligned_shade_key(*surface_key), primary.palette.brace(*palette_shade), comma,));
     }
     out.push_str("    }");
 }
 
 fn emit_color_scheme(out: &mut String, preset: &PrimeVuePreset) {
     out.push_str("    colorScheme: {\n");
-    emit_surface_block(
-        out,
-        "light",
-        &preset.light_surface,
-        preset.light_surface_zero.as_str(),
-        true,
-    );
-    emit_surface_block(
-        out,
-        "dark",
-        &preset.dark_surface,
-        preset.dark_surface_zero.as_str(),
-        false,
-    );
+    emit_surface_block(out, "light", &preset.light_surface, preset.light_surface_zero.as_str(), true);
+    emit_surface_block(out, "dark", &preset.dark_surface, preset.dark_surface_zero.as_str(), false);
     out.push_str("    }\n");
 }
 
-fn emit_surface_block(
-    out: &mut String,
-    mode: &str,
-    surface: &ColorScaleRef,
-    surface_zero_hex: &str,
-    trailing_comma: bool,
-) {
+fn emit_surface_block(out: &mut String, mode: &str, surface: &ColorScaleRef, surface_zero_hex: &str, trailing_comma: bool) {
     out.push_str(&format!("      {}: {{\n", mode));
     out.push_str("        surface: {\n");
     out.push_str(&format!("          0:   '{}',\n", surface_zero_hex));
@@ -92,12 +69,7 @@ fn emit_surface_block(
     let last_idx = pairs.len() - 1;
     for (i, (surface_key, palette_shade)) in pairs.iter().enumerate() {
         let comma = if i == last_idx { "" } else { "," };
-        out.push_str(&format!(
-            "          {}'{}'{}\n",
-            aligned_shade_key(*surface_key),
-            surface.palette.brace(*palette_shade),
-            comma,
-        ));
+        out.push_str(&format!("          {}'{}'{}\n", aligned_shade_key(*surface_key), surface.palette.brace(*palette_shade), comma,));
     }
     out.push_str("        }\n");
     let close = if trailing_comma { "      },\n" } else { "      }\n" };
@@ -228,10 +200,7 @@ export default function installPrimeVue(app: App): void {
         // Forward primary scale: surface key matches palette shade.
         for s in [50u32, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] {
             let needle = format!("'{{violet.{}}}'", s);
-            assert!(
-                body.contains(&needle),
-                "expected primary to reference {needle}\nbody:\n{body}"
-            );
+            assert!(body.contains(&needle), "expected primary to reference {needle}\nbody:\n{body}");
         }
     }
 
@@ -268,9 +237,6 @@ export default function installPrimeVue(app: App): void {
         // The codegen targets byte-equivalence to the existing static
         // PRIMEVUE_TS so the migration introduces no diff for the user.
         let body = emit_primevue_ts(&ThemeConfig::default());
-        assert_eq!(
-            body, REFERENCE_PRIMEVUE_TS,
-            "codegen primevue.ts drifted from static reference\nemitted:\n{body}"
-        );
+        assert_eq!(body, REFERENCE_PRIMEVUE_TS, "codegen primevue.ts drifted from static reference\nemitted:\n{body}");
     }
 }

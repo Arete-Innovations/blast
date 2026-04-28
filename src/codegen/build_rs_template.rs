@@ -1,6 +1,6 @@
+use std::{fs, path::PathBuf};
+
 use crate::error::BlastResult;
-use std::fs;
-use std::path::PathBuf;
 
 pub struct Args {
     pub project_root: PathBuf,
@@ -18,11 +18,7 @@ pub enum WriteAction {
 
 pub fn run(args: Args) -> BlastResult<Outcome> {
     let dest = args.project_root.join("build.rs");
-    let action = if dest.exists() {
-        WriteAction::Overwritten
-    } else {
-        WriteAction::Created
-    };
+    let action = if dest.exists() { WriteAction::Overwritten } else { WriteAction::Created };
     fs::write(&dest, render_template())?;
     Ok(Outcome { written: dest, action })
 }
@@ -33,8 +29,9 @@ pub fn render_template() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
+
+    use super::*;
 
     #[test]
     fn render_template_is_nonempty() {
@@ -135,13 +132,7 @@ mod tests {
     }
 
     fn simulate_check(root: &std::path::Path) -> Result<(), String> {
-        let watched_dirs: &[&str] = &[
-            "src/structs/generated",
-            "src/models/generated",
-            "src/flows/generated",
-            "src/transport/http/generated",
-            "src/transport/ws/generated",
-        ];
+        let watched_dirs: &[&str] = &["src/structs/generated", "src/models/generated", "src/flows/generated", "src/transport/http/generated", "src/transport/ws/generated"];
 
         for rel_dir in watched_dirs {
             let dir_path = root.join(rel_dir);
@@ -168,13 +159,9 @@ mod tests {
                 };
                 let state_file = root.join(&state_path_str);
                 if !state_file.exists() {
-                    return Err(format!(
-                        "state file '{}' missing; was it deleted? regen with 'blast gen all'",
-                        state_path_str
-                    ));
+                    return Err(format!("state file '{}' missing; was it deleted? regen with 'blast gen all'", state_path_str));
                 }
-                let actual_hash = compute_hash(&state_file)
-                    .map_err(|err| format!("hash {}: {}", state_file.display(), err))?;
+                let actual_hash = compute_hash(&state_file).map_err(|err| format!("hash {}: {}", state_file.display(), err))?;
                 if actual_hash != marker_hash {
                     return Err(format!(
                         "state file '{}' changed since last regen — run 'blast gen all'\n  expected hash: {}\n  actual hash:   {}",

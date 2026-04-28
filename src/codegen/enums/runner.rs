@@ -14,14 +14,22 @@
 //! will refuse to compile if the migration changed since the last
 //! blast gen.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use crate::codegen::enums::render;
-use crate::codegen::enums::scan::{scan_project_enums, ParsedEnum};
-use crate::codegen::header;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
+use crate::{
+    codegen::{
+        enums::{
+            render,
+            scan::{scan_project_enums, ParsedEnum},
+        },
+        header,
+    },
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct EmitReport {
@@ -31,11 +39,7 @@ pub struct EmitReport {
 
 const STEP_LABEL: &str = "enums: emit per-enum Rust types";
 
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
 
     let scan = match scan_project_enums(project_root) {
@@ -49,17 +53,13 @@ pub fn run(
     };
 
     for dup in &scan.duplicates {
-        sink.warn(format!(
-            "enums: '{dup}' declared in multiple migrations; first occurrence wins"
-        ));
+        sink.warn(format!("enums: '{dup}' declared in multiple migrations; first occurrence wins"));
     }
 
     let mut report = EmitReport::default();
 
     if scan.enums.is_empty() {
-        sink.info(format!(
-            "{STEP_LABEL}: no CREATE TYPE statements found; nothing to emit"
-        ));
+        sink.info(format!("{STEP_LABEL}: no CREATE TYPE statements found; nothing to emit"));
         progress.step_done(STEP_LABEL);
         return Ok(report);
     }
@@ -70,10 +70,7 @@ pub fn run(
     let total = scan.enums.len() as u64;
     for (idx, parsed) in scan.enums.iter().enumerate() {
         emit_enum(project_root, parsed, &out_dir, &mut report)?;
-        sink.info(format!(
-            "enums: emitted {}",
-            enum_target(&out_dir, parsed).display()
-        ));
+        sink.info(format!("enums: emitted {}", enum_target(&out_dir, parsed).display()));
         progress.tick(idx as u64 + 1, total);
     }
 
@@ -87,12 +84,7 @@ pub fn run(
     Ok(report)
 }
 
-fn emit_enum(
-    project_root: &Path,
-    parsed: &ParsedEnum,
-    out_dir: &Path,
-    report: &mut EmitReport,
-) -> BlastResult<()> {
+fn emit_enum(project_root: &Path, parsed: &ParsedEnum, out_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
     let target = enum_target(out_dir, parsed);
     let marker = marker_for_enum(project_root, parsed)?;
     let body = format!("{}{}", marker, render::render_enum_file(parsed));
@@ -108,17 +100,11 @@ fn enum_target(out_dir: &Path, parsed: &ParsedEnum) -> PathBuf {
 }
 
 fn enums_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join("src")
-        .join("structs")
-        .join("generated")
-        .join("enums")
+    project_root.join("src").join("structs").join("generated").join("enums")
 }
 
 fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult<()> {
-    let parent = target.parent().ok_or_else(|| {
-        BlastError::Invalid(format!("enums target has no parent: {}", target.display()))
-    })?;
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("enums target has no parent: {}", target.display())))?;
     fs::create_dir_all(parent)?;
 
     match fs::read_to_string(target) {
@@ -127,7 +113,7 @@ fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult
             return Ok(());
         }
         Ok(_different) => {} // allow: existing file differs, fall through to overwrite
-        Err(_missing) => {} // allow: file does not yet exist, fall through to write
+        Err(_missing) => {}  // allow: file does not yet exist, fall through to write
     }
 
     fs::write(target, body)?;
@@ -153,10 +139,12 @@ fn render_barrel(enums: &[ParsedEnum]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
+    use tempfile::TempDir;
+
     use super::*;
     use crate::io::null::{NullProgress, NullSink};
-    use std::io::Write;
-    use tempfile::TempDir;
 
     fn write_migration(root: &Path, dir: &str, body: &str) {
         let mig = root.join("src/database/migrations").join(dir);
@@ -189,16 +177,8 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         write_schema_stub(root);
-        write_migration(
-            root,
-            "2026-01-01-000001_a",
-            "CREATE TYPE user_role AS ENUM ('admin','member');",
-        );
-        write_migration(
-            root,
-            "2026-01-02-000002_b",
-            "CREATE TYPE post_status AS ENUM ('draft','live');",
-        );
+        write_migration(root, "2026-01-01-000001_a", "CREATE TYPE user_role AS ENUM ('admin','member');");
+        write_migration(root, "2026-01-02-000002_b", "CREATE TYPE post_status AS ENUM ('draft','live');");
 
         let mut sink = NullSink;
         let mut progress = NullProgress;
@@ -233,8 +213,7 @@ mod tests {
         write_migration(
             root,
             "2026-04-26-000001_users_and_sessions",
-            "CREATE TYPE user_role AS ENUM ('admin', 'member');\n\
-             CREATE TABLE users (id BIGSERIAL PRIMARY KEY, role user_role NOT NULL DEFAULT 'member');",
+            "CREATE TYPE user_role AS ENUM ('admin', 'member');\nCREATE TABLE users (id BIGSERIAL PRIMARY KEY, role user_role NOT NULL DEFAULT 'member');",
         );
 
         let mut sink = NullSink;
@@ -246,9 +225,7 @@ mod tests {
 
         assert!(body.contains("use crate::database::schema::sql_types::UserRole;"));
         assert!(body.contains("use crate::meltdown::*;"));
-        assert!(body.contains(
-            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]"
-        ));
+        assert!(body.contains("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]"));
         assert!(body.contains("#[diesel(sql_type = UserRole)]"));
         assert!(body.contains("pub enum UserRole {"));
         assert!(body.contains("    Admin,"));
@@ -265,11 +242,7 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         write_schema_stub(root);
-        write_migration(
-            root,
-            "2026-01-01-000001_a",
-            "CREATE TYPE x AS ENUM ('a','b');",
-        );
+        write_migration(root, "2026-01-01-000001_a", "CREATE TYPE x AS ENUM ('a','b');");
 
         let mut sink = NullSink;
         let mut progress = NullProgress;

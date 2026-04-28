@@ -3,8 +3,7 @@ use std::path::Path;
 use serde::Serialize;
 use serde_json::ser::PrettyFormatter;
 
-use crate::arsenal::scanner::ArsenalReport;
-use crate::error::BlastResult;
+use crate::{arsenal::scanner::ArsenalReport, error::BlastResult};
 
 pub fn write_report(report: &ArsenalReport, project_root: &Path) -> BlastResult<()> {
     let target_dir = project_root.join("target");
@@ -26,9 +25,10 @@ pub fn serialize(report: &ArsenalReport) -> BlastResult<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::arsenal::scanner::{Entry, RouteEntry};
-    use std::collections::BTreeMap;
 
     fn fixture() -> ArsenalReport {
         let mut layers: BTreeMap<String, Vec<Entry>> = BTreeMap::new();

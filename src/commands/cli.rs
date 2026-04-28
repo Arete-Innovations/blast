@@ -227,8 +227,9 @@ pub enum ArsenalCmd {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::Parser;
+
+    use super::*;
 
     #[test]
     fn new_command_accepts_minimum_args() {

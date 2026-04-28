@@ -1,16 +1,18 @@
-use crate::configs::Config;
-use crate::error::{BlastError, BlastResult};
-use crate::logger;
-use chrono::Local;
-use diesel::prelude::*;
-use diesel::sql_query;
-use diesel::sql_types::*;
-use diesel::{PgConnection, RunQueryDsl};
-use dotenv::dotenv;
-use std::fs::{self, File, OpenOptions};
-use std::io::Write;
-use std::path::Path;
+use std::{
+    fs::{self, File, OpenOptions},
+    io::Write,
+    path::Path,
+};
 
+use chrono::Local;
+use diesel::{prelude::*, sql_query, sql_types::*, PgConnection, RunQueryDsl};
+use dotenv::dotenv;
+
+use crate::{
+    configs::Config,
+    error::{BlastError, BlastResult},
+    logger,
+};
 
 #[derive(Debug, QueryableByName)]
 pub struct FuseInfo {
@@ -67,10 +69,7 @@ fn ensure_fuse_dirs(config: &Config) -> BlastResult<()> {
 }
 
 fn log_to_execution(config: &Config, message: &str) -> BlastResult<()> {
-    let log_path = Path::new(&config.project_dir)
-        .join("storage")
-        .join("fuses")
-        .join("execution.log");
+    let log_path = Path::new(&config.project_dir).join("storage").join("fuses").join("execution.log");
 
     let mut file = OpenOptions::new().create(true).append(true).open(log_path)?;
 
@@ -88,8 +87,7 @@ fn establish_connection(config: &Config) -> BlastResult<PgConnection> {
         drop(e);
     }
 
-    let database_url = std::env::var("DATABASE_URL")
-        .map_err(|_e| BlastError::Config("DATABASE_URL not found in .env".to_string()))?;
+    let database_url = std::env::var("DATABASE_URL").map_err(|_e| BlastError::Config("DATABASE_URL not found in .env".to_string()))?;
 
     std::env::set_current_dir(current_dir)?;
 
@@ -97,10 +95,7 @@ fn establish_connection(config: &Config) -> BlastResult<PgConnection> {
 }
 
 fn check_fuses_table(conn: &mut PgConnection) -> BlastResult<bool> {
-    let results = sql_query(
-        "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'fuses') as exists",
-    )
-    .load::<BoolResult>(conn)?;
+    let results = sql_query("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'fuses') as exists").load::<BoolResult>(conn)?;
 
     if results.is_empty() {
         Ok(false)
@@ -119,27 +114,16 @@ pub fn list_fuses(config: &Config) -> BlastResult<()> {
         return Ok(());
     }
 
-    let jobs = sql_query(
-        "SELECT id, name, flow_name, schedule_kind, schedule_spec, \
-         enabled, last_run_status, last_error, run_count \
-         FROM fuses ORDER BY id",
-    )
-    .load::<FuseInfo>(&mut conn)?;
+    let jobs = sql_query("SELECT id, name, flow_name, schedule_kind, schedule_spec, enabled, last_run_status, last_error, run_count FROM fuses ORDER BY id").load::<FuseInfo>(&mut conn)?;
 
     if jobs.is_empty() {
         println!("No fuses registered.");
         return Ok(());
     }
 
-    println!(
-        "╔══════╦══════════════════════════╦══════════════╦══════════╦═══════════╦═══════╦═══════╗"
-    );
-    println!(
-        "║ ID   ║ Name                     ║ Flow         ║ Kind     ║ Spec      ║ On?   ║ Runs  ║"
-    );
-    println!(
-        "╠══════╬══════════════════════════╬══════════════╬══════════╬═══════════╬═══════╬═══════╣"
-    );
+    println!("╔══════╦══════════════════════════╦══════════════╦══════════╦═══════════╦═══════╦═══════╗");
+    println!("║ ID   ║ Name                     ║ Flow         ║ Kind     ║ Spec      ║ On?   ║ Runs  ║");
+    println!("╠══════╬══════════════════════════╬══════════════╬══════════╬═══════════╬═══════╬═══════╣");
 
     for job in &jobs {
         let enabled_str = if job.enabled { "yes" } else { "no" };
@@ -149,8 +133,7 @@ pub fn list_fuses(config: &Config) -> BlastResult<()> {
             format!("\x1b[33m{}\x1b[0m", enabled_str)
         };
         let enabled_visible_len = enabled_str.len();
-        let enabled_padding =
-            " ".repeat(if enabled_visible_len < 5 { 5 - enabled_visible_len } else { 0 });
+        let enabled_padding = " ".repeat(if enabled_visible_len < 5 { 5 - enabled_visible_len } else { 0 });
 
         println!(
             "║ {:4} ║ {:24} ║ {:12} ║ {:8} ║ {:9} ║ {}{} ║ {:5} ║",
@@ -165,9 +148,7 @@ pub fn list_fuses(config: &Config) -> BlastResult<()> {
         );
     }
 
-    println!(
-        "╚══════╩══════════════════════════╩══════════════╩══════════╩═══════════╩═══════╩═══════╝"
-    );
+    println!("╚══════╩══════════════════════════╩══════════════╩══════════╩═══════════╩═══════╩═══════╝");
 
     Ok(())
 }
@@ -181,38 +162,22 @@ pub fn toggle_fuse(config: &Config, name: &str) -> BlastResult<()> {
         return Err(BlastError::Fuse("fuses table not found".to_string()));
     }
 
-    let exists_results = sql_query(&format!(
-        "SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists",
-        name
-    ))
-    .load::<BoolResult>(&mut conn)?;
+    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists", name)).load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
         return Err(BlastError::Fuse(format!("no fuse found with name '{}'", name)));
     }
 
-    let status_results = sql_query(&format!(
-        "SELECT enabled::text as result FROM fuses WHERE name = '{}'",
-        name
-    ))
-    .load::<StringResult>(&mut conn)?;
+    let status_results = sql_query(&format!("SELECT enabled::text as result FROM fuses WHERE name = '{}'", name)).load::<StringResult>(&mut conn)?;
 
     if status_results.is_empty() {
-        return Err(BlastError::Fuse(format!(
-            "failed to get enabled flag for fuse '{}'",
-            name
-        )));
+        return Err(BlastError::Fuse(format!("failed to get enabled flag for fuse '{}'", name)));
     }
 
-    let currently_enabled =
-        status_results[0].result == "true" || status_results[0].result == "t";
+    let currently_enabled = status_results[0].result == "true" || status_results[0].result == "t";
     let new_enabled = !currently_enabled;
 
-    sql_query(&format!(
-        "UPDATE fuses SET enabled = {}, updated_at = NOW() WHERE name = '{}'",
-        new_enabled, name
-    ))
-    .execute(&mut conn)?;
+    sql_query(&format!("UPDATE fuses SET enabled = {}, updated_at = NOW() WHERE name = '{}'", new_enabled, name)).execute(&mut conn)?;
 
     let new_state = if new_enabled { "enabled" } else { "disabled" };
 
@@ -231,27 +196,16 @@ pub fn run_fuse(config: &Config, name: &str) -> BlastResult<()> {
         return Err(BlastError::Fuse("fuses table not found".to_string()));
     }
 
-    let exists_results = sql_query(&format!(
-        "SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists",
-        name
-    ))
-    .load::<BoolResult>(&mut conn)?;
+    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists", name)).load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
         return Err(BlastError::Fuse(format!("no fuse found with name '{}'", name)));
     }
 
-    sql_query(&format!(
-        "UPDATE fuses SET next_run_at = NOW(), updated_at = NOW() WHERE name = '{}'",
-        name
-    ))
-    .execute(&mut conn)?;
+    sql_query(&format!("UPDATE fuses SET next_run_at = NOW(), updated_at = NOW() WHERE name = '{}'", name)).execute(&mut conn)?;
 
     log_to_execution(config, &format!("Fuse '{}' queued for immediate run", name))?;
-    logger::success(&format!(
-        "Fuse '{}' queued for immediate run (next_run_at set to now)",
-        name
-    ))?;
+    logger::success(&format!("Fuse '{}' queued for immediate run (next_run_at set to now)", name))?;
 
     Ok(())
 }
@@ -265,20 +219,14 @@ pub fn logs_fuse(config: &Config, name: &str) -> BlastResult<()> {
         return Err(BlastError::Fuse("fuses table not found".to_string()));
     }
 
-    let exists_results = sql_query(&format!(
-        "SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists",
-        name
-    ))
-    .load::<BoolResult>(&mut conn)?;
+    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM fuses WHERE name = '{}') as exists", name)).load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
         return Err(BlastError::Fuse(format!("no fuse found with name '{}'", name)));
     }
 
     let info = sql_query(&format!(
-        "SELECT id, name, flow_name, schedule_kind, schedule_spec, \
-         enabled, last_run_status, last_error, run_count \
-         FROM fuses WHERE name = '{}'",
+        "SELECT id, name, flow_name, schedule_kind, schedule_spec, enabled, last_run_status, last_error, run_count FROM fuses WHERE name = '{}'",
         name
     ))
     .load::<FuseInfo>(&mut conn)?;
@@ -305,17 +253,11 @@ pub fn logs_fuse(config: &Config, name: &str) -> BlastResult<()> {
     println!("  last_error:      {}", error_display);
     println!("  run_count:       {}", fuse.run_count);
 
-    let log_path = Path::new(&config.project_dir)
-        .join("storage")
-        .join("fuses")
-        .join("execution.log");
+    let log_path = Path::new(&config.project_dir).join("storage").join("fuses").join("execution.log");
 
     if log_path.exists() {
         let contents = fs::read_to_string(&log_path)?;
-        let relevant: Vec<&str> = contents
-            .lines()
-            .filter(|line| line.contains(&format!("'{}'", name)))
-            .collect();
+        let relevant: Vec<&str> = contents.lines().filter(|line| line.contains(&format!("'{}'", name))).collect();
 
         if relevant.is_empty() {
             println!("\nNo log entries found for fuse '{}'.", name);
@@ -340,19 +282,13 @@ pub fn remove_fuse(config: &Config, id: i32) -> BlastResult<()> {
         return Err(BlastError::Fuse("fuses table not found".to_string()));
     }
 
-    let exists_results = sql_query(&format!(
-        "SELECT EXISTS (SELECT 1 FROM fuses WHERE id = {}) as exists",
-        id
-    ))
-    .load::<BoolResult>(&mut conn)?;
+    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM fuses WHERE id = {}) as exists", id)).load::<BoolResult>(&mut conn)?;
 
     if exists_results.is_empty() || !exists_results[0].exists {
         return Err(BlastError::Fuse(format!("no fuse found with ID {}", id)));
     }
 
-    let name_results =
-        sql_query(&format!("SELECT name as result FROM fuses WHERE id = {}", id))
-            .load::<StringResult>(&mut conn)?;
+    let name_results = sql_query(&format!("SELECT name as result FROM fuses WHERE id = {}", id)).load::<StringResult>(&mut conn)?;
 
     if name_results.is_empty() {
         return Err(BlastError::Fuse(format!("failed to get name for fuse ID {}", id)));

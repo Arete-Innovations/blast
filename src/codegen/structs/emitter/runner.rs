@@ -10,8 +10,7 @@
 //! 1. `use` imports
 //! 2. base `<Type>` (when any field has `Db` variant)
 //! 3. `<Type>{Insertable, Patch, Public, Admin}` (when present)
-//! 4. `From<<Type>>` impls for `Public` / `Admin` (when projection is a
-//!    Db subset and the Db base struct itself is present)
+//! 4. `From<<Type>>` impls for `Public` / `Admin` (when projection is a Db subset and the Db base struct itself is present)
 //! 5. `<Type>Filter` (when `filterable_columns` non-empty)
 //! 6. `<Type>Sort` (when `sortable_columns` non-empty)
 
@@ -31,12 +30,7 @@ pub fn render_resource_body(resource: &ResourceState) -> String {
         out.push('\n');
     }
 
-    for variant in [
-        FieldVariant::Insertable,
-        FieldVariant::Patch,
-        FieldVariant::Public,
-        FieldVariant::Admin,
-    ] {
+    for variant in [FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public, FieldVariant::Admin] {
         if !present_variants.contains(&variant) {
             continue;
         }
@@ -81,14 +75,12 @@ pub fn render_resource_body(resource: &ResourceState) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::ResourceName;
-    use crate::state::{
-        AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType,
-        Verb, VerbState,
-    };
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::state::{names::ResourceName, AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType, Verb, VerbState};
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -106,38 +98,17 @@ mod tests {
 
     fn full_resource(table: &str) -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        fields.insert(
-            FieldName::new("id"),
-            field(
-                "Int8",
-                &[
-                    FieldVariant::Db,
-                    FieldVariant::Public,
-                    FieldVariant::Admin,
-                ],
-                false,
-                true,
-            ),
-        );
+        fields.insert(FieldName::new("id"), field("Int8", &[FieldVariant::Db, FieldVariant::Public, FieldVariant::Admin], false, true));
         fields.insert(
             FieldName::new("email"),
             field(
                 "Varchar",
-                &[
-                    FieldVariant::Db,
-                    FieldVariant::Insertable,
-                    FieldVariant::Patch,
-                    FieldVariant::Public,
-                    FieldVariant::Admin,
-                ],
+                &[FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public, FieldVariant::Admin],
                 false,
                 false,
             ),
         );
-        fields.insert(
-            FieldName::new("password_hash"),
-            field("Varchar", &[FieldVariant::Db], false, false),
-        );
+        fields.insert(FieldName::new("password_hash"), field("Varchar", &[FieldVariant::Db], false, false));
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
         let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
@@ -183,19 +154,13 @@ mod tests {
         let patch_section = body.split("pub struct UserPatch {").nth(1).expect("patch start");
         let patch_section = patch_section.split('}').next().expect("patch end");
 
-        assert!(
-            patch_section.contains("pub email: Option<String>"),
-            "non-nullable email should still be Option in Patch:\n{patch_section}",
-        );
+        assert!(patch_section.contains("pub email: Option<String>"), "non-nullable email should still be Option in Patch:\n{patch_section}",);
         for line in patch_section.lines() {
             let trimmed = line.trim();
             if !trimmed.starts_with("pub ") {
                 continue;
             }
-            assert!(
-                trimmed.contains("Option<"),
-                "Patch field not wrapped in Option: {trimmed}",
-            );
+            assert!(trimmed.contains("Option<"), "Patch field not wrapped in Option: {trimmed}",);
         }
     }
 
@@ -203,10 +168,7 @@ mod tests {
     fn insertable_excludes_non_insertable_fields() {
         let resource = full_resource("users");
         let body = render_resource_body(&resource);
-        let ins_section = body
-            .split("pub struct UserInsertable {")
-            .nth(1)
-            .expect("ins start");
+        let ins_section = body.split("pub struct UserInsertable {").nth(1).expect("ins start");
         let ins_section = ins_section.split('}').next().expect("ins end");
         assert!(ins_section.contains("pub email: String"));
         assert!(!ins_section.contains("pub id:"));
@@ -228,45 +190,24 @@ mod tests {
     fn from_db_impl_emitted_for_public_and_admin() {
         let resource = full_resource("users");
         let body = render_resource_body(&resource);
-        assert!(
-            body.contains("impl From<User> for UserPublic"),
-            "missing From<User> for UserPublic:\n{body}",
-        );
-        assert!(
-            body.contains("impl From<User> for UserAdmin"),
-            "missing From<User> for UserAdmin:\n{body}",
-        );
+        assert!(body.contains("impl From<User> for UserPublic"), "missing From<User> for UserPublic:\n{body}",);
+        assert!(body.contains("impl From<User> for UserAdmin"), "missing From<User> for UserAdmin:\n{body}",);
     }
 
     #[test]
     fn from_db_impl_moves_each_subset_field() {
         let resource = full_resource("users");
         let body = render_resource_body(&resource);
-        let pub_impl = body
-            .split("impl From<User> for UserPublic")
-            .nth(1)
-            .expect("pub impl start")
-            .split("}\n}")
-            .next()
-            .expect("pub impl end");
+        let pub_impl = body.split("impl From<User> for UserPublic").nth(1).expect("pub impl start").split("}\n}").next().expect("pub impl end");
         assert!(pub_impl.contains("id: row.id"), "missing id move:\n{pub_impl}");
-        assert!(
-            pub_impl.contains("email: row.email"),
-            "missing email move:\n{pub_impl}",
-        );
-        assert!(
-            !pub_impl.contains("password_hash"),
-            "password_hash must not appear in From<User> for UserPublic",
-        );
+        assert!(pub_impl.contains("email: row.email"), "missing email move:\n{pub_impl}",);
+        assert!(!pub_impl.contains("password_hash"), "password_hash must not appear in From<User> for UserPublic",);
     }
 
     #[test]
     fn no_from_impl_when_db_variant_absent() {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        fields.insert(
-            FieldName::new("payload"),
-            field("Jsonb", &[FieldVariant::Public], false, false),
-        );
+        fields.insert(FieldName::new("payload"), field("Jsonb", &[FieldVariant::Public], false, false));
         let mut resource = ResourceState::new(ResourceName::new("events"));
         resource.fields = fields;
         resource.canonicalize();
@@ -277,22 +218,13 @@ mod tests {
     #[test]
     fn no_from_impl_when_projection_not_db_subset() {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        fields.insert(
-            FieldName::new("id"),
-            field("Int8", &[FieldVariant::Db, FieldVariant::Public], false, true),
-        );
-        fields.insert(
-            FieldName::new("display_name"),
-            field("Varchar", &[FieldVariant::Public], false, false),
-        );
+        fields.insert(FieldName::new("id"), field("Int8", &[FieldVariant::Db, FieldVariant::Public], false, true));
+        fields.insert(FieldName::new("display_name"), field("Varchar", &[FieldVariant::Public], false, false));
         let mut resource = ResourceState::new(ResourceName::new("users"));
         resource.fields = fields;
         resource.canonicalize();
         let body = render_resource_body(&resource);
-        assert!(
-            !body.contains("impl From<User> for UserPublic"),
-            "Public is not a Db subset; From impl must be omitted:\n{body}",
-        );
+        assert!(!body.contains("impl From<User> for UserPublic"), "Public is not a Db subset; From impl must be omitted:\n{body}",);
     }
 
     #[test]
@@ -300,10 +232,7 @@ mod tests {
         let resource = full_resource("users");
         let body = render_resource_body(&resource);
         assert!(body.contains("pub struct UserFilter {"));
-        let filter_section = body
-            .split("pub struct UserFilter {")
-            .nth(1)
-            .expect("filter start");
+        let filter_section = body.split("pub struct UserFilter {").nth(1).expect("filter start");
         let filter_section = filter_section.split('}').next().expect("filter end");
         assert!(filter_section.contains("pub email: Option<String>"));
         assert!(!filter_section.contains("pub id:"));
@@ -313,22 +242,10 @@ mod tests {
     #[test]
     fn filter_field_types_per_kind() {
         let mut resource = full_resource("users");
-        resource.fields.insert(
-            FieldName::new("created_at"),
-            field("Timestamptz", &[FieldVariant::Db, FieldVariant::Public], false, false),
-        );
-        resource.fields.insert(
-            FieldName::new("age"),
-            field("Int4", &[FieldVariant::Db, FieldVariant::Public], false, false),
-        );
-        resource.fields.insert(
-            FieldName::new("status"),
-            field("Varchar", &[FieldVariant::Db, FieldVariant::Public], false, false),
-        );
-        resource.fields.insert(
-            FieldName::new("active"),
-            field("Bool", &[FieldVariant::Db, FieldVariant::Public], false, false),
-        );
+        resource.fields.insert(FieldName::new("created_at"), field("Timestamptz", &[FieldVariant::Db, FieldVariant::Public], false, false));
+        resource.fields.insert(FieldName::new("age"), field("Int4", &[FieldVariant::Db, FieldVariant::Public], false, false));
+        resource.fields.insert(FieldName::new("status"), field("Varchar", &[FieldVariant::Db, FieldVariant::Public], false, false));
+        resource.fields.insert(FieldName::new("active"), field("Bool", &[FieldVariant::Db, FieldVariant::Public], false, false));
 
         let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
         filterable.insert(FieldName::new("email"), FilterKind::IlikeContains);
@@ -347,16 +264,11 @@ mod tests {
         resource.canonicalize();
         let body = render_resource_body(&resource);
 
-        let filter_section = body
-            .split("pub struct UserFilter {")
-            .nth(1)
-            .expect("filter start");
+        let filter_section = body.split("pub struct UserFilter {").nth(1).expect("filter start");
         let filter_section = filter_section.split("}\n").next().expect("filter end");
 
         assert!(filter_section.contains("pub email: Option<String>"));
-        assert!(filter_section.contains(
-            "pub created_at: Option<RangeFilter<chrono::DateTime<chrono::Utc>>>"
-        ));
+        assert!(filter_section.contains("pub created_at: Option<RangeFilter<chrono::DateTime<chrono::Utc>>>"));
         assert!(filter_section.contains("pub age: Option<i32>"));
         assert!(filter_section.contains("pub status: Option<Vec<String>>"));
         assert!(filter_section.contains("pub active: Option<bool>"));
@@ -370,10 +282,7 @@ mod tests {
     fn no_range_filter_struct_when_no_range_kind() {
         let resource = full_resource("users");
         let body = render_resource_body(&resource);
-        assert!(
-            !body.contains("pub struct RangeFilter"),
-            "RangeFilter only when a column uses FilterKind::Range",
-        );
+        assert!(!body.contains("pub struct RangeFilter"), "RangeFilter only when a column uses FilterKind::Range",);
     }
 
     #[test]
@@ -381,11 +290,7 @@ mod tests {
         let resource = full_resource("users");
         let body = render_resource_body(&resource);
         let head = body.split("pub struct UserFilter").next().expect("head");
-        let derive_line = head
-            .lines()
-            .rev()
-            .find(|l| l.contains("#[derive"))
-            .expect("derive line for UserFilter");
+        let derive_line = head.lines().rev().find(|l| l.contains("#[derive")).expect("derive line for UserFilter");
         assert!(derive_line.contains("Debug"));
         assert!(derive_line.contains("Default"));
         assert!(derive_line.contains("Clone"));
@@ -426,10 +331,7 @@ mod tests {
     #[test]
     fn missing_db_variant_omits_base_struct() {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        fields.insert(
-            FieldName::new("payload"),
-            field("Jsonb", &[FieldVariant::Public], false, false),
-        );
+        fields.insert(FieldName::new("payload"), field("Jsonb", &[FieldVariant::Public], false, false));
         let mut resource = ResourceState::new(ResourceName::new("events"));
         resource.fields = fields;
         resource.canonicalize();
@@ -441,14 +343,8 @@ mod tests {
     #[test]
     fn nullable_column_yields_option_in_db() {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
-        fields.insert(
-            FieldName::new("id"),
-            field("Int8", &[FieldVariant::Db, FieldVariant::Public], false, true),
-        );
-        fields.insert(
-            FieldName::new("nickname"),
-            field("Varchar", &[FieldVariant::Db, FieldVariant::Public], true, false),
-        );
+        fields.insert(FieldName::new("id"), field("Int8", &[FieldVariant::Db, FieldVariant::Public], false, true));
+        fields.insert(FieldName::new("nickname"), field("Varchar", &[FieldVariant::Db, FieldVariant::Public], true, false));
         let mut resource = ResourceState::new(ResourceName::new("users"));
         resource.fields = fields;
         resource.canonicalize();
@@ -476,15 +372,7 @@ mod tests {
 
     fn sortable_resource() -> ResourceState {
         let mut resource = full_resource("users");
-        resource.fields.insert(
-            FieldName::new("created_at"),
-            field(
-                "Timestamptz",
-                &[FieldVariant::Db, FieldVariant::Public],
-                false,
-                false,
-            ),
-        );
+        resource.fields.insert(FieldName::new("created_at"), field("Timestamptz", &[FieldVariant::Db, FieldVariant::Public], false, false));
 
         let mut sortable: BTreeSet<FieldName> = BTreeSet::new();
         sortable.insert(FieldName::new("id"));

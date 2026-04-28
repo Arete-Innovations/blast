@@ -1,8 +1,9 @@
-use crate::error::BlastResult;
-use crate::governor::config::load_or_default;
-use crate::governor::report::format_report;
-use crate::governor::scanner::scan_project;
 use std::path::Path;
+
+use crate::{
+    error::BlastResult,
+    governor::{config::load_or_default, report::format_report, scanner::scan_project},
+};
 
 pub struct RunOutcome {
     pub violation_count: usize,

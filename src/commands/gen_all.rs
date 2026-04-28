@@ -11,14 +11,16 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::codegen;
-use crate::codegen::ir_loader;
-use crate::configs::Config;
-use crate::database;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
-use crate::state;
-use crate::state::{GenLevel, ResourceState};
+use crate::{
+    codegen,
+    codegen::ir_loader,
+    configs::Config,
+    database,
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state,
+    state::{GenLevel, ResourceState},
+};
 
 #[derive(Debug, Clone)]
 pub struct Args {
@@ -44,31 +46,17 @@ const STEP_ICONS: &str = "icons codegen";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
 
-pub fn run(
-    args: Args,
-    config: &mut Config,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-) -> BlastResult<Outcome> {
-    sink.info(format!(
-        "blast gen all: pipeline starting at {}",
-        args.project_root.display()
-    ));
+pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
+    sink.info(format!("blast gen all: pipeline starting at {}", args.project_root.display()));
 
     let resource_count = match preflight_resources(&args.project_root) {
         Ok(n) => n,
         Err(err) => {
-            sink.warn(format!(
-                "state directory unreadable ({}); proceeding with zero resources",
-                err
-            ));
+            sink.warn(format!("state directory unreadable ({}); proceeding with zero resources", err));
             0
         }
     };
-    sink.info(format!(
-        "discovered {} resource state file(s)",
-        resource_count
-    ));
+    sink.info(format!("discovered {} resource state file(s)", resource_count));
 
     let mut outcome = Outcome::default();
 
@@ -116,11 +104,31 @@ fn warn_resource_orphans(project_root: &Path, resource: &ResourceState, sink: &m
     let checks: &[(GenLevel, PathBuf, &'static str)] = &[
         (GenLevel::Model, project_root.join("src").join("models").join("generated").join(format!("{table}.rs")), "models/generated"),
         (GenLevel::Route, project_root.join("src").join("flows").join("generated").join(table), "flows/generated"),
-        (GenLevel::Route, project_root.join("src").join("transport").join("http").join("generated").join(format!("{table}.rs")), "transport/http/generated"),
-        (GenLevel::Types, project_root.join("frontend").join("src").join("generated").join("types").join(format!("{table}.ts")), "frontend/types/generated"),
-        (GenLevel::Types, project_root.join("frontend").join("src").join("generated").join("api").join(format!("{table}.ts")), "frontend/api/generated"),
-        (GenLevel::Composables, project_root.join("frontend").join("src").join("composables").join("generated").join(format!("{table}.ts")), "frontend/composables/generated"),
-        (GenLevel::Components, project_root.join("frontend").join("src").join("components").join("generated").join("forms").join(table), "frontend/components/generated/forms"),
+        (
+            GenLevel::Route,
+            project_root.join("src").join("transport").join("http").join("generated").join(format!("{table}.rs")),
+            "transport/http/generated",
+        ),
+        (
+            GenLevel::Types,
+            project_root.join("frontend").join("src").join("generated").join("types").join(format!("{table}.ts")),
+            "frontend/types/generated",
+        ),
+        (
+            GenLevel::Types,
+            project_root.join("frontend").join("src").join("generated").join("api").join(format!("{table}.ts")),
+            "frontend/api/generated",
+        ),
+        (
+            GenLevel::Composables,
+            project_root.join("frontend").join("src").join("composables").join("generated").join(format!("{table}.ts")),
+            "frontend/composables/generated",
+        ),
+        (
+            GenLevel::Components,
+            project_root.join("frontend").join("src").join("components").join("generated").join("forms").join(table),
+            "frontend/components/generated/forms",
+        ),
         (GenLevel::Pages, project_root.join("frontend").join("src").join("pages").join(table), "frontend/pages"),
     ];
 
@@ -151,11 +159,7 @@ fn preflight_resources(project_root: &PathBuf) -> BlastResult<usize> {
     Ok(names.len())
 }
 
-fn run_schema_step(
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_schema_step(sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     progress.step_start(STEP_SCHEMA);
     let ok = database::generate_schema();
     if !ok {
@@ -172,12 +176,7 @@ fn run_schema_step(
     Ok(())
 }
 
-fn run_enums_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_enums_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::enums::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
@@ -197,12 +196,7 @@ fn run_enums_step(
     }
 }
 
-fn run_structs_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_structs_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::structs::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
@@ -222,13 +216,7 @@ fn run_structs_step(
     }
 }
 
-fn run_models_step(
-    project_root: &PathBuf,
-    _config: &mut Config,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_models_step(project_root: &PathBuf, _config: &mut Config, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::models::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
@@ -248,12 +236,7 @@ fn run_models_step(
     }
 }
 
-fn run_flows_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_flows_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::flows::run(project_root, sink, progress) {
         Ok(report) => {
             for path in &report.written {
@@ -273,22 +256,12 @@ fn run_flows_step(
     }
 }
 
-fn run_http_routes_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_http_routes_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::http_routes::run(project_root, sink, progress) {
         Ok(report) => {
             outcome.files_written += report.written.len();
             outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_HTTP_ROUTES,
-                report.written.len(),
-                report.skipped.len()
-            ));
+            sink.info(format!("{}: {} written, {} skipped", STEP_HTTP_ROUTES, report.written.len(), report.skipped.len()));
             outcome.steps_run += 1;
             Ok(())
         }
@@ -299,22 +272,12 @@ fn run_http_routes_step(
     }
 }
 
-fn run_frontend_types_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_frontend_types_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::frontend_types::run(project_root, sink, progress) {
         Ok(report) => {
             outcome.files_written += report.written.len();
             outcome.files_skipped += report.skipped.len();
-            sink.info(format!(
-                "{}: {} written, {} skipped",
-                STEP_FRONTEND_TYPES,
-                report.written.len(),
-                report.skipped.len()
-            ));
+            sink.info(format!("{}: {} written, {} skipped", STEP_FRONTEND_TYPES, report.written.len(), report.skipped.len()));
             outcome.steps_run += 1;
             Ok(())
         }
@@ -325,12 +288,7 @@ fn run_frontend_types_step(
     }
 }
 
-fn run_env_example_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_env_example_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     progress.step_start(STEP_ENV_EXAMPLE);
     match codegen::env_example::run(project_root, sink, progress) {
         Ok(report) => {
@@ -354,12 +312,7 @@ fn run_env_example_step(
     }
 }
 
-fn run_theme_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_theme_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::theme::run(project_root, sink, progress) {
         Ok(report) => {
             outcome.files_written += report.written.len();
@@ -373,12 +326,7 @@ fn run_theme_step(
     }
 }
 
-fn run_icons_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_icons_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::icons::run(project_root, sink, progress) {
         Ok(report) => {
             if report.written.is_some() {
@@ -394,12 +342,7 @@ fn run_icons_step(
     }
 }
 
-fn run_governor_plugin_step(
-    project_root: &PathBuf,
-    sink: &mut dyn Sink,
-    progress: &mut dyn Progress,
-    outcome: &mut Outcome,
-) -> BlastResult<()> {
+fn run_governor_plugin_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     progress.step_start(STEP_GOVERNOR_PLUGIN);
     match codegen::governor_plugin::run(project_root) {
         Ok(emitted) => {

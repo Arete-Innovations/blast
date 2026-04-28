@@ -1,10 +1,18 @@
-use crate::governor::rules::helpers::{is_comment_line, line_has_allow, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
-use crate::state::FeLintState;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, line_has_allow, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref LOADING_RE: Regex = match Regex::new(r#"v-if\s*=\s*"[^"]*[Ll]oading[^"]*""#) {
@@ -26,13 +34,7 @@ impl Rule for LoadingSpinnerAfterFirstLoad {
         "LoadingSpinnerAfterFirstLoad"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        _config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
         if is_comment_line(line) {
             return None;
         }
@@ -54,8 +56,9 @@ impl Rule for LoadingSpinnerAfterFirstLoad {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn run(line: &str) -> Option<Violation> {
         let rule = LoadingSpinnerAfterFirstLoad::new();

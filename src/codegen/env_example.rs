@@ -11,12 +11,17 @@
 //! NAME=default_or_changeme
 //! ```
 
-use crate::codegen::header;
-use crate::error::{BlastError, BlastResult};
-use crate::io::traits::{Progress, Sink, SinkExt};
-use crate::state::{AppPolicySection, EnvSpecState, EnvVarSpec};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use crate::{
+    codegen::header,
+    error::{BlastError, BlastResult},
+    io::traits::{Progress, Sink, SinkExt},
+    state::{AppPolicySection, EnvSpecState, EnvVarSpec},
+};
 
 const ENV_EXAMPLE_RELATIVE: &str = ".env.example";
 const SENSITIVE_PLACEHOLDER: &str = "<changeme>";
@@ -25,11 +30,7 @@ pub struct EmitReport {
     pub written: Option<PathBuf>,
 }
 
-pub fn run(
-    project_root: &Path,
-    sink: &mut dyn Sink,
-    _progress: &mut dyn Progress,
-) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, _progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     let state_dir = project_root.join("storage/blast/state");
     let env_spec = load_env_spec(&state_dir)?;
 
@@ -40,15 +41,11 @@ pub fn run(
             Ok(EmitReport { written: Some(path) })
         }
         Some(_spec_empty) => {
-            sink.warn(
-                "no env spec declared in app.ron — skipping .env.example".to_string(),
-            );
+            sink.warn("no env spec declared in app.ron — skipping .env.example".to_string());
             Ok(EmitReport { written: None })
         }
         None => {
-            sink.warn(
-                "no env spec declared in app.ron — skipping .env.example".to_string(),
-            );
+            sink.warn("no env spec declared in app.ron — skipping .env.example".to_string());
             Ok(EmitReport { written: None })
         }
     }
@@ -65,9 +62,7 @@ fn load_env_spec(state_dir: &Path) -> BlastResult<Option<EnvSpecState>> {
     extract_env_spec(app_state.sections.get("env_spec"))
 }
 
-fn extract_env_spec(
-    section: Option<&AppPolicySection>,
-) -> BlastResult<Option<EnvSpecState>> {
+fn extract_env_spec(section: Option<&AppPolicySection>) -> BlastResult<Option<EnvSpecState>> {
     let section = match section {
         Some(s) => s,
         None => return Ok(None),
@@ -101,11 +96,7 @@ fn emit(project_root: &Path, spec: &EnvSpecState) -> BlastResult<PathBuf> {
 /// and standalone `//` with `#`.
 fn marker_for_env(project_root: &Path) -> BlastResult<String> {
     let rs_marker = header::marker_for_app(project_root)?;
-    let converted = rs_marker
-        .lines()
-        .map(convert_line)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let converted = rs_marker.lines().map(convert_line).collect::<Vec<_>>().join("\n");
     Ok(format!("{}\n", converted))
 }
 
@@ -132,23 +123,22 @@ fn render_var(out: &mut String, name: &str, var: &EnvVarSpec) {
         Some(comment) => out.push_str(&format!("# {}\n", comment)),
         None => {}
     }
-    let value = if var.sensitive {
-        SENSITIVE_PLACEHOLDER.to_string()
-    } else {
-        var.default.clone()
-    };
+    let value = if var.sensitive { SENSITIVE_PLACEHOLDER.to_string() } else { var.default.clone() };
     out.push_str(&format!("{}={}\n", name, value));
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::io::null::NullProgress;
-    use crate::io::recorder::RecorderSink;
-    use crate::state::{AppPolicySection, AppState, EnvSpecState, EnvVarSpec};
-    use indexmap::IndexMap;
     use std::fs;
+
+    use indexmap::IndexMap;
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::{null::NullProgress, recorder::RecorderSink},
+        state::{AppPolicySection, AppState, EnvSpecState, EnvVarSpec},
+    };
 
     fn make_state_with_env_spec() -> AppState {
         let mut vars: IndexMap<String, EnvVarSpec> = IndexMap::new();
@@ -178,20 +168,14 @@ mod tests {
         );
         let spec = EnvSpecState { vars };
         let mut state = AppState::new();
-        state
-            .sections
-            .insert("env_spec".to_string(), AppPolicySection::EnvSpec(spec));
+        state.sections.insert("env_spec".to_string(), AppPolicySection::EnvSpec(spec));
         state
     }
 
     fn write_app_ron(dir: &TempDir, state: &AppState) {
         let state_dir = dir.path().join("storage/blast/state");
         fs::create_dir_all(&state_dir).unwrap();
-        let ron = ron::ser::to_string_pretty(
-            state,
-            ron::ser::PrettyConfig::new().struct_names(true),
-        )
-        .unwrap();
+        let ron = ron::ser::to_string_pretty(state, ron::ser::PrettyConfig::new().struct_names(true)).unwrap();
         fs::write(state_dir.join("app.ron"), ron).unwrap();
     }
 
@@ -213,10 +197,7 @@ mod tests {
         assert!(content.contains("# AUTO-GENERATED from"));
         assert!(content.contains("storage/blast/state/app.ron"));
         let first_line = content.lines().next().expect("file has at least one line");
-        assert!(
-            first_line.starts_with('#'),
-            "header first line must start with #, got: {first_line}"
-        );
+        assert!(first_line.starts_with('#'), "header first line must start with #, got: {first_line}");
 
         assert!(content.contains("# Postgres connection string\nDATABASE_URL=postgres://localhost/myapp"));
         assert!(content.contains("# 32-byte hex secret for session tokens\nSESSION_SIGNING_KEY=<changeme>"));

@@ -1,10 +1,18 @@
-use crate::state::FeLintState;
-use crate::governor::rules::helpers::{is_comment_line, snippet_of};
-use crate::governor::rules::traits::Rule;
-use crate::governor::violation::Violation;
+use std::path::Path;
+
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::path::Path;
+
+use crate::{
+    governor::{
+        rules::{
+            helpers::{is_comment_line, snippet_of},
+            traits::Rule,
+        },
+        violation::Violation,
+    },
+    state::FeLintState,
+};
 
 lazy_static! {
     static ref INLINE_RE: Regex = match Regex::new(r#"(?:\s|^)(?::style\s*=|style\s*=)\s*["']"#) {
@@ -26,25 +34,13 @@ impl Rule for InlineStyle {
         "InlineStyle"
     }
 
-    fn check(
-        &self,
-        file: &Path,
-        line: &str,
-        line_no: usize,
-        _config: &FeLintState,
-    ) -> Option<Violation> {
+    fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
         if is_comment_line(line) {
             return None;
         }
         if !INLINE_RE.is_match(line) {
             return None;
         }
-        Some(Violation::new(
-            "InlineStyle",
-            file.to_path_buf(),
-            line_no,
-            snippet_of(line),
-            "move style into <style scoped> via a class",
-        ))
+        Some(Violation::new("InlineStyle", file.to_path_buf(), line_no, snippet_of(line), "move style into <style scoped> via a class"))
     }
 }

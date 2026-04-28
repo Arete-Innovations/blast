@@ -6,9 +6,12 @@
 //! picks the primary key column ascending (or the first sortable column
 //! if no PK is present), and a `FromStr` impl parses the wire form.
 
-use crate::codegen::structs::naming;
-use crate::state::{FieldName, ResourceState};
 use std::collections::BTreeSet;
+
+use crate::{
+    codegen::structs::naming,
+    state::{FieldName, ResourceState},
+};
 
 pub fn render(resource: &ResourceState, sortable: &BTreeSet<FieldName>) -> String {
     let enum_name = naming::sort_enum_name_for_resource(resource);
@@ -52,21 +55,10 @@ pub fn render(resource: &ResourceState, sortable: &BTreeSet<FieldName>) -> Strin
     out.push_str("        };\n");
     out.push_str("        match (col, desc) {\n");
     for (col, asc, desc) in &variants {
-        out.push_str(&format!(
-            "            (\"{col}\", false) => Ok(Self::{asc}),\n",
-            col = col,
-            asc = asc,
-        ));
-        out.push_str(&format!(
-            "            (\"{col}\", true) => Ok(Self::{desc}),\n",
-            col = col,
-            desc = desc,
-        ));
+        out.push_str(&format!("            (\"{col}\", false) => Ok(Self::{asc}),\n", col = col, asc = asc,));
+        out.push_str(&format!("            (\"{col}\", true) => Ok(Self::{desc}),\n", col = col, desc = desc,));
     }
-    out.push_str(&format!(
-        "            _other => Err(format!(\"unknown sort column for {table}: {{}}\", s)),\n",
-        table = table,
-    ));
+    out.push_str(&format!("            _other => Err(format!(\"unknown sort column for {table}: {{}}\", s)),\n", table = table,));
     out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("}\n");
@@ -79,11 +71,7 @@ pub fn render(resource: &ResourceState, sortable: &BTreeSet<FieldName>) -> Strin
 /// only when `variants` is empty (shouldn't happen — the runner guards
 /// emission on `sortable_columns` being non-empty — but defending
 /// against a future refactor moving that guard).
-fn default_sort_variant(
-    resource: &ResourceState,
-    sortable: &BTreeSet<FieldName>,
-    variants: &[(String, String, String)],
-) -> String {
+fn default_sort_variant(resource: &ResourceState, sortable: &BTreeSet<FieldName>, variants: &[(String, String, String)]) -> String {
     for (name, field) in resource.fields.iter() {
         if !field.primary_key {
             continue;

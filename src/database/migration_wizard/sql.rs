@@ -1,6 +1,4 @@
-use crate::database::migration_wizard::spec::{
-    AlterTableSpec, ColumnSpec, ForeignKeySpec, NewTableSpec,
-};
+use crate::database::migration_wizard::spec::{AlterTableSpec, ColumnSpec, ForeignKeySpec, NewTableSpec};
 
 pub fn render_new_table_up(spec: &NewTableSpec) -> String {
     let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", spec.table);
@@ -52,10 +50,7 @@ pub fn render_alter_table_up(spec: &AlterTableSpec) -> String {
     }
 
     for fk in &spec.foreign_keys {
-        sql.push_str(&format!(
-            "ADD FOREIGN KEY ({}) REFERENCES {}({})",
-            fk.column, fk.referenced_table, fk.referenced_column
-        ));
+        sql.push_str(&format!("ADD FOREIGN KEY ({}) REFERENCES {}({})", fk.column, fk.referenced_table, fk.referenced_column));
         emitted += 1;
         if emitted < total_clauses {
             sql.push_str(", ");
@@ -75,20 +70,14 @@ fn render_column_def(col: &ColumnSpec) -> String {
     let unique_part = if col.unique { " UNIQUE" } else { "" };
     let default_part = render_default(&col.default);
     let pk_part = if col.primary_key { " PRIMARY KEY" } else { "" };
-    format!(
-        "{} {}{}{}{}{}",
-        col.name, col.sql_type, nullable_part, unique_part, default_part, pk_part
-    )
+    format!("{} {}{}{}{}{}", col.name, col.sql_type, nullable_part, unique_part, default_part, pk_part)
 }
 
 fn render_column_def_no_pk(col: &ColumnSpec) -> String {
     let nullable_part = if col.nullable { "" } else { " NOT NULL" };
     let unique_part = if col.unique { " UNIQUE" } else { "" };
     let default_part = render_default(&col.default);
-    format!(
-        "{} {}{}{}{}",
-        col.name, col.sql_type, nullable_part, unique_part, default_part
-    )
+    format!("{} {}{}{}{}", col.name, col.sql_type, nullable_part, unique_part, default_part)
 }
 
 fn render_default(default: &Option<String>) -> String {
@@ -106,10 +95,7 @@ fn render_default(default: &Option<String>) -> String {
 }
 
 fn render_inline_fk(fk: &ForeignKeySpec) -> String {
-    format!(
-        "FOREIGN KEY ({}) REFERENCES {}({})",
-        fk.column, fk.referenced_table, fk.referenced_column
-    )
+    format!("FOREIGN KEY ({}) REFERENCES {}({})", fk.column, fk.referenced_table, fk.referenced_column)
 }
 
 pub fn custom_up_template() -> String {

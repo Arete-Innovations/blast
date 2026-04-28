@@ -1,12 +1,18 @@
-use crate::configs::Config;
-use crate::error::{BlastError, BlastResult};
+use std::{
+    collections::HashMap,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::Path,
+    process::Command,
+    sync::{Arc, Mutex},
+};
+
 use lazy_static::lazy_static;
-use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::Path;
-use std::process::Command;
-use std::sync::{Arc, Mutex};
+
+use crate::{
+    configs::Config,
+    error::{BlastError, BlastResult},
+};
 
 lazy_static! {
     static ref SERVER_PROCESSES: Arc<Mutex<HashMap<String, u32>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -41,7 +47,8 @@ fn prepare_layout(project_dir: &Path) -> BlastResult<String> {
 
     if !layout_path.exists() {
         return Err(BlastError::Dashboard(format!(
-            "Zellij layout file not found at: {}\n\nThe dashboard.kdl file should be present in your project's storage/blast directory. This file should have been included in your project template. Please check your installation or create this file manually.",
+            "Zellij layout file not found at: {}\n\nThe dashboard.kdl file should be present in your project's storage/blast directory. This file should have been included in your project template. Please check your \
+             installation or create this file manually.",
             layout_path.display()
         )));
     }
@@ -51,9 +58,7 @@ fn prepare_layout(project_dir: &Path) -> BlastResult<String> {
 
 pub fn launch_dashboard(config: &Config) -> BlastResult<()> {
     if !check_zellij_installed()? {
-        return Err(BlastError::Dashboard(
-            "Zellij terminal multiplexer is not installed. Install it with 'cargo install zellij'".into(),
-        ));
+        return Err(BlastError::Dashboard("Zellij terminal multiplexer is not installed. Install it with 'cargo install zellij'".into()));
     }
 
     let project_dir = &config.project_dir;
@@ -148,10 +153,7 @@ pub fn start_server(config: &Config, is_dev: bool) -> BlastResult<u32> {
 
     let output = cmd.output()?;
     let pid_str = String::from_utf8_lossy(&output.stdout);
-    let pid = pid_str
-        .trim()
-        .parse::<u32>()
-        .map_err(|e| BlastError::Dashboard(format!("failed to parse server PID: {}", e)))?;
+    let pid = pid_str.trim().parse::<u32>().map_err(|e| BlastError::Dashboard(format!("failed to parse server PID: {}", e)))?;
 
     let mut processes = match SERVER_PROCESSES.lock() {
         Ok(guard) => guard,

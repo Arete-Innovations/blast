@@ -1,5 +1,7 @@
-use crate::codegen::enums::{pascalize, ParsedEnum};
-use crate::state::SqlType;
+use crate::{
+    codegen::enums::{pascalize, ParsedEnum},
+    state::SqlType,
+};
 
 pub fn primevue_component(sql: &SqlType, enums: &[ParsedEnum]) -> &'static str {
     if enum_meta(sql, enums).is_some() {
@@ -94,8 +96,9 @@ pub fn is_json(sql: &SqlType) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn enums_fixture() -> Vec<ParsedEnum> {
         vec![ParsedEnum {

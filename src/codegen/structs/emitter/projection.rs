@@ -5,8 +5,10 @@
 //! attributes are stamped on the schema-bound variants only.
 
 use super::util;
-use crate::codegen::structs::naming;
-use crate::state::{FieldVariant, ResourceState};
+use crate::{
+    codegen::structs::naming,
+    state::{FieldVariant, ResourceState},
+};
 
 pub fn render(resource: &ResourceState, variant: FieldVariant) -> String {
     let table = resource.name.as_str();

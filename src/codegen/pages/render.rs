@@ -1,5 +1,7 @@
-use crate::codegen::structs::naming::type_stem_for_resource;
-use crate::state::{FieldVariant, ResourceState, Verb};
+use crate::{
+    codegen::structs::naming::type_stem_for_resource,
+    state::{FieldVariant, ResourceState, Verb},
+};
 
 pub fn pages_for_resource(r: &ResourceState) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
@@ -87,7 +89,8 @@ pub fn build_list_page(r: &ResourceState) -> String {
 
     let delete_handler = if has_delete {
         format!(
-            "async function on_delete(id: number): Promise<void> {{\n  if (!window.confirm('Delete this {table} record?')) return\n  const result = await delete{stem}(id)\n  if (result.error !== null) {{\n    error_message.value = result.error.error.message\n    return\n  }}\n  await load(last_event.value)\n}}\n",
+            "async function on_delete(id: number): Promise<void> {{\n  if (!window.confirm('Delete this {table} record?')) return\n  const result = await delete{stem}(id)\n  if (result.error !== null) {{\n    \
+             error_message.value = result.error.error.message\n    return\n  }}\n  await load(last_event.value)\n}}\n",
             table = table,
             stem = stem,
         )
@@ -96,139 +99,25 @@ pub fn build_list_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<script setup lang=\"ts\">\n\
-import {{ ref }} from 'vue'\n\
-import DataTable from 'primevue/datatable'\n\
-import Column from 'primevue/column'\n\
-import Button from 'primevue/button'\n\
-import {{ list{plural} }} from '@/generated/api/{table}'\n\
-{delete_imports}\
-import type {{ {stem}Public }} from '@/generated/types/{table}'\n\
-\n\
-interface LazyEvent {{\n\
-  first?: number\n\
-  rows?: number\n\
-  sortField?: string | null\n\
-  sortOrder?: number | null\n\
-  filters?: {{ [key: string]: {{ value: unknown; matchMode?: string }} }}\n\
-}}\n\
-\n\
-const items = ref<{stem}Public[]>([])\n\
-const total_records = ref<number>(0)\n\
-const loading = ref<boolean>(false)\n\
-const error_message = ref<string | null>(null)\n\
-const last_event = ref<LazyEvent>({{ first: 0, rows: 25 }})\n\
-\n\
-function build_sort(event: LazyEvent): string | null {{\n\
-  const field = event.sortField\n\
-  if (field === null || field === undefined) return null\n\
-  const order = event.sortOrder === undefined || event.sortOrder === null ? 1 : event.sortOrder\n\
-  return order < 0 ? `-${{field}}` : field\n\
-}}\n\
-\n\
-function build_filter(event: LazyEvent): {{ [key: string]: string | number | boolean | null }} | null {{\n\
-  if (!event.filters) return null\n\
-  const out: {{ [key: string]: string | number | boolean | null }} = {{}}\n\
-  for (const [key, meta] of Object.entries(event.filters)) {{\n\
-    if (meta === undefined || meta === null) continue\n\
-    const value = meta.value\n\
-    if (value === null || value === undefined || value === '') continue\n\
-    out[key] = value as string | number | boolean | null\n\
-  }}\n\
-  return Object.keys(out).length > 0 ? out : null\n\
-}}\n\
-\n\
-async function load(event: LazyEvent): Promise<void> {{\n\
-  loading.value = true\n\
-  error_message.value = null\n\
-  last_event.value = event\n\
-  const first = event.first === undefined ? 0 : event.first\n\
-  const rows = event.rows === undefined ? 25 : event.rows\n\
-  const page = Math.floor(first / Math.max(rows, 1)) + 1\n\
-  const result = await list{plural}({{\n\
-    page,\n\
-    page_size: rows,\n\
-    sort: build_sort(event),\n\
-    filter: build_filter(event),\n\
-  }})\n\
-  loading.value = false\n\
-  if (result.error !== null) {{\n\
-    error_message.value = result.error.error.message\n\
-    items.value = []\n\
-    total_records.value = 0\n\
-    return\n\
-  }}\n\
-  items.value = result.data === null ? [] : result.data\n\
-  total_records.value = items.value.length\n\
-}}\n\
-\n\
-{delete_handler}\
-</script>\n\
-\n\
-<template>\n\
-  <section class=\"{table}-list-page\">\n\
-    <header class=\"{table}-list-header\">\n\
-      <h1 class=\"{table}-list-title\">{label}</h1>\n\
-{header_actions}    </header>\n\
-    <div v-if=\"error_message !== null\" class=\"{table}-list-error\" role=\"alert\">\n\
-      {{{{ error_message }}}}\n\
-    </div>\n\
-    <DataTable\n\
-      :value=\"items\"\n\
-      :loading=\"loading\"\n\
-      lazy\n\
-      paginator\n\
-      :rows=\"25\"\n\
-      :rows-per-page-options=\"[10, 25, 50, 100]\"\n\
-      :total-records=\"total_records\"\n\
-      :first=\"0\"\n\
-      data-key=\"id\"\n\
-      striped-rows\n\
-      removable-sort\n\
-      filter-display=\"row\"\n\
-      @page=\"load\"\n\
-      @sort=\"load\"\n\
-      @filter=\"load\"\n\
-      @load=\"load\"\n\
-    >\n\
-{columns_html}\n\
-{actions_column}    </DataTable>\n\
-  </section>\n\
-</template>\n\
-\n\
-<style scoped>\n\
-@layer app {{\n\
-  .{table}-list-page {{\n\
-    display: flex;\n\
-    flex-direction: column;\n\
-    gap: var(--app-space-lg);\n\
-    padding: var(--app-space-lg);\n\
-  }}\n\
-  .{table}-list-header {{\n\
-    display: flex;\n\
-    align-items: baseline;\n\
-    justify-content: space-between;\n\
-    gap: var(--app-space-md);\n\
-  }}\n\
-  .{table}-list-title {{\n\
-    margin: 0;\n\
-    font-size: var(--app-text-lg);\n\
-    font-weight: var(--app-font-weight-semibold);\n\
-  }}\n\
-  .{table}-list-error {{\n\
-    color: var(--p-message-error-color, var(--app-color-danger, #b00020));\n\
-  }}\n\
-  .{table}-list-actions {{\n\
-    display: inline-flex;\n\
-    gap: var(--app-space-sm);\n\
-    align-items: center;\n\
-  }}\n\
-  .{table}-list-action {{\n\
-    color: var(--p-primary-color);\n\
-    text-decoration: underline;\n\
-  }}\n\
-}}\n\
-</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ ref }} from 'vue'\nimport DataTable from 'primevue/datatable'\nimport Column from 'primevue/column'\nimport Button from 'primevue/button'\nimport {{ list{plural} }} from \
+         '@/generated/api/{table}'\n{delete_imports}import type {{ {stem}Public }} from '@/generated/types/{table}'\n\ninterface LazyEvent {{\nfirst?: number\nrows?: number\nsortField?: string | null\nsortOrder?: \
+         number | null\nfilters?: {{ [key: string]: {{ value: unknown; matchMode?: string }} }}\n}}\n\nconst items = ref<{stem}Public[]>([])\nconst total_records = ref<number>(0)\nconst loading = \
+         ref<boolean>(false)\nconst error_message = ref<string | null>(null)\nconst last_event = ref<LazyEvent>({{ first: 0, rows: 25 }})\n\nfunction build_sort(event: LazyEvent): string | null {{\nconst field = \
+         event.sortField\nif (field === null || field === undefined) return null\nconst order = event.sortOrder === undefined || event.sortOrder === null ? 1 : event.sortOrder\nreturn order < 0 ? `-${{field}}` : \
+         field\n}}\n\nfunction build_filter(event: LazyEvent): {{ [key: string]: string | number | boolean | null }} | null {{\nif (!event.filters) return null\nconst out: {{ [key: string]: string | number | boolean | \
+         null }} = {{}}\nfor (const [key, meta] of Object.entries(event.filters)) {{\nif (meta === undefined || meta === null) continue\nconst value = meta.value\nif (value === null || value === undefined || value === \
+         '') continue\nout[key] = value as string | number | boolean | null\n}}\nreturn Object.keys(out).length > 0 ? out : null\n}}\n\nasync function load(event: LazyEvent): Promise<void> {{\nloading.value = \
+         true\nerror_message.value = null\nlast_event.value = event\nconst first = event.first === undefined ? 0 : event.first\nconst rows = event.rows === undefined ? 25 : event.rows\nconst page = Math.floor(first / \
+         Math.max(rows, 1)) + 1\nconst result = await list{plural}({{\npage,\npage_size: rows,\nsort: build_sort(event),\nfilter: build_filter(event),\n}})\nloading.value = false\nif (result.error !== null) \
+         {{\nerror_message.value = result.error.error.message\nitems.value = []\ntotal_records.value = 0\nreturn\n}}\nitems.value = result.data === null ? [] : result.data\ntotal_records.value = \
+         items.value.length\n}}\n\n{delete_handler}</script>\n\n<template>\n<section class=\"{table}-list-page\">\n<header class=\"{table}-list-header\">\n<h1 \
+         class=\"{table}-list-title\">{label}</h1>\n{header_actions}    </header>\n<div v-if=\"error_message !== null\" class=\"{table}-list-error\" role=\"alert\">\n{{{{ error_message \
+         }}}}\n</div>\n<DataTable\n:value=\"items\"\n:loading=\"loading\"\nlazy\npaginator\n:rows=\"25\"\n:rows-per-page-options=\"[10, 25, 50, \
+         100]\"\n:total-records=\"total_records\"\n:first=\"0\"\ndata-key=\"id\"\nstriped-rows\nremovable-sort\nfilter-display=\"row\"\n@page=\"load\"\n@sort=\"load\"\n@filter=\"load\"\n@load=\"load\"\n>\\
+         n{columns_html}\n{actions_column}    </DataTable>\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-list-page {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-lg);\npadding: \
+         var(--app-space-lg);\n}}\n.{table}-list-header {{\ndisplay: flex;\nalign-items: baseline;\njustify-content: space-between;\ngap: var(--app-space-md);\n}}\n.{table}-list-title {{\nmargin: 0;\nfont-size: \
+         var(--app-text-lg);\nfont-weight: var(--app-font-weight-semibold);\n}}\n.{table}-list-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n.{table}-list-actions {{\ndisplay: \
+         inline-flex;\ngap: var(--app-space-sm);\nalign-items: center;\n}}\n.{table}-list-action {{\ncolor: var(--p-primary-color);\ntext-decoration: underline;\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         plural = plural,
@@ -276,93 +165,18 @@ pub fn build_detail_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<script setup lang=\"ts\">\n\
-import {{ onMounted, ref, watch }} from 'vue'\n\
-import Button from 'primevue/button'\n\
-import {{ get{stem} }} from '@/generated/api/{table}'\n\
-import type {{ {stem}Public }} from '@/generated/types/{table}'\n\
-\n\
-const props = defineProps<{{ id: number }}>()\n\
-\n\
-const item = ref<{stem}Public | null>(null)\n\
-const loading = ref<boolean>(false)\n\
-const error_message = ref<string | null>(null)\n\
-\n\
-function format_value(value: unknown): string {{\n\
-  if (value === null || value === undefined) return '—'\n\
-  if (typeof value === 'object') return JSON.stringify(value)\n\
-  return String(value)\n\
-}}\n\
-\n\
-async function load(id: number): Promise<void> {{\n\
-  loading.value = true\n\
-  error_message.value = null\n\
-  const result = await get{stem}(id)\n\
-  loading.value = false\n\
-  if (result.error !== null) {{\n\
-    error_message.value = result.error.error.message\n\
-    return\n\
-  }}\n\
-  item.value = result.data\n\
-}}\n\
-\n\
-onMounted(() => {{ void load(props.id) }})\n\
-watch(() => props.id, (next) => {{ void load(next) }})\n\
-</script>\n\
-\n\
-<template>\n\
-  <section class=\"{table}-detail-page\">\n\
-    <header class=\"{table}-detail-header\">\n\
-      <h1 class=\"{table}-detail-title\">{label}</h1>\n\
-{edit_link}    </header>\n\
-    <div v-if=\"error_message !== null\" class=\"{table}-detail-error\" role=\"alert\">\n\
-      {{{{ error_message }}}}\n\
-    </div>\n\
-    <div v-if=\"loading\" class=\"{table}-detail-loading\">Loading…</div>\n\
-    <dl v-else-if=\"item !== null\" class=\"{table}-detail-grid\">\n\
-{rows_html}\n\
-    </dl>\n\
-  </section>\n\
-</template>\n\
-\n\
-<style scoped>\n\
-@layer app {{\n\
-  .{table}-detail-page {{\n\
-    display: flex;\n\
-    flex-direction: column;\n\
-    gap: var(--app-space-lg);\n\
-    padding: var(--app-space-lg);\n\
-  }}\n\
-  .{table}-detail-header {{\n\
-    display: flex;\n\
-    align-items: baseline;\n\
-    justify-content: space-between;\n\
-  }}\n\
-  .{table}-detail-title {{\n\
-    margin: 0;\n\
-    font-size: var(--app-text-lg);\n\
-  }}\n\
-  .{table}-detail-grid {{\n\
-    display: grid;\n\
-    grid-template-columns: minmax(8rem, max-content) 1fr;\n\
-    gap: var(--app-space-sm) var(--app-space-md);\n\
-    margin: 0;\n\
-  }}\n\
-  .{table}-detail-row {{\n\
-    display: contents;\n\
-  }}\n\
-  .{table}-detail-label {{\n\
-    font-weight: var(--app-font-weight-semibold);\n\
-    color: var(--p-text-muted-color);\n\
-  }}\n\
-  .{table}-detail-value {{\n\
-    margin: 0;\n\
-  }}\n\
-  .{table}-detail-error {{\n\
-    color: var(--p-message-error-color, var(--app-color-danger, #b00020));\n\
-  }}\n\
-}}\n\
-</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ onMounted, ref, watch }} from 'vue'\nimport Button from 'primevue/button'\nimport {{ get{stem} }} from '@/generated/api/{table}'\nimport type {{ {stem}Public }} from \
+         '@/generated/types/{table}'\n\nconst props = defineProps<{{ id: number }}>()\n\nconst item = ref<{stem}Public | null>(null)\nconst loading = ref<boolean>(false)\nconst error_message = ref<string | \
+         null>(null)\n\nfunction format_value(value: unknown): string {{\nif (value === null || value === undefined) return '—'\nif (typeof value === 'object') return JSON.stringify(value)\nreturn \
+         String(value)\n}}\n\nasync function load(id: number): Promise<void> {{\nloading.value = true\nerror_message.value = null\nconst result = await get{stem}(id)\nloading.value = false\nif (result.error !== null) \
+         {{\nerror_message.value = result.error.error.message\nreturn\n}}\nitem.value = result.data\n}}\n\nonMounted(() => {{ void load(props.id) }})\nwatch(() => props.id, (next) => {{ void load(next) \
+         }})\n</script>\n\n<template>\n<section class=\"{table}-detail-page\">\n<header class=\"{table}-detail-header\">\n<h1 class=\"{table}-detail-title\">{label}</h1>\n{edit_link}    </header>\n<div \
+         v-if=\"error_message !== null\" class=\"{table}-detail-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div v-if=\"loading\" class=\"{table}-detail-loading\">Loading…</div>\n<dl v-else-if=\"item !== \
+         null\" class=\"{table}-detail-grid\">\n{rows_html}\n</dl>\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-detail-page {{\ndisplay: flex;\nflex-direction: column;\ngap: \
+         var(--app-space-lg);\npadding: var(--app-space-lg);\n}}\n.{table}-detail-header {{\ndisplay: flex;\nalign-items: baseline;\njustify-content: space-between;\n}}\n.{table}-detail-title {{\nmargin: \
+         0;\nfont-size: var(--app-text-lg);\n}}\n.{table}-detail-grid {{\ndisplay: grid;\ngrid-template-columns: minmax(8rem, max-content) 1fr;\ngap: var(--app-space-sm) var(--app-space-md);\nmargin: \
+         0;\n}}\n.{table}-detail-row {{\ndisplay: contents;\n}}\n.{table}-detail-label {{\nfont-weight: var(--app-font-weight-semibold);\ncolor: var(--p-text-muted-color);\n}}\n.{table}-detail-value {{\nmargin: \
+         0;\n}}\n.{table}-detail-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         label = label,
@@ -383,44 +197,11 @@ pub fn build_create_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<script setup lang=\"ts\">\n\
-import {{ useRouter }} from 'vue-router'\n\
-import CreateForm from '@/components/generated/forms/{table}/CreateForm.vue'\n\
-\n\
-const router = useRouter()\n\
-\n\
-async function on_created(): Promise<void> {{\n\
-{nav_after}}}\n\
-\n\
-function on_cancel(): void {{\n\
-  router.back()\n\
-}}\n\
-</script>\n\
-\n\
-<template>\n\
-  <section class=\"{table}-create-page\">\n\
-    <header class=\"{table}-create-header\">\n\
-      <h1 class=\"{table}-create-title\">New {label_singular}</h1>\n\
-    </header>\n\
-    <CreateForm @created=\"on_created\" @cancel=\"on_cancel\" />\n\
-  </section>\n\
-</template>\n\
-\n\
-<style scoped>\n\
-@layer app {{\n\
-  .{table}-create-page {{\n\
-    display: flex;\n\
-    flex-direction: column;\n\
-    gap: var(--app-space-lg);\n\
-    padding: var(--app-space-lg);\n\
-    max-width: 48rem;\n\
-  }}\n\
-  .{table}-create-title {{\n\
-    margin: 0;\n\
-    font-size: var(--app-text-lg);\n\
-  }}\n\
-}}\n\
-</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ useRouter }} from 'vue-router'\nimport CreateForm from '@/components/generated/forms/{table}/CreateForm.vue'\n\nconst router = useRouter()\n\nasync function on_created(): \
+         Promise<void> {{\n{nav_after}}}\n\nfunction on_cancel(): void {{\nrouter.back()\n}}\n</script>\n\n<template>\n<section class=\"{table}-create-page\">\n<header class=\"{table}-create-header\">\n<h1 \
+         class=\"{table}-create-title\">New {label_singular}</h1>\n</header>\n<CreateForm @created=\"on_created\" @cancel=\"on_cancel\" />\n</section>\n</template>\n\n<style scoped>\n@layer app \
+         {{\n.{table}-create-page {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-lg);\npadding: var(--app-space-lg);\nmax-width: 48rem;\n}}\n.{table}-create-title {{\nmargin: 0;\nfont-size: \
+         var(--app-text-lg);\n}}\n}}\n</style>\n",
         table = table,
         label_singular = label_singular(&label),
         nav_after = nav_after,
@@ -440,74 +221,16 @@ pub fn build_edit_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<script setup lang=\"ts\">\n\
-import {{ onMounted, ref, watch }} from 'vue'\n\
-import {{ useRouter }} from 'vue-router'\n\
-import EditForm from '@/components/generated/forms/{table}/EditForm.vue'\n\
-import {{ get{stem} }} from '@/generated/api/{table}'\n\
-import type {{ {stem}Public }} from '@/generated/types/{table}'\n\
-\n\
-const props = defineProps<{{ id: number }}>()\n\
-const router = useRouter()\n\
-\n\
-const entity = ref<{stem}Public | null>(null)\n\
-const loading = ref<boolean>(false)\n\
-const error_message = ref<string | null>(null)\n\
-\n\
-async function load(): Promise<void> {{\n\
-  loading.value = true\n\
-  error_message.value = null\n\
-  const result = await get{stem}(props.id)\n\
-  loading.value = false\n\
-  if (result.error !== null) {{\n\
-    error_message.value = result.error.error.message\n\
-    return\n\
-  }}\n\
-  entity.value = result.data\n\
-}}\n\
-\n\
-async function on_updated(): Promise<void> {{\n\
-{nav_after}}}\n\
-\n\
-function on_cancel(): void {{\n\
-  router.back()\n\
-}}\n\
-\n\
-onMounted(load)\n\
-watch(() => props.id, load)\n\
-</script>\n\
-\n\
-<template>\n\
-  <section class=\"{table}-edit-page\">\n\
-    <header class=\"{table}-edit-header\">\n\
-      <h1 class=\"{table}-edit-title\">Edit {label_singular} #{{{{ id }}}}</h1>\n\
-    </header>\n\
-    <div v-if=\"error_message !== null\" class=\"{table}-edit-error\" role=\"alert\">\n\
-      {{{{ error_message }}}}\n\
-    </div>\n\
-    <div v-if=\"loading\" class=\"{table}-edit-loading\">Loading…</div>\n\
-    <EditForm v-else-if=\"entity !== null\" :entity=\"entity\" @updated=\"on_updated\" @cancel=\"on_cancel\" />\n\
-  </section>\n\
-</template>\n\
-\n\
-<style scoped>\n\
-@layer app {{\n\
-  .{table}-edit-page {{\n\
-    display: flex;\n\
-    flex-direction: column;\n\
-    gap: var(--app-space-lg);\n\
-    padding: var(--app-space-lg);\n\
-    max-width: 48rem;\n\
-  }}\n\
-  .{table}-edit-title {{\n\
-    margin: 0;\n\
-    font-size: var(--app-text-lg);\n\
-  }}\n\
-  .{table}-edit-error {{\n\
-    color: var(--p-message-error-color, var(--app-color-danger, #b00020));\n\
-  }}\n\
-}}\n\
-</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ onMounted, ref, watch }} from 'vue'\nimport {{ useRouter }} from 'vue-router'\nimport EditForm from '@/components/generated/forms/{table}/EditForm.vue'\nimport {{ \
+         get{stem} }} from '@/generated/api/{table}'\nimport type {{ {stem}Public }} from '@/generated/types/{table}'\n\nconst props = defineProps<{{ id: number }}>()\nconst router = useRouter()\n\nconst entity = \
+         ref<{stem}Public | null>(null)\nconst loading = ref<boolean>(false)\nconst error_message = ref<string | null>(null)\n\nasync function load(): Promise<void> {{\nloading.value = true\nerror_message.value = \
+         null\nconst result = await get{stem}(props.id)\nloading.value = false\nif (result.error !== null) {{\nerror_message.value = result.error.error.message\nreturn\n}}\nentity.value = result.data\n}}\n\nasync \
+         function on_updated(): Promise<void> {{\n{nav_after}}}\n\nfunction on_cancel(): void {{\nrouter.back()\n}}\n\nonMounted(load)\nwatch(() => props.id, load)\n</script>\n\n<template>\n<section \
+         class=\"{table}-edit-page\">\n<header class=\"{table}-edit-header\">\n<h1 class=\"{table}-edit-title\">Edit {label_singular} #{{{{ id }}}}</h1>\n</header>\n<div v-if=\"error_message !== null\" \
+         class=\"{table}-edit-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div v-if=\"loading\" class=\"{table}-edit-loading\">Loading…</div>\n<EditForm v-else-if=\"entity !== null\" :entity=\"entity\" \
+         @updated=\"on_updated\" @cancel=\"on_cancel\" />\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-edit-page {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-lg);\npadding: \
+         var(--app-space-lg);\nmax-width: 48rem;\n}}\n.{table}-edit-title {{\nmargin: 0;\nfont-size: var(--app-text-lg);\n}}\n.{table}-edit-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, \
+         #b00020));\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         label_singular = label_singular(&label),
@@ -599,12 +322,16 @@ fn humanize(snake: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::{FieldName, ResourceName};
-    use crate::state::resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION};
-    use crate::state::SqlType;
-    use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::state::{
+        names::{FieldName, ResourceName},
+        resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+        SqlType,
+    };
 
     fn synth_resource_full_crud() -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();

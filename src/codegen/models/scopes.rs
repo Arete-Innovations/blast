@@ -4,18 +4,15 @@
 //! the boxed inner query. The exact method shape per kind is locked by
 //! the design spec.
 
-use crate::codegen::models::filter_kind::{classify, fk_target, refine_for_column, FilterKind};
-use crate::state::{FieldName, FieldState};
+use crate::{
+    codegen::models::filter_kind::{classify, fk_target, refine_for_column, FilterKind},
+    state::{FieldName, FieldState},
+};
 
 /// Public emission entry point. Walks the resource fields once and emits
 /// a flat block of impl-method bodies (without the surrounding impl
 /// braces — `builder.rs` wraps them).
-pub fn emit_for_field(
-    out: &mut String,
-    table: &str,
-    field_name: &FieldName,
-    field: &FieldState,
-) {
+pub fn emit_for_field(out: &mut String, table: &str, field_name: &FieldName, field: &FieldState) {
     let col = field_name.as_str();
     let raw_kind = classify(field);
     let kind = refine_for_column(col, raw_kind);
@@ -320,35 +317,23 @@ fn emit_null_guards(out: &mut String, table: &str, col: &str) {
 fn scalar_rust_type(kind: FilterKind, field: &FieldState) -> String {
     let sql = field.sql_type.as_str().to_ascii_lowercase();
     match (kind, sql.as_str()) {
-        (FilterKind::Int, "int2") | (FilterKind::Int, "smallint") | (FilterKind::Int, "smallserial") => {
-            "i16".to_string()
-        }
-        (FilterKind::Int, "int4") | (FilterKind::Int, "integer") | (FilterKind::Int, "serial") => {
-            "i32".to_string()
-        }
-        (FilterKind::Int, "int8") | (FilterKind::Int, "bigint") | (FilterKind::Int, "bigserial") => {
-            "i64".to_string()
-        }
+        (FilterKind::Int, "int2") | (FilterKind::Int, "smallint") | (FilterKind::Int, "smallserial") => "i16".to_string(),
+        (FilterKind::Int, "int4") | (FilterKind::Int, "integer") | (FilterKind::Int, "serial") => "i32".to_string(),
+        (FilterKind::Int, "int8") | (FilterKind::Int, "bigint") | (FilterKind::Int, "bigserial") => "i64".to_string(),
         (FilterKind::Int, _other) => "i32".to_string(),
         (FilterKind::Float, "float4") | (FilterKind::Float, "real") => "f32".to_string(),
         (FilterKind::Float, _other) => "f64".to_string(),
         (FilterKind::Decimal, _) => "::rust_decimal::Decimal".to_string(),
-        (FilterKind::Bool, _)
-        | (FilterKind::TimestampInt64, _)
-        | (FilterKind::TimestampChrono, _)
-        | (FilterKind::Text, _)
-        | (FilterKind::Uuid, _)
-        | (FilterKind::Enum, _)
-        | (FilterKind::Skipped, _) => "i64".to_string(),
+        (FilterKind::Bool, _) | (FilterKind::TimestampInt64, _) | (FilterKind::TimestampChrono, _) | (FilterKind::Text, _) | (FilterKind::Uuid, _) | (FilterKind::Enum, _) | (FilterKind::Skipped, _) => "i64".to_string(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::names::SqlType;
-    use crate::state::FieldVariant;
     use std::collections::BTreeSet;
+
+    use super::*;
+    use crate::state::{names::SqlType, FieldVariant};
 
     fn field(sql: &str, nullable: bool) -> FieldState {
         let mut variants = BTreeSet::new();
@@ -375,12 +360,7 @@ mod tests {
     #[test]
     fn timestamp_int64_emits_helpers_for_at_columns() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "users",
-            &FieldName::new("created_at"),
-            &field("Int8", false),
-        );
+        emit_for_field(&mut out, "users", &FieldName::new("created_at"), &field("Int8", false));
         assert!(out.contains("pub fn before_created_at(mut self, t: i64) -> Self"));
         assert!(out.contains("pub fn after_created_at(mut self, t: i64) -> Self"));
         assert!(out.contains("pub fn between_created_at(mut self, a: i64, b: i64) -> Self"));
@@ -392,12 +372,7 @@ mod tests {
     #[test]
     fn timestamp_chrono_emits_typed_helpers() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "events",
-            &FieldName::new("happened_at"),
-            &field("Timestamptz", false),
-        );
+        emit_for_field(&mut out, "events", &FieldName::new("happened_at"), &field("Timestamptz", false));
         assert!(out.contains("::chrono::DateTime<::chrono::Utc>"));
         assert!(out.contains("pub fn before_happened_at"));
     }
@@ -405,32 +380,19 @@ mod tests {
     #[test]
     fn int_emits_compare_in_and_optional_fk() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "posts",
-            &FieldName::new("author_id"),
-            &field("Int8", false),
-        );
+        emit_for_field(&mut out, "posts", &FieldName::new("author_id"), &field("Int8", false));
         assert!(out.contains("pub fn where_author_id_eq"));
         assert!(out.contains("pub fn where_author_id_gt"));
         assert!(out.contains("pub fn where_author_id_lt"));
         assert!(out.contains("pub fn where_author_id_between"));
         assert!(out.contains("pub fn where_author_id_in"));
-        assert!(
-            out.contains("pub fn by_author"),
-            "FK shortcut should be emitted for *_id columns"
-        );
+        assert!(out.contains("pub fn by_author"), "FK shortcut should be emitted for *_id columns");
     }
 
     #[test]
     fn text_emits_ilike_variants() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "users",
-            &FieldName::new("email"),
-            &field("Varchar", false),
-        );
+        emit_for_field(&mut out, "users", &FieldName::new("email"), &field("Varchar", false));
         assert!(out.contains("pub fn where_email_eq"));
         assert!(out.contains("pub fn where_email_contains"));
         assert!(out.contains("pub fn where_email_starts_with"));
@@ -441,12 +403,7 @@ mod tests {
     #[test]
     fn uuid_emits_by_method() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "tokens",
-            &FieldName::new("public_id"),
-            &field("Uuid", false),
-        );
+        emit_for_field(&mut out, "tokens", &FieldName::new("public_id"), &field("Uuid", false));
         assert!(out.contains("pub fn by_public_id"));
         assert!(out.contains("::uuid::Uuid"));
     }
@@ -454,12 +411,7 @@ mod tests {
     #[test]
     fn enum_emits_single_method_no_variant_sugar() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "tickets",
-            &FieldName::new("status"),
-            &field("status_enum", false),
-        );
+        emit_for_field(&mut out, "tickets", &FieldName::new("status"), &field("status_enum", false));
         assert!(out.contains("pub fn where_status"));
         assert!(!out.contains("pub fn is_open"));
     }
@@ -467,12 +419,7 @@ mod tests {
     #[test]
     fn nullable_field_emits_null_guards() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "users",
-            &FieldName::new("nickname"),
-            &field("Varchar", true),
-        );
+        emit_for_field(&mut out, "users", &FieldName::new("nickname"), &field("Varchar", true));
         assert!(out.contains("pub fn nickname_null"));
         assert!(out.contains("pub fn nickname_not_null"));
     }
@@ -480,12 +427,7 @@ mod tests {
     #[test]
     fn jsonb_emits_no_scopes() {
         let mut out = String::new();
-        emit_for_field(
-            &mut out,
-            "events",
-            &FieldName::new("payload"),
-            &field("Jsonb", false),
-        );
+        emit_for_field(&mut out, "events", &FieldName::new("payload"), &field("Jsonb", false));
         assert!(out.is_empty());
     }
 }

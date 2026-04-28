@@ -62,15 +62,11 @@ pub fn emit_default_application(out: &mut String, table: &str, cfg: &SoftDeleteC
             out.push_str("        // soft-delete: default = include all rows\n");
         }
         DefaultBehavior::Exclude => {
-            let line = format!(
-                "        let inner = inner.filter(crate::database::schema::{table}::dsl::{col}.is_null());\n"
-            );
+            let line = format!("        let inner = inner.filter(crate::database::schema::{table}::dsl::{col}.is_null());\n");
             out.push_str(&line);
         }
         DefaultBehavior::OnlyDeleted => {
-            let line = format!(
-                "        let inner = inner.filter(crate::database::schema::{table}::dsl::{col}.is_not_null());\n"
-            );
+            let line = format!("        let inner = inner.filter(crate::database::schema::{table}::dsl::{col}.is_not_null());\n");
             out.push_str(&line);
         }
     }
@@ -161,10 +157,7 @@ mod tests {
     fn delete_body_uses_update_not_delete() {
         let mut out = String::new();
         emit_delete_body(&mut out, "users", &cfg());
-        assert!(
-            out.contains("::diesel::update("),
-            "soft-delete must use UPDATE, not DELETE"
-        );
+        assert!(out.contains("::diesel::update("), "soft-delete must use UPDATE, not DELETE");
         assert!(out.contains(".set(schema::deleted_at.eq(now))"));
         assert!(!out.contains("::diesel::delete"));
         assert!(out.contains("MeltDown::not_found"));

@@ -1,11 +1,8 @@
-use crate::codegen::header;
-use crate::configs::Config;
-use crate::error::BlastResult;
-use crate::progress::ProgressManager;
+use std::{collections::HashMap, fs, path::Path};
+
 use regex::Regex;
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
+
+use crate::{codegen::header, configs::Config, error::BlastResult, progress::ProgressManager};
 
 #[derive(Debug, Clone)]
 struct ColumnInfo {
@@ -36,24 +33,13 @@ fn load_schema_table_info(schema_path: &str) -> BlastResult<Vec<TableInfo>> {
     let mut tables = Vec::new();
 
     for table_cap in table_re.captures_iter(&content) {
-        let table_name = table_cap
-            .get(1)
-            .ok_or_else(|| crate::error::BlastError::Invalid("table regex group 1 missing".into()))?
-            .as_str()
-            .to_string();
-        let columns_section = table_cap
-            .get(2)
-            .ok_or_else(|| crate::error::BlastError::Invalid("table regex group 2 missing".into()))?
-            .as_str();
+        let table_name = table_cap.get(1).ok_or_else(|| crate::error::BlastError::Invalid("table regex group 1 missing".into()))?.as_str().to_string();
+        let columns_section = table_cap.get(2).ok_or_else(|| crate::error::BlastError::Invalid("table regex group 2 missing".into()))?.as_str();
 
         let mut columns = Vec::new();
 
         for column_cap in column_re.captures_iter(columns_section) {
-            let column_name = column_cap
-                .get(1)
-                .ok_or_else(|| crate::error::BlastError::Invalid("column regex group 1 missing".into()))?
-                .as_str()
-                .to_string();
+            let column_name = column_cap.get(1).ok_or_else(|| crate::error::BlastError::Invalid("column regex group 1 missing".into()))?.as_str().to_string();
             let column_type = column_cap
                 .get(2)
                 .ok_or_else(|| crate::error::BlastError::Invalid("column regex group 2 missing".into()))?
@@ -104,21 +90,9 @@ fn load_schema_relationships(schema_path: &str) -> BlastResult<Vec<RelationshipI
     let joinable_re = Regex::new(r"joinable!\s*\(\s*([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*\(\s*([A-Za-z0-9_]+)\s*\)\s*\)")?;
 
     for join_cap in joinable_re.captures_iter(&content) {
-        let source_table = join_cap
-            .get(1)
-            .ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 1 missing".into()))?
-            .as_str()
-            .to_string();
-        let target_table = join_cap
-            .get(2)
-            .ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 2 missing".into()))?
-            .as_str()
-            .to_string();
-        let source_column = join_cap
-            .get(3)
-            .ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 3 missing".into()))?
-            .as_str()
-            .to_string();
+        let source_table = join_cap.get(1).ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 1 missing".into()))?.as_str().to_string();
+        let target_table = join_cap.get(2).ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 2 missing".into()))?.as_str().to_string();
+        let source_column = join_cap.get(3).ok_or_else(|| crate::error::BlastError::Invalid("joinable regex group 3 missing".into()))?.as_str().to_string();
 
         let key = (source_table.clone(), source_column.clone());
         relationship_map.insert(
