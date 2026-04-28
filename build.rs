@@ -25,22 +25,16 @@
 //   accumulate stale exemptions that nobody ever revisits.
 //
 // HISTORY OF LOCAL PATCHES:
-//   - relaxed `while let Some(` / `while let Ok(` — these iterate, they do
-//     not swallow errors; the let-else trick people were forced into was
-//     uglier and longer than the original.
-//   - added `// allow: <reason>` escape valve (was: no escape, leading to
-//     `drop(e); false`, lying default arms, and `match Regex::new(...) {
-//     Ok(r) => r, Err(_) => panic!(...) }` workarounds).
-//   - added DANGER category for `unsafe`, `std::process::exit(`, and
-//     non-test `panic!(` sites. Forward-looking — current codebase has zero
-//     `unsafe` and zero raw `process::exit`; the panics in `governor/rules/*`
-//     all carry the new `// allow:` marker.
+//   - relaxed `while let Some(` / `while let Ok(` — these iterate, they do not swallow errors; the let-else trick people were forced into was uglier and longer than the original.
+//   - added `// allow: <reason>` escape valve (was: no escape, leading to `drop(e); false`, lying default arms, and `match Regex::new(...) { Ok(r) => r, Err(_) => panic!(...) }` workarounds).
+//   - added DANGER category for `unsafe`, `std::process::exit(`, and non-test `panic!(` sites. Forward-looking — current codebase has zero `unsafe` and zero raw `process::exit`; the panics in `governor/rules/*` all
+//     carry the new `// allow:` marker.
 
-use std::collections::BTreeMap;
-use std::env;
-use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
+use std::{
+    collections::BTreeMap,
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 const MAX_LOC: usize = 800;
 
@@ -71,11 +65,7 @@ const SILENT_ERROR_PATTERNS: &[&str] = &[
     // gain.
 ];
 
-const RESULT_OPTION_MATCH_ARMS: &[&str] = &[
-    "Some(_) =>",
-    "Ok(_) =>",
-    "Err(_) =>",
-];
+const RESULT_OPTION_MATCH_ARMS: &[&str] = &["Some(_) =>", "Ok(_) =>", "Err(_) =>"];
 
 const ERR_DEFAULT_VALUES: &[&str] = &[
     "=> None",
@@ -199,10 +189,7 @@ const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "ERROR", "TYPE", "DEAD", "DAN
 fn format_report(hits: &[Hit]) -> String {
     let mut by_rule: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for hit in hits {
-        by_rule
-            .entry(hit.rule)
-            .or_default()
-            .push(format!("{}:{}", hit.file, hit.line));
+        by_rule.entry(hit.rule).or_default().push(format!("{}:{}", hit.file, hit.line));
     }
 
     let mut by_category: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -223,11 +210,7 @@ fn format_report(hits: &[Hit]) -> String {
             None => continue,
         };
 
-        out.push_str(&format!(
-            "\n--- {} --- {}\n",
-            cat,
-            category_spirit(cat)
-        ));
+        out.push_str(&format!("\n--- {} --- {}\n", cat, category_spirit(cat)));
 
         for rule in rules {
             let locations = match by_rule.get(rule) {
@@ -332,10 +315,7 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
     let src_dir = manifest_dir.join("src");
     let rel = path.strip_prefix(&src_dir).unwrap_or(path);
     let rel_str = rel.to_string_lossy();
-    let file_name = path
-        .file_name()
-        .map(|f| f.to_string_lossy().to_string())
-        .unwrap_or_default();
+    let file_name = path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
 
     let is_bin = rel_str.starts_with("bin/") || file_name == "main.rs";
 
@@ -377,10 +357,7 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
             }
             continue;
         }
-        if !in_block_comment
-            && !trimmed.starts_with("//")
-            && trimmed.starts_with("macro_rules!")
-        {
+        if !in_block_comment && !trimmed.starts_with("//") && trimmed.starts_with("macro_rules!") {
             in_macro_rules = true;
             macro_brace_depth = trimmed.chars().filter(|&c| c == '{').count() as i32;
             macro_brace_depth -= trimmed.chars().filter(|&c| c == '}').count() as i32;
@@ -414,21 +391,41 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
 }
 
 fn check_switchboard_purity(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    let mut in_block_comment = false;
+    let mut brace_depth: i32 = 0;
     for (line_no, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let is_mod = trimmed.starts_with("mod ")
-            || trimmed.starts_with("pub mod ")
-            || trimmed.starts_with("pub(crate) mod ");
-        let is_use = trimmed.starts_with("use ")
-            || trimmed.starts_with("pub use ")
-            || trimmed.starts_with("pub(crate) use ");
+        if trimmed.contains("/*") {
+            in_block_comment = true;
+        }
+        if trimmed.contains("*/") {
+            in_block_comment = false;
+            continue;
+        }
+        if in_block_comment {
+            continue;
+        }
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        let opens = trimmed.chars().filter(|&c| c == '{').count() as i32;
+        let closes = trimmed.chars().filter(|&c| c == '}').count() as i32;
+        if brace_depth > 0 {
+            brace_depth = (brace_depth + opens - closes).max(0);
+            continue;
+        }
+        let is_mod = trimmed.starts_with("mod ") || trimmed.starts_with("pub mod ") || trimmed.starts_with("pub(crate) mod ");
+        let is_use = trimmed.starts_with("use ") || trimmed.starts_with("pub use ") || trimmed.starts_with("pub(crate) use ");
         let is_attr = trimmed.starts_with("#[") || trimmed.starts_with("#![");
         let is_extern = trimmed.starts_with("extern crate ");
         if !is_mod && !is_use && !is_attr && !is_extern {
             hit(hits, "DECOMPOSITION:2", rel, line_no + 1);
+        }
+        if is_use {
+            brace_depth = (opens - closes).max(0);
         }
     }
 }
@@ -461,10 +458,7 @@ fn check_err_default_arms(rel: &Path, line_no: usize, trimmed: &str, hits: &mut 
     if line_has_allow(trimmed) {
         return;
     }
-    if !(trimmed.starts_with("Err(")
-        || trimmed.starts_with("Err (")
-        || trimmed.starts_with("None =>"))
-    {
+    if !(trimmed.starts_with("Err(") || trimmed.starts_with("Err (") || trimmed.starts_with("None =>")) {
         return;
     }
     if !trimmed.contains("=>") {
@@ -506,10 +500,7 @@ fn check_process_exit(rel: &Path, line_no: usize, trimmed: &str, is_main: bool, 
     if is_main {
         return;
     }
-    let hits_pat = trimmed.contains("std::process::exit(")
-        || trimmed.contains("process::exit(")
-        || trimmed.contains("libc::exit(")
-        || trimmed.contains("libc::_exit(");
+    let hits_pat = trimmed.contains("std::process::exit(") || trimmed.contains("process::exit(") || trimmed.contains("libc::exit(") || trimmed.contains("libc::_exit(");
     if hits_pat {
         hit(hits, "DANGER:12", rel, line_no + 1);
     }
@@ -553,8 +544,7 @@ fn check_empty_err_arms(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
             continue;
         }
 
-        let is_err_arm =
-            (trimmed.starts_with("Err(") || trimmed.starts_with("Err (")) && trimmed.contains("=>");
+        let is_err_arm = (trimmed.starts_with("Err(") || trimmed.starts_with("Err (")) && trimmed.contains("=>");
         if !is_err_arm {
             continue;
         }
@@ -585,10 +575,7 @@ fn check_empty_err_arms(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
 }
 
 fn check_dead_code_suppression(rel: &Path, line_no: usize, trimmed: &str, hits: &mut Vec<Hit>) {
-    if trimmed.contains("#[allow(dead_code")
-        || trimmed.contains("#[allow(unused")
-        || trimmed.contains("#[allow(unreachable_code")
-    {
+    if trimmed.contains("#[allow(dead_code") || trimmed.contains("#[allow(unused") || trimmed.contains("#[allow(unreachable_code") {
         hit(hits, "DEAD:8", rel, line_no + 1);
     }
 }
@@ -601,33 +588,21 @@ fn check_commented_out_code(rel: &Path, line_no: usize, trimmed: &str, hits: &mu
     }
 
     let code_indicators = [
-        "fn ", "let ", "use ", "pub ", "struct ", "enum ", "impl ", "mod ", "match ", "if ",
-        "for ", "while ", "return ", "self.", "Self::", "crate::", "super::", ".await", "async ",
-        "mut ", "const ", "static ", "type ", "trait ", "where ", "loop ", "break", "continue",
+        "fn ", "let ", "use ", "pub ", "struct ", "enum ", "impl ", "mod ", "match ", "if ", "for ", "while ", "return ", "self.", "Self::", "crate::", "super::", ".await", "async ", "mut ", "const ", "static ",
+        "type ", "trait ", "where ", "loop ", "break", "continue",
     ];
 
-    let smells_like_code = code_indicators
-        .iter()
-        .any(|indicator| after_slashes.starts_with(indicator));
+    let smells_like_code = code_indicators.iter().any(|indicator| after_slashes.starts_with(indicator));
 
-    let has_code_punctuation = after_slashes.ends_with(';')
-        || after_slashes.ends_with('{')
-        || after_slashes.ends_with('}')
-        || after_slashes.ends_with("()")
-        || (after_slashes.contains("::") && after_slashes.contains('('));
+    let has_code_punctuation =
+        after_slashes.ends_with(';') || after_slashes.ends_with('{') || after_slashes.ends_with('}') || after_slashes.ends_with("()") || (after_slashes.contains("::") && after_slashes.contains('('));
 
     if smells_like_code || has_code_punctuation {
         hit(hits, "DEAD:9", rel, line_no + 1);
     }
 }
 
-fn check_unfinished_markers(
-    rel: &Path,
-    line_no: usize,
-    trimmed: &str,
-    is_bin: bool,
-    hits: &mut Vec<Hit>,
-) {
+fn check_unfinished_markers(rel: &Path, line_no: usize, trimmed: &str, is_bin: bool, hits: &mut Vec<Hit>) {
     if is_bin && trimmed.contains("todo!") {
         return;
     }
@@ -672,11 +647,7 @@ fn check_result_types(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
             let start_line = idx + 1;
             let mut sig = trimmed.to_string();
             let mut j = idx + 1;
-            while j < lines.len()
-                && !sig.contains('{')
-                && !sig.trim_end().ends_with(';')
-                && sig.len() < 1600
-            {
+            while j < lines.len() && !sig.contains('{') && !sig.trim_end().ends_with(';') && sig.len() < 1600 {
                 let next = lines[j].trim();
                 if !next.starts_with("//") {
                     sig.push(' ');
@@ -732,11 +703,7 @@ fn check_return_type(rel: &Path, line_no: usize, sig: &str, hits: &mut Vec<Hit>)
         return;
     }
 
-    let prefix_len = if ret.starts_with("std::result::Result<") {
-        "std::result::Result<".len()
-    } else {
-        "Result<".len()
-    };
+    let prefix_len = if ret.starts_with("std::result::Result<") { "std::result::Result<".len() } else { "Result<".len() };
     let Some(close_idx) = ret.rfind('>') else {
         hit(hits, "TYPE:7", rel, line_no);
         return;
