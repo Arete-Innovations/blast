@@ -229,6 +229,12 @@ fn format_report(hits: &[Hit]) -> String {
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+
+    let templates_canonical = manifest_dir.join("templates").join("canonical");
+    if templates_canonical.is_dir() {
+        clean_template_artifacts(&templates_canonical);
+    }
+
     let src_dir = manifest_dir.join("src");
     let mut hits: Vec<Hit> = Vec::new();
 
@@ -238,6 +244,33 @@ fn main() {
 
     if !hits.is_empty() {
         panic!("\n{}", format_report(&hits));
+    }
+}
+
+const TEMPLATE_ARTIFACT_DIRS: &[&str] = &["target", "node_modules", "dist", ".vite", ".turbo", ".next", ".git"];
+
+fn clean_template_artifacts(root: &Path) {
+    let entries = match fs::read_dir(root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n,
+            None => continue,
+        };
+        if TEMPLATE_ARTIFACT_DIRS.contains(&name) {
+            println!("cargo:warning=blast: removing template artifact dir {}", path.display());
+            if let Err(e) = fs::remove_dir_all(&path) {
+                println!("cargo:warning=blast: failed to remove {}: {}", path.display(), e);
+            }
+        } else {
+            clean_template_artifacts(&path);
+        }
     }
 }
 
