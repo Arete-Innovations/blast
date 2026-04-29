@@ -33,7 +33,7 @@ Combined with `blast check` (FE lint) + `cargo check` + layer-enforced imports, 
 
 NOT scanned: `src/structs/`, `src/database/`, `frontend/` — those are shape/presentation, not capabilities.
 
-Both `generated/` and `custom/` subtrees are indexed. State file contents supplement the Rust scan: Arsenal knows what verbs exist even if codegen hasn't run yet.
+Both `generated/` subtrees and user-owned files are indexed. State file contents supplement the Rust scan: Arsenal knows what verbs exist even if codegen hasn't run yet.
 
 ## Output Schema (`target/arsenal.json`)
 

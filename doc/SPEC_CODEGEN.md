@@ -279,7 +279,7 @@ frontend/src/generated/validators/<r>.ts
 
 `gen_level` filter: `r.gen_level >= GenLevel::Types`. Validators are useful as soon as types exist; doesn't wait for components/pages.
 
-### Theme codegen output (Wave 10)
+### Theme codegen output
 
 Driven by `ThemeConfig` in `app.ron`. Emitted by `src/codegen/theme/tokens.rs` and `src/codegen/theme/primevue.rs`. Both carry an `app.ron` blake3 hash-marker in their header — stale detection fires on `cargo check` like any other generated file.
 
@@ -290,12 +290,12 @@ frontend/src/generated/styles/tokens.css
 
 frontend/src/generated/plugins/primevue.ts
   - PrimeVue `definePreset()` call parameterised from ThemeConfig
-  - Registered in main.ts; DO NOT import from custom/ code
+  - Registered in main.ts; DO NOT import from user-owned code
 ```
 
-These files are **state-driven codegen**, not static templates. They did not exist as static files prior to Wave 10.
+These files are **state-driven codegen**, not static templates.
 
-### Icons codegen output (Wave 10)
+### Icons codegen output
 
 Driven by `IconConfig` in `app.ron`. Emitted by `src/codegen/icons/emit.rs`. Carries an `app.ron` blake3 hash-marker.
 
@@ -305,7 +305,7 @@ frontend/src/generated/icons.ts
   - Imported by components; DO NOT extend by hand
 ```
 
-Also **state-driven codegen** (was a static file before Wave 10).
+Also **state-driven codegen**.
 
 ### Admin shell route output
 
@@ -452,9 +452,9 @@ User-owned root dirs (`components/`, `composables/`, `pages/`, etc.) coexist wit
 
 - `generated/` subtree is **rewritten wholesale** on `blast gen`
 - Any hand-edit to a file under `generated/` gets stomped next regen
-- `custom/` subtree is **never read, touched, deleted, or renamed** by Blast
+- Top-level user-owned subdirs (anything outside `<layer>/generated/`) are **never read, touched, deleted, or renamed** by Blast
 - `mod.rs` at each Rust layer re-exports both; Blast regenerates only the generated side
-- Vendored framework files are written once by `blast new`; user pulls upstream changes via git diff (no `vendor-update` command — killed)
+- Vendored framework files are written once by `blast new`; user pulls upstream changes via git diff against upstream `blast/templates/canonical/`
 
 ## Rename Detection and Refusal
 
@@ -533,11 +533,11 @@ Blast reads: `storage/blast/state/*.ron` + `resources/*.ron` + `schema.rs` (Dies
 - `flows/generated/**/*.test.rs` (initial scaffold only; not overwritten once written)
 - `transport/http/generated/**/*.test.rs` (initial scaffold only)
 - `tests/fixtures/<resource>.rs` (initial scaffold only)
-- All vendored framework files written by `blast new` from `templates/canonical/` (including `frontend/src/composables/bus.ts` and the `custom/` stub seeds)
+- All vendored framework files written by `blast new` from `templates/canonical/` (including `frontend/src/composables/bus.ts` and the seed pages/components shipped with the canonical template)
 
 ## What Blast DOES NOT Write
 
-- Anything under `custom/` subdirs
+- Anything outside `<layer>/generated/` subdirs (i.e. all user-owned subdirs at top level of each layer)
 - User's hand-written Vue SFCs / pages
 - `Cargo.toml` (after `blast new` initial scaffold)
 - Migrations (user writes them; Blast only runs them)
@@ -558,7 +558,7 @@ Blast reads: `storage/blast/state/*.ron` + `resources/*.ron` + `schema.rs` (Dies
 - Reading deprecated paths like `target/primer/` or `target/blueprint/` — those are gone. Read `storage/blast/state/`.
 - Emitting codegen without a state-hash marker in the file header.
 - Timestamps, random seeds, or env-var reads inside generator logic.
-- Reaching for the old string-constant emitter modules (`fe_runtime.rs`, `fe_runtime_composables.rs`, `fe_runtime_extras.rs`, `frontend_scaffold.rs`) — those ~1750 LOC of embedded string constants are gone as of Wave 10. Static FE framework files live in `blast/templates/canonical/frontend/` and are picked up by `include_dir!()`.
+- Reaching for the old string-constant emitter modules (`fe_runtime.rs`, `fe_runtime_composables.rs`, `fe_runtime_extras.rs`, `frontend_scaffold.rs`) — those ~1750 LOC of embedded string constants are gone. Static FE framework files live in `blast/templates/canonical/frontend/` and are picked up by `include_dir!()`.
 - Writing `frontend/src/composables/bus.ts` from a codegen pass — `bus.ts` is a static vendored file, not codegen. Per-resource composables that emit on the bus are codegen'd; `bus.ts` itself is not.
 - Treating `frontend/src/generated/styles/tokens.css`, `frontend/src/generated/plugins/primevue.ts`, or `frontend/src/generated/icons.ts` as static templates — all three are state-driven codegen keyed off `app.ron` and must carry hash-markers.
 

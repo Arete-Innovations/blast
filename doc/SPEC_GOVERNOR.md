@@ -14,8 +14,8 @@ Catablast does NOT use a JS-based linter (`.mjs` script). Rule engine is in Rust
 
 ## Scope
 
-Governor scans **both `generated/` and `custom/` subtrees**. Rationale:
-- `custom/` = AI-written or hand-written user code = where every rule MUST bite.
+Governor scans **both `generated/` subtrees and user-owned files**. Rationale:
+- User-owned (everything outside `generated/`) = AI-written or hand-written = where every rule MUST bite.
 - `generated/` = Blast-emitted = should already be compliant by construction. Linting it is a forcing function on the codegen and a tripwire for codegen bugs.
 
 Three exempt files (token source-of-truth + PrimeVue preset + base CSS) are listed in `app.ron` and skipped per-rule. Whitelist file (`.rule_violations_whitelist`) carries narrow per-pattern exceptions for hand-written escape hatches.
@@ -23,7 +23,7 @@ Three exempt files (token source-of-truth + PrimeVue preset + base CSS) are list
 ## Invocation
 
 ```
-blast check                         # lints frontend/ source tree (custom + generated)
+blast check                         # lints frontend/ source tree (user-owned + generated)
 blast check --verbose               # extra diagnostic output
 blast check --fix                   # v2; not implemented in v1
 ```
@@ -147,7 +147,7 @@ Codegen'd interfaces are compliant by construction; rule catches user-authored t
 
 Rationale: Pinia gives AI-written code too much rope. Codegen'd composables IS the store, scoped per-resource, hash-locked.
 
-**`PrimeVueReinvented`** — Bans custom Vue components in `custom/components/` whose name matches a PrimeVue primitive: `Button`, `Card`, `Dialog`, `Drawer`, `Modal`, `Dropdown`, `Select`, `Checkbox`, `RadioButton`, `Slider`, `ProgressBar`, `Sidebar`, `Toolbar`, `Breadcrumb`, `Paginator`, `Skeleton`, `Toast`, `Tabs`, `TabView`, `Tab`, `DataTable`, `Tree`, `TreeTable`, `Calendar`, `DatePicker`, `Tooltip`. Use PrimeVue directly. Wrap with composition only when adding domain logic, and name the wrapper after the domain (`OrderActionsMenu`, not `Menu`).
+**`PrimeVueReinvented`** — Bans hand-written Vue components in user-owned `frontend/src/components/` (anything outside `generated/`) whose name matches a PrimeVue primitive: `Button`, `Card`, `Dialog`, `Drawer`, `Modal`, `Dropdown`, `Select`, `Checkbox`, `RadioButton`, `Slider`, `ProgressBar`, `Sidebar`, `Toolbar`, `Breadcrumb`, `Paginator`, `Skeleton`, `Toast`, `Tabs`, `TabView`, `Tab`, `DataTable`, `Tree`, `TreeTable`, `Calendar`, `DatePicker`, `Tooltip`. Use PrimeVue directly. Wrap with composition only when adding domain logic, and name the wrapper after the domain (`OrderActionsMenu`, not `Menu`).
 
 ### Routing + URL discipline
 
@@ -303,7 +303,7 @@ Regenerated from `app.ron` `fe_lint` section via `blast gen governor-plugin` —
 
 ## Implementation Notes (Blast-side)
 
-- Files scanned: `frontend/src/**/*.{ts,vue,css}` — both `generated/` and `custom/` subtrees.
+- Files scanned: `frontend/src/**/*.{ts,vue,css}` — `generated/` subtrees plus all user-owned files.
 - Scanning is regex-based, line-by-line, for v1 rules. Template-depth and PageShell-required require minimal Vue SFC parsing (split `<template>` block, count tag-open/close stack); use a tight hand-rolled tokenizer, not a full AST parser.
 - Per-file rule batching: read file once, run all applicable rules.
 - Parallel file scan via Rayon.

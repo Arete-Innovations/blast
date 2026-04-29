@@ -116,7 +116,7 @@ AppState(
         Page(
             route: "dashboard",
             path: "/",
-            component: "custom/pages/DashboardPage.vue",
+            component: "pages/DashboardPage.vue",
             layout: "cards",
             label: "Dashboard",
             icon: "dashboard",
@@ -126,7 +126,7 @@ AppState(
         Page(
             route: "settings",
             path: "/settings",
-            component: "custom/pages/SettingsPage.vue",
+            component: "pages/SettingsPage.vue",
             layout: "cards",
             label: "Settings",
             icon: "cog",
@@ -136,7 +136,7 @@ AppState(
         Page(
             route: "debug.thing",
             path: "/_debug/thing",
-            component: "custom/pages/DebugThing.vue",
+            component: "pages/DebugThing.vue",
             layout: "bleed",
             in_nav: false,
             roles: [Admin],
@@ -253,7 +253,7 @@ Both feed the FE routing codegen pass — `frontend/src/generated/router/{routes
 |-------|------|-------|
 | `route` | string | Route name. Becomes part of `RouteName` union in `route-names.ts`. Dot-notation convention (`dashboard`, `audit.detail`). |
 | `path` | string | URL path. Supports vue-router param syntax (`/foo/:id`). No trailing slash. |
-| `component` | string | Path to hand-written Vue component, relative to `frontend/src/` (e.g. `custom/pages/DashboardPage.vue`). |
+| `component` | string | Path to hand-written Vue component, relative to `frontend/src/` (e.g. `pages/DashboardPage.vue`). |
 | `layout` | enum | `cards` / `split` / `table` / `bleed` / `tabbed`. Drives `<PageShell layout="...">` codegen. |
 | `label` | string | Human-readable name (used in nav + breadcrumbs). |
 | `icon` | string | Icon registry key (resolves to `IC.<icon>` from `src/icons.ts`). |
@@ -484,7 +484,7 @@ build.rs: state file 'storage/blast/state/resources/users.ron' changed since las
   stale file:    src/structs/generated/users.rs
 ```
 
-Files without a marker (hand-rolled `custom/`, the layer `mod.rs`, etc.) are skipped silently. State files referenced from a marker but missing on disk also fail loudly ("was it deleted? regenerate with 'blast gen all'").
+Files without a marker (hand-rolled user-owned files, the layer `mod.rs`, etc.) are skipped silently. State files referenced from a marker but missing on disk also fail loudly ("was it deleted? regenerate with 'blast gen all'").
 
 This means `cargo check` / `cargo build` / `cargo test` all hard-fail when state is out of sync. The user literally cannot forget to regen — the compiler refuses.
 
