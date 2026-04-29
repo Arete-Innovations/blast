@@ -25,16 +25,26 @@ layout {
 
     tab name="Dashboard" focus=true {
         pane split_direction="vertical" {
-            pane size="60%" name="Menu" command="blast" {
+            pane size="30%" name="Menu" command="blast" {
                 args "cli"
                 focus true
             }
-            pane size="40%" split_direction="horizontal" {
-                pane name="Server" command="blast" {
-                    args "run"
+            pane size="70%" split_direction="vertical" {
+                pane split_direction="horizontal" {
+                    pane name="Server" command="blast" {
+                        args "run"
+                    }
+                    pane name="Errors" command="bash" {
+                        args "-c" "tail -n100 -f storage/logs/error.log 2>/dev/null || (touch storage/logs/error.log && tail -f storage/logs/error.log)"
+                    }
                 }
-                pane name="Errors" command="bash" {
-                    args "-c" "tail -n100 -f storage/logs/error.log 2>/dev/null || (touch storage/logs/error.log && tail -f storage/logs/error.log)"
+                pane split_direction="horizontal" {
+                    pane name="FE HMR" command="bash" {
+                        args "-c" "echo stub: FE HMR stdout - wire vite dev server here && exec bash"
+                    }
+                    pane name="Routes" command="bash" {
+                        args "-c" "echo stub: routes pane - wire blast routes here && exec bash"
+                    }
                 }
             }
         }
