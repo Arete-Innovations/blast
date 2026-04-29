@@ -86,9 +86,30 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     write_file(&ts_barrel, &ts_barrel_body, &mut report)?;
     sink.info(format!("emitted {}", ts_barrel.display()));
 
+    ensure_parent_structs_barrel_includes_validators(project_root, &mut report)?;
+
     sink.info(format!("{STEP_LABEL}: {} written, {} skipped", report.written.len(), report.skipped.len()));
     progress.step_done(STEP_LABEL);
     Ok(report)
+}
+
+fn ensure_parent_structs_barrel_includes_validators(project_root: &Path, report: &mut EmitReport) -> BlastResult<()> {
+    let parent_barrel = project_root.join("src").join("structs").join("generated").join("mod.rs");
+    let existing = match fs::read_to_string(&parent_barrel) {
+        Ok(s) => s,
+        Err(_e) => return Ok(()),
+    };
+    if existing.contains("\npub mod validators;\n") || existing.ends_with("pub mod validators;\n") {
+        return Ok(());
+    }
+    let updated = if existing.ends_with('\n') {
+        format!("{existing}\npub mod validators;\n")
+    } else {
+        format!("{existing}\n\npub mod validators;\n")
+    };
+    fs::write(&parent_barrel, &updated)?;
+    report.written.push(parent_barrel);
+    Ok(())
 }
 
 pub fn run_for_resource(project_root: &Path, resource_name: &str, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {

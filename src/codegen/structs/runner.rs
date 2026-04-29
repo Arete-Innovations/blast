@@ -61,12 +61,21 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
 
     let barrel_target = out_dir.join("mod.rs");
     let barrel_marker = header::marker_for_app(project_root)?;
-    let barrel_body = format!("{}{}", barrel_marker, render_barrel(&resources));
+    let barrel_body = format!("{}{}", barrel_marker, render_barrel_with_subdirs(&resources, &out_dir));
     write_file(&barrel_target, &barrel_body, &mut report)?;
     sink.info(format!("structs: emitted {}", barrel_target.display()));
 
     progress.step_done(STEP_LABEL);
     Ok(report)
+}
+
+fn render_barrel_with_subdirs(resources: &[ResourceState], out_dir: &Path) -> String {
+    let mut out = render_barrel(resources);
+    let validators_mod = out_dir.join("validators").join("mod.rs");
+    if validators_mod.is_file() {
+        out.push_str("\npub mod validators;\n");
+    }
+    out
 }
 
 fn emit_resource(project_root: &Path, resource: &ResourceState, out_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
