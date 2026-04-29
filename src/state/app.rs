@@ -153,11 +153,11 @@ fn default_rules() -> BTreeSet<String> {
 }
 
 fn default_exempt_color_files() -> BTreeSet<String> {
-    ["src/plugins/primevue.ts"].iter().map(|s| s.to_string()).collect()
+    ["src/generated/plugins/primevue.ts"].iter().map(|s| s.to_string()).collect()
 }
 
 fn default_exempt_px_files() -> BTreeSet<String> {
-    ["src/plugins/primevue.ts", "src/styles/tokens.css", "src/styles/base.css"].iter().map(|s| s.to_string()).collect()
+    ["src/generated/plugins/primevue.ts", "src/generated/styles/tokens.css", "src/styles/base.css"].iter().map(|s| s.to_string()).collect()
 }
 
 fn default_max_lines_per_sfc() -> usize {
@@ -189,15 +189,15 @@ fn default_hairline_border_rem() -> String {
 }
 
 fn default_icons_file() -> String {
-    "src/icons.ts".to_string()
+    "src/generated/icons.ts".to_string()
 }
 
 fn default_tokens_file() -> String {
-    "src/styles/tokens.css".to_string()
+    "src/generated/styles/tokens.css".to_string()
 }
 
 fn default_primevue_preset_file() -> String {
-    "src/plugins/primevue.ts".to_string()
+    "src/generated/plugins/primevue.ts".to_string()
 }
 
 pub const APP_SCHEMA_VERSION: u32 = 4;
