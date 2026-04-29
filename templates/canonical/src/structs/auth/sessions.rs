@@ -1,4 +1,4 @@
-use diesel::prelude::*;
+use diesel::{Identifiable, Insertable, Queryable, Selectable};
 use serde::{Deserialize, Serialize};
 
 use crate::database::schema::sessions;

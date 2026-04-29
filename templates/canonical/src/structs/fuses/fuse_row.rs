@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
+use diesel::Queryable;
 
 #[derive(Debug, Clone, Queryable)]
 pub(crate) struct FuseRow {

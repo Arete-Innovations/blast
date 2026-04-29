@@ -1,4 +1,4 @@
-use diesel::prelude::*;
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 
 use crate::{

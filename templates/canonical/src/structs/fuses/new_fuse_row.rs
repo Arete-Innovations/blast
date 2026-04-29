@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
+use diesel::Insertable;
 
 use crate::database::schema::fuses;
 
