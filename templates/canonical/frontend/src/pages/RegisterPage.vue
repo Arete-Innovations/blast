@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageShell from '@/components/PageShell.vue'
 import { useAuth } from '@/composables/auth'
+import { validateRegisterInput } from '@/composables/auth_validators'
 
 const router = useRouter()
 const { register } = useAuth()
@@ -13,10 +14,11 @@ const confirm_password = ref('')
 const loading = ref(false)
 const server_error = ref<string | null>(null)
 
-const email_valid = computed<boolean>(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value))
-const password_valid = computed<boolean>(() => password.value.length >= 8)
-const confirm_valid = computed<boolean>(() => password.value === confirm_password.value && confirm_password.value.length > 0)
-const form_valid = computed<boolean>(() => email_valid.value && password_valid.value && confirm_valid.value)
+const field_errors = computed<Record<string, string>>(() => validateRegisterInput({ email: email.value, password: password.value, confirm_password: confirm_password.value }) ?? {})
+const email_invalid = computed<boolean>(() => email.value.length > 0 && field_errors.value.email !== undefined)
+const password_invalid = computed<boolean>(() => password.value.length > 0 && field_errors.value.password !== undefined)
+const confirm_invalid = computed<boolean>(() => confirm_password.value.length > 0 && field_errors.value.confirm_password !== undefined)
+const form_valid = computed<boolean>(() => Object.keys(field_errors.value).length === 0)
 
 async function handle_submit(): Promise<void> {
   if (!form_valid.value || loading.value) return
@@ -47,11 +49,11 @@ async function handle_submit(): Promise<void> {
               type="email"
               autocomplete="email"
               placeholder="you@example.com"
-              :invalid="email.length > 0 && !email_valid"
+              :invalid="email_invalid"
               class="register-input"
             />
-            <span v-if="email.length > 0 && !email_valid" class="register-hint register-hint--error">
-              Enter a valid email address.
+            <span v-if="email_invalid" class="register-hint register-hint--error">
+              {{ field_errors.email }}
             </span>
           </div>
 
@@ -64,11 +66,11 @@ async function handle_submit(): Promise<void> {
               toggle-mask
               autocomplete="new-password"
               placeholder="At least 8 characters"
-              :invalid="password.length > 0 && !password_valid"
+              :invalid="password_invalid"
               class="register-input"
             />
-            <span v-if="password.length > 0 && !password_valid" class="register-hint register-hint--error">
-              Password must be at least 8 characters.
+            <span v-if="password_invalid" class="register-hint register-hint--error">
+              {{ field_errors.password }}
             </span>
           </div>
 
@@ -81,11 +83,11 @@ async function handle_submit(): Promise<void> {
               toggle-mask
               autocomplete="new-password"
               placeholder="Repeat your password"
-              :invalid="confirm_password.length > 0 && !confirm_valid"
+              :invalid="confirm_invalid"
               class="register-input"
             />
-            <span v-if="confirm_password.length > 0 && !confirm_valid" class="register-hint register-hint--error">
-              Passwords do not match.
+            <span v-if="confirm_invalid" class="register-hint register-hint--error">
+              {{ field_errors.confirm_password }}
             </span>
           </div>
 

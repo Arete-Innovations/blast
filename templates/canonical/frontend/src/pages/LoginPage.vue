@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageShell from '@/components/PageShell.vue'
 import { useAuth } from '@/composables/auth'
+import { validateLoginInput } from '@/composables/auth_validators'
 
 const router = useRouter()
 const auth = useAuth()
@@ -12,11 +13,10 @@ const password = ref('')
 const loading = ref(false)
 const server_error = ref<string | null>(null)
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-const email_valid = computed(() => EMAIL_RE.test(email.value))
-const password_valid = computed(() => password.value.length > 0)
-const form_valid = computed(() => email_valid.value && password_valid.value)
+const field_errors = computed<Record<string, string>>(() => validateLoginInput({ email: email.value, password: password.value }) ?? {})
+const email_invalid = computed<boolean>(() => email.value.length > 0 && field_errors.value.email !== undefined)
+const password_invalid = computed<boolean>(() => password.value.length > 0 && field_errors.value.password !== undefined)
+const form_valid = computed<boolean>(() => Object.keys(field_errors.value).length === 0)
 
 async function handle_submit(): Promise<void> {
   if (!form_valid.value || loading.value) return
@@ -50,11 +50,11 @@ async function handle_submit(): Promise<void> {
               type="email"
               autocomplete="email"
               placeholder="you@example.com"
-              :invalid="email.length > 0 && !email_valid"
+              :invalid="email_invalid"
               class="login-input"
             />
-            <small v-if="email.length > 0 && !email_valid" class="login-field-error">
-              Enter a valid email address.
+            <small v-if="email_invalid" class="login-field-error">
+              {{ field_errors.email }}
             </small>
           </div>
 
@@ -67,12 +67,12 @@ async function handle_submit(): Promise<void> {
               toggle-mask
               autocomplete="current-password"
               placeholder="Password"
-              :invalid="password.length > 0 && !password_valid"
+              :invalid="password_invalid"
               input-class="login-input"
               class="login-password-wrap"
             />
-            <small v-if="password.length > 0 && !password_valid" class="login-field-error">
-              Password is required.
+            <small v-if="password_invalid" class="login-field-error">
+              {{ field_errors.password }}
             </small>
           </div>
 
