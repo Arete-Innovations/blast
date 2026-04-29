@@ -129,9 +129,9 @@ Heuristic is regex-based; line-level `// @allow-fallback` comment escape.
 
 **`ConsoleLog`** — Bans `console.log`, `console.warn`, `console.error`, `console.info`, `console.debug` in committed source. Use `import.meta.env.DEV && console.log(...)` or a dev-only log utility.
 
-**`SnakeCaseInterfaceFields`** — TypeScript interface/type declarations modeling backend resources MUST use snake_case fields (matches Rust struct serialization). Banned: `camelCase` field names in interfaces under `frontend/src/generated/types/` or `frontend/src/custom/types/`. Rationale: zero serde-rename drift between Rust and TS.
+**`SnakeCaseInterfaceFields`** — TypeScript interface/type declarations modeling backend resources MUST use snake_case fields (matches Rust struct serialization). Banned: `camelCase` field names in any interface under `frontend/src/**/types/`. Rationale: zero serde-rename drift between Rust and TS.
 
-Codegen'd interfaces are compliant by construction; rule catches custom types that drift.
+Codegen'd interfaces are compliant by construction; rule catches user-authored types that drift.
 
 ### Architectural layering
 
@@ -139,7 +139,7 @@ Codegen'd interfaces are compliant by construction; rule catches custom types th
 
 **`WebSocketOutsideRelay`** — Bans `new WebSocket(`, `socket.io`, raw WS construction outside `frontend/src/generated/ws/client.ts`. Custom code uses `useTopic()`/`useChannel()` composables that go through the singleton `Relay` client.
 
-**`LocalStorageOutsidePersistence`** — Bans `localStorage.`, `sessionStorage.`, `indexedDB.` outside `frontend/src/generated/persistence/` and `frontend/src/custom/persistence/` (if present). Mutating browser storage from random components is a war crime.
+**`LocalStorageOutsidePersistence`** — Bans `localStorage.`, `sessionStorage.`, `indexedDB.` outside any `persistence/` dir (`frontend/src/**/persistence/`). Mutating browser storage from random components is a war crime.
 
 **`PrimeVueConfigImportOutsidePresetFile`** — Importing `primevue.config.*` or `PrimeVueConfig` types outside `src/generated/plugins/primevue.ts` is banned. Theming config lives in one file.
 
@@ -198,7 +198,7 @@ Heuristic: flags mutation calls (`useUpdateX()`, `useCreateX()`, `useDeleteX()`)
 
 ### Layout / page structure
 
-**`PageShellRequired`** — Every Vue file under `frontend/src/pages/` (or `frontend/src/custom/pages/`) MUST have its template root be `<PageShell layout="...">`. No bare `<div>`/`<main>`/`<section>` roots. Rationale: every page goes through the layout enum, no orphan padding.
+**`PageShellRequired`** — Every Vue file under `frontend/src/pages/` (including `pages/generated/`) MUST have its template root be `<PageShell layout="...">`. No bare `<div>`/`<main>`/`<section>` roots. Rationale: every page goes through the layout enum, no orphan padding.
 
 **`InlineLayoutProps`** — `<PageShell>` does not accept `padding`, `margin`, `gap`, `width`, `height` props. Layout is enum-locked: `cards`, `split`, `table`, `bleed`, `tabbed`. Devs pick a layout, layout owns the spacing.
 
@@ -228,7 +228,7 @@ For genuine external-constant exceptions (schema.org URLs, SVG xmlns constants, 
 # file-glob : optional snippet substring
 src/components/**/*.vue : schema.org
 src/generated/icons.ts : xmlns
-src/custom/widgets/Tooltip.vue : v-model:visible
+src/components/widgets/Tooltip.vue : v-model:visible
 ```
 
 Configured via `app.ron` `fe_lint.whitelist_snippets`. Minimal by design — whitelisting is escape-hatch behavior, not extension mechanism.
@@ -241,23 +241,23 @@ The whitelist file `frontend/.rule_violations_whitelist` is codegen'd by `blast 
 blast check
 ✗ 5 governor violations
 
-frontend/src/custom/pages/SettingsPage.vue:14
+frontend/src/pages/SettingsPage.vue:14
     [InlineStyle]  :style="{ padding: '16px' }"
     → use a class + scoped style with var(--app-space-lg)
 
-frontend/src/custom/components/UserCard.vue:32
+frontend/src/components/UserCard.vue:32
     [HardcodedPx]  margin-top: 24px;
     → use var(--app-space-xl)
 
-frontend/src/custom/composables/useDashboard.ts:8
+frontend/src/composables/useDashboard.ts:8
     [ConsoleLog]  console.log(value);
     → use import.meta.env.DEV wrapper
 
-frontend/src/custom/pages/UsersPage.vue:5
+frontend/src/pages/UsersPage.vue:5
     [PageShellRequired]  template root is <main>; expected <PageShell layout="...">
     → wrap content in <PageShell layout="cards"> (or split/table/bleed/tabbed)
 
-frontend/src/custom/pages/OrderEditPage.vue:21
+frontend/src/pages/OrderEditPage.vue:21
     [HardcodedRoutePath]  router.push('/orders')
     → router.push({ name: 'orders.list' })
 

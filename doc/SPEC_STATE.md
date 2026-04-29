@@ -497,7 +497,7 @@ This means `cargo check` / `cargo build` / `cargo test` all hard-fail when state
 
 State files have no `raw_rust` field. There is no way to inject arbitrary Rust or TypeScript into codegen output via state files.
 
-If the TUI wizard cannot express what the user needs, the user writes Rust in `src/<layer>/custom/`. The generated/custom layer split is the escape hatch. This is by design:
+If the TUI wizard cannot express what the user needs, the user writes Rust at the top level of `src/<layer>/<resource>/` (anywhere outside `<layer>/generated/`). The generated/user-owned layer split is the escape hatch. This is by design:
 
 - Keeps state files data-only and machine-readable.
 - Prevents Blast from becoming a template engine for arbitrary code.
@@ -507,11 +507,11 @@ If the TUI wizard cannot express what the user needs, the user writes Rust in `s
 
 When the user renames a resource (e.g. `User` → `Account`) via the TUI, Blast:
 
-1. Greps `src/**/custom/` for the old symbol (`User`, `UserPublic`, `NewUser`, etc.) before writing the updated state file.
+1. Greps user-owned files (everything outside `src/**/generated/`) for the old symbol (`User`, `UserPublic`, `NewUser`, etc.) before writing the updated state file.
 2. If old symbols are found, prints them with file:line context and **refuses to write** (or emits a loud warning, depending on flag).
-3. User resolves the references manually in `custom/` — then reruns the wizard to confirm.
+3. User resolves the references manually — then reruns the wizard to confirm.
 
-There is no magic AST patching. Manual resolution keeps `custom/` code intentional and readable. The grep is text-based (conservative: may have false positives for common names). User can override with `--force-rename` after reviewing the list.
+There is no magic AST patching. Manual resolution keeps user-owned code intentional and readable. The grep is text-based (conservative: may have false positives for common names). User can override with `--force-rename` after reviewing the list.
 
 ## Related Specs
 
