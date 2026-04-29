@@ -31,8 +31,8 @@ impl RawFetchOutsideApi {
     }
 }
 
-fn is_in_generated_api(file: &Path) -> bool {
-    path_contains(file, "/generated/api/")
+fn is_in_api_dir(file: &Path) -> bool {
+    path_contains(file, "/generated/api/") || path_contains(file, "/src/api/")
 }
 
 impl Rule for RawFetchOutsideApi {
@@ -41,7 +41,7 @@ impl Rule for RawFetchOutsideApi {
     }
 
     fn check(&self, file: &Path, line: &str, line_no: usize, _config: &FeLintState) -> Option<Violation> {
-        if is_in_generated_api(file) {
+        if is_in_api_dir(file) {
             return None;
         }
         if is_comment_line(line) {
@@ -55,7 +55,7 @@ impl Rule for RawFetchOutsideApi {
             file.to_path_buf(),
             line_no,
             snippet_of(line),
-            "use the codegen'd typed client from frontend/src/generated/api/",
+            "move HTTP into frontend/src/api/<feature>.ts (hand-written) or use frontend/src/generated/api/ (codegen'd)",
         ))
     }
 }
@@ -87,6 +87,12 @@ mod tests {
     #[test]
     fn allows_fetch_in_generated_api() {
         let v = run("frontend/src/generated/api/users.ts", "  const r = await fetch('/api/x')");
+        assert!(v.is_none());
+    }
+
+    #[test]
+    fn allows_fetch_in_handwritten_api() {
+        let v = run("frontend/src/api/auth.ts", "  const r = await fetch('/api/auth/login')");
         assert!(v.is_none());
     }
 }
