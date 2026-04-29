@@ -31,16 +31,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Log { cmd: sub } => dispatch_log(sub, config),
         Command::Arsenal { cmd: sub } => dispatch_arsenal(sub, config),
 
-        Command::Stop => {
-            logger::info("Stopping running server...")?;
-            if let Err(e) = crate::dashboard::stop_server() {
-                logger::error(&format!("Failed to stop server: {}", e))?;
-                return Err(e);
-            }
-            logger::success("Server stopped successfully")?;
-            Ok(())
-        }
-
         Command::New {
             name,
             dev,
@@ -491,79 +481,37 @@ fn run_refresh(config: &mut Config) -> BlastResult<()> {
 }
 
 fn run_dev_server(config: &Config) -> BlastResult<()> {
-    match crate::dashboard::start_server(config, true) {
-        Ok(pid) => {
-            logger::success(&format!("Development server started with PID: {}", pid))?;
-        }
-        Err(_started) => {
-            let cmd = format!("cargo run --bin {}", &config.project_name);
-            std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn()?;
-            logger::success("Development server started with cargo run")?;
-        }
-    }
-    Ok(())
+    use std::os::unix::process::CommandExt;
+    let err = std::process::Command::new("cargo")
+        .args(["run", "--bin", &config.project_name])
+        .current_dir(&config.project_dir)
+        .exec();
+    Err(BlastError::Invalid(format!("failed to exec cargo run: {}", err)))
 }
 
 fn run_prod_server(config: &Config) -> BlastResult<()> {
-    match crate::dashboard::start_server(config, false) {
-        Ok(pid) => {
-            logger::success(&format!("Production server started with PID: {}", pid))?;
-        }
-        Err(_started) => {
-            let binary_path = format!("target/release/{}", &config.project_name);
-            if std::path::Path::new(&binary_path).exists() {
-                std::process::Command::new("script").args(["-q", "-c", &binary_path, "storage/logs/server.log"]).spawn()?;
-                logger::success(&format!("Production server started using compiled binary: {}", binary_path))?;
-            } else {
-                let cmd = format!("cargo run --release --bin {}", &config.project_name);
-                std::process::Command::new("script").args(["-q", "-c", &cmd, "storage/logs/server.log"]).spawn()?;
-                logger::success("Production server started with cargo run --release")?;
-                logger::info("Tip: Build with 'cargo build --release' for faster startup next time")?;
-            }
-        }
-    }
-    Ok(())
+    use std::os::unix::process::CommandExt;
+    let binary_path = config.project_dir.join("target").join("release").join(&config.project_name);
+    let err = if binary_path.exists() {
+        std::process::Command::new(&binary_path).current_dir(&config.project_dir).exec()
+    } else {
+        std::process::Command::new("cargo")
+            .args(["run", "--release", "--bin", &config.project_name])
+            .current_dir(&config.project_dir)
+            .exec()
+    };
+    Err(BlastError::Invalid(format!("failed to exec prod server: {}", err)))
 }
 
 fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
+    use std::os::unix::process::CommandExt;
     dep_manager.ensure_installed(&["cargo-watch"], true)?;
-
-    logger::info(&format!("Starting watch mode for {}", &config.project_name))?;
-
-    crate::dashboard::stop_server()?;
-
-    let logs_dir = config.project_dir.join("storage").join("logs");
-    std::fs::create_dir_all(&logs_dir)?;
-
-    let blast_dir = config.project_dir.join("storage").join("blast");
-    std::fs::create_dir_all(&blast_dir)?;
-
-    let server_log_path = logs_dir.join("server.log");
-
-    let _touch = std::fs::OpenOptions::new().create(true).append(true).open(&server_log_path)?;
-    drop(_touch);
-
-    let watch_cmd = format!(
-        "nohup script -q -f -c \"cargo watch -x 'run --bin {}'\" storage/logs/server.log </dev/null >/dev/null 2>&1 & echo $!",
-        &config.project_name
-    );
-
-    let output = std::process::Command::new("bash").args(["-c", &watch_cmd]).output()?;
-
-    let pid_str = String::from_utf8_lossy(&output.stdout);
-    let pid = pid_str.trim().parse::<u32>().map_err(|e| BlastError::Invalid(e.to_string()))?;
-
-    let pid_file_path = blast_dir.join("server.pid");
-    std::fs::write(&pid_file_path, pid.to_string())?;
-
-    let timestamp = chrono::Local::now().format("[%Y-%m-%d %H:%M:%S]");
-    let mut server_log = std::fs::OpenOptions::new().create(true).append(true).open(&server_log_path)?;
-
-    writeln!(server_log, "{} Using development configuration", timestamp)?;
-    writeln!(server_log, "{} Watch mode started with PID: {}", timestamp, pid)?;
-
-    logger::success(&format!("Watch mode started with PID: {}. Server will restart automatically when code changes.", pid))?;
-    Ok(())
+    let run_arg = format!("run --bin {}", &config.project_name);
+    let err = std::process::Command::new("cargo")
+        .args(["watch", "-x", &run_arg])
+        .current_dir(&config.project_dir)
+        .exec();
+    Err(BlastError::Invalid(format!("failed to exec cargo watch: {}", err)))
 }
 
 fn run_check(config: &Config, verbose: bool) -> BlastResult<()> {

@@ -73,9 +73,6 @@ pub enum Command {
     #[command(name = "run-prod", about = "Run production server", alias = "serve-prod")]
     RunProd,
 
-    #[command(about = "Stop background blast run process")]
-    Stop,
-
     #[command(about = "Watch backend with cargo-watch")]
     Watch,
 
