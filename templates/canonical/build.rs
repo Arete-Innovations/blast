@@ -1389,7 +1389,10 @@ fn check_no_comments(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
 
 fn is_generated_path(rel: &Path) -> bool {
     let s = rel.to_string_lossy();
-    s.contains("/generated/") || s.starts_with("generated/") || s.contains("\\generated\\") || s.starts_with("generated\\")
+    if s.contains("/generated/") || s.starts_with("generated/") || s.contains("\\generated\\") || s.starts_with("generated\\") {
+        return true;
+    }
+    matches!(s.as_ref(), "database/schema.rs")
 }
 
 fn is_data_definition_allowed_file(rel: &Path) -> bool {
