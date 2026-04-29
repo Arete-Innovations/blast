@@ -2,12 +2,13 @@
 //!
 //! Pipeline order:
 //!     schema → structs → models → flows → http_routes
-//!            → frontend_types
+//!            → frontend_types → frontend_api → composables
 //!            → theme → icons → env_example → governor_plugin
 //!
-//! FE composables / api clients / Vue components / CRUD pages are opt-in
-//! via `blast gen pages [<resource>]`, `blast gen api [<resource>]`,
-//! `blast gen types [<resource>]`. Default keeps FE side to types only.
+//! FE Vue components / CRUD pages are opt-in via `blast gen pages
+//! [<resource>]` / `blast gen components [<resource>]`. The default
+//! pipeline stops at composables — enough for users to author their own
+//! Vue templates against typed reactive primitives.
 
 use std::path::{Path, PathBuf};
 
@@ -42,6 +43,8 @@ const STEP_ROUTINES: &str = "routines generation";
 const STEP_FLOWS: &str = "flows generation";
 const STEP_HTTP_ROUTES: &str = "http routes generation";
 const STEP_FRONTEND_TYPES: &str = "frontend types generation";
+const STEP_FRONTEND_API: &str = "frontend api generation";
+const STEP_COMPOSABLES: &str = "composables generation";
 const STEP_THEME: &str = "theme codegen";
 const STEP_ICONS: &str = "icons codegen";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
@@ -69,6 +72,8 @@ pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut 
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, sink, progress, &mut outcome)?;
     run_frontend_types_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_frontend_api_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_composables_step(&args.project_root, sink, progress, &mut outcome)?;
     run_theme_step(&args.project_root, sink, progress, &mut outcome)?;
     run_icons_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -124,8 +129,8 @@ fn warn_resource_orphans(project_root: &Path, resource: &ResourceState, sink: &m
         ),
         (
             GenLevel::Composables,
-            project_root.join("frontend").join("src").join("composables").join("generated").join(format!("{table}.ts")),
-            "frontend/composables/generated",
+            project_root.join("frontend").join("src").join("generated").join("composables").join(format!("{table}.ts")),
+            "frontend/generated/composables",
         ),
         (
             GenLevel::Components,
@@ -306,6 +311,38 @@ fn run_frontend_types_step(project_root: &PathBuf, sink: &mut dyn Sink, progress
         }
         Err(err) => {
             sink.error(format!("{}: {}", STEP_FRONTEND_TYPES, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_frontend_api_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::frontend_api::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!("{}: {} written, {} skipped", STEP_FRONTEND_API, report.written.len(), report.skipped.len()));
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_FRONTEND_API, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_composables_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::composables::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            sink.info(format!("{}: {} written, {} skipped", STEP_COMPOSABLES, report.written.len(), report.skipped.len()));
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_COMPOSABLES, err));
             Err(err)
         }
     }

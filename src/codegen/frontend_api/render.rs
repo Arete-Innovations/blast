@@ -116,19 +116,23 @@ pub fn build_resource_api(resource: &ResourceState) -> String {
 
 /// `listUsers` — matches `list{}s as apiList` alias in composables_v2.
 /// Returns the items array directly (unwrapping the ListResponse wrapper)
-/// so composables can store `ref<UserPublic[] | null>` without needing
-/// to know about the pagination envelope.
+/// plus the pagination envelope's metadata as sibling fields so generated
+/// composables can populate `total` / `total_pages` refs without a second
+/// roundtrip. Existing pages that destructure `result.data` and
+/// `result.error` keep working — the extra fields are additive.
 fn render_list_fn(table: &str, singular: &str, plural: &str) -> String {
     format!(
-        "interface {singular}ListEnvelope {{\nitems: {singular}Public[]\ntotal: number\npage: number\npage_size: number\n}}\n\nexport async function list{plural}(\nparams: {{ page?: number; page_size?: number; sort?: \
-         string | null; filter?: {{ [key: string]: string | number | boolean | null | undefined }} | null }},\nsignal?: AbortSignal,\n): ApiResult<{singular}Public[]> {{\nconst url = new URL(`/api/{table}/`, \
+        "interface {singular}ListEnvelope {{\nitems: {singular}Public[]\ntotal: number\ntotal_pages: number\npage: number\npage_size: number\n}}\n\nexport interface {singular}ListResult {{\ndata: {singular}Public[] | \
+         null\nerror: MeltDownResponse | null\ntotal: number\ntotal_pages: number\npage: number\npage_size: number\n}}\n\nexport async function list{plural}(\nparams: {{ page?: number; page_size?: number; sort?: string \
+         | null; filter?: {{ [key: string]: string | number | boolean | null | undefined }} | null }},\nsignal?: AbortSignal,\n): Promise<{singular}ListResult> {{\nconst url = new URL(`/api/{table}/`, \
          window.location.origin)\nif (params.page !== undefined) {{\nurl.searchParams.set('page', String(params.page))\n}}\nif (params.page_size !== undefined) {{\nurl.searchParams.set('page_size', \
          String(params.page_size))\n}}\nif (params.sort !== undefined && params.sort !== null) {{\nurl.searchParams.set('sort', params.sort)\n}}\nif (params.filter !== null && params.filter !== undefined) {{\nfor \
          (const [key, val] of Object.entries(params.filter)) {{\nif (val === null || val === undefined) {{\ncontinue\n}}\nconst serialized = typeof val === 'object' ? JSON.stringify(val) : \
          String(val)\nurl.searchParams.set(`filter[${{key}}]`, serialized)\n}}\n}}\nconst path = url.pathname + url.search\ntry {{\nconst res = await fetch(path, {{\nheaders: {{ ...auth_header(), Accept: \
-         'application/json' }},\nsignal,\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: null, error: err }}\n}}\nconst envelope = (await res.json()) as \
-         {singular}ListEnvelope\nreturn {{ data: envelope.items, error: null }}\n}} catch (e) {{\nif (e instanceof DOMException && e.name === 'AbortError') {{\nreturn {{ data: null, error: null }}\n}}\nconst err: \
-         MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
+         'application/json' }},\nsignal,\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: null, error: err, total: 0, total_pages: 0, page: 0, page_size: 0 }}\n}}\nconst \
+         envelope = (await res.json()) as {singular}ListEnvelope\nreturn {{ data: envelope.items, error: null, total: envelope.total, total_pages: envelope.total_pages, page: envelope.page, page_size: \
+         envelope.page_size }}\n}} catch (e) {{\nif (e instanceof DOMException && e.name === 'AbortError') {{\nreturn {{ data: null, error: null, total: 0, total_pages: 0, page: 0, page_size: 0 }}\n}}\nconst err: \
+         MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err, total: 0, total_pages: 0, page: 0, page_size: 0 }}\n}}\n}}\n",
         table = table,
         singular = singular,
         plural = plural,
