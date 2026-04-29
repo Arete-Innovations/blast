@@ -147,10 +147,6 @@ where
         self
     }
 
-    pub fn retry_only_transient(self) -> Self {
-        self.classify(|e: &MeltDown| e.is_transient())
-    }
-
     pub fn retry_all(self) -> Self {
         self.classify(|_: &MeltDown| true)
     }
