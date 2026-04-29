@@ -14,5 +14,5 @@ pub use hash::content_hash;
 pub use icons::{IconClass, IconConfig, IconKey};
 pub use io::{list_resources, load_app, load_resource, save_app, save_resource};
 pub use names::{AuthScopeField, FieldName, ResourceName, SqlType};
-pub use resource::{AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, PayloadShape, Relation, ResourceState, SoftDeleteConfig, SoftDeleteDefault, TopicScope, Verb, VerbState, WsEventsState};
+pub use resource::{AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, PayloadShape, Relation, ResourceState, SoftDeleteConfig, SoftDeleteDefault, TopicScope, ValidatorRule, Verb, VerbState, WsEventsState};
 pub use theme::{ClampValue, ColorScaleRef, DimValue, FontTokens, HexColor, PaletteRef, PrimeVuePreset, SizeKey, SurfaceDirection, ThemeConfig, TokenCatalog};

@@ -339,10 +339,7 @@ ResourceState(
         FieldState(
             column: "email",
             variants: [DB, Insertable, Patch, Public, Admin],
-            validation: FieldValidation(
-                max_len: Some(254),
-                pattern: Some("^[^@]+@[^@]+$"),
-            ),
+            validators: [Email, MaxLen(254)],
         ),
         FieldState(
             column: "password_hash",
@@ -351,9 +348,7 @@ ResourceState(
         FieldState(
             column: "role",
             variants: [DB, Public, Admin],
-            validation: FieldValidation(
-                enum_values: Some(["user", "admin"]),
-            ),
+            validators: [OneOf(["user", "admin"])],
         ),
         FieldState(
             column: "created_at",

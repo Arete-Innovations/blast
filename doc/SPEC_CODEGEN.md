@@ -183,7 +183,7 @@ src/transport/http/generated/mod.rs
 src/transport/ws/generated/mod.rs
 ```
 
-`structs`, `models`, `routines`, `flows`, `http_routes`, `ws_topics` are emitted by **separate** codegen passes (`src/codegen/{structs/, models/, routines/, flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`. Pipeline order: `schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → theme → icons → env_example → governor_plugin`.
+`structs`, `models`, `routines`, `flows`, `http_routes`, `ws_topics` are emitted by **separate** codegen passes (`src/codegen/{structs/, models/, routines/, flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`. Pipeline order: `schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → validators → components → pages → theme → icons → env_example → governor_plugin`.
 
 ### Enum output (Postgres `CREATE TYPE` → Rust enum + Diesel impls)
 
@@ -250,18 +250,32 @@ frontend/src/generated/api/index.ts     (barrel)
 frontend/src/generated/composables/index.ts
 ```
 
-### TS validator output
+### Validators output (Rust + TS, single source)
+
+Driven by `FieldState.validators: BTreeSet<ValidatorRule>` in each Primer file. Codegen pass at `src/codegen/validators/` emits paired Rust + TS validators with byte-identical regex strings. See `templates/canonical/doc/SPEC_VALIDATORS.md` for the full rule set + wire-in pattern.
 
 ```
-frontend/src/generated/validators/users.ts
-  - validateNewUser(input: unknown): Result<NewUser, ValidationError[]>
-  - validateUserPatch(input: unknown): Result<UserPatch, ValidationError[]>
-  - validateUserListFilters(input: unknown): Result<UserListFilters, ValidationError[]>
+src/structs/generated/validators/<r>.rs
+  - pub fn validate_<r>_insertable(input: &<R>Insertable) -> Result<(), MeltDown>
+  - pub fn validate_<r>_patch(input: &<R>Patch) -> Result<(), MeltDown>
+  - lazy_static / once_cell regex constants for any Pattern/Email/Url rules
 ```
 
-Generated from resource state validation modifiers (`.max_len`, `.pattern`, `.enum_values`, `.min`, `.max`) plus the list endpoint wire schema (`.filtered_by`, `.paginated`). Called by generated API clients before the fetch; surfaces errors client-side without a network round-trip.
+```
+frontend/src/generated/validators/<r>.ts
+  - export type FieldErrors = Record<string, string>;
+  - export function validate<R>Insertable(input: <R>Insertable): FieldErrors | null
+  - export function validate<R>Patch(input: <R>Patch): FieldErrors | null
+```
 
-Rule: every constraint declared in resource state emits both a Rust validator (in the generated route handler's extractor) and a TS validator. The two are structurally mirrored. Blast's `gen frontend` pass drives both in a single codegen cycle to keep them in sync.
+**Wire-in:**
+- `transport/http/generated/<r>.rs` create/update handlers call `validate_<r>_insertable(&input)?` BEFORE the flow.
+- `frontend/src/generated/api/<r>.ts` mutations call `validate<R>Insertable(input)` BEFORE the fetch; on errors return synthetic `MeltDownResponse`-shaped error.
+- `frontend/src/components/generated/forms/<r>/<Form>.vue` consumes via `computed(() => validate<R>Insertable(form.value) ?? {})` for live field error binding.
+
+**Rule semantics:** `Required`, `MinLen(n)`, `MaxLen(n)`, `MinValue(n)`, `MaxValue(n)`, `Pattern(re)`, `OneOf([…])`, `Email`, `Url`. Defined in `crate::state::resource::ValidatorRule`. Patterns are restricted to RE2 ∩ JS RegExp intersection (no lookahead, no backreferences) so both validators interpret them identically.
+
+`gen_level` filter: `r.gen_level >= GenLevel::Types`. Validators are useful as soon as types exist; doesn't wait for components/pages.
 
 ### Theme codegen output (Wave 10)
 

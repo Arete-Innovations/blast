@@ -263,6 +263,7 @@ fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, dep_manager: &mut Depe
         GenCmd::Pages { resource } => run_gen_pages(config, resource),
         GenCmd::Components { resource } => run_gen_components(config, resource),
         GenCmd::Composables { resource } => run_gen_composables(config, resource),
+        GenCmd::Validators { resource } => run_gen_validators(config, resource),
         GenCmd::Api { resource } => run_gen_api(config, resource),
         GenCmd::Types { resource } => run_gen_types(config, resource),
         GenCmd::All => run_gen_all(config),
@@ -279,6 +280,17 @@ fn run_gen_composables(config: &Config, resource: Option<String>) -> BlastResult
         None => crate::codegen::composables::run(&config.project_dir, &mut sink, &mut progress)?,
     };
     logger::info(&format!("composables: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
+    Ok(())
+}
+
+fn run_gen_validators(config: &Config, resource: Option<String>) -> BlastResult<()> {
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    let report = match resource {
+        Some(name) => crate::codegen::validators::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
+        None => crate::codegen::validators::run(&config.project_dir, &mut sink, &mut progress)?,
+    };
+    logger::info(&format!("validators: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
     Ok(())
 }
 

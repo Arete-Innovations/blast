@@ -16,3 +16,4 @@ pub mod pages;
 pub mod routines;
 pub mod structs;
 pub mod theme;
+pub mod validators;
