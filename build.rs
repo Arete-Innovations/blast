@@ -233,6 +233,7 @@ fn main() {
     let templates_canonical = manifest_dir.join("templates").join("canonical");
     if templates_canonical.is_dir() {
         clean_template_artifacts(&templates_canonical);
+        emit_rerun_for_tree(&templates_canonical);
     }
 
     let src_dir = manifest_dir.join("src");
@@ -248,6 +249,22 @@ fn main() {
 }
 
 const TEMPLATE_ARTIFACT_DIRS: &[&str] = &["target", "node_modules", "dist", ".vite", ".turbo", ".next", ".git"];
+
+fn emit_rerun_for_tree(root: &Path) {
+    println!("cargo:rerun-if-changed={}", root.display());
+    let entries = match fs::read_dir(root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            emit_rerun_for_tree(&path);
+        } else {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+}
 
 fn clean_template_artifacts(root: &Path) {
     let entries = match fs::read_dir(root) {
