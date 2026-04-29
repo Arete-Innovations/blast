@@ -13,7 +13,7 @@ export interface RegisterInput {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-export function validateLoginInput(input: LoginInput): FieldErrors | null {
+export function validateLoginInput(input: LoginInput): FieldErrors {
   const errors: FieldErrors = {}
   if (typeof input.email !== 'string' || input.email.length === 0) {
     errors.email = 'required'
@@ -25,10 +25,10 @@ export function validateLoginInput(input: LoginInput): FieldErrors | null {
   if (typeof input.password !== 'string' || input.password.length === 0) {
     errors.password = 'required'
   }
-  return Object.keys(errors).length === 0 ? null : errors
+  return errors
 }
 
-export function validateRegisterInput(input: RegisterInput): FieldErrors | null {
+export function validateRegisterInput(input: RegisterInput): FieldErrors {
   const errors: FieldErrors = {}
   if (typeof input.email !== 'string' || input.email.length === 0) {
     errors.email = 'required'
@@ -47,5 +47,5 @@ export function validateRegisterInput(input: RegisterInput): FieldErrors | null 
   } else if (input.confirm_password !== input.password) {
     errors.confirm_password = 'passwords do not match'
   }
-  return Object.keys(errors).length === 0 ? null : errors
+  return errors
 }
