@@ -23,7 +23,7 @@ use crate::{
     codegen::{
         enums::{
             render,
-            scan::{scan_project_enums, ParsedEnum},
+            scan::{existing_user_enums, scan_project_enums, ParsedEnum},
         },
         header,
     },
@@ -64,11 +64,32 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
         return Ok(report);
     }
 
+    let user_enums = existing_user_enums(project_root)?;
+    let emit_targets: Vec<&ParsedEnum> = scan
+        .enums
+        .iter()
+        .filter(|parsed| {
+            let pascal = render::enum_type_name(&parsed.name);
+            if user_enums.contains(&pascal) {
+                sink.info(format!("enums: skipping {} (hand-written {} found in src/structs/)", parsed.name, pascal));
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if emit_targets.is_empty() {
+        sink.info(format!("{STEP_LABEL}: every CREATE TYPE has a hand-written enum; nothing to emit"));
+        progress.step_done(STEP_LABEL);
+        return Ok(report);
+    }
+
     let out_dir = enums_dir(project_root);
     fs::create_dir_all(&out_dir)?;
 
-    let total = scan.enums.len() as u64;
-    for (idx, parsed) in scan.enums.iter().enumerate() {
+    let total = emit_targets.len() as u64;
+    for (idx, parsed) in emit_targets.iter().enumerate() {
         emit_enum(project_root, parsed, &out_dir, &mut report)?;
         sink.info(format!("enums: emitted {}", enum_target(&out_dir, parsed).display()));
         progress.tick(idx as u64 + 1, total);
@@ -76,7 +97,7 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
 
     let barrel_target = out_dir.join("mod.rs");
     let barrel_marker = header::marker_for_schema(project_root)?;
-    let barrel_body = format!("{}{}", barrel_marker, render_barrel(&scan.enums));
+    let barrel_body = format!("{}{}", barrel_marker, render_barrel(&emit_targets));
     write_file(&barrel_target, &barrel_body, &mut report)?;
     sink.info(format!("enums: emitted {}", barrel_target.display()));
 
@@ -121,7 +142,7 @@ fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult
     Ok(())
 }
 
-fn render_barrel(enums: &[ParsedEnum]) -> String {
+fn render_barrel(enums: &[&ParsedEnum]) -> String {
     let mut names: Vec<&str> = enums.iter().map(|e| e.name.as_str()).collect();
     names.sort();
 
@@ -251,5 +272,49 @@ mod tests {
 
         assert!(second.written.is_empty());
         assert!(!second.skipped.is_empty());
+    }
+
+    #[test]
+    fn skips_emission_when_hand_written_enum_already_exists() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        write_schema_stub(root);
+        write_migration(root, "2026-04-26-000001_users_and_sessions", "CREATE TYPE user_role AS ENUM ('admin', 'member');");
+
+        let role_dir = root.join("src/structs/auth");
+        fs::create_dir_all(&role_dir).expect("mkdir auth");
+        fs::write(role_dir.join("role.rs"), "pub enum Role {\n    Admin,\n    Member,\n}\n").expect("write role.rs");
+
+        let user_role_dir = root.join("src/structs/users");
+        fs::create_dir_all(&user_role_dir).expect("mkdir users");
+        fs::write(user_role_dir.join("kind.rs"), "pub enum UserRole {\n    Admin,\n    Member,\n}\n").expect("write kind.rs");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        let report = run(root, &mut sink, &mut progress).expect("run ok");
+
+        let user_role_path = root.join("src/structs/generated/enums/user_role.rs");
+        assert!(!user_role_path.exists(), "codegen should skip emission when UserRole already exists");
+        assert!(report.written.is_empty(), "no files should be written");
+    }
+
+    #[test]
+    fn skip_detection_ignores_generated_subtree() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        write_schema_stub(root);
+        write_migration(root, "2026-01-01-000001_a", "CREATE TYPE post_status AS ENUM ('draft', 'live');");
+
+        let prior_gen = root.join("src/structs/generated/enums");
+        fs::create_dir_all(&prior_gen).expect("mkdir prior gen");
+        fs::write(prior_gen.join("post_status.rs"), "pub enum PostStatus {\n    Draft,\n    Live,\n}\n").expect("write prior gen");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        let report = run(root, &mut sink, &mut progress).expect("run ok");
+
+        let target = root.join("src/structs/generated/enums/post_status.rs");
+        assert!(target.exists(), "codegen should still emit when only generated/ has the enum");
+        assert!(!report.written.is_empty(), "expected at least one written file");
     }
 }

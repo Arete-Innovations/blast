@@ -4,4 +4,4 @@ pub mod scan;
 
 pub use render::{enum_type_name, render_enum_file};
 pub use runner::{run, EmitReport};
-pub use scan::{pascalize, scan_project_enums, ParsedEnum, ScanReport};
+pub use scan::{existing_user_enums, pascalize, scan_project_enums, ParsedEnum, ScanReport};

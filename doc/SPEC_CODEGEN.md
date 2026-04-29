@@ -204,6 +204,8 @@ src/structs/generated/enums/mod.rs   (barrel — `pub mod my_status; pub use my_
 
 The Diesel `sql_types` marker struct lives in canonical's `src/database/schema.rs` (emitted by `diesel print-schema`) — `STRUCTS:22` build.rs lint exempts that file specifically so the marker can live there.
 
+**Skip-emission for hand-written enums:** if a Rust enum with the matching PascalCase name already exists in `src/structs/**` (excluding any `generated/` subtree), the codegen pass skips emission for that SQL `CREATE TYPE`. Detection is `src/codegen/enums/scan.rs::existing_user_enums(project_root) -> HashSet<String>`, which walks `src/structs/` recursively (skipping `generated/`) and matches `pub enum <PascalCaseName>`. Canonical's hand-rolled `Role` enum at `src/structs/auth/role.rs` is treated this way for `CREATE TYPE user_role` because canonical maps the SQL type onto `Role` rather than `UserRole`. Emission for an enum named to collide with `pascalize(<sql_type>)` (e.g. a `pub enum UserRole` somewhere under `src/structs/`) is also skipped to keep Diesel `SingleValue` impls unique.
+
 Reference shape: canonical's hand-rolled `Role` enum at `src/structs/auth/role.rs` is the canonical example every codegen'd enum mirrors. E2E proof: `blast/tests/enum_codegen_e2e.rs` runs the full pipeline against a fixture migration.
 
 ### TS output

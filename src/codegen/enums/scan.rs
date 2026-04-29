@@ -10,7 +10,7 @@
 //!   - the (future) FE codegen that emits matching TS enum literal unions
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -154,6 +154,61 @@ pub fn parse_enums_in_sql(body: &str, source: &Path) -> BlastResult<Vec<ParsedEn
 
 fn enum_regex() -> BlastResult<Regex> {
     Regex::new(r"(?is)create\s+type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+as\s+enum\s*\(([^)]*)\)").map_err(BlastError::from)
+}
+
+/// Walk `<project_root>/src/structs/` (excluding any `generated/` subtree)
+/// and collect every PascalCase Rust enum name declared with `pub enum X`.
+///
+/// Used by the enum codegen runner to skip emission when a hand-written enum
+/// already covers the same SQL `CREATE TYPE`. Canonical's `Role` enum at
+/// `src/structs/auth/role.rs` is the reference: its presence makes
+/// `CREATE TYPE user_role` a no-op for codegen because `pascalize("user_role")
+/// == "UserRole"` does not match `"Role"` — but other resources may legitimately
+/// hand-roll an enum keyed off this map.
+pub fn existing_user_enums(project_root: &Path) -> BlastResult<HashSet<String>> {
+    let structs_dir = project_root.join("src").join("structs");
+    let mut found: HashSet<String> = HashSet::new();
+    if !structs_dir.is_dir() {
+        return Ok(found);
+    }
+    let re = pub_enum_regex()?;
+    walk_for_enums(&structs_dir, &re, &mut found)?;
+    Ok(found)
+}
+
+fn pub_enum_regex() -> BlastResult<Regex> {
+    Regex::new(r"\bpub\s+enum\s+([A-Z][A-Za-z0-9_]*)\b").map_err(BlastError::from)
+}
+
+fn walk_for_enums(dir: &Path, re: &Regex, out: &mut HashSet<String>) -> BlastResult<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            let dir_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+            if dir_name == "generated" {
+                continue;
+            }
+            walk_for_enums(&path, re, out)?;
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let body = fs::read_to_string(&path)?;
+        for caps in re.captures_iter(&body) {
+            match caps.get(1) {
+                Some(m) => {
+                    out.insert(m.as_str().to_string());
+                }
+                None => continue,
+            }
+        }
+    }
+    Ok(())
 }
 
 fn parse_variant_list(body: &str, source: &Path, type_name: &str) -> BlastResult<Vec<String>> {
