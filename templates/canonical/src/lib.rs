@@ -8,6 +8,7 @@ pub mod flows;
 pub mod meltdown;
 pub mod models;
 pub mod routines;
+pub mod seeds;
 pub mod services;
 pub mod structs;
 pub mod transport;

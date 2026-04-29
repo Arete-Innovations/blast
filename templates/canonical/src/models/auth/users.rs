@@ -4,7 +4,7 @@ use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use crate::{
     database::schema::users::dsl as users_dsl,
     meltdown::*,
-    structs::{NewUser, User},
+    structs::{auth::Role, NewUser, User},
 };
 
 pub async fn find_by_email(conn: &mut AsyncPgConnection, email: &str) -> Result<Option<User>, MeltDown> {
@@ -38,4 +38,12 @@ pub async fn insert_new(conn: &mut AsyncPgConnection, email: &str, password_hash
         .get_result::<User>(conn)
         .await
         .map_err(|e| MeltDown::from(e).with_context("operation", "insert_new_user"))
+}
+
+pub async fn set_role(conn: &mut AsyncPgConnection, id: i64, role: Role) -> Result<User, MeltDown> {
+    diesel::update(users_dsl::users.filter(users_dsl::id.eq(id)))
+        .set(users_dsl::role.eq(role))
+        .get_result::<User>(conn)
+        .await
+        .map_err(|e| MeltDown::from(e).with_context("operation", "set_user_role"))
 }

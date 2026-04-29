@@ -22,6 +22,3 @@ CREATE TABLE sessions (
 
 CREATE INDEX idx_sessions_token   ON sessions (token);
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
-
-INSERT INTO users (email, password_hash, role) VALUES
-    ('admin', '$argon2id$v=19$m=16384,t=2,p=1$Y2F0YWJsYXN0YWRtaW4wMQ$48Sz0gH0b2FmBSf8meNbu6/2iA2Un9Oi0pN56uuyor4', 'admin');

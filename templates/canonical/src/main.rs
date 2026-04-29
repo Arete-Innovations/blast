@@ -13,6 +13,7 @@ mod flows;
 mod meltdown;
 mod models;
 mod routines;
+mod seeds;
 mod services;
 mod structs;
 mod transport;
