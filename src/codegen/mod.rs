@@ -12,5 +12,6 @@ pub mod icons;
 pub mod ir_loader;
 pub mod models;
 pub mod pages;
+pub mod routines;
 pub mod structs;
 pub mod theme;

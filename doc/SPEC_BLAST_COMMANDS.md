@@ -52,7 +52,8 @@ blast help                       # top-level help
 blast gen schema                  # diesel migration run + print-schema
 blast gen structs                 # schema.rs + resource state → src/structs/generated/
 blast gen models                  # schema.rs + resource state → src/models/generated/
-blast gen flows                   # resource state → src/flows/generated/
+blast gen routines                # resource state → src/routines/generated/<r>/<verb>.rs (each wraps the model fn, called by flows)
+blast gen flows                   # resource state → src/flows/generated/ (each verb wraps the routine in Crank::none() + auth check)
 blast gen frontend                # resource state + app state → frontend/src/generated/
 blast gen env-example             # app state env spec → .env.example
 blast gen governor-plugin         # app state fe_lint section → frontend/scripts/governor-plugin.js + .rule_violations_whitelist
@@ -68,28 +69,26 @@ All `blast gen` targets read from `storage/blast/state/` (see `SPEC_STATE.md`). 
 
 ### `blast gen all` pipeline
 
-`blast gen all` runs **sixteen** ordered steps. Each step calls a dedicated codegen module and reports `{written, skipped}` counts back to the sink. On any step's failure the pipeline aborts; no retries (that's `blast init`'s job).
+`blast gen all` runs the ordered steps below. Each step calls a dedicated codegen module and reports `{written, skipped}` counts back to the sink. On any step's failure the pipeline aborts; no retries (that's `blast init`'s job).
 
 ```
-1.  schema generation           (diesel print-schema → src/database/schema.rs)
-2.  structs generation          (codegen::structs::run)
-3.  models generation           (codegen::models::run)
-4.  flows generation            (codegen::flows::run)
-5.  http routes generation      (codegen::http_routes::run)
-6.  frontend generation         (codegen::run_frontend — types + api + validators)
-7.  fe composables v2 generation (codegen::composables_v2::run)
-8.  ws topics generation        (codegen::ws_topics::run)
-9.  vue components generation   (codegen::vue::run — Form.vue + List.vue per resource)
-10. crud pages generation        (codegen::pages::run — resource list/detail pages)
-11. router codegen               (codegen::router::run — emits frontend/src/generated/router.ts)
-12. theme codegen                (codegen::theme::run — emits tokens.css + primevue.ts from app.ron theme section)
-13. icons codegen                (codegen::icons::run — emits icons.ts from app.ron icons section)
-14. .env.example generation     (codegen::env_example::run)
-15. governor plugin emission    (codegen::governor_plugin::run)
-16. test scaffold emission      (codegen::test_scaffold::run, Filter::All)
+1.  schema generation           (diesel print-schema → src/database/schema.rs; preserves `pub use` lines in src/database/mod.rs)
+2.  enums generation            (codegen::enums::run — scans CREATE TYPE in migrations)
+3.  structs generation          (codegen::structs::run)
+4.  models generation           (codegen::models::run — emits the per-resource model layer + auto-conn impls + fluent query builder)
+5.  routines generation         (codegen::routines::run — per-verb stubs that wrap models, called by flows)
+6.  flows generation            (codegen::flows::run — auth check + Crank::none wrapping the routine)
+7.  http routes generation      (codegen::http_routes::run)
+8.  frontend types generation   (codegen::frontend_types::run)
+9.  theme codegen                (codegen::theme::run — emits tokens.css + primevue.ts from app.ron theme section)
+10. icons codegen                (codegen::icons::run — emits icons.ts from app.ron icons section)
+11. .env.example generation     (codegen::env_example::run)
+12. governor plugin emission    (codegen::governor_plugin::run)
 ```
 
-Steps 5/7/8/9/10/16 short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping").
+(Composables, vue components, crud pages, router, ws topics, test scaffold are opt-in via dedicated `blast gen <subcmd>` invocations once their pipeline slots land — see backlog.)
+
+Steps short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping"). Routines + flows additionally filter by `gen_level >= GenLevel::Route`.
 
 Implementation lives in `src/commands/gen_all.rs` as `pub fn run(args, config, sink, progress) -> BlastResult<Outcome>`. `Outcome` carries cumulative `steps_run`, `files_written`, `files_skipped`.
 
@@ -133,7 +132,7 @@ Steps (each step is a sub-module in `src/wizards/gen_resource/`):
 
 8. **Atomic write** — on confirm, `state::save_resource` writes `storage/blast/state/resources/<name>.ron` via the atomic `.tmp` + rename pattern (see `SPEC_STATE.md`).
 
-There is no `raw_rust` field in state files. If the TUI can't express something, the user writes Rust in `src/<layer>/custom/`. The layer split is the escape hatch.
+There is no `raw_rust` field in state files. If the TUI can't express something, the user writes Rust at the top of `src/<layer>/<resource>/` (anywhere outside `<layer>/generated/`). The two-tier user-owned/generated split is the escape hatch.
 
 ### `blast gen` (no args)
 
@@ -310,9 +309,9 @@ Outputs:
 ```
 src/flows/generated/<resource>/<verb>.test.rs   (per declared verb)
 src/transport/http/generated/<resource>.test.rs (one per resource with routes)
-tests/fixtures/<resource>.rs                    (fixture impl, one per resource)
-tests/fixtures/mod.rs                            (barrel of fixture modules)
-tests/common/mod.rs                              (shared `use catalyst::testing::*` + test_pool helper)
+tests/common/fixtures/<resource>.rs             (fixture impl, one per resource)
+tests/common/fixtures/mod.rs                    (barrel of fixture modules)
+tests/common/mod.rs                              (shared harness; `use canonical::*` rewritten to project name on scaffold)
 ```
 
 Every emitted file is an **opinionated stub**: imports, `#[tokio::test]` attribute, `run_in_test` wrapper, fixture call, and a placeholder assertion the user replaces.

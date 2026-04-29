@@ -159,12 +159,12 @@ pub async fn send(addr: &str) -> Result<(), MeltDown> {
 pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> {
     ctx.require_anonymous()?;
     let user = Crank::none()
-        .run(|| routines::users::create(ctx, &input))
+        .run(|| routines::auth::register::run(ctx, input.clone()))
         .await?;
     Crank::backoff(3, Duration::from_millis(500))
-        .run(|| routines::email::welcome::send(&user.email))
+        .run(|| routines::email::welcome::run(user.email.clone()))
         .await?;
-    Ok(user.into_public())
+    Ok(user)
 }
 ```
 

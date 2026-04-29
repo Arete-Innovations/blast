@@ -8,7 +8,7 @@ Apps DO NOT depend on `catalyst` as a Cargo dep. There is no `catalyst = { path 
 
 `templates/canonical/` is the single source of truth. The published `catalyst/` repo is an OUTPUT artifact regenerated from `blast new` at publish time; never edit it by hand.
 
-**Update model (end-user-time):** `blast vendor-update` (planned) re-walks the baked tree into an existing project, preserving `**/custom/` dirs and `storage/`, warning when framework files it would stomp have local edits. Because every project is a local copy, edits stick on the user's checkout unless they explicitly ask for an update.
+**Update model (end-user-time):** there is no `vendor-update` command. Framework upgrades are user-driven via `git diff` against upstream `blast/templates/canonical/` — user merges what they want into their fork. Each scaffolded app is a complete framework checkout, and edits stick on the user's checkout indefinitely.
 
 ## Inputs
 
@@ -131,40 +131,80 @@ src/structs/generated/users.rs
 
 src/structs/generated/mod.rs     (barrel — alphabetical re-exports)
 
-src/models/generated/users.rs    (legacy schema-only generator — slated for v2 rewrite)
-  - pub async fn list(conn, ...) -> Result<Vec<User>, MeltDown>
+src/models/generated/users.rs    (per-resource model layer — fluent builder + auto-conn impls + module fns)
+  - pub async fn list(conn, &ListQuery) -> Result<ListResponse<User>, MeltDown>
   - pub async fn get(conn, id) -> Result<User, MeltDown>
+  - pub async fn create(conn, &UserInsertable) -> Result<User, MeltDown>
   - pub async fn update(conn, id, &UserPatch) -> Result<User, MeltDown>
   - pub async fn delete(conn, id) -> Result<(), MeltDown>
+  - impl User { auto-conn `pub async fn list/get/create/update/delete` wrappers using `crate::database::acquire_conn()`; `query()`, `count()` shortcuts }
+  - pub struct UserQuery { fluent filter builder over `BoxedSelectStatement` }
+  - impl IntoFuture for UserQuery / UserQueryPaginated
+  - All Diesel calls use `.select(<User as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())` and `.returning(...)` on insert/update so column order is Selectable-driven, not tuple-position-driven.
+
+src/routines/generated/users/list.rs
+src/routines/generated/users/get.rs
+src/routines/generated/users/create.rs
+src/routines/generated/users/update.rs
+src/routines/generated/users/delete.rs
+  - Each contains: pub async fn run(ctx: &Ctx, args) -> Result<<UserPublic / ListResponse<UserPublic> / ()>, MeltDown>
+  - Owns `ctx.conn()`, calls `crate::models::generated::users::<verb>(&mut conn, ...)`, maps Row → Public via `.into()`
+    (and `.map(|row| row.into())` for List). Atomic capability — one file per verb. NO auth check (auth lives in flow).
+
+src/routines/generated/mod.rs   (top-level barrel listing each `pub mod <table>;`)
+src/routines/generated/users/mod.rs   (per-resource verb barrel)
 
 src/flows/generated/users/list.rs
 src/flows/generated/users/get.rs
 src/flows/generated/users/create.rs
 src/flows/generated/users/update.rs
 src/flows/generated/users/delete.rs
-  - Each contains: pub async fn run(ctx: &Ctx, input: ...) -> Result<Output, MeltDown>
-  - Auth enforcement is dispatched through `Ctx::require_admin()` / `Ctx::require_roles(&[...])`
-    per resource state hints (auth_required, scoped_to, admin_only, roles).
+  - Each contains: pub async fn run(ctx: &Ctx, args) -> Result<Output, MeltDown>
+  - Body is auth check (`ctx.require_session()?` / `require_any(&[Role::Admin, ...])?`) plus
+    `Crank::none().run(|| routines::generated::<r>::<verb>::run(ctx, args.clone())).await`
+  - AuthMode codegen: Public→none, AuthRequired→require_session, AdminOnly→require_any(&[Role::Admin]),
+    Roles([…])→require_any(&[Role::A, Role::B]) (PascalCase Role enum variants), ScopedTo(field)→require_session + TODO scope check.
 
 src/transport/http/generated/users.rs
-  - pub fn router() -> Router
-  - Route handlers: list_users, get_user, create_user, update_user, delete_user
-  - List handlers extract `catalyst::transport::http::list_query::ListQuery`
-    (page, page_size, `Sort` with `SortDirection`, filter map) and return
-    `catalyst::transport::http::list_query::ListResponse<UserPublic>`.
+  - pub fn router() -> Router<Ctx>
+  - Route handlers: list, get_one, create, update, delete_one
+  - List handlers extract `crate::structs::list_query::ListQuery` (params: ListQuery — uses its own
+    FromRequestParts impl, NOT `Query<ListQuery>`) and return
+    `Json<crate::structs::list_query::ListResponse<UserPublic>>`.
   - Each handler calls one flow only.
 
 src/transport/ws/generated/users.rs
-  - pub fn register_topics(relay: &mut catalyst::relay::Registry)
+  - pub fn register_topics(relay: &mut crate::transport::ws::Registry)
   - Topic enum derived from resource state ws_events
   - WsAuth stub trait impl (user fills in can_subscribe)
 
-src/flows/generated/mod.rs      (barrel)
+src/flows/generated/mod.rs      (top-level barrel — `pub mod <table>;` for each emitted resource)
 src/transport/http/generated/mod.rs
 src/transport/ws/generated/mod.rs
 ```
 
-`flows`, `http_routes`, `ws_topics` are emitted by **separate** Wave-3 codegen passes (`src/codegen/{flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`.
+`structs`, `models`, `routines`, `flows`, `http_routes`, `ws_topics` are emitted by **separate** codegen passes (`src/codegen/{structs/, models/, routines/, flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`. Pipeline order: `schema → enums → structs → models → routines → flows → http_routes → frontend_types → theme → icons → env_example → governor_plugin`.
+
+### Enum output (Postgres `CREATE TYPE` → Rust enum + Diesel impls)
+
+When user adds `CREATE TYPE my_status AS ENUM ('a', 'b', 'c');` to a migration, the `enums` codegen pass (`src/codegen/enums/`) detects it and emits a Role-shape Rust file:
+
+```
+src/structs/generated/enums/my_status.rs
+  - pub enum MyStatus { A, B, C }
+  - impl MyStatus { fn as_str() -> &'static str; fn parse(&str) -> Result<Self, MeltDown>; }
+  - impl FromSql<MyStatus, Pg> for MyStatus
+  - impl ToSql<MyStatus, Pg> for MyStatus
+  - sql_type tied to crate::database::schema::sql_types::MyStatus
+
+src/structs/generated/enums/mod.rs   (barrel — `pub mod my_status; pub use my_status::MyStatus;`)
+```
+
+`src/codegen/enums/scan.rs::scan_project_enums(project_root) -> ScanReport { enums: Vec<ParsedEnum>, duplicates }` parses `database/migrations/**/*.sql` for `CREATE TYPE ... AS ENUM (...)` declarations. The result is threaded as `&[ParsedEnum]` through downstream FE codegen passes (frontend_types, components, pages) so they can detect enum-typed fields and emit the appropriate TS string-literal-union and Vue Dropdown wiring.
+
+The Diesel `sql_types` marker struct lives in canonical's `src/database/schema.rs` (emitted by `diesel print-schema`) — `STRUCTS:22` build.rs lint exempts that file specifically so the marker can live there.
+
+Reference shape: canonical's hand-rolled `Role` enum at `src/structs/auth/role.rs` is the canonical example every codegen'd enum mirrors. E2E proof: `blast/tests/enum_codegen_e2e.rs` runs the full pipeline against a fixture migration.
 
 ### TS output
 
@@ -273,19 +313,21 @@ src/flows/generated/users/delete.test.rs
 
 src/transport/http/generated/users.test.rs    (per resource: oneshot request through full stack)
 
-tests/fixtures/users.rs                       (`impl Fixture for User` calling create flow)
-tests/fixtures/mod.rs                         (barrel re-exporting every fixture module)
-tests/common/mod.rs                           (shared `use catalyst::testing::*` + `test_pool` helper)
+tests/common/fixtures/users.rs                (`impl Fixture for User` calling create flow)
+tests/common/fixtures/mod.rs                  (barrel re-exporting every fixture module)
+tests/common/mod.rs                           (shared `use canonical::*` + harness/ctx helpers)
 ```
 
-Each scaffold consumes the catalyst testing harness shipped behind the `testing` Cargo feature:
+Each scaffold consumes the canonical test scaffolding at `tests/common/`. The `src/testing/` feature gate was killed in 2026-04-28 — tests are top-level integration binaries and pull harness via `mod common;` declaration.
 
-- `catalyst::testing::with_test_transaction` — always-rollback Postgres wrapper
-- `catalyst::testing::run_in_test` — composes the wrapper with a `TestCtxBuilder`
-- `catalyst::testing::TestCtx<'a>` — flow-shaped test context (conn + session)
-- `catalyst::testing::Fixture` trait + `catalyst::fixture!` macro — flow-driven fixture data
+- `tests/common/harness::with_test_transaction` — always-rollback Postgres wrapper
+- `tests/common/harness::run_in_test` — composes the wrapper with a `TestCtxBuilder`
+- `tests/common/ctx::TestCtx<'a>` — flow-shaped test context (conn + session)
+- `tests/common/fixtures::Fixture` trait + `fixture!` macro — flow-driven fixture data
 
-CLI surface: `blast gen test`, `blast gen test --flow <table>` or `<table>/<verb>`, `blast gen test --route <table>`. See `SPEC_BLAST_COMMANDS.md` and `catalyst/doc/SPEC_TESTING.md`.
+In a scaffolded user-app, `canonical` is rewritten to the project's package name at scaffold time (e.g. `use myapp::*` instead of `use canonical::*`).
+
+CLI surface: `blast gen test`, `blast gen test --flow <table>` or `<table>/<verb>`, `blast gen test --route <table>`. See `SPEC_BLAST_COMMANDS.md` and `templates/canonical/doc/SPEC_TESTING.md`.
 
 ### Vue component output
 
@@ -385,11 +427,11 @@ User-owned root dirs (`components/`, `composables/`, `pages/`, etc.) coexist wit
 - Any hand-edit to a file under `generated/` gets stomped next regen
 - `custom/` subtree is **never read, touched, deleted, or renamed** by Blast
 - `mod.rs` at each Rust layer re-exports both; Blast regenerates only the generated side
-- Vendored framework files are written once by `blast new`; `blast vendor-update` refreshes them
+- Vendored framework files are written once by `blast new`; user pulls upstream changes via git diff (no `vendor-update` command — killed)
 
 ## Rename Detection and Refusal
 
-When the user renames a resource (e.g. `User` → `Account`) via the TUI wizard, Blast greps `src/**/custom/` for the old symbol before writing the updated state file. If old symbols are found, Blast refuses (or loudly warns with file:line context) until the user resolves them manually. There is no magic AST patching — the layer split is intentional.
+When the user renames a resource (e.g. `User` → `Account`) via the TUI wizard, Blast greps user-owned files (everything outside `src/**/generated/`) for the old symbol before writing the updated state file. If old symbols are found, Blast refuses (or loudly warns with file:line context) until the user resolves them manually. There is no magic AST patching — the layer split is intentional.
 
 ## Regeneration Behavior
 
@@ -444,8 +486,8 @@ Migration path (if it gets painful): `quote!` + `syn` for AST-based generation. 
 
 ## What Blast Does NOT Parse
 
-- User's Rust source files (models/custom/, flows/custom/, anywhere)
-- User's Vue/TS source files (frontend/custom/)
+- User's Rust source files (anything outside `src/**/generated/`)
+- User's Vue/TS source files (anything outside `frontend/src/**/generated/`)
 - `Cargo.toml` of user's app (except for minimal name lookup in `blast new`)
 
 Blast reads: `storage/blast/state/*.ron` + `resources/*.ron` + `schema.rs` (Diesel output, considered stable format). Nothing else.
@@ -478,12 +520,12 @@ Blast reads: `storage/blast/state/*.ron` + `resources/*.ron` + `schema.rs` (Dies
 
 ## Anti-Patterns (for Blast maintainers)
 
-- Generating code that references non-generated paths. If user hasn't written `flows/custom/signup.rs`, don't emit an import for it.
-- Overwriting `mod.rs` that mixes generated + custom. Keep `mod.rs` files at the layer boundary simple: `pub mod generated; pub mod custom;` — never list individual files.
+- Generating code that references hand-written paths Blast can't see. Emit only `crate::<layer>::generated::*` references; if a user-owned module needs to be referenced, it's the user's job to wire that up.
+- Overwriting parent `mod.rs` files that mix generated + user-owned. Keep parent `mod.rs` simple: `pub mod generated;` plus user-owned siblings — Blast only writes the `generated/` subtree.
 - Emitting unstable output (iteration over HashMap without sorting). Always sort for determinism.
 - Assuming migration has been run. Always `blast gen schema` first, error if `schema.rs` is missing.
-- Emitting to `custom/` subdirs. Ever. Blast's generators must refuse to write there.
-- Reading `target/primer/` or `target/blueprint/` — those paths are gone. Read `storage/blast/state/`.
+- Writing outside `<layer>/generated/`. Ever. Blast's generators must refuse to write to user-owned paths.
+- Reading deprecated paths like `target/primer/` or `target/blueprint/` — those are gone. Read `storage/blast/state/`.
 - Emitting codegen without a state-hash marker in the file header.
 - Timestamps, random seeds, or env-var reads inside generator logic.
 - Reaching for the old string-constant emitter modules (`fe_runtime.rs`, `fe_runtime_composables.rs`, `fe_runtime_extras.rs`, `frontend_scaffold.rs`) — those ~1750 LOC of embedded string constants are gone as of Wave 10. Static FE framework files live in `blast/templates/canonical/frontend/` and are picked up by `include_dir!()`.

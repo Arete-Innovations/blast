@@ -87,30 +87,37 @@ A flow that does `Crank::none() → one routine call → map result` is still a 
 
 ## Generated Flow Shape
 
-For a resource declaring `list` with `auth_required`, `paginated`, `filtered_by: ["role"]`, Blast emits:
+For a resource declaring `list` with `AuthRequired` and a `ListQuery` body, Blast emits:
 
 ```rust
-use crate::{
-    crank::Crank,
-    meltdown::MeltDown,
-    routines,
-    structs::{generated::users::*, common::Pagination},
-    Ctx,
-};
+use crate::crank::Crank;
+use crate::meltdown::MeltDown;
+use crate::routines;
+use crate::structs::generated::users::*;
+use crate::Ctx;
 
 pub async fn run(
     ctx: &Ctx,
-    pagination: Pagination,
-    filters: UserListFilters,
-) -> Result<PaginatedList<UserPublic>, MeltDown> {
+    query: crate::structs::list_query::ListQuery,
+) -> Result<crate::structs::list_query::ListResponse<UserPublic>, MeltDown> {
     ctx.require_session()?;
     Crank::none()
-        .run(|| routines::generated::users::list(ctx, &pagination, &filters))
+        .run(|| routines::generated::users::list::run(ctx, query.clone()))
         .await
 }
 ```
 
-Generated flows are predictable, ~10-15 lines, regeneration-safe. They wrap exactly one generated routine under `Crank::none()` plus the resource's declared auth check.
+Generated flows are predictable, ~10-15 lines, regeneration-safe. They wrap exactly one generated routine under `Crank::none()` plus the resource's declared auth check. AuthMode codegen → emit:
+
+| AuthMode | emitted check |
+|----------|---------------|
+| `Public` | (none) |
+| `AuthRequired` | `ctx.require_session()?;` |
+| `AdminOnly` | `ctx.require_any(&[Role::Admin])?;` (with `use crate::structs::auth::Role;`) |
+| `Roles([…])` | `ctx.require_any(&[Role::A, Role::B])?;` (PascalCase variants, sorted) |
+| `ScopedTo(field)` | `ctx.require_session()?;` + TODO comment about per-row scope check |
+
+The closure clones args (e.g. `query.clone()`, `input.clone()`, `patch.clone()`) so `Crank` can re-fire on retry. Every codegen'd `Insertable`/`Patch`/`ListQuery` derives `Clone`. `id: i64` is `Copy`, no clone needed.
 
 ## Custom Flow Shape
 
@@ -121,7 +128,7 @@ use crate::{
     crank::Crank,
     meltdown::MeltDown,
     routines,
-    structs::users::*,
+    structs::auth::*,
     Ctx,
 };
 
@@ -136,14 +143,17 @@ pub async fn run(ctx: &Ctx, input: SignupInput) -> Result<UserPublic, MeltDown> 
     ctx.require_anonymous()?;
 
     let user = Crank::none()
-        .run(|| routines::users::create(ctx, &input))
+        .run(|| routines::auth::register::run(ctx, RegisterInput {
+            email: input.email.clone(),
+            password: input.password.clone(),
+        }))
         .await?;
 
     Crank::backoff(3, Duration::from_millis(500))
-        .run(|| routines::email::welcome::send(&user.email))
+        .run(|| routines::email::welcome::send(user.email.clone()))
         .await?;
 
-    Ok(user.into_public())
+    Ok(user)
 }
 ```
 
@@ -158,19 +168,19 @@ pub async fn run(ctx: &Ctx, input: CheckoutInput) -> Result<Receipt, MeltDown> {
     ctx.require_session()?;
 
     let charge = Crank::backoff(3, Duration::from_millis(200))
-        .run(|| routines::payments::charge(&input.card, input.amount))
+        .run(|| routines::payments::charge::run(input.card.clone(), input.amount))
         .await?;
 
     let sub = Crank::none()
-        .run(|| routines::subscriptions::create(ctx, &input, &charge))
+        .run(|| routines::subscriptions::create::run(ctx, input.clone(), charge.clone()))
         .await?;
 
     Crank::backoff(2, Duration::from_millis(500))
-        .run(|| routines::email::send_receipt(&sub.email, &charge))
+        .run(|| routines::email::send_receipt::run(sub.email.clone(), charge.clone()))
         .await?;
 
     Crank::none()
-        .run(|| routines::users::update_tier(ctx, sub.user_id))
+        .run(|| routines::users::update_tier::run(ctx, sub.user_id))
         .await?;
 
     Ok(Receipt::from((charge, sub)))
@@ -244,16 +254,16 @@ Build one `flows::signup` that chains routines.
 
 ```rust
 pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
-    routines::users::list(ctx).await
+    routines::generated::users::list::run(ctx, query).await
 }
 ```
 
 Banned. Wrap in `Crank::none()` so the policy is visible:
 
 ```rust
-pub async fn run(ctx: &Ctx) -> Result<Vec<UserPublic>, MeltDown> {
+pub async fn run(ctx: &Ctx, query: ListQuery) -> Result<ListResponse<UserPublic>, MeltDown> {
     Crank::none()
-        .run(|| routines::users::list(ctx))
+        .run(|| routines::generated::users::list::run(ctx, query.clone()))
         .await
 }
 ```

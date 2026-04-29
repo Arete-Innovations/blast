@@ -38,6 +38,7 @@ const STEP_SCHEMA: &str = "schema generation";
 const STEP_ENUMS: &str = "enums generation";
 const STEP_STRUCTS: &str = "structs generation";
 const STEP_MODELS: &str = "models generation";
+const STEP_ROUTINES: &str = "routines generation";
 const STEP_FLOWS: &str = "flows generation";
 const STEP_HTTP_ROUTES: &str = "http routes generation";
 const STEP_FRONTEND_TYPES: &str = "frontend types generation";
@@ -64,6 +65,7 @@ pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut 
     run_enums_step(&args.project_root, sink, progress, &mut outcome)?;
     run_structs_step(&args.project_root, sink, progress, &mut outcome)?;
     run_models_step(&args.project_root, config, sink, progress, &mut outcome)?;
+    run_routines_step(&args.project_root, sink, progress, &mut outcome)?;
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, sink, progress, &mut outcome)?;
     run_frontend_types_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -103,6 +105,7 @@ fn warn_resource_orphans(project_root: &Path, resource: &ResourceState, sink: &m
 
     let checks: &[(GenLevel, PathBuf, &'static str)] = &[
         (GenLevel::Model, project_root.join("src").join("models").join("generated").join(format!("{table}.rs")), "models/generated"),
+        (GenLevel::Route, project_root.join("src").join("routines").join("generated").join(table), "routines/generated"),
         (GenLevel::Route, project_root.join("src").join("flows").join("generated").join(table), "flows/generated"),
         (
             GenLevel::Route,
@@ -231,6 +234,26 @@ fn run_models_step(project_root: &PathBuf, _config: &mut Config, sink: &mut dyn 
             let reason = err.to_string();
             progress.step_fail(STEP_MODELS, &reason);
             sink.error(format!("{}: {}", STEP_MODELS, reason));
+            Err(err)
+        }
+    }
+}
+
+fn run_routines_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::routines::run(project_root, sink, progress) {
+        Ok(report) => {
+            for path in &report.written {
+                sink.info(format!("wrote {}", path.display()));
+            }
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_ROUTINES, &reason);
+            sink.error(format!("{}: {}", STEP_ROUTINES, reason));
             Err(err)
         }
     }
