@@ -54,7 +54,11 @@ blast gen structs                 # schema.rs + resource state → src/structs/g
 blast gen models                  # schema.rs + resource state → src/models/generated/
 blast gen routines                # resource state → src/routines/generated/<r>/<verb>.rs (each wraps the model fn, called by flows)
 blast gen flows                   # resource state → src/flows/generated/ (each verb wraps the routine in Crank::none() + auth check)
-blast gen frontend                # resource state + app state → frontend/src/generated/
+blast gen types [<resource>]     # resource state → frontend/src/generated/types/<r>.ts
+blast gen api [<resource>]       # resource state → frontend/src/generated/api/<r>.ts (typed fetch wrappers)
+blast gen composables [<resource>]  # resource state → frontend/src/generated/composables/<r>.ts (use<R>List, use<R>, useCreate<R>, useUpdate<R>, useDelete<R>)
+blast gen components [<resource>] # resource state → frontend/src/components/generated/forms/<r>/{CreateForm,EditForm}.vue
+blast gen pages [<resource>]     # resource state → frontend/src/pages/generated/<r>/{ListPage,DetailPage,CreatePage,EditPage}.vue
 blast gen env-example             # app state env spec → .env.example
 blast gen governor-plugin         # app state fe_lint section → frontend/scripts/governor-plugin.js + .rule_violations_whitelist
 blast gen fe-scaffold             # seed tokens.css, base.css, primevue.ts (idempotent — first-run seed)
@@ -80,15 +84,17 @@ All `blast gen` targets read from `storage/blast/state/` (see `SPEC_STATE.md`). 
 6.  flows generation            (codegen::flows::run — auth check + Crank::none wrapping the routine)
 7.  http routes generation      (codegen::http_routes::run)
 8.  frontend types generation   (codegen::frontend_types::run)
-9.  theme codegen                (codegen::theme::run — emits tokens.css + primevue.ts from app.ron theme section)
-10. icons codegen                (codegen::icons::run — emits icons.ts from app.ron icons section)
-11. .env.example generation     (codegen::env_example::run)
-12. governor plugin emission    (codegen::governor_plugin::run)
+9.  frontend api generation     (codegen::frontend_api::run — typed fetch wrappers per resource)
+10. composables generation      (codegen::composables::run — Vue 3 reactive composables per resource: list/get/create/update/delete)
+11. theme codegen                (codegen::theme::run — emits tokens.css + primevue.ts from app.ron theme section)
+12. icons codegen                (codegen::icons::run — emits icons.ts from app.ron icons section)
+13. .env.example generation     (codegen::env_example::run)
+14. governor plugin emission    (codegen::governor_plugin::run)
 ```
 
-(Composables, vue components, crud pages, router, ws topics, test scaffold are opt-in via dedicated `blast gen <subcmd>` invocations once their pipeline slots land — see backlog.)
+(Vue components, crud pages, router, ws topics, test scaffold are opt-in via dedicated `blast gen <subcmd>` invocations once their pipeline slots land — see backlog.)
 
-Steps short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping"). Routines + flows additionally filter by `gen_level >= GenLevel::Route`.
+Steps short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping"). Routines + flows additionally filter by `gen_level >= GenLevel::Route`. Frontend types/api filter by `gen_level >= GenLevel::Types`. Composables filter by `gen_level >= GenLevel::Composables` (the default for new resources).
 
 Implementation lives in `src/commands/gen_all.rs` as `pub fn run(args, config, sink, progress) -> BlastResult<Outcome>`. `Outcome` carries cumulative `steps_run`, `files_written`, `files_skipped`.
 

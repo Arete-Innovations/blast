@@ -70,7 +70,7 @@ Each resource declares a `gen_level` in its RON state file controlling how far c
 | `Model` | `models/generated/<r>.rs` (Diesel CRUD + cross-resource read helpers) | persistence layer; user owns transport |
 | `Route` | `routines/generated/<r>/{list,get,create,update,delete}.rs` + `flows/generated/<r>/...` (Crank::none()) + `transport/http/generated/<r>/...` | full BE CRUD via HTTP; no FE help |
 | `Types` | `frontend/src/types/generated/<r>.ts` (TS interfaces mirroring Rust DTOs) + `frontend/src/api/generated/<r>.ts` (typed fetch wrappers) | BE + TS-typed API client; user writes own UI |
-| `Composables` | `frontend/src/composables/generated/<r>.ts` (`useUsersList`, `useUser`, `useUserCreate`, `useUserUpdate`, `useUserDelete`, `useUserForm`) + `frontend/src/validators/generated/<r>.ts` (TS validators mirroring Rust ones) | reactive Vue logic ready; user writes templates |
+| `Composables` | `frontend/src/generated/composables/<r>.ts` (`useUsersList`, `useUser`, `useCreateUser`, `useUpdateUser`, `useDeleteUser`) + `frontend/src/generated/composables/index.ts` (barrel) | reactive Vue logic ready; user writes templates |
 | `Components` | `frontend/src/components/generated/forms/<r>/{CreateForm,EditForm}.vue` (PrimeVue form components wired to composables) | user composes own page layouts using generated forms |
 | `Pages` | `frontend/src/pages/generated/<r>/{ListPage,DetailPage,CreatePage,EditPage}.vue` + `frontend/src/router/generated/routes.ts` (auto-route table updated) + `frontend/src/nav/generated/menu.ts` (sidebar entry added) | full admin-style CRUD UI shipped — opt-in |
 
@@ -183,7 +183,7 @@ src/transport/http/generated/mod.rs
 src/transport/ws/generated/mod.rs
 ```
 
-`structs`, `models`, `routines`, `flows`, `http_routes`, `ws_topics` are emitted by **separate** codegen passes (`src/codegen/{structs/, models/, routines/, flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`. Pipeline order: `schema → enums → structs → models → routines → flows → http_routes → frontend_types → theme → icons → env_example → governor_plugin`.
+`structs`, `models`, `routines`, `flows`, `http_routes`, `ws_topics` are emitted by **separate** codegen passes (`src/codegen/{structs/, models/, routines/, flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`. Pipeline order: `schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → theme → icons → env_example → governor_plugin`.
 
 ### Enum output (Postgres `CREATE TYPE` → Rust enum + Diesel impls)
 
@@ -224,10 +224,21 @@ frontend/src/generated/api/users.ts
   - deleteUser(id) -> Promise<Result>
 
 frontend/src/generated/composables/users.ts
-  - useUsers({ poll?, live?, filter? })
-  - useUser(id)
-  - useUpdateUser()
-  - useDeleteUser()
+  - useUsersList(opts?: UseListOpts)            // returns { data, error, loading, refetch, page, pageSize, sort, filter, total, total_pages }
+                                                // tier dispatch via opts: {} static, { poll: ms } polled (visibility-pause), { live: true } WS
+  - useUser(id: Ref<number>)                    // single-item composable; abort controller threaded; watches id
+  - useCreateUser()                             // returns async (input: UserInsertable) => { data?, error? }
+  - useUpdateUser()                             // returns async (id, patch: UserPatch) => { data?, error? }
+  - useDeleteUser()                             // returns async (id) => { error? }
+
+frontend/src/generated/composables/index.ts     // barrel re-exports per resource
+  - export { useUsersList, useUser, useCreateUser, useUpdateUser, useDeleteUser } from './users'
+
+Composables thread URL state via `useUrlListState()` from `@/composables/url` (hand-written
+primitive — never re-emitted by Blast). They never own local refs for page/sort/filter
+(LocalListState Governor rule). Mutations are non-optimistic — caller awaits the result
+and decides what to do with it. Lifecycle: onMounted triggers initial fetch, onUnmounted
+aborts in-flight + clears interval + removes WS subscription.
 
 frontend/src/generated/ws/client.ts
   - Shared WsClient singleton
@@ -443,13 +454,16 @@ When the user renames a resource (e.g. `User` → `Account`) via the TUI wizard,
 - `blast gen structs` — reads schema.rs + resource state files; writes `src/structs/generated/`
 - `blast gen models` — reads schema.rs + resource state files; writes `src/models/generated/` (legacy generator slated for v2 rewrite)
 - `blast gen flows` — reads resource state files; writes `src/flows/generated/`
-- `blast gen frontend` — reads schema.rs + resource state files + app.ron; writes `frontend/src/generated/` (types, API clients, composables, TS validators, admin clients)
+- `blast gen types [<resource>]` — reads schema.rs + resource state files; writes `frontend/src/generated/types/<r>.ts` (TS interfaces mirroring Rust DTOs)
+- `blast gen api [<resource>]` — reads schema.rs + resource state files; writes `frontend/src/generated/api/<r>.ts` (typed fetch wrappers, `listX` returns `{ data, error, total, total_pages, page, page_size }`)
+- `blast gen composables [<resource>]` — reads schema.rs + resource state files; writes `frontend/src/generated/composables/<r>.ts` (filter `gen_level >= GenLevel::Composables`)
+- `blast gen components [<resource>]` — reads resource state files; writes `frontend/src/components/generated/forms/<r>/{CreateForm,EditForm}.vue` consuming the composable mutation factories
 - `blast gen theme` — reads `app.ron` (`ThemeConfig`); writes `frontend/src/generated/styles/tokens.css` + `frontend/src/generated/plugins/primevue.ts` (hash-marker keyed off `app.ron`)
 - `blast gen icons` — reads `app.ron` (`IconConfig`); writes `frontend/src/generated/icons.ts` (hash-marker keyed off `app.ron`)
 - `blast gen env-example` — reads app.ron env spec; writes `.env.example`
 - `blast gen governor-plugin` — reads app.ron fe_lint section; writes `frontend/scripts/governor-plugin.js` + `.rule_violations_whitelist`
 - `blast gen test [--flow|--route]` — reads resource state files; scaffolds `*.test.rs` per flow + per route; idempotent on existing files
-- `blast gen all` — full pipeline; step order: schema → structs → models → flows → http_routes → frontend → ws_topics → vue_components → theme → icons → env_example → governor_plugin → test_scaffolds. See `SPEC_BLAST_COMMANDS.md` for the exact step list.
+- `blast gen all` — full pipeline; step order: schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → theme → icons → env_example → governor_plugin. See `SPEC_BLAST_COMMANDS.md` for the exact step list. Vue components and CRUD pages are opt-in via `blast gen components` / `blast gen pages`.
 
 **Hard order:** `schema.rs` must exist before resource state can be validated (column references checked). Resource state must exist before structs/models/flows can generate. `blast gen all` enforces this implicitly via step ordering; individual targets fail loudly if their prerequisites are missing.
 
