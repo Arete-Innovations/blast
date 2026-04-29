@@ -188,6 +188,12 @@ pub enum GenCmd {
         resource: Option<String>,
     },
 
+    #[command(about = "Emit per-resource Vue 3 composables into frontend/src/generated/composables/")]
+    Composables {
+        #[arg(value_name = "RESOURCE")]
+        resource: Option<String>,
+    },
+
     #[command(about = "Emit per-resource Vue CRUD page scaffolds into frontend/src/pages/generated/<resource>/")]
     Pages {
         #[arg(value_name = "RESOURCE")]

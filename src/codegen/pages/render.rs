@@ -38,10 +38,11 @@ pub fn build_list_page(r: &ResourceState) -> String {
     let has_update = r.verbs.contains_key(&Verb::Update);
     let has_delete = r.verbs.contains_key(&Verb::Delete);
 
-    let mut delete_imports = String::new();
+    let mut composable_imports: Vec<String> = vec![format!("use{plural}List")];
     if has_delete {
-        delete_imports.push_str(&format!("import {{ delete{stem} }} from '@/generated/api/{table}'\n"));
+        composable_imports.push(format!("useDelete{stem}"));
     }
+    let composable_import_line = format!("import {{ {names} }} from '@/generated/composables/{table}'\n", names = composable_imports.join(", "));
 
     let mut header_actions = String::new();
     if has_create {
@@ -87,34 +88,37 @@ pub fn build_list_page(r: &ResourceState) -> String {
         String::new()
     };
 
+    let delete_setup = if has_delete {
+        format!("const delete_one = useDelete{stem}()\n")
+    } else {
+        String::new()
+    };
+
     let delete_handler = if has_delete {
         format!(
-            "async function on_delete(id: number): Promise<void> {{\n  if (!window.confirm('Delete this {table} record?')) return\n  const result = await delete{stem}(id)\n  if (result.error !== null) {{\n    \
-             error_message.value = result.error.error.message\n    return\n  }}\n  await load(last_event.value)\n}}\n",
+            "async function on_delete(id: number): Promise<void> {{\n  if (!window.confirm('Delete this {table} record?')) {{\n    return\n  }}\n  const result = await delete_one(id)\n  if (result.error !== undefined) \
+             {{\n    error_message.value = result.error.error.message\n    return\n  }}\n  await refetch()\n}}\n",
             table = table,
-            stem = stem,
         )
     } else {
         String::new()
     };
 
     format!(
-        "<script setup lang=\"ts\">\nimport {{ ref }} from 'vue'\nimport DataTable from 'primevue/datatable'\nimport Column from 'primevue/column'\nimport Button from 'primevue/button'\nimport {{ list{plural} }} from \
-         '@/generated/api/{table}'\n{delete_imports}import type {{ {stem}Public }} from '@/generated/types/{table}'\n\ninterface LazyEvent {{\nfirst?: number\nrows?: number\nsortField?: string | null\nsortOrder?: \
-         number | null\nfilters?: {{ [key: string]: {{ value: unknown; matchMode?: string }} }}\n}}\n\nconst items = ref<{stem}Public[]>([])\nconst total_records = ref<number>(0)\nconst loading = \
-         ref<boolean>(false)\nconst error_message = ref<string | null>(null)\nconst last_event = ref<LazyEvent>({{ first: 0, rows: 25 }})\n\nfunction build_sort(event: LazyEvent): string | null {{\nconst field = \
-         event.sortField\nif (field === null || field === undefined) return null\nconst order = event.sortOrder === undefined || event.sortOrder === null ? 1 : event.sortOrder\nreturn order < 0 ? `-${{field}}` : \
-         field\n}}\n\nfunction build_filter(event: LazyEvent): {{ [key: string]: string | number | boolean | null }} | null {{\nif (!event.filters) return null\nconst out: {{ [key: string]: string | number | boolean | \
-         null }} = {{}}\nfor (const [key, meta] of Object.entries(event.filters)) {{\nif (meta === undefined || meta === null) continue\nconst value = meta.value\nif (value === null || value === undefined || value === \
-         '') continue\nout[key] = value as string | number | boolean | null\n}}\nreturn Object.keys(out).length > 0 ? out : null\n}}\n\nasync function load(event: LazyEvent): Promise<void> {{\nloading.value = \
-         true\nerror_message.value = null\nlast_event.value = event\nconst first = event.first === undefined ? 0 : event.first\nconst rows = event.rows === undefined ? 25 : event.rows\nconst page = Math.floor(first / \
-         Math.max(rows, 1)) + 1\nconst result = await list{plural}({{\npage,\npage_size: rows,\nsort: build_sort(event),\nfilter: build_filter(event),\n}})\nloading.value = false\nif (result.error !== null) \
-         {{\nerror_message.value = result.error.error.message\nitems.value = []\ntotal_records.value = 0\nreturn\n}}\nitems.value = result.data === null ? [] : result.data\ntotal_records.value = \
-         items.value.length\n}}\n\n{delete_handler}</script>\n\n<template>\n<section class=\"{table}-list-page\">\n<header class=\"{table}-list-header\">\n<h1 \
-         class=\"{table}-list-title\">{label}</h1>\n{header_actions}    </header>\n<div v-if=\"error_message !== null\" class=\"{table}-list-error\" role=\"alert\">\n{{{{ error_message \
-         }}}}\n</div>\n<DataTable\n:value=\"items\"\n:loading=\"loading\"\nlazy\npaginator\n:rows=\"25\"\n:rows-per-page-options=\"[10, 25, 50, \
-         100]\"\n:total-records=\"total_records\"\n:first=\"0\"\ndata-key=\"id\"\nstriped-rows\nremovable-sort\nfilter-display=\"row\"\n@page=\"load\"\n@sort=\"load\"\n@filter=\"load\"\n@load=\"load\"\n>\\
-         n{columns_html}\n{actions_column}    </DataTable>\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-list-page {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-lg);\npadding: \
+        "<script setup lang=\"ts\">\nimport {{ ref }} from 'vue'\nimport DataTable from 'primevue/datatable'\nimport Column from 'primevue/column'\nimport Button from \
+         'primevue/button'\n{composable_import_line}import type {{ {stem}Public }} from '@/generated/types/{table}'\n\ninterface LazyEvent {{\nfirst?: number\nrows?: number\nsortField?: string | null\nsortOrder?: number \
+         | null\nfilters?: {{ [key: string]: {{ value: unknown; matchMode?: string }} }}\n}}\n\nconst {{ data, error, loading, refetch, page, pageSize, sort, filter, total }} = use{plural}List()\nconst error_message = \
+         ref<string | null>(null)\n{delete_setup}\nfunction build_sort_string(event: LazyEvent): string {{\nconst field = event.sortField\nif (field === null || field === undefined) {{\n  return ''\n}}\nconst order = \
+         event.sortOrder === undefined || event.sortOrder === null ? 1 : event.sortOrder\nreturn order < 0 ? `-${{field}}` : `+${{field}}`\n}}\n\nfunction build_filter_map(event: LazyEvent): {{ [key: string]: string \
+         }} {{\nconst out: {{ [key: string]: string }} = {{}}\nif (event.filters === undefined) {{\n  return out\n}}\nfor (const [key, meta] of Object.entries(event.filters)) {{\nif (meta === undefined || meta === null) \
+         {{\n  continue\n}}\nconst value = meta.value\nif (value === null || value === undefined || value === '') {{\n  continue\n}}\nout[key] = String(value)\n}}\nreturn out\n}}\n\nfunction on_table_event(event: \
+         LazyEvent): void {{\nconst first = event.first === undefined ? 0 : event.first\nconst rows = event.rows === undefined ? pageSize.value : event.rows\nconst next_page = Math.floor(first / Math.max(rows, 1)) + \
+         1\npage.value = next_page\npageSize.value = rows\nsort.value = build_sort_string(event)\nfilter.value = build_filter_map(event)\n}}\n\n{delete_handler}</script>\n\n<template>\n<section \
+         class=\"{table}-list-page\">\n<header class=\"{table}-list-header\">\n<h1 class=\"{table}-list-title\">{label}</h1>\n{header_actions}    </header>\n<div v-if=\"error_message !== null\" \
+         class=\"{table}-list-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div v-else-if=\"error !== null\" class=\"{table}-list-error\" role=\"alert\">\n{{{{ error.error.message \
+         }}}}\n</div>\n<DataTable\n:value=\"data === null ? [] : data\"\n:loading=\"loading\"\nlazy\npaginator\n:rows=\"pageSize\"\n:rows-per-page-options=\"[10, 25, 50, 100]\"\n:total-records=\"total\"\n:first=\"(page - \
+         1) * pageSize\"\ndata-key=\"id\"\nstriped-rows\nremovable-sort\nfilter-display=\"row\"\n@page=\"on_table_event\"\n@sort=\"on_table_event\"\n@filter=\"on_table_event\"\n>\n{columns_html}\n{actions_column}    \
+         </DataTable>\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-list-page {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-lg);\npadding: \
          var(--app-space-lg);\n}}\n.{table}-list-header {{\ndisplay: flex;\nalign-items: baseline;\njustify-content: space-between;\ngap: var(--app-space-md);\n}}\n.{table}-list-title {{\nmargin: 0;\nfont-size: \
          var(--app-text-lg);\nfont-weight: var(--app-font-weight-semibold);\n}}\n.{table}-list-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n.{table}-list-actions {{\ndisplay: \
          inline-flex;\ngap: var(--app-space-sm);\nalign-items: center;\n}}\n.{table}-list-action {{\ncolor: var(--p-primary-color);\ntext-decoration: underline;\n}}\n}}\n</style>\n",
@@ -124,7 +128,8 @@ pub fn build_list_page(r: &ResourceState) -> String {
         label = label,
         columns_html = columns_html,
         actions_column = actions_column,
-        delete_imports = delete_imports,
+        composable_import_line = composable_import_line,
+        delete_setup = delete_setup,
         delete_handler = delete_handler,
         header_actions = header_actions,
     )
@@ -165,14 +170,12 @@ pub fn build_detail_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<script setup lang=\"ts\">\nimport {{ onMounted, ref, watch }} from 'vue'\nimport Button from 'primevue/button'\nimport {{ get{stem} }} from '@/generated/api/{table}'\nimport type {{ {stem}Public }} from \
-         '@/generated/types/{table}'\n\nconst props = defineProps<{{ id: number }}>()\n\nconst item = ref<{stem}Public | null>(null)\nconst loading = ref<boolean>(false)\nconst error_message = ref<string | \
-         null>(null)\n\nfunction format_value(value: unknown): string {{\nif (value === null || value === undefined) return '—'\nif (typeof value === 'object') return JSON.stringify(value)\nreturn \
-         String(value)\n}}\n\nasync function load(id: number): Promise<void> {{\nloading.value = true\nerror_message.value = null\nconst result = await get{stem}(id)\nloading.value = false\nif (result.error !== null) \
-         {{\nerror_message.value = result.error.error.message\nreturn\n}}\nitem.value = result.data\n}}\n\nonMounted(() => {{ void load(props.id) }})\nwatch(() => props.id, (next) => {{ void load(next) \
-         }})\n</script>\n\n<template>\n<section class=\"{table}-detail-page\">\n<header class=\"{table}-detail-header\">\n<h1 class=\"{table}-detail-title\">{label}</h1>\n{edit_link}    </header>\n<div \
-         v-if=\"error_message !== null\" class=\"{table}-detail-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div v-if=\"loading\" class=\"{table}-detail-loading\">Loading…</div>\n<dl v-else-if=\"item !== \
-         null\" class=\"{table}-detail-grid\">\n{rows_html}\n</dl>\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-detail-page {{\ndisplay: flex;\nflex-direction: column;\ngap: \
+        "<script setup lang=\"ts\">\nimport {{ computed }} from 'vue'\nimport Button from 'primevue/button'\nimport {{ use{stem} }} from '@/generated/composables/{table}'\nimport type {{ {stem}Public }} from \
+         '@/generated/types/{table}'\n\nconst props = defineProps<{{ id: number }}>()\nconst id_ref = computed<number>(() => props.id)\nconst {{ data: item, error, loading }} = use{stem}(id_ref)\n\nfunction \
+         format_value(value: unknown): string {{\nif (value === null || value === undefined) {{\n  return '—'\n}}\nif (typeof value === 'object') {{\n  return JSON.stringify(value)\n}}\nreturn \
+         String(value)\n}}\n</script>\n\n<template>\n<section class=\"{table}-detail-page\">\n<header class=\"{table}-detail-header\">\n<h1 class=\"{table}-detail-title\">{label}</h1>\n{edit_link}    </header>\n<div \
+         v-if=\"error !== null\" class=\"{table}-detail-error\" role=\"alert\">\n{{{{ error.error.message }}}}\n</div>\n<div v-if=\"loading && item === null\" class=\"{table}-detail-loading\">Loading…</div>\n<dl \
+         v-else-if=\"item !== null\" class=\"{table}-detail-grid\">\n{rows_html}\n</dl>\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-detail-page {{\ndisplay: flex;\nflex-direction: column;\ngap: \
          var(--app-space-lg);\npadding: var(--app-space-lg);\n}}\n.{table}-detail-header {{\ndisplay: flex;\nalign-items: baseline;\njustify-content: space-between;\n}}\n.{table}-detail-title {{\nmargin: \
          0;\nfont-size: var(--app-text-lg);\n}}\n.{table}-detail-grid {{\ndisplay: grid;\ngrid-template-columns: minmax(8rem, max-content) 1fr;\ngap: var(--app-space-sm) var(--app-space-md);\nmargin: \
          0;\n}}\n.{table}-detail-row {{\ndisplay: contents;\n}}\n.{table}-detail-label {{\nfont-weight: var(--app-font-weight-semibold);\ncolor: var(--p-text-muted-color);\n}}\n.{table}-detail-value {{\nmargin: \
@@ -221,16 +224,14 @@ pub fn build_edit_page(r: &ResourceState) -> String {
     };
 
     format!(
-        "<script setup lang=\"ts\">\nimport {{ onMounted, ref, watch }} from 'vue'\nimport {{ useRouter }} from 'vue-router'\nimport EditForm from '@/components/generated/forms/{table}/EditForm.vue'\nimport {{ \
-         get{stem} }} from '@/generated/api/{table}'\nimport type {{ {stem}Public }} from '@/generated/types/{table}'\n\nconst props = defineProps<{{ id: number }}>()\nconst router = useRouter()\n\nconst entity = \
-         ref<{stem}Public | null>(null)\nconst loading = ref<boolean>(false)\nconst error_message = ref<string | null>(null)\n\nasync function load(): Promise<void> {{\nloading.value = true\nerror_message.value = \
-         null\nconst result = await get{stem}(props.id)\nloading.value = false\nif (result.error !== null) {{\nerror_message.value = result.error.error.message\nreturn\n}}\nentity.value = result.data\n}}\n\nasync \
-         function on_updated(): Promise<void> {{\n{nav_after}}}\n\nfunction on_cancel(): void {{\nrouter.back()\n}}\n\nonMounted(load)\nwatch(() => props.id, load)\n</script>\n\n<template>\n<section \
-         class=\"{table}-edit-page\">\n<header class=\"{table}-edit-header\">\n<h1 class=\"{table}-edit-title\">Edit {label_singular} #{{{{ id }}}}</h1>\n</header>\n<div v-if=\"error_message !== null\" \
-         class=\"{table}-edit-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div v-if=\"loading\" class=\"{table}-edit-loading\">Loading…</div>\n<EditForm v-else-if=\"entity !== null\" :entity=\"entity\" \
-         @updated=\"on_updated\" @cancel=\"on_cancel\" />\n</section>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-edit-page {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-lg);\npadding: \
-         var(--app-space-lg);\nmax-width: 48rem;\n}}\n.{table}-edit-title {{\nmargin: 0;\nfont-size: var(--app-text-lg);\n}}\n.{table}-edit-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, \
-         #b00020));\n}}\n}}\n</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ computed }} from 'vue'\nimport {{ useRouter }} from 'vue-router'\nimport EditForm from '@/components/generated/forms/{table}/EditForm.vue'\nimport {{ use{stem} }} from \
+         '@/generated/composables/{table}'\nimport type {{ {stem}Public }} from '@/generated/types/{table}'\n\nconst props = defineProps<{{ id: number }}>()\nconst router = useRouter()\nconst id_ref = \
+         computed<number>(() => props.id)\nconst {{ data: entity, error, loading }} = use{stem}(id_ref)\n\nasync function on_updated(): Promise<void> {{\n{nav_after}}}\n\nfunction on_cancel(): void \
+         {{\nrouter.back()\n}}\n</script>\n\n<template>\n<section class=\"{table}-edit-page\">\n<header class=\"{table}-edit-header\">\n<h1 class=\"{table}-edit-title\">Edit {label_singular} #{{{{ id \
+         }}}}</h1>\n</header>\n<div v-if=\"error !== null\" class=\"{table}-edit-error\" role=\"alert\">\n{{{{ error.error.message }}}}\n</div>\n<div v-if=\"loading && entity === null\" \
+         class=\"{table}-edit-loading\">Loading…</div>\n<EditForm v-else-if=\"entity !== null\" :entity=\"entity\" @updated=\"on_updated\" @cancel=\"on_cancel\" />\n</section>\n</template>\n\n<style scoped>\n@layer app \
+         {{\n.{table}-edit-page {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-lg);\npadding: var(--app-space-lg);\nmax-width: 48rem;\n}}\n.{table}-edit-title {{\nmargin: 0;\nfont-size: \
+         var(--app-text-lg);\n}}\n.{table}-edit-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         label_singular = label_singular(&label),
@@ -397,14 +398,14 @@ mod tests {
     }
 
     #[test]
-    fn list_page_uses_lazy_mode_and_list_api() {
+    fn list_page_uses_lazy_mode_and_composable() {
         let r = synth_resource_full_crud();
         let body = build_list_page(&r);
         assert!(body.contains("lazy"), "DataTable must be lazy");
-        assert!(body.contains("listUsers"), "must call listUsers API");
-        assert!(body.contains("page,"), "must pass page");
-        assert!(body.contains("page_size: rows"), "must pass page_size");
-        assert!(body.contains("`-${field}`"), "sort must format with leading dash");
+        assert!(body.contains("useUsersList"), "must call useUsersList composable");
+        assert!(body.contains("from '@/generated/composables/users'"), "must import from composables");
+        assert!(!body.contains("from '@/generated/api/users'"), "must NOT import directly from api");
+        assert!(body.contains("`-${field}`") || body.contains("`-${{field}}`"), "sort must format with leading dash");
     }
 
     #[test]
@@ -426,9 +427,10 @@ mod tests {
     fn detail_page_renders_field_grid() {
         let r = synth_resource_full_crud();
         let body = build_detail_page(&r);
-        assert!(body.contains("getUser"));
+        assert!(body.contains("useUser"), "must use useUser composable");
         assert!(body.contains("UserPublic"));
         assert!(body.contains("format_value(item['email'])"));
+        assert!(body.contains("from '@/generated/composables/users'"));
     }
 
     #[test]
@@ -445,7 +447,8 @@ mod tests {
         let body = build_edit_page(&r);
         assert!(body.contains("import EditForm from '@/components/generated/forms/users/EditForm.vue'"));
         assert!(body.contains(":entity=\"entity\""));
-        assert!(body.contains("getUser"));
+        assert!(body.contains("useUser"), "must use useUser composable");
+        assert!(body.contains("from '@/generated/composables/users'"));
     }
 
     #[test]

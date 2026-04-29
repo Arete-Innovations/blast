@@ -262,18 +262,32 @@ fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, dep_manager: &mut Depe
         GenCmd::Resource { name } => run_gen_resource(config, name),
         GenCmd::Pages { resource } => run_gen_pages(config, resource),
         GenCmd::Components { resource } => run_gen_components(config, resource),
+        GenCmd::Composables { resource } => run_gen_composables(config, resource),
         GenCmd::Api { resource } => run_gen_api(config, resource),
         GenCmd::Types { resource } => run_gen_types(config, resource),
         GenCmd::All => run_gen_all(config),
     }
 }
 
+fn run_gen_composables(config: &Config, resource: Option<String>) -> BlastResult<()> {
+    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+    let mut progress = crate::io::cli_progress(None);
+    crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
+    crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
+    let report = match resource {
+        Some(name) => crate::codegen::composables::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
+        None => crate::codegen::composables::run(&config.project_dir, &mut sink, &mut progress)?,
+    };
+    logger::info(&format!("composables: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
+    Ok(())
+}
+
 fn run_gen_pages(config: &Config, resource: Option<String>) -> BlastResult<()> {
     let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
     let mut progress = crate::io::cli_progress(None);
-    // Pages depend on types + api + components — emit those first so the SFCs resolve their imports.
     crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
     crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
+    crate::codegen::composables::run(&config.project_dir, &mut sink, &mut progress)?;
     crate::codegen::components::run(&config.project_dir, &mut sink, &mut progress)?;
     let report = match resource {
         Some(name) => crate::codegen::pages::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
@@ -286,9 +300,9 @@ fn run_gen_pages(config: &Config, resource: Option<String>) -> BlastResult<()> {
 fn run_gen_components(config: &Config, resource: Option<String>) -> BlastResult<()> {
     let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
     let mut progress = crate::io::cli_progress(None);
-    // Components depend on types + api — emit those first so the SFCs resolve their imports.
     crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
     crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
+    crate::codegen::composables::run(&config.project_dir, &mut sink, &mut progress)?;
     let report = match resource {
         Some(name) => crate::codegen::components::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
         None => crate::codegen::components::run(&config.project_dir, &mut sink, &mut progress)?,
