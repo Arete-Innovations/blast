@@ -22,7 +22,7 @@ const { isActive } = useGlobalProgress()
     position: fixed;
     top: 0;
     inset-inline: 0;
-    height: 0.1875rem;
+    height: var(--app-space-2xs);
     overflow: hidden;
     z-index: var(--app-z-overlay);
     pointer-events: none;
