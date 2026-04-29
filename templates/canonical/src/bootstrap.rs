@@ -6,7 +6,6 @@ use diesel_migrations::EmbeddedMigrations;
 use crate::{
     cata_log,
     database::{auto_migrate, db},
-    seeds,
 };
 
 pub async fn bootstrap(migrations: EmbeddedMigrations) {
@@ -39,15 +38,6 @@ pub async fn bootstrap(migrations: EmbeddedMigrations) {
     if let Err(e) = db::init_connection_pool().await {
         cata_log!(Error, format!("Failed to initialize database connection pool: {}", e));
         panic!("Database initialization failed");
-    }
-
-    match db::acquire_conn().await {
-        Ok(mut conn) => {
-            if let Err(e) = seeds::ensure_admin(&mut conn).await {
-                cata_log!(Error, format!("Admin seed failed: {}", e));
-            }
-        }
-        Err(e) => cata_log!(Error, format!("Could not acquire conn for admin seed: {}", e)),
     }
 
     cata_log!(Info, "Bootstrap completed successfully");

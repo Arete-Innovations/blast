@@ -22,3 +22,11 @@ CREATE TABLE sessions (
 
 CREATE INDEX idx_sessions_token   ON sessions (token);
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
+
+INSERT INTO users (email, password_hash, role)
+VALUES (
+    'admin@admin.com',
+    '$argon2id$v=19$m=65536,t=3,p=4$I+o759MGU1FYHOb2P9mgog$8qh2IgRssw4nBCbDOA96IWgj/pnTVFkQzs28qRtQLkE',
+    'admin'
+)
+ON CONFLICT (email) DO NOTHING;
