@@ -56,6 +56,9 @@ impl Rule for RawRemOutsideTokens {
         if line_is_allow_context(line) {
             return None;
         }
+        if line.contains(&config.hairline_border_rem) {
+            return None;
+        }
         if !REM_RE.is_match(line) {
             return None;
         }
