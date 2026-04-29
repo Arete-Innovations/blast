@@ -289,12 +289,18 @@ fn write_dir_recursive(dir: &Dir<'_>, project_root: &Path, project_name: &str, c
         match entry {
             include_dir::DirEntry::Dir(d) => {
                 let rel = d.path();
+                if is_canonical_only_path(rel) {
+                    continue;
+                }
                 let dest_path = project_root.join(substitute_path_component(rel, project_name));
                 fs::create_dir_all(&dest_path)?;
                 write_dir_recursive(d, project_root, project_name, count)?;
             }
             include_dir::DirEntry::File(f) => {
                 let rel = f.path();
+                if is_canonical_only_path(rel) {
+                    continue;
+                }
                 let dest_path = project_root.join(substitute_path_component(rel, project_name));
                 match dest_path.parent() {
                     Some(parent) => fs::create_dir_all(parent)?,
@@ -307,6 +313,14 @@ fn write_dir_recursive(dir: &Dir<'_>, project_root: &Path, project_name: &str, c
         }
     }
     Ok(())
+}
+
+/// Paths inside `templates/canonical/` that exist for canonical's own
+/// in-place dev loop (target-dir redirect to dodge the include_dir blob
+/// trap) but MUST NOT bleed into scaffolded user apps. Skipped wholesale
+/// during vendor copy.
+fn is_canonical_only_path(rel: &Path) -> bool {
+    matches!(rel.to_string_lossy().as_ref(), ".cargo" | ".cargo/config.toml")
 }
 
 fn substitute_path_component(rel: &Path, project_name: &str) -> PathBuf {
@@ -451,6 +465,13 @@ mod tests {
         let body = fs::read_to_string(outcome.project_root.join("build.rs")).expect("read");
         assert!(body.contains("blake3"));
         assert!(body.contains("storage/blast/state/"));
+    }
+
+    #[test]
+    fn scaffold_skips_canonical_only_cargo_config() {
+        let (_dir, outcome) = run_in_tempdir("acme");
+        let cargo_config = outcome.project_root.join(".cargo").join("config.toml");
+        assert!(!cargo_config.exists(), "scaffold leaked canonical-only .cargo/config.toml into user app");
     }
 
     #[test]
