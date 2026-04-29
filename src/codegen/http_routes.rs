@@ -71,6 +71,8 @@ fn build_resource_file(r: &ResourceState) -> String {
     let table = r.name.as_str();
     let type_name = pascal_case(&singularize(table));
 
+    let needs_validator_import = r.gen_level >= crate::state::GenLevel::Types && (r.verbs.contains_key(&Verb::Create) || r.verbs.contains_key(&Verb::Update));
+
     let mut out = String::new();
     out.push_str("use axum::extract::{Path, State};\n");
     out.push_str("use axum::http::StatusCode;\n");
@@ -82,10 +84,24 @@ fn build_resource_file(r: &ResourceState) -> String {
     out.push('\n');
     out.push_str(&format!("use crate::flows::generated::{table} as flow;\n", table = table,));
     out.push_str(&format!("use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}Public}};\n", table = table, ty = type_name,));
+    if needs_validator_import {
+        let mut imports: Vec<String> = Vec::new();
+        if r.verbs.contains_key(&Verb::Create) {
+            imports.push(format!("validate_{table}_insertable", table = table));
+        }
+        if r.verbs.contains_key(&Verb::Update) {
+            imports.push(format!("validate_{table}_patch", table = table));
+        }
+        out.push_str(&format!(
+            "use crate::structs::generated::validators::{table}::{{{names}}};\n",
+            table = table,
+            names = imports.join(", "),
+        ));
+    }
     out.push('\n');
 
     for verb in r.verbs.keys() {
-        out.push_str(&handler_for_verb(*verb, &type_name));
+        out.push_str(&handler_for_verb(*verb, &type_name, table, needs_validator_import));
         out.push('\n');
     }
 
@@ -93,12 +109,12 @@ fn build_resource_file(r: &ResourceState) -> String {
     out
 }
 
-fn handler_for_verb(verb: Verb, type_name: &str) -> String {
+fn handler_for_verb(verb: Verb, type_name: &str, table: &str, validators_enabled: bool) -> String {
     match verb {
         Verb::List => list_handler(type_name),
         Verb::Get => get_handler(type_name),
-        Verb::Create => create_handler(type_name),
-        Verb::Update => update_handler(type_name),
+        Verb::Create => create_handler(type_name, table, validators_enabled),
+        Verb::Update => update_handler(type_name, table, validators_enabled),
         Verb::Delete => delete_handler(),
     }
 }
@@ -119,19 +135,31 @@ fn get_handler(type_name: &str) -> String {
     )
 }
 
-fn create_handler(type_name: &str) -> String {
+fn create_handler(type_name: &str, table: &str, validators_enabled: bool) -> String {
+    let validator_call = if validators_enabled {
+        format!("\x20   validate_{table}_insertable(&input)?;\n", table = table)
+    } else {
+        String::new()
+    };
     format!(
-        "pub async fn create(\n\x20   State(ctx): State<Ctx>,\n\x20   Json(input): Json<{ty}Insertable>,\n) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n\x20   let result = flow::create::run(&ctx, \
+        "pub async fn create(\n\x20   State(ctx): State<Ctx>,\n\x20   Json(input): Json<{ty}Insertable>,\n) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n{validator}\x20   let result = flow::create::run(&ctx, \
          input).await?;\n\x20   Ok((StatusCode::CREATED, Json(result)))\n}}\n",
         ty = type_name,
+        validator = validator_call,
     )
 }
 
-fn update_handler(type_name: &str) -> String {
+fn update_handler(type_name: &str, table: &str, validators_enabled: bool) -> String {
+    let validator_call = if validators_enabled {
+        format!("\x20   validate_{table}_patch(&patch)?;\n", table = table)
+    } else {
+        String::new()
+    };
     format!(
-        "pub async fn update(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n\x20   Json(patch): Json<{ty}Patch>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n\x20   let result = flow::update::run(&ctx, \
-         id, patch).await?;\n\x20   Ok(Json(result))\n}}\n",
+        "pub async fn update(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n\x20   Json(patch): Json<{ty}Patch>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n{validator}\x20   let result = \
+         flow::update::run(&ctx, id, patch).await?;\n\x20   Ok(Json(result))\n}}\n",
         ty = type_name,
+        validator = validator_call,
     )
 }
 
@@ -336,6 +364,62 @@ mod tests {
         let barrel_body = fs::read_to_string(&barrel).expect("read barrel");
         assert!(barrel_body.contains("pub mod users;"), "barrel module missing");
         assert!(barrel_body.contains(".nest(\"/users\", users::router())"), "barrel nest missing",);
+    }
+
+    #[test]
+    fn create_handler_calls_validator_before_flow() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        write_state(root, "users").expect("write resource state");
+        write_app_state(root).expect("write app state");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("http routes generation");
+
+        let resource_file = root.join("src/transport/http/generated/users.rs");
+        let body = fs::read_to_string(&resource_file).expect("read");
+        let validator_call = "validate_users_insertable(&input)?;";
+        let flow_call = "flow::create::run(&ctx, input)";
+        let validator_pos = body.find(validator_call).expect("validator call must be emitted");
+        let flow_pos = body.find(flow_call).expect("flow call must be emitted");
+        assert!(validator_pos < flow_pos, "validator must come BEFORE flow call: validator@{} flow@{} body=\n{}", validator_pos, flow_pos, body);
+    }
+
+    #[test]
+    fn update_handler_calls_validator_before_flow() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        write_state(root, "users").expect("write resource state");
+        write_app_state(root).expect("write app state");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("http routes generation");
+
+        let resource_file = root.join("src/transport/http/generated/users.rs");
+        let body = fs::read_to_string(&resource_file).expect("read");
+        let validator_call = "validate_users_patch(&patch)?;";
+        let flow_call = "flow::update::run(&ctx, id, patch)";
+        let validator_pos = body.find(validator_call).expect("validator call must be emitted");
+        let flow_pos = body.find(flow_call).expect("flow call must be emitted");
+        assert!(validator_pos < flow_pos, "validator must come BEFORE flow call");
+    }
+
+    #[test]
+    fn validators_module_imported_when_create_or_update_present() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        write_state(root, "users").expect("write resource state");
+        write_app_state(root).expect("write app state");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("http routes generation");
+
+        let resource_file = root.join("src/transport/http/generated/users.rs");
+        let body = fs::read_to_string(&resource_file).expect("read");
+        assert!(body.contains("use crate::structs::generated::validators::users::"), "must import validators module; got: {body}");
     }
 
     #[test]

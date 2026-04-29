@@ -32,19 +32,22 @@ pub fn build_create_form(resource: &ResourceState, fields: &[(&FieldName, &Field
     let imports_block = render_primevue_imports(fields, enums);
     let enum_imports_block = render_enum_imports(fields, enums);
     let initial_block = render_initial_create(fields, enums);
-    let template_fields = render_template_fields(fields, enums);
+    let template_fields = render_template_fields_with_errors(fields, enums, "create");
     let serialize_block = render_serialize_block(fields);
 
     format!(
-        "<script setup lang=\"ts\">\nimport {{ ref, reactive }} from 'vue'\nimport Button from 'primevue/button'\n{imports_block}import {{ useCreate{stem} }} from '@/generated/composables/{table}'\nimport type {{ {dto} \
-         }} from '@/generated/types/{table}'\n{enum_imports_block}\nconst emit = defineEmits<{{\n(event: 'created', payload: {dto}): void\n(event: 'cancel'): void\n}}>()\n\nconst create = useCreate{stem}()\n\
-         \n{initial_block}\nconst submitting = ref<boolean>(false)\nconst error_message = ref<string | null>(null)\n\nasync function on_submit(): Promise<void> {{\nsubmitting.value = true\nerror_message.value = \
-         null\n{serialize_block}  const result = await create(payload as {dto})\nsubmitting.value = false\nif (result.error !== undefined) {{\nerror_message.value = result.error.error.message\nreturn\n}}\nemit('created', \
-         payload as {dto})\n}}\n</script>\n\n<template>\n<form class=\"{table}-create-form\" novalidate @submit.prevent=\"on_submit\">\n{template_fields}    <div v-if=\"error_message !== null\" \
-         class=\"{table}-create-form-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div class=\"{table}-create-form-actions\">\n<Button type=\"button\" label=\"Cancel\" severity=\"secondary\" \
-         :disabled=\"submitting\" @click=\"emit('cancel')\" />\n<Button type=\"submit\" label=\"Create\" :loading=\"submitting\" :disabled=\"submitting\" />\n</div>\n</form>\n</template>\n\n<style scoped>\n@layer app \
-         {{\n.{table}-create-form {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-md);\n}}\n.{table}-create-form-actions {{\ndisplay: flex;\ngap: var(--app-space-sm);\njustify-content: \
-         flex-end;\n}}\n.{table}-create-form-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n}}\n</style>\n",
+        "<script setup lang=\"ts\">\nimport {{ ref, reactive, computed }} from 'vue'\nimport Button from 'primevue/button'\n{imports_block}import {{ useCreate{stem} }} from '@/generated/composables/{table}'\nimport type \
+         {{ {dto} }} from '@/generated/types/{table}'\nimport {{ validate{stem}Insertable }} from '@/generated/validators/{table}'\n{enum_imports_block}\nconst emit = defineEmits<{{\n(event: 'created', payload: {dto}): \
+         void\n(event: 'cancel'): void\n}}>()\n\nconst create = useCreate{stem}()\n\n{initial_block}\nconst submitting = ref<boolean>(false)\nconst error_message = ref<string | null>(null)\nconst field_errors = \
+         computed<Record<string, string>>(() => validate{stem}Insertable(form as unknown as {dto}) ?? {{}})\nconst form_valid = computed<boolean>(() => Object.keys(field_errors.value).length === 0)\n\nasync function \
+         on_submit(): Promise<void> {{\nif (!form_valid.value) {{\nreturn\n}}\nsubmitting.value = true\nerror_message.value = null\n{serialize_block}  const result = await create(payload as {dto})\nsubmitting.value = \
+         false\nif (result.error !== undefined) {{\nerror_message.value = result.error.error.message\nreturn\n}}\nemit('created', payload as {dto})\n}}\n</script>\n\n<template>\n<form class=\"{table}-create-form\" \
+         novalidate @submit.prevent=\"on_submit\">\n{template_fields}    <div v-if=\"error_message !== null\" class=\"{table}-create-form-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div \
+         class=\"{table}-create-form-actions\">\n<Button type=\"button\" label=\"Cancel\" severity=\"secondary\" :disabled=\"submitting\" @click=\"emit('cancel')\" />\n<Button type=\"submit\" label=\"Create\" \
+         :loading=\"submitting\" :disabled=\"submitting || !form_valid\" />\n</div>\n</form>\n</template>\n\n<style scoped>\n@layer app {{\n.{table}-create-form {{\ndisplay: flex;\nflex-direction: column;\ngap: \
+         var(--app-space-md);\n}}\n.{table}-create-form-actions {{\ndisplay: flex;\ngap: var(--app-space-sm);\njustify-content: flex-end;\n}}\n.{table}-create-form-error {{\ncolor: var(--p-message-error-color, \
+         var(--app-color-danger, #b00020));\n}}\n.{table}-create-form-field-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\nfont-size: var(--app-text-xs, \
+         0.75rem);\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         dto = dto,
@@ -65,20 +68,23 @@ pub fn build_edit_form(resource: &ResourceState, fields: &[(&FieldName, &FieldSt
     let imports_block = render_primevue_imports(fields, enums);
     let enum_imports_block = render_enum_imports(fields, enums);
     let initial_block = render_initial_edit(fields, enums);
-    let template_fields = render_template_fields(fields, enums);
+    let template_fields = render_template_fields_with_errors(fields, enums, "edit");
     let serialize_block = render_serialize_block(fields);
 
     format!(
-        "<script setup lang=\"ts\">\nimport {{ ref, reactive, watch }} from 'vue'\nimport Button from 'primevue/button'\n{imports_block}import {{ useUpdate{stem} }} from '@/generated/composables/{table}'\nimport type \
-         {{ {public}, {patch} }} from '@/generated/types/{table}'\n{enum_imports_block}\nconst props = defineProps<{{ entity: {public} }}>()\nconst emit = defineEmits<{{\n(event: 'updated', payload: {patch}): \
-         void\n(event: 'cancel'): void\n}}>()\n\nconst update = useUpdate{stem}()\n\n{initial_block}\nconst submitting = ref<boolean>(false)\nconst error_message = ref<string | null>(null)\n\nwatch(() => props.entity, \
-         (next) => {{\nreset_form(next as unknown as {{ [key: string]: unknown }})\n}}, {{ deep: true }})\n\nasync function on_submit(): Promise<void> {{\nsubmitting.value = true\nerror_message.value = \
-         null\n{serialize_block}  const result = await update((props.entity as unknown as {{ id: number }}).id, payload as {patch})\nsubmitting.value = false\nif (result.error !== undefined) {{\nerror_message.value = \
-         result.error.error.message\nreturn\n}}\nemit('updated', payload as {patch})\n}}\n</script>\n\n<template>\n<form class=\"{table}-edit-form\" novalidate @submit.prevent=\"on_submit\">\n{template_fields}    <div \
-         v-if=\"error_message !== null\" class=\"{table}-edit-form-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div class=\"{table}-edit-form-actions\">\n<Button type=\"button\" label=\"Cancel\" \
-         severity=\"secondary\" :disabled=\"submitting\" @click=\"emit('cancel')\" />\n<Button type=\"submit\" label=\"Save\" :loading=\"submitting\" :disabled=\"submitting\" />\n</div>\n</form>\n</template>\n\n<style \
+        "<script setup lang=\"ts\">\nimport {{ ref, reactive, watch, computed }} from 'vue'\nimport Button from 'primevue/button'\n{imports_block}import {{ useUpdate{stem} }} from \
+         '@/generated/composables/{table}'\nimport type {{ {public}, {patch} }} from '@/generated/types/{table}'\nimport {{ validate{stem}Patch }} from '@/generated/validators/{table}'\n{enum_imports_block}\nconst props \
+         = defineProps<{{ entity: {public} }}>()\nconst emit = defineEmits<{{\n(event: 'updated', payload: {patch}): void\n(event: 'cancel'): void\n}}>()\n\nconst update = useUpdate{stem}()\n\n{initial_block}\nconst \
+         submitting = ref<boolean>(false)\nconst error_message = ref<string | null>(null)\nconst field_errors = computed<Record<string, string>>(() => validate{stem}Patch(form as unknown as {patch}) ?? {{}})\nconst \
+         form_valid = computed<boolean>(() => Object.keys(field_errors.value).length === 0)\n\nwatch(() => props.entity, (next) => {{\nreset_form(next as unknown as {{ [key: string]: unknown }})\n}}, {{ deep: true \
+         }})\n\nasync function on_submit(): Promise<void> {{\nif (!form_valid.value) {{\nreturn\n}}\nsubmitting.value = true\nerror_message.value = null\n{serialize_block}  const result = await update((props.entity as \
+         unknown as {{ id: number }}).id, payload as {patch})\nsubmitting.value = false\nif (result.error !== undefined) {{\nerror_message.value = result.error.error.message\nreturn\n}}\nemit('updated', payload as \
+         {patch})\n}}\n</script>\n\n<template>\n<form class=\"{table}-edit-form\" novalidate @submit.prevent=\"on_submit\">\n{template_fields}    <div v-if=\"error_message !== null\" \
+         class=\"{table}-edit-form-error\" role=\"alert\">\n{{{{ error_message }}}}\n</div>\n<div class=\"{table}-edit-form-actions\">\n<Button type=\"button\" label=\"Cancel\" severity=\"secondary\" \
+         :disabled=\"submitting\" @click=\"emit('cancel')\" />\n<Button type=\"submit\" label=\"Save\" :loading=\"submitting\" :disabled=\"submitting || !form_valid\" />\n</div>\n</form>\n</template>\n\n<style \
          scoped>\n@layer app {{\n.{table}-edit-form {{\ndisplay: flex;\nflex-direction: column;\ngap: var(--app-space-md);\n}}\n.{table}-edit-form-actions {{\ndisplay: flex;\ngap: \
-         var(--app-space-sm);\njustify-content: flex-end;\n}}\n.{table}-edit-form-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n}}\n</style>\n",
+         var(--app-space-sm);\njustify-content: flex-end;\n}}\n.{table}-edit-form-error {{\ncolor: var(--p-message-error-color, var(--app-color-danger, #b00020));\n}}\n.{table}-edit-form-field-error {{\ncolor: \
+         var(--p-message-error-color, var(--app-color-danger, #b00020));\nfont-size: var(--app-text-xs, 0.75rem);\n}}\n}}\n</style>\n",
         table = table,
         stem = stem,
         public = public,
@@ -167,7 +173,7 @@ fn render_initial_edit(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum
     lines
 }
 
-fn render_template_fields(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> String {
+fn render_template_fields_with_errors(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum], form_kind: &str) -> String {
     let mut out = String::new();
     for (name, field) in fields {
         let key = name.as_str();
@@ -176,7 +182,14 @@ fn render_template_fields(fields: &[(&FieldName, &FieldState)], enums: &[ParsedE
         let attrs = render_attrs(comp, &field.sql_type, enums);
         let id = format!("form-{key}");
         out.push_str(&format!(
-            "    <div class=\"form-field\">\n      <label for=\"{id}\" class=\"form-field-label\">{label}</label>\n      <{comp} id=\"{id}\" v-model=\"form.{key}\"{attrs} />\n    </div>\n"
+            "    <div class=\"form-field\">\n      <label for=\"{id}\" class=\"form-field-label\">{label}</label>\n      <{comp} id=\"{id}\" v-model=\"form.{key}\"{attrs} />\n      <small v-if=\"field_errors['{key}']\" \
+             class=\"form-field-error form-field-error-{form_kind}\" role=\"alert\">{{{{ field_errors['{key}'] }}}}</small>\n    </div>\n",
+            id = id,
+            label = label,
+            comp = comp,
+            attrs = attrs,
+            key = key,
+            form_kind = form_kind,
         ));
     }
     out
@@ -382,6 +395,42 @@ mod tests {
         assert!(edit.contains("UserPublic"), "UserPublic type missing");
         assert!(edit.contains("useUpdateUser"), "useUpdateUser composable missing");
         assert!(edit.contains("from '@/generated/composables/users'"), "must import from composables");
+    }
+
+    #[test]
+    fn create_form_imports_validator_and_binds_field_errors() {
+        let r = synth_resource();
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        let pairs = forms_for_resource(&r, &enums);
+        let create = pairs.iter().find(|(name, _)| name == "CreateForm.vue").map(|(_, body)| body.clone()).expect("CreateForm.vue produced");
+        assert!(create.contains("import { validateUserInsertable } from '@/generated/validators/users'"), "must import validator; got: {create}");
+        assert!(create.contains("validateUserInsertable(form as unknown as UserInsertable)"), "must call validator; got: {create}");
+        assert!(create.contains("field_errors"), "must bind field_errors computed");
+        assert!(create.contains("form_valid"), "must compute form_valid for submit gating");
+        assert!(create.contains(":disabled=\"submitting || !form_valid\""), "submit button must disable when invalid");
+    }
+
+    #[test]
+    fn edit_form_imports_validator_and_binds_field_errors() {
+        let r = synth_resource();
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        let pairs = forms_for_resource(&r, &enums);
+        let edit = pairs.iter().find(|(name, _)| name == "EditForm.vue").map(|(_, body)| body.clone()).expect("EditForm.vue produced");
+        assert!(edit.contains("import { validateUserPatch } from '@/generated/validators/users'"), "must import validator; got: {edit}");
+        assert!(edit.contains("validateUserPatch(form as unknown as UserPatch)"));
+        assert!(edit.contains("field_errors"));
+        assert!(edit.contains("form_valid"));
+    }
+
+    #[test]
+    fn forms_render_field_errors_inline() {
+        let r = synth_resource();
+        let enums: Vec<crate::codegen::enums::ParsedEnum> = Vec::new();
+        let pairs = forms_for_resource(&r, &enums);
+        for (_, body) in pairs.iter() {
+            assert!(body.contains("v-if=\"field_errors['email']\""), "must conditionally render email field error: {body}");
+            assert!(body.contains("{{ field_errors['email'] }}"), "must interpolate error message: {body}");
+        }
     }
 
     #[test]

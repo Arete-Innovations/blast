@@ -55,7 +55,6 @@ pub fn build_resource_api(resource: &ResourceState) -> String {
     let mut out = String::new();
 
     if !imports.is_empty() {
-        // Deduplicate (list + get might both need Public)
         let mut seen: Vec<String> = Vec::new();
         for item in imports {
             if !seen.contains(&item) {
@@ -66,6 +65,17 @@ pub fn build_resource_api(resource: &ResourceState) -> String {
     }
 
     out.push_str("import type { MeltDownResponse } from '@/generated/types/meltdown'\n");
+
+    let mut validator_imports: Vec<String> = Vec::new();
+    if has_create {
+        validator_imports.push(format!("validate{singular}Insertable", singular = singular));
+    }
+    if has_update {
+        validator_imports.push(format!("validate{singular}Patch", singular = singular));
+    }
+    if !validator_imports.is_empty() {
+        out.push_str(&format!("import {{ {names} }} from '@/generated/validators/{table}'\n", names = validator_imports.join(", "), table = table,));
+    }
     out.push('\n');
 
     // Helpers (auth header) — emitted inline since each api file is standalone.
@@ -154,10 +164,12 @@ fn render_get_fn(table: &str, singular: &str) -> String {
 /// `createUser` — matches `create{} as apiCreate` alias.
 fn render_create_fn(table: &str, singular: &str) -> String {
     format!(
-        "export async function create{singular}(\nbody: {singular}Insertable,\n): ApiResult<{singular}Public> {{\ntry {{\nconst res = await fetch(`/api/{table}/`, {{\nmethod: 'POST',\nheaders: {{ ...auth_header(), \
-         'Content-Type': 'application/json', Accept: 'application/json' }},\nbody: JSON.stringify(body),\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: null, error: err \
-         }}\n}}\nconst data = (await res.json()) as {singular}Public\nreturn {{ data, error: null }}\n}} catch (e) {{\nconst err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', message: 'Network \
-         error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
+        "export async function create{singular}(\nbody: {singular}Insertable,\n): ApiResult<{singular}Public> {{\nconst client_errors = validate{singular}Insertable(body)\nif (client_errors !== null) {{\nconst entries \
+         = Object.entries(client_errors)\nconst first_field = entries.length > 0 ? entries[0][0] : ''\nconst first_message = entries.length > 0 ? entries[0][1] : 'validation failed'\nconst err: MeltDownResponse = {{ \
+         error: {{ code: 422, type: 'ValidationFailed', message: first_message, context: {{ field: first_field }} }} }}\nreturn {{ data: null, error: err }}\n}}\ntry {{\nconst res = await fetch(`/api/{table}/`, \
+         {{\nmethod: 'POST',\nheaders: {{ ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\nbody: JSON.stringify(body),\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as \
+         MeltDownResponse\nreturn {{ data: null, error: err }}\n}}\nconst data = (await res.json()) as {singular}Public\nreturn {{ data, error: null }}\n}} catch (e) {{\nconst err: MeltDownResponse = {{ error: {{ code: \
+         0, type: 'NetworkError', message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
         table = table,
         singular = singular,
     )
@@ -166,10 +178,12 @@ fn render_create_fn(table: &str, singular: &str) -> String {
 /// `updateUser` — matches `update{} as apiUpdate` alias.
 fn render_update_fn(table: &str, singular: &str) -> String {
     format!(
-        "export async function update{singular}(\nid: number,\npatch: {singular}Patch,\n): ApiResult<{singular}Public> {{\ntry {{\nconst res = await fetch(`/api/{table}/${{id}}`, {{\nmethod: 'PATCH',\nheaders: {{ \
-         ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\nbody: JSON.stringify(patch),\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as MeltDownResponse\nreturn {{ data: \
-         null, error: err }}\n}}\nconst data = (await res.json()) as {singular}Public\nreturn {{ data, error: null }}\n}} catch (e) {{\nconst err: MeltDownResponse = {{ error: {{ code: 0, type: 'NetworkError', \
-         message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
+        "export async function update{singular}(\nid: number,\npatch: {singular}Patch,\n): ApiResult<{singular}Public> {{\nconst client_errors = validate{singular}Patch(patch)\nif (client_errors !== null) {{\nconst \
+         entries = Object.entries(client_errors)\nconst first_field = entries.length > 0 ? entries[0][0] : ''\nconst first_message = entries.length > 0 ? entries[0][1] : 'validation failed'\nconst err: MeltDownResponse \
+         = {{ error: {{ code: 422, type: 'ValidationFailed', message: first_message, context: {{ field: first_field }} }} }}\nreturn {{ data: null, error: err }}\n}}\ntry {{\nconst res = await fetch(`/api/{table}/${{id}}`, \
+         {{\nmethod: 'PATCH',\nheaders: {{ ...auth_header(), 'Content-Type': 'application/json', Accept: 'application/json' }},\nbody: JSON.stringify(patch),\n}})\nif (!res.ok) {{\nconst err = (await res.json()) as \
+         MeltDownResponse\nreturn {{ data: null, error: err }}\n}}\nconst data = (await res.json()) as {singular}Public\nreturn {{ data, error: null }}\n}} catch (e) {{\nconst err: MeltDownResponse = {{ error: {{ code: \
+         0, type: 'NetworkError', message: 'Network error', context: null }} }}\nreturn {{ data: null, error: err }}\n}}\n}}\n",
         table = table,
         singular = singular,
     )
@@ -323,6 +337,45 @@ mod tests {
         let r = synth_resource_all_verbs();
         let body = build_resource_api(&r);
         assert!(body.contains("ApiResult<{ id: number }>"), "delete must return id shape");
+    }
+
+    #[test]
+    fn create_fn_calls_validator_before_fetch() {
+        let r = synth_resource_all_verbs();
+        let body = build_resource_api(&r);
+        assert!(body.contains("validateUserInsertable(body)"), "create fn must call validator; got: {body}");
+        let validator_pos = body.find("validateUserInsertable(body)").expect("validator call");
+        let fetch_pos = body.find("fetch(`/api/users/`").expect("fetch call");
+        assert!(validator_pos < fetch_pos, "validator must come BEFORE fetch");
+    }
+
+    #[test]
+    fn update_fn_calls_validator_before_fetch() {
+        let r = synth_resource_all_verbs();
+        let body = build_resource_api(&r);
+        assert!(body.contains("validateUserPatch(patch)"), "update fn must call validator; got: {body}");
+        let update_block_start = body.find("updateUser(").expect("updateUser fn must exist");
+        let after_update = &body[update_block_start..];
+        let validator_pos = after_update.find("validateUserPatch(patch)").expect("validator call inside updateUser");
+        let fetch_pos = after_update.find("fetch(`/api/users/${id}`").expect("fetch call inside updateUser");
+        assert!(validator_pos < fetch_pos, "validator must come BEFORE fetch inside updateUser");
+    }
+
+    #[test]
+    fn validators_module_imported_when_create_or_update_present() {
+        let r = synth_resource_all_verbs();
+        let body = build_resource_api(&r);
+        assert!(body.contains("from '@/generated/validators/users'"), "must import validators; got: {body}");
+        assert!(body.contains("validateUserInsertable"));
+        assert!(body.contains("validateUserPatch"));
+    }
+
+    #[test]
+    fn synthetic_validation_failed_response_uses_meltdown_shape() {
+        let r = synth_resource_all_verbs();
+        let body = build_resource_api(&r);
+        assert!(body.contains("type: 'ValidationFailed'"), "synthetic error must use ValidationFailed type; got: {body}");
+        assert!(body.contains("code: 422"), "synthetic error must use 422 status code");
     }
 
     #[test]
