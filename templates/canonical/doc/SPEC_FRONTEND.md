@@ -346,6 +346,14 @@ async function fetchUsers() {
 
 Use `@/generated/api/users.ts`. Types match the resource state file.
 
+**Hand-rolling regex / validators in pages:**
+```ts
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const email_valid = computed(() => EMAIL_RE.test(email.value))
+```
+
+Banned. Field-level validation lives in the Primer (`FieldState.validators`) and codegen emits paired Rust + TS validators with byte-identical regex strings — see `SPEC_VALIDATORS.md`. Pages and forms consume `validate<R>Insertable` / `validate<R>Patch` from `@/generated/validators/<r>`. Hand-written auth pages (Login, Register) use the one-off helpers at `@/composables/auth_validators.ts` which mirror the codegen emit shape so the regex string is identical to a `ValidatorRule::Email` rule.
+
 **Inline styles, hardcoded paths, local modal state, Pinia, optimistic updates** — all banned. See Governor rules.
 
 ## Related Specs
@@ -354,6 +362,7 @@ Use `@/generated/api/users.ts`. Types match the resource state file.
 - `SPEC_CSS.md` — design token system, scoped styles
 - `SPEC_RELAY.md` — WS protocol, shared WsClient
 - `SPEC_MELTDOWN.md` — error type + TS enum mirror
+- `SPEC_VALIDATORS.md` — field-level validators codegen pass (rule set, wire-in pattern, regex compatibility)
 - `SPEC_CONFIG.md` — resource state files that drive FE codegen
 - `blast/doc/SPEC_GOVERNOR.md` — FE lint enforcement (full rule list)
 - `blast/doc/SPEC_CODEGEN.md` — what Blast emits for FE
