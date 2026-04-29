@@ -147,10 +147,6 @@ where
         self
     }
 
-    pub fn retry_all(self) -> Self {
-        self.classify(|_: &MeltDown| true)
-    }
-
     pub fn deadline(mut self, deadline: Duration) -> Self {
         self.deadline = Some(deadline);
         self
