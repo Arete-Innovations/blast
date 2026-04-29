@@ -43,14 +43,12 @@ Everything else (DB blips, external service hiccups, IO errors, `Unexpected`) re
 | Method | Sets classifier to |
 |--------|-------------------|
 | `.classify(closure)` | the closure (full control) |
-| `.retry_only_transient()` | `\|e\| e.is_transient()` (strict — only `DatabaseConnection` / `ExternalServiceError` / `TooManyRequests`) |
-| `.retry_all()` | `\|_\| true` (YOLO — every Err) |
 
 Chain in builder style:
 
 ```rust
 Crank::backoff(3, Duration::from_millis(500))
-    .retry_only_transient()
+    .classify(|e| e.is_transient())
     .deadline(Duration::from_secs(10))
     .run(|| routines::stripe::charge(ctx, &input))
     .await?;
@@ -87,8 +85,6 @@ if resp.status() == 429 {
 | `Crank::fixed(attempts, delay)` | — | fixed delay with default classifier |
 | `Crank::new(policy)` | yes | full control — must chain `.classify(...)` |
 | `.classify(closure)` | depends | override classifier |
-| `.retry_only_transient()` | — | shortcut classifier |
-| `.retry_all()` | — | shortcut classifier |
 | `.deadline(Duration)` | — | overall time budget |
 | `.on_attempt(closure)` | — | hook fired before each retry (not before first attempt) |
 | `.on_giveup(closure)` | — | hook fired when retries exhaust |
@@ -182,9 +178,9 @@ Banned at compile time. `crate::crank` import outside `flows/` fails `LAYER:11�
 
 **Retrying validation errors:**
 ```rust
-Crank::backoff(3, ...).retry_all().run(...)  // BAD — retries 400/422/Conflict pointlessly
+Crank::backoff(3, ...).classify(|_| true).run(...)  // BAD — retries 400/422/Conflict pointlessly
 ```
-Default classifier already excludes permanent errors. `.retry_all()` is YOLO mode — only use when you genuinely know retrying every error is correct.
+Default classifier already excludes permanent errors. Forcing retry-on-everything via `.classify(|_| true)` is YOLO mode — only use when you genuinely know retrying every error is correct.
 
 **Long retry loops in hot paths:**
 ```rust

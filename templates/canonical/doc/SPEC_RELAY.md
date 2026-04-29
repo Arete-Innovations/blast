@@ -1,6 +1,6 @@
 # SPEC_RELAY
 
-WebSocket multiplexer + pub/sub. Lives in `catalyst::relay`. One WS connection per authenticated session, all topics multiplexed over it.
+WebSocket multiplexer + pub/sub. Lives in `crate::transport::ws`. One WS connection per authenticated session, all topics multiplexed over it.
 
 ## Why Multiplex
 

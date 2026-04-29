@@ -1,6 +1,6 @@
 # SPEC_MELTDOWN
 
-Unified error type. Lives in `catalyst::meltdown`. Returned by flows, routines, models, and services — `Result<T, MeltDown>` everywhere in those layers. `IntoResponse` is implemented in `transport/http/` only; inner layers return `MeltDown` values and never touch HTTP concerns.
+Unified error type. Lives in `crate::meltdown`. Returned by flows, routines, models, and services — `Result<T, MeltDown>` everywhere in those layers. `IntoResponse` is implemented in `transport/http/` only; inner layers return `MeltDown` values and never touch HTTP concerns.
 
 ## Shape
 

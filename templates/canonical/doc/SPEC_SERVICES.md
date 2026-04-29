@@ -2,7 +2,7 @@
 
 Stateless adapter layer. Catalyst ships **one** implementation per service. No trait abstraction, no driver enum, no plugin hook. If you want a different backend, fork.
 
-Lives in `catalyst::services`. Layered above `models/` and below `routines/` (see `SPEC_ARCHITECTURE.md`).
+Lives in `crate::services`. Layered above `models/` and below `routines/` (see `SPEC_ARCHITECTURE.md`).
 
 ## Why One Impl Each
 

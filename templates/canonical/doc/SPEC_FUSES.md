@@ -36,7 +36,7 @@ The table name is `fuses`, reserved for Catalyst. User apps don't create a diffe
 
 ```rust
 
-use catalyst::fuses::*;
+use crate::transport::fuses::*;
 use std::time::Duration;
 
 pub fn register(registry: &mut FuseRegistry) {
@@ -66,7 +66,7 @@ Registry is called at app boot (in `bootstrap.rs`):
 
 let mut fuse_registry = FuseRegistry::new();
 transport::fuses::register_all(&mut fuse_registry);
-catalyst::fuses::launch(pool.clone(), fuse_registry).await;
+transport::fuses::launch(pool.clone(), fuse_registry).await;
 ```
 
 ## Schedule Kinds
@@ -81,7 +81,7 @@ All resolve to `next_run_at` timestamps in the DB row.
 
 ## Registry → DB Reconciliation
 
-On app boot, `catalyst::fuses::launch` reconciles:
+On app boot, `transport::fuses::launch` reconciles:
 
 1. Read all registered fuses in code (`FuseRegistry`)
 2. Read all fuses in DB
