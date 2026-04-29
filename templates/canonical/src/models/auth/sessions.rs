@@ -5,7 +5,6 @@ use crate::{
     database::schema::sessions::dsl as sessions_dsl,
     meltdown::*,
     structs::{NewSession, Session, User},
-    time::now_unix,
 };
 
 pub async fn insert_session(conn: &mut AsyncPgConnection, user_id: i64, token: &str, expires_at: i64) -> Result<Session, MeltDown> {
@@ -22,10 +21,8 @@ pub async fn insert_session(conn: &mut AsyncPgConnection, user_id: i64, token: &
         .map_err(|e| MeltDown::from(e).with_context("operation", "insert_session"))
 }
 
-pub async fn find_by_token(conn: &mut AsyncPgConnection, token: &str) -> Result<Option<(Session, User)>, MeltDown> {
+pub async fn find_by_token(conn: &mut AsyncPgConnection, token: &str, now: i64) -> Result<Option<(Session, User)>, MeltDown> {
     use crate::database::schema::{sessions, users};
-
-    let now = now_unix();
 
     sessions::table
         .inner_join(users::table)

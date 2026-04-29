@@ -2,7 +2,7 @@ use crate::{
     cata_log,
     meltdown::*,
     models::auth::{sessions, users},
-    services::crypto,
+    services::{crypto, time},
     structs::{
         auth::{LoginInput, LoginOutput, SessionContext},
         UserPublic,
@@ -22,7 +22,7 @@ pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> 
     }
 
     let token = crypto::mint_session_token();
-    let expires_at = crypto::now_unix() + SESSION_TTL_SECS;
+    let expires_at = time::now_unix() + SESSION_TTL_SECS;
     let session_row = sessions::insert_session(&mut conn, user.id, &token, expires_at).await?;
 
     cata_log!(Info, format!("Issued session for user id={}", user.id));

@@ -18,7 +18,6 @@ mod models;
 mod routines;
 mod services;
 mod structs;
-mod time;
 mod transport;
 
 mod cata_log;

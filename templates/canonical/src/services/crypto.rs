@@ -27,5 +27,3 @@ pub fn mint_session_token() -> String {
     rand::thread_rng().fill_bytes(&mut buf);
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(buf)
 }
-
-pub use crate::time::now_unix;
