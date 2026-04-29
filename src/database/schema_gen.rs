@@ -92,18 +92,18 @@ fn update_schema_mod_file() {
         String::new()
     };
 
-    let other_modules: Vec<String> = existing_content
+    let preserved: Vec<String> = existing_content
         .lines()
         .filter(|line| {
             let trimmed = line.trim();
-            trimmed.starts_with("pub mod ") && !trimmed.starts_with("pub mod schema")
+            !trimmed.starts_with("pub mod schema")
         })
         .map(|line| line.to_string())
         .collect();
 
     let mut content = String::from("pub mod schema;\n");
-    for module in other_modules {
-        content.push_str(&format!("{}\n", module));
+    for line in preserved {
+        content.push_str(&format!("{}\n", line));
     }
 
     if let Err(e) = fs::write(mod_path, content) {
