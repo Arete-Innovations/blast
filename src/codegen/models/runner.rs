@@ -277,7 +277,7 @@ mod tests {
         run(root, &mut sink, &mut progress).expect("ok");
 
         let body = fs::read_to_string(root.join("src/models/generated/users.rs")).unwrap();
-        assert!(body.contains("::catalyst::database::pool()"), "auto-conn wrappers must call catalyst::database::pool()");
+        assert!(body.contains("crate::database::acquire_conn()"), "auto-conn wrappers must call crate::database::acquire_conn()");
     }
 
     #[test]

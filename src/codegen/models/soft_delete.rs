@@ -85,7 +85,7 @@ pub fn emit_delete_body(out: &mut String, table: &str, cfg: &SoftDeleteConfig) {
     )
     .await?;
     if n == 0 {{
-        return Err(::catalyst::meltdown::MeltDown::not_found("{table}", id.to_string()));
+        return Err(crate::meltdown::MeltDown::not_found("{table}", id.to_string()));
     }}
     Ok(())
 "#,

@@ -27,16 +27,16 @@ fn emit_list(out: &mut String, table: &str, stem: &str) {
         r#"/// Page-fetch rows under the locked list contract.
 pub async fn list(
     conn: &mut ::diesel_async::AsyncPgConnection,
-    query: &::catalyst::transport::http::list_query::ListQuery,
+    query: &crate::structs::list_query::ListQuery,
 ) -> ::std::result::Result<
-    ::catalyst::transport::http::list_query::ListResponse<{stem}>,
-    ::catalyst::meltdown::MeltDown,
+    crate::structs::list_query::ListResponse<{stem}>,
+    crate::meltdown::MeltDown,
 > {{
     use ::diesel_async::RunQueryDsl;
     use crate::database::schema::{table}::dsl as schema;
 
     let total: i64 = ::diesel::QueryDsl::count(schema::{table})
-        .get_result(conn)
+        .get_result::<i64>(conn)
         .await?;
 
     let offset = ((query.page.saturating_sub(1)) as i64) * (query.page_size as i64);
@@ -47,8 +47,11 @@ pub async fn list(
     }}
     q = ::diesel::QueryDsl::limit(::diesel::QueryDsl::offset(q, offset), limit);
 
-    let items: ::std::vec::Vec<{stem}> = q.load(conn).await?;
-    Ok(::catalyst::transport::http::list_query::ListResponse::from_query(
+    let items: ::std::vec::Vec<{stem}> = q
+        .select(<{stem} as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())
+        .load::<{stem}>(conn)
+        .await?;
+    Ok(crate::structs::list_query::ListResponse::from_query(
         items, query, total as u64,
     ))
 }}
@@ -63,18 +66,19 @@ fn emit_get(out: &mut String, table: &str, stem: &str) {
 pub async fn get(
     conn: &mut ::diesel_async::AsyncPgConnection,
     id: i64,
-) -> ::std::result::Result<{stem}, ::catalyst::meltdown::MeltDown> {{
+) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
     use ::diesel_async::RunQueryDsl;
     use crate::database::schema::{table}::dsl as schema;
     let row: {stem} = schema::{table}
         .filter(schema::id.eq(id))
-        .first(conn)
+        .select(<{stem} as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())
+        .first::<{stem}>(conn)
         .await
         .map_err(|e: ::diesel::result::Error| match e {{
             ::diesel::result::Error::NotFound => {{
-                ::catalyst::meltdown::MeltDown::not_found("{table}", id.to_string())
+                crate::meltdown::MeltDown::not_found("{table}", id.to_string())
             }}
-            other => ::catalyst::meltdown::MeltDown::from(other),
+            other => crate::meltdown::MeltDown::from(other),
         }})?;
     Ok(row)
 }}
@@ -90,12 +94,13 @@ fn emit_create(out: &mut String, table: &str, stem: &str) {
 pub async fn create(
     conn: &mut ::diesel_async::AsyncPgConnection,
     input: &{insertable},
-) -> ::std::result::Result<{stem}, ::catalyst::meltdown::MeltDown> {{
+) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
     use ::diesel_async::RunQueryDsl;
     use crate::database::schema::{table}::dsl as schema;
     let row: {stem} = ::diesel::insert_into(schema::{table})
         .values(input)
-        .get_result(conn)
+        .returning(<{stem} as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())
+        .get_result::<{stem}>(conn)
         .await?;
     Ok(row)
 }}
@@ -112,18 +117,19 @@ pub async fn update(
     conn: &mut ::diesel_async::AsyncPgConnection,
     id: i64,
     patch: &{patch},
-) -> ::std::result::Result<{stem}, ::catalyst::meltdown::MeltDown> {{
+) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
     use ::diesel_async::RunQueryDsl;
     use crate::database::schema::{table}::dsl as schema;
     let row: {stem} = ::diesel::update(schema::{table}.filter(schema::id.eq(id)))
         .set(patch)
-        .get_result(conn)
+        .returning(<{stem} as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())
+        .get_result::<{stem}>(conn)
         .await
         .map_err(|e: ::diesel::result::Error| match e {{
             ::diesel::result::Error::NotFound => {{
-                ::catalyst::meltdown::MeltDown::not_found("{table}", id.to_string())
+                crate::meltdown::MeltDown::not_found("{table}", id.to_string())
             }}
-            other => ::catalyst::meltdown::MeltDown::from(other),
+            other => crate::meltdown::MeltDown::from(other),
         }})?;
     Ok(row)
 }}
@@ -134,7 +140,7 @@ pub async fn update(
 
 fn emit_delete(out: &mut String, table: &str, soft_delete_cfg: Option<&SoftDeleteConfig>) {
     let header = "/// Delete a row by primary key. Returns MeltDown::not_found when no row is affected.\n";
-    let signature = "pub async fn delete(\n    conn: &mut ::diesel_async::AsyncPgConnection,\n    id: i64,\n) -> ::std::result::Result<(), ::catalyst::meltdown::MeltDown> {\n";
+    let signature = "pub async fn delete(\n    conn: &mut ::diesel_async::AsyncPgConnection,\n    id: i64,\n) -> ::std::result::Result<(), crate::meltdown::MeltDown> {\n";
     out.push_str(header);
     out.push_str(signature);
     match soft_delete_cfg {
@@ -145,13 +151,14 @@ fn emit_delete(out: &mut String, table: &str, soft_delete_cfg: Option<&SoftDelet
         }
         None => {
             let body = format!(
-                r#"    use ::diesel_async::RunQueryDsl;
-    use crate::database::schema::{table}::dsl as schema;
-    let n = ::diesel::delete(schema::{table}.filter(schema::id.eq(id)))
-        .execute(conn)
-        .await?;
+                r#"    use crate::database::schema::{table}::dsl as schema;
+    let n: usize = ::diesel_async::RunQueryDsl::execute(
+        ::diesel::delete(schema::{table}.filter(schema::id.eq(id))),
+        conn,
+    )
+    .await?;
     if n == 0 {{
-        return Err(::catalyst::meltdown::MeltDown::not_found(
+        return Err(crate::meltdown::MeltDown::not_found(
             "{table}",
             id.to_string(),
         ));
@@ -175,7 +182,7 @@ mod tests {
         emit_list(&mut out, "users", "User");
         assert!(out.contains("pub async fn list("));
         assert!(out.contains("conn: &mut ::diesel_async::AsyncPgConnection"));
-        assert!(out.contains("query: &::catalyst::transport::http::list_query::ListQuery"));
+        assert!(out.contains("query: &crate::structs::list_query::ListQuery"));
         assert!(out.contains("ListResponse<User>"));
         assert!(out.contains("schema::id.asc()"));
         assert!(out.contains("ListResponse::from_query"));
@@ -195,7 +202,7 @@ mod tests {
         emit_create(&mut out, "users", "User");
         assert!(out.contains("input: &UserInsertable"));
         assert!(out.contains("insert_into("));
-        assert!(out.contains(".get_result("));
+        assert!(out.contains(".get_result::<User>("));
     }
 
     #[test]

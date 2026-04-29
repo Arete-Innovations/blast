@@ -9,17 +9,17 @@
 pub fn emit_type_count(out: &mut String, table: &str, stem: &str) {
     let body = format!(
         r#"    /// Total number of rows in `{table}`. Auto-acquires a connection.
-    pub async fn count() -> ::std::result::Result<i64, ::catalyst::meltdown::MeltDown> {{
+    pub async fn count() -> ::std::result::Result<i64, crate::meltdown::MeltDown> {{
         use ::diesel_async::RunQueryDsl;
-        let mut conn = ::catalyst::database::pool().get().await?;
+        let mut conn = crate::database::acquire_conn().await?;
         let n: i64 = ::diesel::QueryDsl::count(crate::database::schema::{table}::dsl::{table})
-            .get_result(&mut conn)
+            .get_result::<i64>(&mut conn)
             .await
             .map_err(|e: ::diesel::result::Error| match e {{
                 ::diesel::result::Error::NotFound => {{
-                    ::catalyst::meltdown::MeltDown::not_found("{table}", "count".to_string())
+                    crate::meltdown::MeltDown::not_found("{table}", "count".to_string())
                 }}
-                other => ::catalyst::meltdown::MeltDown::from(other),
+                other => crate::meltdown::MeltDown::from(other),
             }})?;
         Ok(n)
     }}
@@ -40,17 +40,17 @@ pub fn emit_type_count(out: &mut String, table: &str, stem: &str) {
 pub fn emit_query_aggregations(out: &mut String, _table: &str, stem: &str) {
     let body = format!(
         r#"    /// Count rows matching the in-flight filters.
-    pub async fn count(self) -> ::std::result::Result<i64, ::catalyst::meltdown::MeltDown> {{
+    pub async fn count(self) -> ::std::result::Result<i64, crate::meltdown::MeltDown> {{
         use ::diesel_async::RunQueryDsl;
-        let mut conn = ::catalyst::database::pool().get().await?;
+        let mut conn = crate::database::acquire_conn().await?;
         let n: i64 = ::diesel::QueryDsl::count(self.inner)
-            .get_result(&mut conn)
+            .get_result::<i64>(&mut conn)
             .await?;
         Ok(n)
     }}
 
     /// `true` when at least one row matches the in-flight filters.
-    pub async fn exists(self) -> ::std::result::Result<bool, ::catalyst::meltdown::MeltDown> {{
+    pub async fn exists(self) -> ::std::result::Result<bool, crate::meltdown::MeltDown> {{
         let n = self.count().await?;
         Ok(n > 0)
     }}
@@ -58,10 +58,11 @@ pub fn emit_query_aggregations(out: &mut String, _table: &str, stem: &str) {
     /// Return the first matching row, if any.
     pub async fn first(
         self,
-    ) -> ::std::result::Result<::std::option::Option<{stem}>, ::catalyst::meltdown::MeltDown> {{
+    ) -> ::std::result::Result<::std::option::Option<{stem}>, crate::meltdown::MeltDown> {{
         use ::diesel_async::RunQueryDsl;
-        let mut conn = ::catalyst::database::pool().get().await?;
+        let mut conn = crate::database::acquire_conn().await?;
         let rows: ::std::vec::Vec<{stem}> = ::diesel::QueryDsl::limit(self.inner, 1)
+            .select(<{stem} as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())
             .load::<{stem}>(&mut conn)
             .await?;
         Ok(rows.into_iter().next())
@@ -80,7 +81,7 @@ mod tests {
         let mut out = String::new();
         emit_type_count(&mut out, "users", "User");
         assert!(out.contains("pub async fn count()"));
-        assert!(out.contains("::catalyst::database::pool()"));
+        assert!(out.contains("crate::database::acquire_conn()"));
         assert!(out.contains("MeltDown::not_found(\"users\""));
         assert!(out.contains("pub fn query() -> UserQuery"), "should expose builder shortcut");
     }
@@ -99,6 +100,6 @@ mod tests {
     fn aggregations_use_pool_for_auto_conn() {
         let mut out = String::new();
         emit_query_aggregations(&mut out, "posts", "Post");
-        assert!(out.contains("::catalyst::database::pool()"));
+        assert!(out.contains("crate::database::acquire_conn()"));
     }
 }

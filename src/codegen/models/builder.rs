@@ -38,7 +38,7 @@ fn emit_query_struct(out: &mut String, table: &str, q_ty: &str, relations: &[Rel
 pub struct {q_ty} {{
     pub(crate) inner: ::diesel::query_builder::BoxedSelectStatement<
         'static,
-        <crate::database::schema::{table}::table as ::diesel::query_source::Table>::SqlType,
+        crate::database::schema::{table}::SqlType,
         ::diesel::internal::table_macro::FromClause<crate::database::schema::{table}::table>,
         ::diesel::pg::Pg,
     >,
@@ -134,15 +134,18 @@ fn emit_into_future_for_query(out: &mut String, stem: &str, q_ty: &str) {
     let body = format!(
         r#"impl ::std::future::IntoFuture for {q_ty} {{
     type Output =
-        ::std::result::Result<::std::vec::Vec<{stem}>, ::catalyst::meltdown::MeltDown>;
+        ::std::result::Result<::std::vec::Vec<{stem}>, crate::meltdown::MeltDown>;
     type IntoFuture =
         ::std::pin::Pin<::std::boxed::Box<dyn ::std::future::Future<Output = Self::Output> + Send>>;
 
     fn into_future(self) -> Self::IntoFuture {{
         ::std::boxed::Box::pin(async move {{
             use ::diesel_async::RunQueryDsl;
-            let mut conn = ::catalyst::database::pool().get().await?;
-            let rows: ::std::vec::Vec<{stem}> = self.inner.load(&mut conn).await?;
+            let mut conn = crate::database::acquire_conn().await?;
+            let rows: ::std::vec::Vec<{stem}> = self.inner
+                .select(<{stem} as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())
+                .load::<{stem}>(&mut conn)
+                .await?;
             Ok(rows)
         }})
     }}
@@ -188,8 +191,8 @@ fn emit_into_future_for_paginated(out: &mut String, stem: &str, p_ty: &str) {
     let body = format!(
         r#"impl ::std::future::IntoFuture for {p_ty} {{
     type Output = ::std::result::Result<
-        ::catalyst::transport::http::list_query::ListResponse<{stem}>,
-        ::catalyst::meltdown::MeltDown,
+        crate::structs::list_query::ListResponse<{stem}>,
+        crate::meltdown::MeltDown,
     >;
     type IntoFuture =
         ::std::pin::Pin<::std::boxed::Box<dyn ::std::future::Future<Output = Self::Output> + Send>>;
@@ -197,14 +200,17 @@ fn emit_into_future_for_paginated(out: &mut String, stem: &str, p_ty: &str) {
     fn into_future(self) -> Self::IntoFuture {{
         ::std::boxed::Box::pin(async move {{
             use ::diesel_async::RunQueryDsl;
-            let mut conn = ::catalyst::database::pool().get().await?;
+            let mut conn = crate::database::acquire_conn().await?;
             let count_q = self.base.inner;
             let offset = ((self.page.saturating_sub(1)) as i64) * (self.page_size as i64);
             let limit = self.page_size as i64;
             let q = ::diesel::QueryDsl::limit(::diesel::QueryDsl::offset(count_q, offset), limit);
-            let items: ::std::vec::Vec<{stem}> = q.load(&mut conn).await?;
+            let items: ::std::vec::Vec<{stem}> = q
+                .select(<{stem} as ::diesel::SelectableHelper<::diesel::pg::Pg>>::as_select())
+                .load::<{stem}>(&mut conn)
+                .await?;
             let total = items.len() as u64;
-            Ok(::catalyst::transport::http::list_query::ListResponse::new(
+            Ok(crate::structs::list_query::ListResponse::new(
                 items,
                 self.page,
                 self.page_size,

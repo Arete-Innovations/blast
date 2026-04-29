@@ -37,13 +37,13 @@ fn emit_list_wrapper(out: &mut String, stem: &str) {
         r#"    /// Page-fetch with auto-acquired connection. Convenience wrapper around
     /// the txn-friendly module-level list fn.
     pub async fn list(
-        query: &::catalyst::transport::http::list_query::ListQuery,
+        query: &crate::structs::list_query::ListQuery,
     ) -> ::std::result::Result<
-        ::catalyst::transport::http::list_query::ListResponse<{stem}>,
-        ::catalyst::meltdown::MeltDown,
+        crate::structs::list_query::ListResponse<{stem}>,
+        crate::meltdown::MeltDown,
     > {{
-        let mut conn = ::catalyst::database::pool().get().await?;
-        super::list(&mut conn, query).await
+        let mut conn = crate::database::acquire_conn().await?;
+        self::list(&mut conn, query).await
     }}
 "#,
     );
@@ -53,9 +53,9 @@ fn emit_list_wrapper(out: &mut String, stem: &str) {
 fn emit_get_wrapper(out: &mut String, stem: &str) {
     let body = format!(
         r#"    /// Auto-conn variant of the module-level get fn.
-    pub async fn get(id: i64) -> ::std::result::Result<{stem}, ::catalyst::meltdown::MeltDown> {{
-        let mut conn = ::catalyst::database::pool().get().await?;
-        super::get(&mut conn, id).await
+    pub async fn get(id: i64) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
+        let mut conn = crate::database::acquire_conn().await?;
+        self::get(&mut conn, id).await
     }}
 "#,
     );
@@ -67,9 +67,9 @@ fn emit_create_wrapper(out: &mut String, stem: &str, insertable: &str) {
         r#"    /// Auto-conn variant of the module-level create fn.
     pub async fn create(
         input: &{insertable},
-    ) -> ::std::result::Result<{stem}, ::catalyst::meltdown::MeltDown> {{
-        let mut conn = ::catalyst::database::pool().get().await?;
-        super::create(&mut conn, input).await
+    ) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
+        let mut conn = crate::database::acquire_conn().await?;
+        self::create(&mut conn, input).await
     }}
 "#,
     );
@@ -82,9 +82,9 @@ fn emit_update_wrapper(out: &mut String, stem: &str, patch: &str) {
     pub async fn update(
         id: i64,
         patch: &{patch},
-    ) -> ::std::result::Result<{stem}, ::catalyst::meltdown::MeltDown> {{
-        let mut conn = ::catalyst::database::pool().get().await?;
-        super::update(&mut conn, id, patch).await
+    ) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
+        let mut conn = crate::database::acquire_conn().await?;
+        self::update(&mut conn, id, patch).await
     }}
 "#,
     );
@@ -93,9 +93,9 @@ fn emit_update_wrapper(out: &mut String, stem: &str, patch: &str) {
 
 fn emit_delete_wrapper(out: &mut String) {
     let body = r#"    /// Auto-conn variant of the module-level delete fn.
-    pub async fn delete(id: i64) -> ::std::result::Result<(), ::catalyst::meltdown::MeltDown> {
-        let mut conn = ::catalyst::database::pool().get().await?;
-        super::delete(&mut conn, id).await
+    pub async fn delete(id: i64) -> ::std::result::Result<(), crate::meltdown::MeltDown> {
+        let mut conn = crate::database::acquire_conn().await?;
+        self::delete(&mut conn, id).await
     }
 "#;
     out.push_str(body);
@@ -109,7 +109,7 @@ fn emit_list_from_query_wrapper(out: &mut String, _table: &str, stem: &str) {
     /// per-field FilterKind metadata each `(col, value)` pair will dispatch
     /// to the matching scope method.
     pub fn list_from_query(
-        _q: &::catalyst::transport::http::list_query::ListQuery,
+        _q: &crate::structs::list_query::ListQuery,
     ) -> {query_ty} {{
         {query_ty}::new()
     }}
@@ -143,12 +143,12 @@ mod tests {
     fn wrappers_call_pool_and_super() {
         let mut out = String::new();
         emit_impl_block(&mut out, "users", "User");
-        assert!(out.contains("::catalyst::database::pool().get().await"));
-        assert!(out.contains("super::list(&mut conn, query).await"));
-        assert!(out.contains("super::get(&mut conn, id).await"));
-        assert!(out.contains("super::create(&mut conn, input).await"));
-        assert!(out.contains("super::update(&mut conn, id, patch).await"));
-        assert!(out.contains("super::delete(&mut conn, id).await"));
+        assert!(out.contains("crate::database::acquire_conn().await"));
+        assert!(out.contains("self::list(&mut conn, query).await"));
+        assert!(out.contains("self::get(&mut conn, id).await"));
+        assert!(out.contains("self::create(&mut conn, input).await"));
+        assert!(out.contains("self::update(&mut conn, id, patch).await"));
+        assert!(out.contains("self::delete(&mut conn, id).await"));
     }
 
     #[test]

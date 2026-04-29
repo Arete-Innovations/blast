@@ -72,13 +72,13 @@ fn build_resource_file(r: &ResourceState) -> String {
     let type_name = pascal_case(&singularize(table));
 
     let mut out = String::new();
-    out.push_str("use axum::extract::{Path, Query, State};\n");
+    out.push_str("use axum::extract::{Path, State};\n");
     out.push_str("use axum::http::StatusCode;\n");
     out.push_str("use axum::routing::{delete, get, patch, post};\n");
     out.push_str("use axum::{Json, Router};\n");
     out.push_str("use crate::Ctx;\n");
     out.push_str("use crate::meltdown::MeltDown;\n");
-    out.push_str("use crate::transport::http::list_query::{ListQuery, ListResponse};\n");
+    out.push_str("use crate::structs::list_query::{ListQuery, ListResponse};\n");
     out.push('\n');
     out.push_str(&format!("use crate::flows::generated::{table} as flow;\n", table = table,));
     out.push_str(&format!("use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}Public}};\n", table = table, ty = type_name,));
@@ -105,7 +105,7 @@ fn handler_for_verb(verb: Verb, type_name: &str) -> String {
 
 fn list_handler(type_name: &str) -> String {
     format!(
-        "pub async fn list(\n\x20   State(ctx): State<Ctx>,\n\x20   Query(params): Query<ListQuery>,\n) -> Result<Json<ListResponse<{ty}Public>>, MeltDown> {{\n\x20   let result = flow::list::run(&ctx, \
+        "pub async fn list(\n\x20   State(ctx): State<Ctx>,\n\x20   params: ListQuery,\n) -> Result<Json<ListResponse<{ty}Public>>, MeltDown> {{\n\x20   let result = flow::list::run(&ctx, \
          params).await?;\n\x20   Ok(Json(result))\n}}\n",
         ty = type_name,
     )

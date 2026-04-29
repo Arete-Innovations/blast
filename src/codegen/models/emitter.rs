@@ -42,7 +42,7 @@ fn imports_block(table: &str, stem: &str) -> String {
     out.push_str("//! Generated model layer for this resource. Persistence primitives,\n");
     out.push_str("//! the fluent query builder, and auto-conn convenience wrappers.\n\n");
     out.push_str("#![allow(unused_imports, dead_code, clippy::needless_borrow)]\n\n");
-    out.push_str("use ::diesel::prelude::*;\n");
+    out.push_str("use ::diesel::{BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgTextExpressionMethods, QueryDsl};\n");
     out.push_str(&format!("use crate::structs::generated::{table}::{{{stem}, {insertable}, {patch}}};\n",));
     out
 }
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn auto_conn_wrappers_use_pool() {
         let body = render_resource_body(&resource_with_columns(), &[], None);
-        assert!(body.contains("::catalyst::database::pool().get().await"));
+        assert!(body.contains("crate::database::acquire_conn().await"));
     }
 
     #[test]
