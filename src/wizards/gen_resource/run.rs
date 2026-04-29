@@ -11,7 +11,7 @@ use crate::{
         names::{FieldName, ResourceName, SqlType},
         resource::{FieldState, ResourceState},
     },
-    wizards::gen_resource::{confirm, fields, gen_level, list, pick, schema_diff, verbs, ws},
+    wizards::gen_resource::{confirm, fields, gen_level, list, pick, schema_diff, validators, verbs, ws},
 };
 
 pub struct Args {
@@ -75,6 +75,10 @@ pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> Blas
     progress.step_start("fields");
     fields::collect_fields(table, &mut resource)?;
     progress.step_done("fields");
+
+    progress.step_start("validators");
+    validators::collect_validators(&mut resource)?;
+    progress.step_done("validators");
 
     progress.step_start("verbs");
     verbs::collect_verbs(table, &mut resource)?;
