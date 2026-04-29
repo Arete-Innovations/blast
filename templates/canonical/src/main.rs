@@ -69,8 +69,7 @@ async fn create_app() -> Router {
             .layer(transport::http::middleware::trace::make_trace_layer())
             .layer(CorsLayer::permissive())
             .layer(DefaultBodyLimit::max(1024 * 1024))
-            .layer(from_fn(error_handling_middleware))
-            .layer(from_fn(api_logger_middleware)),
+            .layer(from_fn(error_handling_middleware)),
     );
 
     app
