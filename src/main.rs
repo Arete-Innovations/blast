@@ -7,6 +7,7 @@ mod build;
 mod codegen;
 mod commands;
 mod configs;
+mod daemon;
 mod dashboard;
 mod database;
 mod dependencies;

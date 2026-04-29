@@ -22,7 +22,7 @@ fn setup_logs(project_dir: &Path) -> BlastResult<()> {
     let blast_dir = project_dir.join("storage").join("blast");
     fs::create_dir_all(&blast_dir)?;
 
-    for filename in ["info.log", "error.log", "debug.log", "warning.log"] {
+    for filename in ["info.log", "server.log", "error.log", "debug.log", "warning.log", "fe.log", "routes.log"] {
         let log_file = logs_dir.join(filename);
         if !log_file.exists() {
             let mut file = OpenOptions::new().create(true).truncate(true).write(true).open(&log_file)?;
@@ -73,6 +73,12 @@ pub fn launch_dashboard(config: &Config) -> BlastResult<()> {
     crate::logger::set_quiet_mode(true);
 
     let layout_path = prepare_layout(project_dir)?;
+
+    let auto_mode = if config.environment == "prod" { crate::daemon::ServerMode::Prod } else { crate::daemon::ServerMode::Dev };
+    match crate::daemon::start_server(config, auto_mode) {
+        Ok(pid) => println!("Auto-started backend daemon (PID {})", pid),
+        Err(e) => eprintln!("warning: failed to auto-start backend daemon: {}", e),
+    }
 
     println!("Launching Blast interactive dashboard...");
 

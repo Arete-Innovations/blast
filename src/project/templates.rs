@@ -31,19 +31,19 @@ layout {
             }
             pane size="70%" split_direction="vertical" {
                 pane split_direction="horizontal" {
-                    pane name="Server" command="blast" {
-                        args "run"
+                    pane name="Server" command="bash" {
+                        args "-c" "tail -n200 -f storage/logs/server.log 2>/dev/null || (mkdir -p storage/logs && touch storage/logs/server.log && tail -f storage/logs/server.log)"
                     }
                     pane name="Errors" command="bash" {
-                        args "-c" "tail -n100 -f storage/logs/error.log 2>/dev/null || (touch storage/logs/error.log && tail -f storage/logs/error.log)"
+                        args "-c" "tail -n200 -f storage/logs/error.log 2>/dev/null || (mkdir -p storage/logs && touch storage/logs/error.log && tail -f storage/logs/error.log)"
                     }
                 }
                 pane split_direction="horizontal" {
                     pane name="FE HMR" command="bash" {
-                        args "-c" "echo stub: FE HMR stdout - wire vite dev server here && exec bash"
+                        args "-c" "tail -n200 -f storage/logs/fe.log 2>/dev/null || (mkdir -p storage/logs && touch storage/logs/fe.log && tail -f storage/logs/fe.log)"
                     }
                     pane name="Routes" command="bash" {
-                        args "-c" "echo stub: routes pane - wire blast routes here && exec bash"
+                        args "-c" "tail -n200 -f storage/logs/routes.log 2>/dev/null || (mkdir -p storage/logs && touch storage/logs/routes.log && tail -f storage/logs/routes.log)"
                     }
                 }
             }

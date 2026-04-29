@@ -31,6 +31,17 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Log { cmd: sub } => dispatch_log(sub, config),
         Command::Arsenal { cmd: sub } => dispatch_arsenal(sub, config),
 
+        Command::Stop => {
+            logger::info("Stopping server...")?;
+            let stopped = crate::daemon::stop_server(config)?;
+            if stopped {
+                logger::success("Server stopped")?;
+            } else {
+                logger::info("No running server")?;
+            }
+            Ok(())
+        }
+
         Command::New {
             name,
             dev,
@@ -481,37 +492,22 @@ fn run_refresh(config: &mut Config) -> BlastResult<()> {
 }
 
 fn run_dev_server(config: &Config) -> BlastResult<()> {
-    use std::os::unix::process::CommandExt;
-    let err = std::process::Command::new("cargo")
-        .args(["run", "--bin", &config.project_name])
-        .current_dir(&config.project_dir)
-        .exec();
-    Err(BlastError::Invalid(format!("failed to exec cargo run: {}", err)))
+    let pid = crate::daemon::start_server(config, crate::daemon::ServerMode::Dev)?;
+    logger::success(&format!("Development server started with PID: {}", pid))?;
+    Ok(())
 }
 
 fn run_prod_server(config: &Config) -> BlastResult<()> {
-    use std::os::unix::process::CommandExt;
-    let binary_path = config.project_dir.join("target").join("release").join(&config.project_name);
-    let err = if binary_path.exists() {
-        std::process::Command::new(&binary_path).current_dir(&config.project_dir).exec()
-    } else {
-        std::process::Command::new("cargo")
-            .args(["run", "--release", "--bin", &config.project_name])
-            .current_dir(&config.project_dir)
-            .exec()
-    };
-    Err(BlastError::Invalid(format!("failed to exec prod server: {}", err)))
+    let pid = crate::daemon::start_server(config, crate::daemon::ServerMode::Prod)?;
+    logger::success(&format!("Production server started with PID: {}", pid))?;
+    Ok(())
 }
 
 fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
-    use std::os::unix::process::CommandExt;
     dep_manager.ensure_installed(&["cargo-watch"], true)?;
-    let run_arg = format!("run --bin {}", &config.project_name);
-    let err = std::process::Command::new("cargo")
-        .args(["watch", "-x", &run_arg])
-        .current_dir(&config.project_dir)
-        .exec();
-    Err(BlastError::Invalid(format!("failed to exec cargo watch: {}", err)))
+    let pid = crate::daemon::start_server(config, crate::daemon::ServerMode::Watch)?;
+    logger::success(&format!("Watch mode started with PID: {}", pid))?;
+    Ok(())
 }
 
 fn run_check(config: &Config, verbose: bool) -> BlastResult<()> {
