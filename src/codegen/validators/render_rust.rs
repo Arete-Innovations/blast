@@ -142,12 +142,12 @@ fn render_field_checks(field: &str, state: &FieldState, is_patch: bool) -> Strin
 
     if is_optional_in_dto {
         if unwrap_inner_some {
-            out.push_str(&format!("    {open} input.{field}.as_ref() {{\n", open = if_let_some_prefix("outer"), field = field));
-            out.push_str(&format!("        {open} outer.as_ref() {{\n", open = if_let_some_prefix("v")));
+            out.push_str(&format!("    {open} = input.{field}.as_ref() {{\n", open = if_let_some_prefix("outer"), field = field));
+            out.push_str(&format!("        {open} = outer.as_ref() {{\n", open = if_let_some_prefix("v")));
             indent = "            ";
             value_expr = "v".to_string();
         } else {
-            out.push_str(&format!("    {open} input.{field}.as_ref() {{\n", open = if_let_some_prefix("v"), field = field));
+            out.push_str(&format!("    {open} = input.{field}.as_ref() {{\n", open = if_let_some_prefix("v"), field = field));
             indent = "        ";
             value_expr = "v".to_string();
         }
