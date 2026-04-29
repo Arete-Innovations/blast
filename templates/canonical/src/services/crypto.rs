@@ -5,7 +5,7 @@ use argon2::{
 use base64::Engine as _;
 use rand::RngCore;
 
-use crate::{cata_log, meltdown::*};
+use crate::meltdown::*;
 
 pub fn hash_password(plain: &str) -> Result<String, MeltDown> {
     let salt = SaltString::generate(&mut OsRng);
@@ -28,13 +28,4 @@ pub fn mint_session_token() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(buf)
 }
 
-pub fn now_unix() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as i64,
-        Err(e) => {
-            cata_log!(Error, format!("system clock before epoch: {}", e));
-            0
-        }
-    }
-}
+pub use crate::time::now_unix;

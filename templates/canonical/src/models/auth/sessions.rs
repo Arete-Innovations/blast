@@ -2,10 +2,10 @@ use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 
 use crate::{
-    cata_log,
     database::schema::sessions::dsl as sessions_dsl,
     meltdown::*,
     structs::{NewSession, Session, User},
+    time::now_unix,
 };
 
 pub async fn insert_session(conn: &mut AsyncPgConnection, user_id: i64, token: &str, expires_at: i64) -> Result<Session, MeltDown> {
@@ -47,13 +47,3 @@ pub async fn delete_by_token(conn: &mut AsyncPgConnection, token: &str) -> Resul
     Ok(())
 }
 
-fn now_unix() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as i64,
-        Err(e) => {
-            cata_log!(Error, format!("system clock before epoch: {}", e));
-            0
-        }
-    }
-}
