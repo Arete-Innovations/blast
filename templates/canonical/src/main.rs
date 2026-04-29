@@ -3,7 +3,10 @@ use std::net::SocketAddr;
 use axum::{extract::DefaultBodyLimit, middleware::from_fn, Router};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 use tower::ServiceBuilder;
-use tower_http::cors::CorsLayer;
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+};
 
 mod bootstrap;
 mod crank;
@@ -58,7 +61,9 @@ async fn create_app() -> Router {
     let ctx = Ctx::anonymous(database::db::pool().clone());
     let api_routes = transport::http::router(ctx);
 
-    let app = Router::new().nest("/api", api_routes).layer(
+    let static_files = ServeDir::new("frontend/dist").not_found_service(ServeFile::new("frontend/dist/index.html"));
+
+    let app = Router::new().nest("/api", api_routes).fallback_service(static_files).layer(
         ServiceBuilder::new()
             .layer(transport::http::middleware::trace::make_trace_layer())
             .layer(CorsLayer::permissive())
