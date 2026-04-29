@@ -481,6 +481,12 @@ impl MeltDown {
         Self::new(MeltType::ValidationFailed, details)
     }
 
+    pub fn validation_failed_field(field: impl Into<String>, message: impl Into<String>) -> Self {
+        let field = field.into();
+        let message = message.into();
+        Self::new(MeltType::ValidationFailed, message.clone()).with_user_message(message).with_context("field", field)
+    }
+
     pub fn bad_request(details: impl Into<String>) -> Self {
         Self::new(MeltType::BadRequest, details)
     }
