@@ -1,7 +1,10 @@
 use leptos::prelude::*;
 use leptos_router::hooks::use_location;
+use stylance::import_crate_style;
 
 use crate::transport::leptos::signals::nav::{schedule_idle, use_nav_store, NavState};
+
+import_crate_style!(style, "src/transport/leptos/components/nav_progress.module.scss");
 
 #[component]
 pub fn NavProgress() -> impl IntoView {
@@ -20,10 +23,13 @@ pub fn NavProgress() -> impl IntoView {
         }
     });
 
-    let class = move || match store.state.get() {
-        NavState::Idle => "nav-progress nav-progress--idle",
-        NavState::Pending(_) => "nav-progress nav-progress--pending",
-        NavState::Settled => "nav-progress nav-progress--settled",
+    let class = move || {
+        let state_class = match store.state.get() {
+            NavState::Idle => style::idle,
+            NavState::Pending(_) => style::pending,
+            NavState::Settled => style::settled,
+        };
+        format!("{} {}", style::bar, state_class)
     };
 
     view! {

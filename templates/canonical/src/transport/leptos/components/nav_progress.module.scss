@@ -1,0 +1,38 @@
+.bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 0.125rem;
+    background: var(--app-color-brand);
+    z-index: 9999;
+    pointer-events: none;
+    transform-origin: left center;
+}
+
+.idle {
+    display: none;
+}
+
+.pending {
+    width: 100%;
+    opacity: 1;
+    animation: fill 0.5s ease-out forwards, overrun 1s linear 0.5s infinite;
+}
+
+.settled {
+    width: 100%;
+    transform: scaleX(1);
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+}
+
+@keyframes fill {
+    from { transform: scaleX(0); }
+    to   { transform: scaleX(1); }
+}
+
+@keyframes overrun {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.4; }
+    100% { opacity: 1; }
+}
