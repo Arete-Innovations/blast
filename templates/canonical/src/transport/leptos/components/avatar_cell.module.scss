@@ -1,0 +1,46 @@
+.avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--app-color-border-subtle);
+    color: var(--app-color-fg);
+    font-weight: 600;
+    line-height: 1;
+    user-select: none;
+    flex: 0 0 auto;
+    font-size: var(--app-fs-md);
+
+    &[data-size="sm"] {
+        width: var(--app-space-xl);
+        height: var(--app-space-xl);
+        font-size: var(--app-fs-2xs);
+    }
+
+    &[data-size="md"] {
+        width: var(--app-space-2xl);
+        height: var(--app-space-2xl);
+        font-size: var(--app-fs-sm);
+    }
+
+    &[data-size="lg"] {
+        width: var(--app-space-3xl);
+        height: var(--app-space-3xl);
+        font-size: var(--app-fs-lg);
+    }
+}
+
+.img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    font-size: inherit;
+}
+
+.initials {
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    font-size: inherit;
+}

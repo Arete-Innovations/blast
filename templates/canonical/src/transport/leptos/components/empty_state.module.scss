@@ -1,0 +1,31 @@
+.wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: var(--app-space-sm);
+    padding: var(--app-space-3xl) var(--app-space-xl);
+    border: 0.0625rem dashed var(--app-color-border-subtle);
+    border-radius: var(--app-radius-lg);
+    background: var(--app-color-bg);
+    color: var(--app-color-fg);
+}
+
+.title {
+    font-size: var(--app-fs-xl);
+    font-weight: 600;
+    margin: 0;
+    line-height: var(--app-line-height-base);
+}
+
+.message {
+    font-size: var(--app-fs-sm);
+    opacity: 0.75;
+    margin: 0;
+    line-height: var(--app-line-height-base);
+}
+
+.action {
+    margin-top: var(--app-space-md);
+}
