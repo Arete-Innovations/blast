@@ -72,8 +72,9 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     let pages_barrel_body = format!("{app_marker}{}", build_top_barrel(&emitted_tables));
     write_file(&pages_barrel, &pages_barrel_body, &mut report)?;
 
+    let data_tables = list_existing_data_tables(&data_dir);
     let data_barrel = data_dir.join("mod.rs");
-    let data_barrel_body = format!("{app_marker}{}", build_top_barrel(&emitted_tables));
+    let data_barrel_body = format!("{app_marker}{}", build_top_barrel(&data_tables));
     write_file(&data_barrel, &data_barrel_body, &mut report)?;
 
     ensure_parent_pages_barrel(project_root, &mut report)?;
@@ -300,6 +301,38 @@ fn build_top_barrel(tables: &[String]) -> String {
         out.push_str(&format!("pub mod {t};\n"));
     }
     out
+}
+
+fn list_existing_data_tables(data_dir: &Path) -> Vec<String> {
+    let mut tables: Vec<String> = Vec::new();
+    let entries = match fs::read_dir(data_dir) {
+        Ok(it) => it,
+        Err(_io) => return tables,
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_io) => continue,
+        };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let file_name = match path.file_name().and_then(|s| s.to_str()) {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        if file_name == "mod.rs" || file_name == ".gitkeep" {
+            continue;
+        }
+        let stem = match file_name.strip_suffix(".rs") {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+        tables.push(stem);
+    }
+    tables.sort();
+    tables
 }
 
 fn emit_data_stub(project_root: &Path, resource: &ResourceState, data_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
