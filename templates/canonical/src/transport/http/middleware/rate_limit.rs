@@ -17,7 +17,7 @@ pub fn with_auth_rate_limit<S: Clone + Send + Sync + 'static>(router: Router<S>)
     router.layer(from_fn(move |ConnectInfo(addr): ConnectInfo<SocketAddr>, req: Request, next: Next| {
         let limiter = Arc::clone(&limiter);
         async move {
-            let key = addr.ip().to_string();
+            let key = format!("{}:{}", req.uri().path(), addr.ip());
             if !limiter.check_and_consume(&key, AUTH_RATE_LIMIT_MAX, AUTH_RATE_LIMIT_WINDOW) {
                 return MeltDown::too_many_requests(AUTH_RATE_LIMIT_WINDOW).into_response();
             }
