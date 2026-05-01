@@ -115,7 +115,7 @@ fn emit_resource(project_root: &Path, resource: &ResourceState, pages_dir: &Path
         emitted_modules.push("list");
     }
     if verb_emits_html(resource, Verb::Get) {
-        let body = render_detail_page(table, &stem, verb_auth(resource, Verb::Get)?);
+        let body = render_detail_page(resource, &stem, verb_auth(resource, Verb::Get)?);
         write_file(&resource_pages_dir.join("detail.rs"), &format!("{marker}{body}"), report)?;
         emitted_modules.push("detail");
     }
@@ -665,5 +665,57 @@ mod tests {
 
         let top_barrel = fs::read_to_string(root.join("src/transport/leptos/pages/generated/mod.rs")).expect("read barrel");
         assert!(top_barrel.contains("pub mod posts;"), "top barrel must list posts: {top_barrel}");
+    }
+
+    #[test]
+    fn detail_page_extracts_id_from_route_params() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let detail = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/detail.rs")).expect("read detail");
+        assert!(detail.contains("use_params_map"), "detail must read params from router: {detail}");
+        assert!(detail.contains("id_signal"), "detail must declare id_signal: {detail}");
+        assert!(detail.contains("load_posts_one(id)"), "detail must call loader with id from signal, not hardcoded: {detail}");
+        assert!(!detail.contains("load_posts_one(0)"), "detail must NOT hardcode id=0: {detail}");
+    }
+
+    #[test]
+    fn detail_page_emits_delete_button_with_id_when_delete_verb_present() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let detail = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/detail.rs")).expect("read detail");
+        assert!(detail.contains("do_posts_delete(id)"), "detail must call deleter with id from signal: {detail}");
+        assert!(detail.contains("on_delete"), "detail must wire on_delete handler: {detail}");
+    }
+
+    #[test]
+    fn edit_page_extracts_id_from_route_params() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let edit = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/edit.rs")).expect("read edit");
+        assert!(edit.contains("use_params_map"), "edit must read params from router: {edit}");
+        assert!(edit.contains("id_signal"), "edit must declare id_signal: {edit}");
+        assert!(edit.contains("load_posts_one(id)"), "edit must call loader with id from signal, not hardcoded: {edit}");
+        assert!(!edit.contains("load_posts_one(0)"), "edit must NOT hardcode id=0: {edit}");
     }
 }

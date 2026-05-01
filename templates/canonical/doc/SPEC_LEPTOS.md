@@ -235,6 +235,65 @@ This means **the data is NOT pre-resolved during SSR**. The cold-load HTML paylo
 
 **`api_client.rs`** (canonical, wasm-only) provides `get_json`, `post_json`, `post_unit`, `patch_json`, `delete`. All map BE error envelope (`{error: {melt_type, message}}`) to a `MeltDown` via `parse_or_envelope_error`.
 
+### Parameterized pages (`:id` route param)
+
+Detail/Edit pages live at routes like `/posts/:id` and `/posts/:id/edit`. The page component reads the `id` from the route via `leptos_router::hooks::use_params_map()`, wraps it in a `Memo<i64>`, and the data-fetch `Effect` re-fires whenever the id changes (e.g. user navigates from `/posts/1` to `/posts/2`).
+
+```rust
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use crate::meltdown::MeltDown;
+use crate::structs::generated::posts::PostPublic;
+use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};
+// Loader is called only inside a wasm-cfg-gated Effect — keep its import wasm-only.
+#[cfg(target_arch = "wasm32")]
+use crate::transport::leptos::data::generated::posts::load_posts_one;
+// Deleter is called from an unconditional click handler. The data helper itself is
+// exported unconditionally with cfg-gated bodies, so the import is unconditional.
+use crate::transport::leptos::data::generated::posts::do_posts_delete;
+
+#[component]
+pub fn PostDetailPage() -> impl IntoView {
+    let params = leptos_router::hooks::use_params_map();
+    let id_signal: Memo<i64> = Memo::new(move |_| {
+        params.read().get("id").and_then(|s| s.parse::<i64>().ok()).unwrap_or(-1)
+    });
+    let item_signal: RwSignal<Option<Result<PostPublic, MeltDown>>> = RwSignal::new(None);
+
+    #[cfg(target_arch = "wasm32")]
+    Effect::new(move |_| {
+        let id = id_signal.get();      // reactive — re-fires on route change
+        if id < 0 { return; }          // skip while route param is missing/unparseable
+        item_signal.set(None);          // reset to Loading on every id change
+        spawn_local(async move {
+            let result = load_posts_one(id).await;
+            item_signal.set(Some(result));
+        });
+    });
+
+    // ... view! ...
+}
+```
+
+**Sentinel pattern.** `unwrap_or(-1)` returns `-1` when the param is missing or unparseable; the Effect early-returns on `id < 0` so the loader is never called with a bogus id. This is the same shape SSR sees on first render (no params yet → id = -1 → no fetch → `<p>"Loading..."</p>` placeholder rendered), so SSR ↔ hydrate trees agree.
+
+**Effect re-fires on `id_signal` change.** `id_signal.get()` inside the Effect subscribes to `id_signal`. When the user navigates from `/posts/1` to `/posts/2` (via `<A href=...>` or `navigate(...)`), `params` updates, `id_signal` recomputes, the Effect re-runs, `item_signal` clears to `None` (renders Loading), the new fetch resolves, view updates. No router-level boilerplate; everything flows through reactive signals.
+
+**Delete from a Detail page** uses the same `id_signal` (via `get_untracked` inside the click handler — we want the value at click time, not a subscription):
+
+```rust
+let on_delete = move |_ev: leptos::ev::MouseEvent| {
+    let id = id_signal.get_untracked();
+    if id < 0 { return; }
+    spawn_local(async move {
+        let outcome = do_posts_delete(id).await;
+        // ... handle outcome ...
+    });
+};
+```
+
+**Edit pages** follow the same id extraction. The loaded `PostPublic` is passed to `<PostEditForm initial=initial/>`; the form pulls the row's primary key from `initial.<pk_field>` (struct-aware — works for non-`id` PKs) and uses it when calling `do_posts_update(id, patch)`.
+
 ## Auth (locked)
 
 httpOnly SameSite=Lax cookie (no Secure flag in dev — Firefox + recent Chrome drop Secure cookies on plain http://localhost). Server reads cookie on SSR request, knows session immediately, can render full page or redirect. Wasm has no JS access (httpOnly). All `/api/*` calls send cookie automatically.

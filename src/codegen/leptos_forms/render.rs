@@ -218,10 +218,15 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::do_{table}_update;\n"));
     out.push('\n');
 
+    let pk_field_name: String = match primary_key_field(resource) {
+        Some((pk_name, _f)) => pk_name.as_str().to_string(),
+        None => "id".to_string(), // unreachable: edit_form is only emitted when primary_key_field(...).is_some()
+    };
+
     out.push_str("#[component]\n");
     out.push_str(&format!("pub fn {component_name}(initial: {public_type}) -> impl IntoView {{\n"));
 
-    out.push_str(&format!("    let row_id: {pk_ty} = initial.id.clone();\n"));
+    out.push_str(&format!("    let row_id: {pk_ty} = initial.{pk_field_name}.clone();\n"));
     for (name, field) in &patch_fields {
         out.push_str(&render_signal_decl(name.as_str(), field, enums));
     }
