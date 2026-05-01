@@ -20,17 +20,22 @@ pub fn render_list_page(table: &str, stem: &str, auth: AuthMode) -> String {
          \n\
          use crate::meltdown::MeltDown;\n\
          use crate::structs::generated::{table}::{public_ty};\n\
-         use crate::structs::list_query::{{ListQuery, ListResponse}};\n\
+         use crate::structs::list_query::ListResponse;\n\
          use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
          #[cfg(target_arch = \"wasm32\")]\n\
-         use crate::transport::leptos::data::generated::{table}::{loader};\n\n\
+         use crate::transport::leptos::data::generated::{table}::{loader};\n\
+         #[cfg(target_arch = \"wasm32\")]\n\
+         use crate::transport::leptos::signals::use_url_list_state;\n\n\
          #[component]\n\
          pub fn {component}() -> impl IntoView {{\n\
          \x20   let items_signal: RwSignal<Option<::std::result::Result<ListResponse<{public_ty}>, MeltDown>>> = RwSignal::new(None);\n\
          \x20   #[cfg(target_arch = \"wasm32\")]\n\
+         \x20   let list_state = use_url_list_state();\n\
+         \x20   #[cfg(target_arch = \"wasm32\")]\n\
          \x20   Effect::new(move |_| {{\n\
+         \x20       let query = list_state.to_list_query();\n\
          \x20       leptos::task::spawn_local(async move {{\n\
-         \x20           let result = {loader}(ListQuery::default()).await;\n\
+         \x20           let result = {loader}(query).await;\n\
          \x20           items_signal.set(Some(result));\n\
          \x20       }});\n\
          \x20   }});\n\

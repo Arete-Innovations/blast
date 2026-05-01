@@ -62,6 +62,30 @@ Both call the same `flows::*` underneath. Mobile / curl / MCP / arsenal hit `/ap
 
 Per-resource opt-in via Primer per-verb flags `emit_rest_api: bool` and `emit_html_page: bool` (defaults: both true).
 
+### Path = identity
+
+The path identifies the resource being viewed: `/posts` is the post list, `/posts/42` is post 42, `/posts/new` is the create form. The path NEVER carries view state (no `/posts/page-2`, no `/posts/sort=created_at`). One path, one canonical "what am I looking at."
+
+### Query = view state
+
+The query string carries everything else: pagination, sort, filters, open dialogs. Two helpers in `crate::transport::leptos::signals` keep components honest:
+
+- `use_url_list_state() -> UrlListState` — bidirectional sync between URL and `RwSignal`s for `page`, `page_size`, `sort`, `filter` per the wire schema (`?page=2&page_size=25&sort=-created_at&filter[col]=val`). `to_list_query()` snapshots the state into a `ListQuery` for data loaders. Codegen wires this into every list page automatically: the loader-Effect re-fires whenever any URL-state signal changes.
+- `use_query_dialog(name) -> QueryDialog` — modal/dialog state lives in the URL, not in component-local signals. `?dialog=<name>` toggles visibility; optional `?dialog_id=<n>` carries a row id (e.g. for edit/delete confirms). `QueryDialog::open(id)` and `QueryDialog::close()` mutate via `use_navigate` + replace. This makes dialogs bookmarkable and survives reload.
+
+Mutations to either helper push via `NavigateOptions { replace: true, scroll: false }` so filter typing / paginating doesn't spam history with a new entry per keystroke.
+
+### Gray-zone heuristic
+
+When deciding whether a piece of state belongs in the URL (query) or in a component-local signal, ask: **if a user bookmarks this URL and reopens it tomorrow, will they see the same content AND the same UI affordances open?**
+
+- "filter set to active=true" → yes, belongs in URL.
+- "edit dialog open for row 42" → yes, belongs in URL (`?dialog=edit&dialog_id=42`).
+- "user is hovering a button" → no, transient.
+- "form has unsaved input" → no, transient (and we don't want bookmark-rehydration confusion).
+
+If the answer is yes, use one of the URL helpers. If no, plain `RwSignal`. Never spread the same state across both layers.
+
 ## Layered architecture (binding)
 
 Leptos UI lives under `src/transport/leptos/`. Layer rule: pages call `flows::*` and `structs::*` only — same as any other transport handler. `build.rs` `LAYER:11` enforces this.

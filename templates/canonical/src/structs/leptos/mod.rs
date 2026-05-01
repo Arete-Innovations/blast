@@ -5,6 +5,7 @@ pub mod route_name;
 pub mod session_store;
 pub mod toast;
 pub mod toast_store;
+pub mod url_state;
 pub mod wire;
 
 pub use auth::{LoginInput, RegisterInput};
@@ -14,4 +15,5 @@ pub use route_name::RouteName;
 pub use session_store::SessionStore;
 pub use toast::{Toast, ToastKind};
 pub use toast_store::ToastStore;
+pub use url_state::{QueryDialog, UrlListState};
 pub use wire::{ErrorBody, ErrorEnvelope};
