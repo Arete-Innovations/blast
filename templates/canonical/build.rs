@@ -1868,6 +1868,20 @@ fn skip_line_for_leptos_scan(trimmed: &str, in_block_comment: &mut bool) -> bool
     false
 }
 
+// LEPTOS:1-10 lint family — policy on `generated/` skip is INTENTIONALLY split:
+//
+// - Rules that target user-authoring discipline (LEPTOS:7 optimistic_update_in_custom,
+//   LEPTOS:8 local_list_state, LEPTOS:9 local_dialog_state) SKIP `/generated/` —
+//   codegen emits the canonical patterns; the rule only catches hand-written drift.
+// - Rules that encode always-true visual/architectural invariants (LEPTOS:1 inline
+//   style, LEPTOS:2 hex/rgb/hsl, LEPTOS:3 raw px, LEPTOS:4 PageShell-required,
+//   LEPTOS:5 hardcoded route paths, LEPTOS:6 loading spinner) apply EVERYWHERE.
+//   If generated code violates one, that's a codegen bug we want to surface.
+//
+// Don't "uniformize" by adding a generated/ skip to all of them — you'd hide
+// codegen-template bugs in the CSS/arch class. Don't strip the existing skips
+// either — you'd false-positive on intentional codegen patterns.
+
 fn check_leptos_inline_style(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
     if !path_under(rel, "transport/leptos/") {
         return;
