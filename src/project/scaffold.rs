@@ -69,8 +69,22 @@ pub fn create_new_project_with_opts(project_name: &str, opts: NewOptions, sink: 
     let cwd = std::env::current_dir()?;
     let project_root = cwd.join(project_name);
 
-    if project_root.exists() {
-        return Err(BlastError::Project(format!("directory `{}` already exists", project_root.display())));
+    // Atomic ownership claim: create the leaf dir directly (was: exists-check
+    // then create_dir_all later in run(); the gap was a TOCTOU window where
+    // another process could create the dir between the two steps and our
+    // create_dir_all would silently succeed, then we'd overwrite their content).
+    // fs::create_dir errors with AlreadyExists if the path is taken — we treat
+    // that as the same hard-fail the old `if exists() { Err }` produced.
+    match project_root.parent() {
+        Some(parent) => fs::create_dir_all(parent)?,
+        None => {} // allow: project_root has no parent (filesystem root); fs::create_dir below surfaces the right error
+    }
+    match fs::create_dir(&project_root) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(BlastError::Project(format!("directory `{}` already exists", project_root.display())));
+        }
+        Err(e) => return Err(BlastError::from(e)),
     }
 
     create_with_target(project_name, project_root, opts, sink, progress)
@@ -349,8 +363,43 @@ fn print_next_steps(project_name: &str, sink: &mut dyn Sink) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
     use crate::io::null::{NullProgress, NullSink};
+
+    /// Process-global cwd is shared across parallel `cargo test` threads.
+    /// Any test that calls `env::set_current_dir` must serialize through
+    /// this mutex; the local `CwdGuard` then restores cwd on Drop so a
+    /// panic mid-test doesn't pollute subsequent tests.
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    struct CwdGuard {
+        prev: PathBuf,
+        // Lock is held alongside the guard so the mutex releases AFTER cwd
+        // is restored. Drop runs the impl body first, then drops fields in
+        // declaration order — `prev: PathBuf` (no-op), then `_lock` releases.
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            match std::env::set_current_dir(&self.prev) {
+                Ok(()) => {}
+                Err(_restore_err) => {} // allow: best-effort cwd restore in Drop; can't propagate
+            }
+        }
+    }
+
+    fn enter_dir<P: AsRef<std::path::Path>>(target: P) -> CwdGuard {
+        let lock = match CWD_LOCK.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let prev = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(target.as_ref()).expect("chdir");
+        CwdGuard { prev, _lock: lock }
+    }
 
     fn run_in_tempdir(name: &str) -> (tempfile::TempDir, Outcome) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -440,8 +489,7 @@ mod tests {
     #[test]
     fn create_new_project_rejects_existing_directory() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let original = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(dir.path()).expect("chdir");
+        let _cwd = enter_dir(dir.path());
 
         fs::create_dir_all(dir.path().join("dup")).expect("seed");
 
@@ -459,8 +507,41 @@ mod tests {
         };
         let result = create_new_project_with_opts("dup", opts, &mut sink, &mut progress);
 
-        std::env::set_current_dir(original).expect("restore cwd");
         assert!(result.is_err());
+        // _cwd drops here, restoring cwd + releasing CWD_LOCK.
+    }
+
+    #[test]
+    fn create_new_project_does_not_overwrite_existing_dir_contents() {
+        // Regression for the TOCTOU class: pre-fix used `if exists() { Err }`
+        // then later `create_dir_all` (which silently succeeds on existing
+        // dirs) then proceeded to write template files, overwriting any
+        // collision. Post-fix uses atomic `fs::create_dir`, which errors
+        // immediately on AlreadyExists — the user's prior content stays
+        // intact even if the exists-check races with another process.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = enter_dir(dir.path());
+
+        let target = dir.path().join("toctou_proj");
+        fs::create_dir_all(&target).expect("seed");
+        let canary = target.join("user_owned.txt");
+        fs::write(&canary, "DO NOT TOUCH").expect("seed canary");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        let opts = NewOptions {
+            db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
+            force: false,
+            no_test_db: true,
+            no_warmup: false,
+            post_seed: None,
+        };
+        let result = create_new_project_with_opts("toctou_proj", opts, &mut sink, &mut progress);
+
+        assert!(result.is_err(), "must fail-fast on existing dir");
+        let canary_after = fs::read_to_string(&canary).expect("canary still readable");
+        assert_eq!(canary_after, "DO NOT TOUCH", "scaffold leaked into the existing dir");
+        // _cwd drops here, restoring cwd + releasing CWD_LOCK.
     }
 
     #[test]

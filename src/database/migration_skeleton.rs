@@ -47,23 +47,41 @@ fn validate_migration_name(name: &str) -> BlastResult<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, sync::Mutex};
+    use std::{env, path::PathBuf, sync::Mutex};
 
     use super::*;
 
     static CWD_LOCK: Mutex<()> = Mutex::new(());
 
+    /// RAII guard that restores the prior cwd on Drop. Critical because
+    /// `env::set_current_dir` is process-global, not thread-local, and a
+    /// panic inside the test body would otherwise leave the cwd polluted —
+    /// subsequent tests would silently operate from the wrong dir.
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            match env::set_current_dir(&self.prev) {
+                Ok(()) => {}
+                Err(_restore_err) => {} // allow: Drop can't propagate; next test's CwdGuard chdir overwrites anyway
+            }
+        }
+    }
+
     fn with_tempdir<F: FnOnce()>(f: F) {
-        let guard = match CWD_LOCK.lock() {
+        let _lock = match CWD_LOCK.lock() {
             Ok(g) => g,
             Err(poisoned) => poisoned.into_inner(),
         };
         let tmp = tempfile::tempdir().expect("tempdir");
         let prev = env::current_dir().expect("cwd");
         env::set_current_dir(tmp.path()).expect("chdir tmp");
+        let _guard = CwdGuard { prev };
         f();
-        env::set_current_dir(prev).expect("chdir back");
-        drop(guard);
+        // _guard drops here, restoring cwd even if f() panicked.
+        // _lock drops next, releasing the mutex.
     }
 
     #[test]
