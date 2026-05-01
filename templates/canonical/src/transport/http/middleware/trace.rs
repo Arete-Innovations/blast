@@ -27,6 +27,8 @@ impl<B> MakeSpan<B> for CatalystMakeSpan {
                 method     = %method,
                 uri        = %uri,
                 user_id    = tracing::field::Empty,
+                session_id = tracing::field::Empty,
+                role       = tracing::field::Empty,
                 status     = tracing::field::Empty,
                 latency_ms = tracing::field::Empty,
             )
@@ -36,6 +38,8 @@ impl<B> MakeSpan<B> for CatalystMakeSpan {
                 method     = %method,
                 uri        = %uri,
                 user_id    = tracing::field::Empty,
+                session_id = tracing::field::Empty,
+                role       = tracing::field::Empty,
                 status     = tracing::field::Empty,
                 latency_ms = tracing::field::Empty,
             )
