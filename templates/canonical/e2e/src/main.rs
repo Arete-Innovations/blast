@@ -12,6 +12,20 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(40);
 const SERVER_BOOT_TIMEOUT: Duration = Duration::from_secs(60);
 const PASSWORD: &str = "S3cure!Pass-word";
 
+// Substrings that, when seen in any captured console-error / uncaught / unhandled-promise
+// entry, MUST fail the suite. These are the fingerprints of tachys hydration panics and
+// console_error_panic_hook dumps. Keep this list narrow so leptos dev-server warnings
+// don't false-positive.
+const FATAL_CONSOLE_SUBSTRINGS: &[&str] = &[
+    "hydration",
+    "panicked",
+    "unreachable executed",
+    "Unrecoverable",
+    "expected a marker node",
+    "RuntimeError",
+    "wasm-bindgen",
+];
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut driver = spawn_driver()?;
@@ -26,9 +40,9 @@ async fn main() -> Result<()> {
 }
 
 async fn run_with_master_timeout() -> Result<()> {
-    match timeout(Duration::from_secs(120), run_suite()).await {
+    match timeout(Duration::from_secs(180), run_suite()).await {
         Ok(r) => r,
-        Err(_elapsed) => bail!("master timeout (120s) — suite hung"),
+        Err(_elapsed) => bail!("master timeout (180s) — suite hung"),
     }
 }
 
@@ -97,6 +111,16 @@ async fn run_suite() -> Result<()> {
         .map_err(|_| anyhow!("login_via_ui timed out after {:?}", STEP_TIMEOUT))??;
     eprintln!("[e2e] ✓ login_via_ui");
 
+    timeout(STEP_TIMEOUT, cold_dashboard_after_login(&client))
+        .await
+        .map_err(|_| anyhow!("cold_dashboard_after_login timed out after {:?}", STEP_TIMEOUT))??;
+    eprintln!("[e2e] ✓ cold_dashboard_after_login");
+
+    timeout(STEP_TIMEOUT, cold_login_redirects_when_authed(&client))
+        .await
+        .map_err(|_| anyhow!("cold_login_redirects_when_authed timed out after {:?}", STEP_TIMEOUT))??;
+    eprintln!("[e2e] ✓ cold_login_redirects_when_authed");
+
     timeout(STEP_TIMEOUT, auth_me_via_api(&email))
         .await
         .map_err(|_| anyhow!("auth_me_via_api timed out after {:?}", STEP_TIMEOUT))??;
@@ -117,10 +141,91 @@ async fn wait_for_server() -> Result<()> {
     }
 }
 
+// Install the console-capture hook into the current page. Idempotent per page-load
+// (the hook self-guards via `window.__e2e_console_hooked`); navigating to a new URL
+// blows the global away and we re-install on the next call. Also resets the queue
+// so each step asserts against its own slice.
+async fn install_console_hook(client: &fantoccini::Client) -> Result<()> {
+    let install_script = r#"
+        if (!window.__e2e_console_hooked) {
+            window.__e2e_console_hooked = true;
+            window.__e2e_console = [];
+            const orig = { log: console.log, warn: console.warn, error: console.error };
+            console.log = function() { window.__e2e_console.push(['log', Array.from(arguments).map(String).join(' ')]); orig.log.apply(console, arguments); };
+            console.warn = function() { window.__e2e_console.push(['warn', Array.from(arguments).map(String).join(' ')]); orig.warn.apply(console, arguments); };
+            console.error = function() { window.__e2e_console.push(['error', Array.from(arguments).map(String).join(' ')]); orig.error.apply(console, arguments); };
+            window.addEventListener('error', (e) => window.__e2e_console.push(['uncaught', String(e.message) + ' @ ' + String(e.filename) + ':' + String(e.lineno)]));
+            window.addEventListener('unhandledrejection', (e) => window.__e2e_console.push(['unhandled-promise', String(e.reason)]));
+        }
+        return null;
+    "#;
+    client.execute(install_script, vec![]).await?;
+    Ok(())
+}
+
+// Drain captured console entries and panic the test if any look like a hydration
+// failure / wasm panic. Returns the (kind, message) pairs so the caller can log
+// the full diagnostic on failure.
+async fn assert_no_fatal_console(client: &fantoccini::Client, label: &str) -> Result<()> {
+    let raw = client
+        .execute("return JSON.stringify(window.__e2e_console || [])", vec![])
+        .await?;
+    let entries: Vec<(String, String)> = match raw.as_str() {
+        Some(s) => serde_json::from_str(s).unwrap_or_default(),
+        None => Vec::new(),
+    };
+
+    let fatal: Vec<&(String, String)> = entries
+        .iter()
+        .filter(|(kind, msg)| {
+            // Only error-level kinds count toward fatality. Leptos dev-server can
+            // emit warn-level noise (HMR, vite probes) that we don't want to fail on.
+            let is_error_kind = matches!(
+                kind.as_str(),
+                "error" | "uncaught" | "unhandled-promise"
+            );
+            if !is_error_kind {
+                return false;
+            }
+            FATAL_CONSOLE_SUBSTRINGS
+                .iter()
+                .any(|needle| msg.to_ascii_lowercase().contains(&needle.to_ascii_lowercase()))
+        })
+        .collect();
+
+    if !fatal.is_empty() {
+        eprintln!("[e2e]   --- fatal console entries ({}) ---", label);
+        for (kind, msg) in &fatal {
+            eprintln!("[e2e]   [{}] {}", kind, msg);
+        }
+        eprintln!("[e2e]   --- full console dump ---");
+        for (kind, msg) in &entries {
+            eprintln!("[e2e]   [{}] {}", kind, msg);
+        }
+        dump_diagnostics(client, label).await;
+        bail!(
+            "{}: {} fatal console entries (hydration / wasm panic fingerprint)",
+            label,
+            fatal.len()
+        );
+    }
+    Ok(())
+}
+
+// Reset the captured-error queue. Use after a navigation if we want fresh-page-only
+// assertions for the next step.
+async fn reset_console(client: &fantoccini::Client) -> Result<()> {
+    client
+        .execute("window.__e2e_console = []; return null;", vec![])
+        .await?;
+    Ok(())
+}
+
 async fn smoke_welcome(client: &fantoccini::Client) -> Result<()> {
     eprintln!("[e2e]   smoke: GET {}/", SERVER_URL);
     client.goto(SERVER_URL).await?;
     eprintln!("[e2e]   smoke: install console hook");
+    install_console_hook(client).await?;
     wait_for_hydration(client, Duration::from_secs(3)).await?;
     eprintln!("[e2e]   smoke: probing browser via execute()");
     match tokio::time::timeout(Duration::from_secs(5), client.execute("return 1+1", vec![])).await {
@@ -132,12 +237,14 @@ async fn smoke_welcome(client: &fantoccini::Client) -> Result<()> {
             bail!("wasm hydrate hung the JS event loop on welcome page");
         }
     }
+    assert_no_fatal_console(client, "smoke_welcome").await?;
     Ok(())
 }
 
 async fn register_via_ui(client: &fantoccini::Client, email: &str) -> Result<()> {
     eprintln!("[e2e]   register: GET {}/register", SERVER_URL);
     client.goto(&format!("{}/register", SERVER_URL)).await?;
+    install_console_hook(client).await?;
     eprintln!("[e2e]   register: waiting for form");
     client.wait().at_most(Duration::from_secs(10)).for_element(Locator::Css("form")).await?;
 
@@ -223,24 +330,12 @@ async fn register_via_ui(client: &fantoccini::Client, email: &str) -> Result<()>
         dump_diagnostics(client, "register-failure").await;
         return Err(err);
     }
+    assert_no_fatal_console(client, "register_via_ui").await?;
     Ok(())
 }
 
 async fn wait_for_hydration(client: &fantoccini::Client, deadline: Duration) -> Result<()> {
-    let install_script = r#"
-        if (!window.__e2e_console_hooked) {
-            window.__e2e_console_hooked = true;
-            window.__e2e_console = [];
-            const orig = { log: console.log, warn: console.warn, error: console.error };
-            console.log = function() { window.__e2e_console.push(['log', Array.from(arguments).map(String).join(' ')]); orig.log.apply(console, arguments); };
-            console.warn = function() { window.__e2e_console.push(['warn', Array.from(arguments).map(String).join(' ')]); orig.warn.apply(console, arguments); };
-            console.error = function() { window.__e2e_console.push(['error', Array.from(arguments).map(String).join(' ')]); orig.error.apply(console, arguments); };
-            window.addEventListener('error', (e) => window.__e2e_console.push(['uncaught', String(e.message) + ' @ ' + String(e.filename) + ':' + String(e.lineno)]));
-            window.addEventListener('unhandledrejection', (e) => window.__e2e_console.push(['unhandled-promise', String(e.reason)]));
-        }
-        return null;
-    "#;
-    client.execute(install_script, vec![]).await?;
+    install_console_hook(client).await?;
     tokio::time::sleep(deadline).await;
     Ok(())
 }
@@ -271,6 +366,7 @@ async fn dump_diagnostics(client: &fantoccini::Client, label: &str) {
 async fn login_via_ui(client: &fantoccini::Client, email: &str) -> Result<()> {
     eprintln!("[e2e]   login: GET {}/login", SERVER_URL);
     client.goto(&format!("{}/login", SERVER_URL)).await?;
+    install_console_hook(client).await?;
     eprintln!("[e2e]   login: waiting for form");
     client.wait().at_most(Duration::from_secs(10)).for_element(Locator::Css("form")).await?;
 
@@ -336,6 +432,84 @@ async fn login_via_ui(client: &fantoccini::Client, email: &str) -> Result<()> {
         dump_diagnostics(client, "login-failure").await;
         return Err(err);
     }
+    assert_no_fatal_console(client, "login_via_ui").await?;
+    Ok(())
+}
+
+// Cold-load the protected dashboard route via full SSR navigation while authed.
+// This is the regression net for the tachys "expected a marker node" hydration
+// panic: soft-nav inside the SPA router uses CSR, which never exercises the
+// SSR-then-hydrate path. A `client.goto()` to an absolute URL forces firefox to
+// fetch the SSR'd HTML and lets the wasm bundle attempt to hydrate against it.
+async fn cold_dashboard_after_login(client: &fantoccini::Client) -> Result<()> {
+    eprintln!("[e2e]   cold-dashboard: full-page goto {}/dashboard", SERVER_URL);
+    client.goto(&format!("{}/dashboard", SERVER_URL)).await?;
+    install_console_hook(client).await?;
+    reset_console(client).await?;
+
+    eprintln!("[e2e]   cold-dashboard: waiting for body");
+    client
+        .wait()
+        .at_most(Duration::from_secs(10))
+        .for_element(Locator::Css("body"))
+        .await?;
+
+    // Give wasm time to download + hydrate. Tachys hydration mismatches surface
+    // as console.error (via console_error_panic_hook) within the first few hundred
+    // ms after wasm boots. 1500ms is a comfortable upper bound.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    eprintln!("[e2e]   cold-dashboard: asserting URL still /dashboard (not bounced to /login)");
+    let url = client.current_url().await?;
+    if url.path() != "/dashboard" {
+        dump_diagnostics(client, "cold-dashboard-wrong-url").await;
+        bail!(
+            "cold-dashboard navigation bounced to {} — auth cookie not honored or hydration error redirected",
+            url.path()
+        );
+    }
+
+    eprintln!("[e2e]   cold-dashboard: asserting page-shell heading present");
+    let h1 = client
+        .wait()
+        .at_most(Duration::from_secs(5))
+        .for_element(Locator::Css("h1"))
+        .await
+        .context("cold-dashboard: no <h1> rendered after hydration")?;
+    let heading_text = h1.text().await?;
+    if !heading_text.contains("Dashboard") {
+        dump_diagnostics(client, "cold-dashboard-bad-heading").await;
+        bail!("cold-dashboard: expected <h1>Dashboard</h1>, got {:?}", heading_text);
+    }
+
+    assert_no_fatal_console(client, "cold_dashboard_after_login").await?;
+    Ok(())
+}
+
+// Cold-load /login while authed. AnonOnly should bounce us to /dashboard. This
+// will fail until the structural AnonOnly fix lands — that's intentional.
+async fn cold_login_redirects_when_authed(client: &fantoccini::Client) -> Result<()> {
+    eprintln!("[e2e]   cold-login-redirect: full-page goto {}/login (while authed)", SERVER_URL);
+    client.goto(&format!("{}/login", SERVER_URL)).await?;
+    install_console_hook(client).await?;
+    reset_console(client).await?;
+
+    eprintln!("[e2e]   cold-login-redirect: waiting for body");
+    client
+        .wait()
+        .at_most(Duration::from_secs(10))
+        .for_element(Locator::Css("body"))
+        .await?;
+
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    eprintln!("[e2e]   cold-login-redirect: asserting URL flipped to /dashboard");
+    if let Err(err) = wait_for_path(client, "/dashboard", Duration::from_secs(5)).await {
+        dump_diagnostics(client, "cold-login-redirect-failure").await;
+        return Err(err);
+    }
+
+    assert_no_fatal_console(client, "cold_login_redirects_when_authed").await?;
     Ok(())
 }
 
