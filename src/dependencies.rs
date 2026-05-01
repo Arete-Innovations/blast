@@ -13,8 +13,7 @@ impl DependencyManager {
         hints.insert("zellij".to_string(), "cargo install zellij".to_string());
         hints.insert("diesel_cli_ext".to_string(), "cargo install diesel_cli_ext".to_string());
         hints.insert("diesel".to_string(), "cargo install diesel_cli --no-default-features --features postgres".to_string());
-        hints.insert("cargo-watch".to_string(), "cargo install cargo-watch".to_string());
-        hints.insert("npm".to_string(), "install Node.js (e.g. pacman -S nodejs npm / apt install nodejs npm)".to_string());
+        hints.insert("cargo-leptos".to_string(), "cargo install cargo-leptos --locked".to_string());
 
         DependencyManager {
             install_hints: hints,

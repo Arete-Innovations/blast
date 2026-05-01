@@ -181,6 +181,8 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Help => print_help(),
 
         Command::Watch => run_watch(config, dep_manager),
+
+        Command::E2e => run_e2e(config, dep_manager),
     }
 }
 
@@ -409,8 +411,27 @@ fn run_prod_server(config: &Config) -> BlastResult<()> {
 }
 
 fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
-    dep_manager.ensure_installed(&["cargo-watch"])?;
+    dep_manager.ensure_installed(&["cargo-leptos"])?;
     let be_pid = crate::daemon::start_server(config, crate::daemon::ServerMode::Watch)?;
-    logger::success(&format!("BE (cargo-watch) started — PID {} → storage/logs/server.log", be_pid))?;
+    logger::success(&format!("cargo leptos watch started — PID {} → storage/logs/server.log", be_pid))?;
+    Ok(())
+}
+
+fn run_e2e(config: &Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
+    dep_manager.ensure_installed(&["cargo-leptos"])?;
+    let status = std::process::Command::new("cargo")
+        .args(["leptos", "end-to-end"])
+        .current_dir(&config.project_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+    if !status.success() {
+        return Err(crate::error::BlastError::Subprocess {
+            cmd: "cargo leptos end-to-end".to_string(),
+            detail: format!("exited with status {}", status),
+        });
+    }
+    logger::success("end-to-end tests passed")?;
     Ok(())
 }

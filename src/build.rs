@@ -7,23 +7,10 @@ use crate::{
 };
 
 pub fn run_build(config: &Config) -> BlastResult<()> {
-    logger::info("info: governor not yet implemented; skipping lint")?;
-
-    let frontend_dir = config.project_dir.join("frontend");
-    if frontend_dir.exists() {
-        logger::info("Building frontend with npm run build...")?;
-        let output = Command::new("npm").args(["run", "build"]).current_dir(&frontend_dir).output()?;
-        if !output.status.success() {
-            let detail = String::from_utf8_lossy(&output.stderr).to_string();
-            return Err(BlastError::Subprocess { cmd: "npm run build".to_string(), detail });
-        }
-        logger::success("Frontend build complete")?;
-    }
-
-    logger::info(&format!("Building {} (release)...", config.project_name))?;
+    logger::info(&format!("Running cargo leptos build --release for {}...", config.project_name))?;
 
     let cargo_status = Command::new("cargo")
-        .args(["build", "--release", "--bin", &config.project_name])
+        .args(["leptos", "build", "--release", "--precompress"])
         .current_dir(&config.project_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
@@ -32,12 +19,12 @@ pub fn run_build(config: &Config) -> BlastResult<()> {
 
     if !cargo_status.success() {
         return Err(BlastError::Subprocess {
-            cmd: format!("cargo build --release --bin {}", config.project_name),
-            detail: "cargo exited with non-zero status".to_string(),
+            cmd: "cargo leptos build --release --precompress".to_string(),
+            detail: "cargo leptos exited with non-zero status".to_string(),
         });
     }
 
-    logger::success("Release build complete")?;
+    logger::success("Release build complete (binary + WASM bundle + precompressed assets)")?;
     Ok(())
 }
 
@@ -48,9 +35,12 @@ pub fn run_package(config: &Config) -> BlastResult<()> {
         return Err(BlastError::NotFound(format!("release binary not found at {}; run `blast build` first", binary_path.display())));
     }
 
-    let dist_dir = config.project_dir.join("frontend").join("dist");
-    if !dist_dir.exists() {
-        logger::warning("frontend/dist/ not found; package will not include frontend assets")?;
+    let site_dir = config.project_dir.join("target").join("site");
+    if !site_dir.exists() {
+        return Err(BlastError::NotFound(format!(
+            "WASM bundle not found at {}; run `blast build` first (cargo leptos build --release)",
+            site_dir.display()
+        )));
     }
 
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
@@ -58,11 +48,12 @@ pub fn run_package(config: &Config) -> BlastResult<()> {
     let archive_path = config.project_dir.join(&archive_name);
 
     let binary_rel = format!("target/release/{}", config.project_name);
-    let mut tar_args: Vec<String> = vec!["-czf".to_string(), archive_path.to_string_lossy().to_string(), binary_rel];
-
-    if dist_dir.exists() {
-        tar_args.push("frontend/dist".to_string());
-    }
+    let mut tar_args: Vec<String> = vec![
+        "-czf".to_string(),
+        archive_path.to_string_lossy().to_string(),
+        binary_rel,
+        "target/site".to_string(),
+    ];
 
     let env_example = config.project_dir.join(".env.example");
     if env_example.exists() {

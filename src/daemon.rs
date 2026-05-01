@@ -142,20 +142,17 @@ fn build_command(config: &Config, mode: ServerMode) -> Command {
     let mut cmd = match mode {
         ServerMode::Dev => {
             let mut c = Command::new("cargo");
-            c.args(["run", "--bin", &config.project_name]);
+            c.args(["leptos", "serve"]);
             c
         }
         ServerMode::Prod => {
             let mut c = Command::new("cargo");
-            c.args(["run", "--release", "--no-default-features", "--features", "prod", "--bin", &config.project_name]);
+            c.args(["leptos", "serve", "--release"]);
             c
         }
         ServerMode::Watch => {
             let mut c = Command::new("cargo");
-            let run_arg = format!("run --bin {}", &config.project_name);
-            // whitelist watch dirs so vite's writes (frontend/.vite, node_modules/...) and
-            // the running binary's writes (storage/...) don't re-trigger rebuilds in a loop
-            c.arg("watch").arg("--watch").arg("src").arg("--watch").arg("Cargo.toml").arg("-x").arg(run_arg);
+            c.args(["leptos", "watch"]);
             c
         }
     };
