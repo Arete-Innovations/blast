@@ -4,7 +4,11 @@ use std::{
 };
 
 use crate::{
-    codegen::{header, ir_loader, leptos_forms::render},
+    codegen::{
+        enums::{scan::scan_project_enums, ParsedEnum},
+        header, ir_loader,
+        leptos_forms::render,
+    },
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
     state::{GenLevel, ResourceState, Verb},
@@ -33,6 +37,17 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
         }
     };
 
+    let enum_scan = match scan_project_enums(project_root) {
+        Ok(rep) => rep,
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_LABEL, &reason);
+            sink.error(format!("{STEP_LABEL}: {reason}"));
+            return Err(err);
+        }
+    };
+    let enums: &[ParsedEnum] = &enum_scan.enums;
+
     let resources: Vec<ResourceState> = all_resources
         .into_iter()
         .filter(|r| r.gen_level >= GenLevel::Components)
@@ -59,7 +74,7 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     let stub_owners: Vec<&ResourceState> = resources.iter().filter(|r| r.gen_level < GenLevel::Pages).collect();
 
     for r in &resources {
-        emit_resource_forms(project_root, r, &forms_dir, &mut report)?;
+        emit_resource_forms(project_root, r, enums, &forms_dir, &mut report)?;
         sink.info(format!("emitted forms for {}", r.name.as_str()));
     }
     for r in &stub_owners {
@@ -97,18 +112,18 @@ fn has_form_verb(r: &ResourceState) -> bool {
     r.verbs.contains_key(&Verb::Create) || r.verbs.contains_key(&Verb::Update)
 }
 
-fn emit_resource_forms(project_root: &Path, resource: &ResourceState, forms_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
+fn emit_resource_forms(project_root: &Path, resource: &ResourceState, enums: &[ParsedEnum], forms_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
     let table = resource.name.as_str();
     let resource_dir = forms_dir.join(table);
     fs::create_dir_all(&resource_dir)?;
     let marker = header::marker_for_resource(project_root, table)?;
 
     if resource.verbs.contains_key(&Verb::Create) {
-        let body = format!("{}{}", marker, render::render_create_form(resource));
+        let body = format!("{}{}", marker, render::render_create_form(resource, enums));
         write_file(&resource_dir.join("create_form.rs"), &body, report)?;
     }
     if resource.verbs.contains_key(&Verb::Update) && render::primary_key_field(resource).is_some() {
-        let body = format!("{}{}", marker, render::render_edit_form(resource));
+        let body = format!("{}{}", marker, render::render_edit_form(resource, enums));
         write_file(&resource_dir.join("edit_form.rs"), &body, report)?;
     }
 
@@ -522,5 +537,110 @@ mod tests {
         assert!(root.join("src/transport/leptos/components/generated/forms/.gitkeep").exists(), ".gitkeep expected when no qualifying resources");
         assert!(root.join("src/transport/leptos/components/generated/mod.rs").exists(), "components/generated/mod.rs expected");
         assert!(!root.join("src/transport/leptos/data/mod.rs").exists(), "user-owned data/mod.rs must NOT be written when no qualifying resources");
+    }
+
+    fn make_tasks_with_status_enum(level: GenLevel) -> ResourceState {
+        let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
+        let id_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public, FieldVariant::Admin].into_iter().collect();
+        let status_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public].into_iter().collect();
+
+        fields.insert(
+            FieldName::new("id"),
+            FieldState {
+                sql_type: SqlType::new("Int8"),
+                variants: id_v,
+                nullable: false,
+                primary_key: true,
+                validators: BTreeSet::new(),
+            },
+        );
+        fields.insert(
+            FieldName::new("status"),
+            FieldState {
+                sql_type: SqlType::new("MyStatus"),
+                variants: status_v,
+                nullable: false,
+                primary_key: false,
+                validators: BTreeSet::new(),
+            },
+        );
+
+        let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
+        for v in [Verb::Create, Verb::Update] {
+            verbs.insert(
+                v,
+                VerbState {
+                    auth: AuthMode::Public,
+                    list_options: None,
+                },
+            );
+        }
+
+        ResourceState {
+            schema_version: RESOURCE_SCHEMA_VERSION,
+            name: ResourceName::new("tasks"),
+            fields,
+            verbs,
+            ws_events: None,
+            singular_override: None,
+            soft_delete: None,
+            relations: BTreeMap::new(),
+            gen_level: level,
+        }
+    }
+
+    fn write_enum_migration(root: &Path) {
+        let mig_dir = root.join("src/database/migrations/2026-05-01-000001_my_status");
+        match fs::create_dir_all(&mig_dir) {
+            Ok(()) => {}
+            Err(e) => panic!("mkdir migration: {e}"),
+        }
+        let body = "CREATE TYPE my_status AS ENUM ('pending', 'active', 'done');\n";
+        match fs::write(mig_dir.join("up.sql"), body) {
+            Ok(()) => {}
+            Err(e) => panic!("write up.sql: {e}"),
+        }
+    }
+
+    #[test]
+    fn enum_field_renders_combobox_with_variants() {
+        let tmp = match TempDir::new() {
+            Ok(t) => t,
+            Err(e) => panic!("tempdir: {e}"),
+        };
+        let root = tmp.path();
+        let resource = make_tasks_with_status_enum(GenLevel::Components);
+        seed_project(root, &[resource]);
+        write_enum_migration(root);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        match run(root, &mut sink, &mut progress) {
+            Ok(_r) => {}
+            Err(e) => panic!("run: {e}"),
+        }
+
+        let create_body = match fs::read_to_string(root.join("src/transport/leptos/components/generated/forms/tasks/create_form.rs")) {
+            Ok(s) => s,
+            Err(e) => panic!("read create_form: {e}"),
+        };
+
+        assert!(create_body.contains("use thaw::{Checkbox, Combobox, ComboboxOption, Input, InputType, Textarea};"), "thaw imports must include Combobox + ComboboxOption: {create_body}");
+        assert!(create_body.contains("use crate::structs::generated::enums::MyStatus;"), "must import the MyStatus enum: {create_body}");
+        assert!(create_body.contains("<Combobox value=status>"), "status field must be rendered as Combobox: {create_body}");
+        assert!(create_body.contains("<ComboboxOption value=\"pending\".to_string() text=\"pending\".to_string()/>"), "must list 'pending' variant: {create_body}");
+        assert!(create_body.contains("<ComboboxOption value=\"active\".to_string() text=\"active\".to_string()/>"), "must list 'active' variant: {create_body}");
+        assert!(create_body.contains("<ComboboxOption value=\"done\".to_string() text=\"done\".to_string()/>"), "must list 'done' variant: {create_body}");
+        assert!(create_body.contains("MyStatus::parse(&status_raw)"), "Action must call MyStatus::parse on the raw signal value: {create_body}");
+        assert!(create_body.contains("MeltDown::validation_failed_field(\"status\", \"invalid MyStatus\")"), "parse failure must propagate as validation_failed_field with field+enum-name message: {create_body}");
+
+        let edit_body = match fs::read_to_string(root.join("src/transport/leptos/components/generated/forms/tasks/edit_form.rs")) {
+            Ok(s) => s,
+            Err(e) => panic!("read edit_form: {e}"),
+        };
+
+        assert!(edit_body.contains("use thaw::{Checkbox, Combobox, ComboboxOption, Input, InputType, Textarea};"), "edit form thaw imports must include Combobox: {edit_body}");
+        assert!(edit_body.contains("<Combobox value=status>"), "edit form must also use Combobox for enum field: {edit_body}");
+        assert!(edit_body.contains("MyStatus::parse(&status_raw)"), "edit form must parse the enum from the raw signal value: {edit_body}");
     }
 }

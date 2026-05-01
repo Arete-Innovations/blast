@@ -81,6 +81,9 @@ fn category_for(rule: &str) -> &'static str {
     if rule.starts_with("TRANSPORT:") {
         return "TRANSPORT";
     }
+    if rule.starts_with("LEPTOS:") {
+        return "LEPTOS";
+    }
     "OTHER"
 }
 
@@ -93,6 +96,7 @@ fn category_spirit(cat: &str) -> &'static str {
         "LAYER" => "the chain is law. transport → flow → routine → models/services → database. only models reach the basement. you may import down, never up, never sideways across siblings.",
         "STRUCTS" => "data shapes belong in src/structs/. behavior layers are for behavior; defining types inline scatters the data model and gives codegen one more place to look.",
         "TRANSPORT" => "every http handler runs through `request_ctx_middleware`, which builds a per-request `Ctx` (with session loaded if a token was sent) and inserts it as `Extension<Ctx>`. handlers MUST extract `Extension<Ctx>` so `ctx.require_session()` sees the loaded session. `State<Ctx>` returns the global anonymous ctx — silently fails auth.",
+        "LEPTOS" => "the leptos UI is the BE's dumb relayer. styling lives in tokens + module scss; pages wear PageShell. inline styles, hex colors, raw px, and naked page bodies are drift — caught here before they spread.",
         _ => "",
     }
 }
@@ -199,11 +203,28 @@ fn rule_help(rule: &str) -> &'static str {
             "    `request_ctx_middleware` builds the per-request `Ctx` (with session) and inserts it as Extension. `State<Ctx>` returns the global anonymous ctx — `ctx.require_session()` then returns `None` and every protected route silently 401s.\n",
             "    exempt: src/transport/http/middleware/ (middleware legitimately extracts State<Ctx> to build the per-request Ctx).",
         ),
+        "LEPTOS:1" => concat!(
+            "inline `style=` attributes inside `view!` macros are banned in src/transport/leptos/.\n",
+            "    styling belongs in per-component `.module.scss` via stylance + design tokens (`var(--app-*)`).\n",
+            "    fix: define a class in `<file>.module.scss`, reference it via `class=style::FOO`.",
+        ),
+        "LEPTOS:2" => concat!(
+            "raw color literals (`#abc`, `#abcdef`, `rgb(...)`, `rgba(...)`, `hsl(...)`, `hsla(...)`) are banned in src/transport/leptos/ and src/structs/.\n",
+            "    color values live in `style/tokens.scss` only. consume via `var(--app-color-*)` from a module scss file.",
+        ),
+        "LEPTOS:3" => concat!(
+            "raw `px` units are banned outside `style/tokens.scss` and `style/base.scss`.\n",
+            "    use rem-scaled tokens (`var(--app-space-*)`, `var(--app-fs-*)`) instead. allowed exceptions: `0.0625rem` hairlines and `@media` query breakpoints.",
+        ),
+        "LEPTOS:4" => concat!(
+            "every page component (file under src/transport/leptos/pages/) must wrap its top-level `view!` in `<PageShell layout=...>`.\n",
+            "    pages own no chrome — the shell does. add `<PageShell layout=PageLayout::Cards>...</PageShell>` (or wrap inside `<AuthGuard>` for protected pages).",
+        ),
         _ => "",
     }
 }
 
-const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "TRANSPORT", "ERROR", "TYPE", "DEAD"];
+const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "TRANSPORT", "LEPTOS", "ERROR", "TYPE", "DEAD"];
 
 fn format_report(hits: &[Hit]) -> String {
     let mut by_rule: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -373,6 +394,10 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
     check_no_comments(rel, &content, hits);
     check_inline_data_definitions(rel, &content, hits);
     check_handler_state_ctx(rel, &content, hits);
+    check_leptos_inline_style(rel, &content, hits);
+    check_leptos_hex_colors(rel, &content, hits);
+    check_leptos_px_units(rel, &content, hits);
+    check_leptos_page_shell_required(rel, &content, hits);
 }
 
 fn check_handler_state_ctx(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
@@ -1469,6 +1494,238 @@ fn is_struct_or_enum_def(trimmed: &str) -> bool {
     };
 
     after.chars().next().map_or(false, |c| c.is_ascii_alphabetic() || c == '_')
+}
+
+fn path_under(rel: &Path, segment: &str) -> bool {
+    let s = rel.to_string_lossy().replace('\\', "/");
+    s.starts_with(segment)
+}
+
+fn skip_line_for_leptos_scan(trimmed: &str, in_block_comment: &mut bool) -> bool {
+    if trimmed.contains("/*") {
+        *in_block_comment = true;
+    }
+    if trimmed.contains("*/") {
+        *in_block_comment = false;
+        return true;
+    }
+    if *in_block_comment {
+        return true;
+    }
+    if trimmed.starts_with("//") {
+        return true;
+    }
+    false
+}
+
+fn check_leptos_inline_style(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/") {
+        return;
+    }
+    let mut in_block_comment = false;
+    for (line_no, raw) in content.lines().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if leptos_line_has_inline_style(trimmed) {
+            hit(hits, "LEPTOS:1", rel, line_no + 1);
+        }
+    }
+}
+
+fn leptos_line_has_inline_style(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let needles: [&[u8]; 2] = [b"style=\"", b"style=format!"];
+    for needle in needles {
+        let mut start = 0usize;
+        while start + needle.len() <= bytes.len() {
+            let slice = &bytes[start..start + needle.len()];
+            if slice == needle {
+                if start == 0 {
+                    return true;
+                }
+                let prev = bytes[start - 1];
+                let prev_is_word = prev.is_ascii_alphanumeric() || prev == b'_';
+                if !prev_is_word {
+                    return true;
+                }
+            }
+            start += 1;
+        }
+    }
+    false
+}
+
+fn check_leptos_hex_colors(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/") && !path_under(rel, "structs/") {
+        return;
+    }
+    let mut in_block_comment = false;
+    for (line_no, raw) in content.lines().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if leptos_line_has_color_literal(raw) {
+            hit(hits, "LEPTOS:2", rel, line_no + 1);
+        }
+    }
+}
+
+fn leptos_line_has_color_literal(line: &str) -> bool {
+    let funcs = ["rgb(", "rgba(", "hsl(", "hsla("];
+    for f in funcs {
+        if line.contains(f) {
+            return true;
+        }
+    }
+    let bytes = line.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'#' {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        while j < bytes.len() && (bytes[j] as char).is_ascii_hexdigit() {
+            j += 1;
+        }
+        let hex_len = j - (i + 1);
+        if (3..=8).contains(&hex_len) {
+            let after_is_word = j < bytes.len() && ((bytes[j] as char).is_ascii_alphanumeric() || bytes[j] == b'_');
+            if !after_is_word {
+                return true;
+            }
+        }
+        i = j.max(i + 1);
+    }
+    false
+}
+
+fn check_leptos_px_units(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/") {
+        return;
+    }
+    let mut in_block_comment = false;
+    for (line_no, raw) in content.lines().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if raw.contains("@media") || raw.contains("0.0625rem") {
+            continue;
+        }
+        if leptos_line_has_px_unit(raw) {
+            hit(hits, "LEPTOS:3", rel, line_no + 1);
+        }
+    }
+}
+
+fn leptos_line_has_px_unit(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if !(bytes[i] as char).is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 1;
+        while j < bytes.len() && (bytes[j] as char).is_ascii_digit() {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'.' && j + 1 < bytes.len() && (bytes[j + 1] as char).is_ascii_digit() {
+            j += 1;
+            while j < bytes.len() && (bytes[j] as char).is_ascii_digit() {
+                j += 1;
+            }
+        }
+        if j + 1 < bytes.len() && bytes[j] == b'p' && bytes[j + 1] == b'x' {
+            let after = j + 2;
+            let next_is_word = after < bytes.len() && ((bytes[after] as char).is_ascii_alphanumeric() || bytes[after] == b'_');
+            if !next_is_word {
+                return true;
+            }
+        }
+        i = j.max(i + 1);
+    }
+    false
+}
+
+fn check_leptos_page_shell_required(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/pages/") {
+        return;
+    }
+    let file_name = rel.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+    if file_name == "mod.rs" {
+        return;
+    }
+    let mut in_block_comment = false;
+    let mut found_page_fn: Option<usize> = None;
+    for (line_no, raw) in content.lines().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if line_declares_page_component(trimmed) {
+            found_page_fn = Some(line_no + 1);
+            break;
+        }
+    }
+    let page_fn_line = match found_page_fn {
+        Some(n) => n,
+        None => return,
+    };
+    if !content.contains("<PageShell") {
+        hit(hits, "LEPTOS:4", rel, page_fn_line);
+    }
+}
+
+fn line_declares_page_component(trimmed: &str) -> bool {
+    let prefixes = ["pub fn ", "pub async fn ", "pub(crate) fn ", "pub(crate) async fn "];
+    let mut after: Option<&str> = None;
+    for p in prefixes {
+        if let Some(rest) = trimmed.strip_prefix(p) {
+            after = Some(rest);
+            break;
+        }
+    }
+    let rest = match after {
+        Some(r) => r,
+        None => return false,
+    };
+    let paren_idx = match rest.find('(') {
+        Some(p) => p,
+        None => return false,
+    };
+    let name = &rest[..paren_idx];
+    if !name.ends_with("Page") {
+        return false;
+    }
+    if name.len() < 5 {
+        return false;
+    }
+    let first = match name.chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !first.is_ascii_uppercase() {
+        return false;
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return false;
+    }
+    let after_paren = rest[paren_idx..].trim_start_matches('(');
+    let close = match after_paren.find(')') {
+        Some(c) => c,
+        None => return false,
+    };
+    let between = after_paren[..close].trim();
+    if !between.is_empty() {
+        return false;
+    }
+    let tail = &after_paren[close + 1..];
+    tail.contains("-> impl IntoView") || tail.contains("->impl IntoView")
 }
 
 fn check_inline_data_definitions(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
