@@ -84,6 +84,9 @@ fn category_for(rule: &str) -> &'static str {
     if rule.starts_with("LEPTOS:") {
         return "LEPTOS";
     }
+    if rule.starts_with("FLOW:") {
+        return "FLOW";
+    }
     "OTHER"
 }
 
@@ -97,6 +100,7 @@ fn category_spirit(cat: &str) -> &'static str {
         "STRUCTS" => "data shapes belong in src/structs/. behavior layers are for behavior; defining types inline scatters the data model and gives codegen one more place to look.",
         "TRANSPORT" => "every http handler runs through `request_ctx_middleware`, which builds a per-request `Ctx` (with session loaded if a token was sent) and inserts it as `Extension<Ctx>`. handlers MUST extract `Extension<Ctx>` so `ctx.require_session()` sees the loaded session. `State<Ctx>` returns the global anonymous ctx — silently fails auth.",
         "LEPTOS" => "the leptos UI is the BE's dumb relayer. styling lives in tokens + module scss; pages wear PageShell. inline styles, hex colors, raw px, and naked page bodies are drift — caught here before they spread.",
+        "FLOW" => "every flow declares its retry policy explicitly via a `Crank::*` invocation. convention without enforcement decays. the crank is the contract — written, not assumed.",
         _ => "",
     }
 }
@@ -248,11 +252,16 @@ fn rule_help(rule: &str) -> &'static str {
             "    UA-default form-control fonts bypass the rem-scaled root and stay tiny at 4K. base.scss already pins these to `var(--app-fs-md)` + `font: inherit` — per-component overrides MUST keep that contract.\n",
             "    fix: use `font-size: var(--app-fs-md)` (or any other `--app-fs-*` token) or `font-size: inherit`.",
         ),
+        "FLOW:24" => concat!(
+            "every `pub async fn run(...)` under src/flows/ must invoke `Crank::*` somewhere in its body — `Crank::none()`, `Crank::backoff(...)`, `Crank::fixed(...)`, or `Crank::new(...)`.\n",
+            "    SPEC_FLOWS: a flow's retry policy is part of its contract; `Crank::none()` means \"this op is non-idempotent or single-shot — don't retry\" and is just as much a declaration as `backoff(...)`.\n",
+            "    fix: pick the right policy and wrap the routine call: `Crank::none().run(|| routines::<x>::run(ctx, args)).await`.",
+        ),
         _ => "",
     }
 }
 
-const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "TRANSPORT", "LEPTOS", "ERROR", "TYPE", "DEAD"];
+const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "TRANSPORT", "LEPTOS", "FLOW", "ERROR", "TYPE", "DEAD"];
 
 fn format_report(hits: &[Hit]) -> String {
     let mut by_rule: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -569,6 +578,30 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
     check_leptos_loading_spinner_after_first_load(rel, &content, hits);
     check_leptos_local_list_state(rel, &content, hits);
     check_leptos_local_dialog_state(rel, &content, hits);
+    check_flow_crank_declaration(rel, &content, hits);
+}
+
+fn check_flow_crank_declaration(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    let path_str = rel.to_string_lossy().replace('\\', "/");
+    if !path_str.starts_with("flows/") {
+        return;
+    }
+    let file_name = rel.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
+    if file_name == "mod.rs" {
+        return;
+    }
+    if path_str.contains("/generated/") {
+        return;
+    }
+    let Some(run_pos) = content.find("pub async fn run(") else {
+        return;
+    };
+    let body = &content[run_pos..];
+    if body.contains("Crank::") {
+        return;
+    }
+    let line_no = content[..run_pos].lines().count();
+    hit(hits, "FLOW:24", rel, line_no);
 }
 
 fn check_handler_state_ctx(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
