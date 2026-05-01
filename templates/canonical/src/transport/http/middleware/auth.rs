@@ -59,11 +59,16 @@ fn extract_token(request: &Request) -> Option<String> {
 pub async fn request_ctx_middleware(State(ctx): State<Ctx>, mut request: Request, next: Next) -> Result<Response, MeltDown> {
     let request_ctx = match extract_token(&request) {
         None => ctx.clone(),
-        Some(raw_token) => {
-            let session_ctx = resolve::run(&ctx, &raw_token).await?;
-            request.extensions_mut().insert(session_ctx.clone());
-            Ctx::with_session(ctx.pool().clone(), session_ctx)
-        }
+        Some(raw_token) => match resolve::run(&ctx, &raw_token).await {
+            Ok(session_ctx) => {
+                request.extensions_mut().insert(session_ctx.clone());
+                Ctx::with_session(ctx.pool().clone(), session_ctx)
+            }
+            Err(err) => {
+                cata_log!(Debug, format!("stale/invalid session cookie ignored: {}", err));
+                ctx.clone()
+            }
+        },
     };
     request.extensions_mut().insert(request_ctx);
     Ok(next.run(request).await)

@@ -7,6 +7,7 @@ pub struct SessionContext {
     pub session_id: i64,
     pub user_id: i64,
     pub role: Role,
+    #[serde(skip_serializing, default)]
     pub token: String,
 }
 

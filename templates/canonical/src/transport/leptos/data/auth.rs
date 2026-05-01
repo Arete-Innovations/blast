@@ -1,8 +1,8 @@
 use crate::meltdown::*;
 use crate::structs::auth::SessionContext;
-use crate::structs::leptos::{AuthOutput, LoginInput, RegisterInput};
+use crate::structs::leptos::{LoginInput, RegisterInput};
 
-pub async fn do_login(input: LoginInput) -> Result<AuthOutput, MeltDown> {
+pub async fn do_login(input: LoginInput) -> Result<SessionContext, MeltDown> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use leptos::prelude::expect_context;
@@ -15,7 +15,7 @@ pub async fn do_login(input: LoginInput) -> Result<AuthOutput, MeltDown> {
             },
         )
         .await?;
-        Ok(AuthOutput { session: out.session })
+        Ok(out.session)
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -23,7 +23,7 @@ pub async fn do_login(input: LoginInput) -> Result<AuthOutput, MeltDown> {
     }
 }
 
-pub async fn do_register(input: RegisterInput) -> Result<AuthOutput, MeltDown> {
+pub async fn do_register(input: RegisterInput) -> Result<SessionContext, MeltDown> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use leptos::prelude::expect_context;
@@ -36,7 +36,7 @@ pub async fn do_register(input: RegisterInput) -> Result<AuthOutput, MeltDown> {
             },
         )
         .await?;
-        Ok(AuthOutput { session: out.session })
+        Ok(out.session)
     }
     #[cfg(target_arch = "wasm32")]
     {

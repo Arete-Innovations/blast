@@ -40,8 +40,8 @@ pub fn RegisterPage() -> impl IntoView {
             let result = do_register(input).await;
             pending.set(false);
             match result {
-                Ok(out) => {
-                    session_store.set(Some(out.session.clone()));
+                Ok(session) => {
+                    session_store.set(Some(session));
                     toasts.success("Welcome.");
                     navigate.with_value(|nav| nav("/dashboard", Default::default()));
                 }

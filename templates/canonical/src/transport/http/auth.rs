@@ -10,20 +10,17 @@ use crate::{
     cata_log,
     flows::auth,
     meltdown::*,
-    structs::{
-        auth::{AuthResponse, LoginBody, RegisterBody},
-        UserPublic,
-    },
+    structs::auth::{LoginBody, RegisterBody, SessionContext},
     Ctx,
 };
 
 pub const SESSION_COOKIE: &str = "blast_session";
 
 fn build_session_cookie(token: String) -> Cookie<'static> {
-    Cookie::build((SESSION_COOKIE, token)).http_only(true).secure(true).same_site(SameSite::Strict).path("/").build()
+    Cookie::build((SESSION_COOKIE, token)).http_only(true).same_site(SameSite::Lax).path("/").build()
 }
 
-async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Json(body): Json<RegisterBody>) -> Result<(CookieJar, Json<AuthResponse>), MeltDown> {
+async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Json(body): Json<RegisterBody>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
     cata_log!(Info, format!("Register attempt for email: {}", body.email));
     let output = auth::register::run(
         &ctx,
@@ -34,10 +31,10 @@ async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Js
     )
     .await?;
     let updated = cookies.add(build_session_cookie(output.token.clone()));
-    Ok((updated, Json(AuthResponse { token: output.token, user: output.user })))
+    Ok((updated, Json(output.session)))
 }
 
-async fn login_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Json(body): Json<LoginBody>) -> Result<(CookieJar, Json<AuthResponse>), MeltDown> {
+async fn login_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Json(body): Json<LoginBody>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
     cata_log!(Info, format!("Login attempt for email: {}", body.email));
     let output = auth::login::run(
         &ctx,
@@ -48,7 +45,7 @@ async fn login_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Json(
     )
     .await?;
     let updated = cookies.add(build_session_cookie(output.token.clone()));
-    Ok((updated, Json(AuthResponse { token: output.token, user: output.user })))
+    Ok((updated, Json(output.session)))
 }
 
 async fn logout_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>) -> Result<(CookieJar, StatusCode), MeltDown> {
@@ -58,10 +55,9 @@ async fn logout_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>) -> R
     Ok((updated, StatusCode::NO_CONTENT))
 }
 
-async fn me_handler(Extension(ctx): Extension<Ctx>) -> Result<Json<UserPublic>, MeltDown> {
+async fn me_handler(Extension(ctx): Extension<Ctx>) -> Result<Json<SessionContext>, MeltDown> {
     let session = ctx.require_session()?;
-    let user = auth::me::run(&ctx, session).await?;
-    Ok(Json(user))
+    Ok(Json(session.clone()))
 }
 
 pub fn router() -> Router<Ctx> {

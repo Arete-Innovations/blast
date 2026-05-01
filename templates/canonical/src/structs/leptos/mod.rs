@@ -6,7 +6,7 @@ pub mod toast;
 pub mod toast_store;
 pub mod wire;
 
-pub use auth::{AuthOutput, LoginInput, RegisterInput};
+pub use auth::{LoginInput, RegisterInput};
 pub use auth_guard_mode::AuthGuardMode;
 pub use page_layout::PageLayout;
 pub use session_store::SessionStore;

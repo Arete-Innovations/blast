@@ -35,8 +35,8 @@ pub fn LoginPage() -> impl IntoView {
             let result = do_login(input).await;
             pending.set(false);
             match result {
-                Ok(out) => {
-                    session_store.set(Some(out.session.clone()));
+                Ok(session) => {
+                    session_store.set(Some(session));
                     toasts.success("Signed in.");
                     navigate.with_value(|nav| nav("/dashboard", Default::default()));
                 }
