@@ -231,7 +231,7 @@ async fn run_fuse(pool: Pool_, row: FuseRow, run_fn: FuseFn) -> Result<(), MeltD
         }
     };
 
-    let ctx = Ctx::anonymous(pool.clone());
+    let ctx = Ctx::system(pool.clone());
     let result = run_fn(&ctx).await;
     let finished = Utc::now();
     let duration_ms = (finished - started).num_milliseconds().max(0);

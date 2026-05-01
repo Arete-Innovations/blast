@@ -6,6 +6,8 @@ use diesel_migrations::EmbeddedMigrations;
 use crate::{
     cata_log,
     database::{auto_migrate, db},
+    structs::fuses::registry::FuseRegistry,
+    transport::fuses,
 };
 
 pub async fn bootstrap(migrations: EmbeddedMigrations) {
@@ -33,6 +35,13 @@ pub async fn bootstrap(migrations: EmbeddedMigrations) {
     if let Err(e) = db::init_connection_pool().await {
         cata_log!(Error, format!("Failed to initialize database connection pool: {}", e));
         panic!("Database initialization failed");
+    }
+
+    cata_log!(Debug, "Launching fuses scheduler");
+    let registry = FuseRegistry::new();
+    if let Err(e) = fuses::launch(db::pool().clone(), registry).await {
+        cata_log!(Error, format!("Failed to launch fuses scheduler: {}", e));
+        panic!("Fuses scheduler launch failed: {}", e);
     }
 
     cata_log!(Info, "Bootstrap completed successfully");

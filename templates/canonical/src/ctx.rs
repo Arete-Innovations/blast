@@ -23,6 +23,15 @@ impl Ctx {
         Self { pool, session: None, request_id: None }
     }
 
+    pub fn system(pool: CtxPool) -> Self {
+        let session = SessionContext::new(0, 0, Role::Admin, "");
+        Self {
+            pool,
+            session: Some(session),
+            request_id: None,
+        }
+    }
+
     pub fn with_session(pool: CtxPool, session: SessionContext) -> Self {
         Self {
             pool,
