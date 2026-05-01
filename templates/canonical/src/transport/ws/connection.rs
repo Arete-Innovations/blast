@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     cata_log,
@@ -18,11 +18,32 @@ use crate::{
 pub const OUTBOUND_QUEUE_DEPTH: usize = 64;
 
 pub async fn handle_socket(socket: WebSocket, ctx: Ctx, registry: Arc<Registry>) {
+    let user_id = match ctx.session_user_id() {
+        Some(id) => id,
+        None => {
+            cata_log!(Warning, "ws: handle_socket reached with anonymous ctx; closing");
+            return;
+        }
+    };
+
     let (mut sink, mut stream) = socket.split();
 
     let (tx, mut rx) = mpsc::channel::<OutboundFrame>(OUTBOUND_QUEUE_DEPTH);
     let subscriber_id = registry.next_id();
     let handle = SubscriberHandle { id: subscriber_id, sender: tx.clone() };
+
+    let (close_tx, mut close_rx) = oneshot::channel::<()>();
+    match registry.claim_session(user_id, subscriber_id, close_tx) {
+        Some(prev) => {
+            match prev.close_signal.send(()) {
+                Ok(()) => {}
+                Err(()) => cata_log!(Debug, format!("ws: prev session for user {} already closed before evict", user_id)),
+            }
+            registry.unsubscribe_all(prev.subscriber_id);
+            cata_log!(Info, format!("ws: evicted prior subscriber {} for user {}", prev.subscriber_id, user_id));
+        }
+        None => {}
+    }
 
     let outbound = tokio::spawn(async move {
         loop {
@@ -36,14 +57,17 @@ pub async fn handle_socket(socket: WebSocket, ctx: Ctx, registry: Arc<Registry>)
     });
 
     loop {
-        let Some(stream_item) = stream.next().await else {
-            break;
-        };
-        let msg = match stream_item {
-            Ok(m) => m,
-            Err(e) => {
-                cata_log!(Debug, format!("ws stream err: {}", e));
-                break;
+        let msg = tokio::select! {
+            _ = &mut close_rx => break,
+            maybe_msg = stream.next() => {
+                let Some(stream_item) = maybe_msg else { break; };
+                match stream_item {
+                    Ok(m) => m,
+                    Err(e) => {
+                        cata_log!(Debug, format!("ws stream err: {}", e));
+                        break;
+                    }
+                }
             }
         };
         match msg {
@@ -77,6 +101,7 @@ pub async fn handle_socket(socket: WebSocket, ctx: Ctx, registry: Arc<Registry>)
     }
 
     registry.unsubscribe_all(subscriber_id);
+    registry.release_session(user_id, subscriber_id);
     drop(tx);
     match outbound.await {
         Ok(()) => {}

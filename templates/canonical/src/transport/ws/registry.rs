@@ -4,19 +4,29 @@ use std::sync::{
 };
 
 use dashmap::DashMap;
+use tokio::sync::oneshot;
 
-pub use crate::structs::ws::registry::{OutboundFrame, Registry, SubscriberHandle, SubscriberId, Topic};
+pub use crate::structs::ws::registry::{OutboundFrame, Registry, SessionEntry, SubscriberHandle, SubscriberId, Topic};
 
 impl Registry {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             topics: DashMap::new(),
             next_id: AtomicU64::new(1),
+            sessions: DashMap::new(),
         })
     }
 
     pub fn next_id(&self) -> SubscriberId {
         self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn claim_session(&self, user_id: i64, subscriber_id: SubscriberId, close_signal: oneshot::Sender<()>) -> Option<SessionEntry> {
+        self.sessions.insert(user_id, SessionEntry { subscriber_id, close_signal })
+    }
+
+    pub fn release_session(&self, user_id: i64, subscriber_id: SubscriberId) {
+        self.sessions.remove_if(&user_id, |_, entry| entry.subscriber_id == subscriber_id);
     }
 
     pub fn subscribe(&self, topic: Topic, handle: SubscriberHandle) {

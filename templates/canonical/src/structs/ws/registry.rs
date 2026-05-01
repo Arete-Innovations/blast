@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU64;
 
 use dashmap::DashMap;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 pub type Topic = String;
 
@@ -15,7 +15,13 @@ pub struct SubscriberHandle {
     pub sender: mpsc::Sender<OutboundFrame>,
 }
 
+pub struct SessionEntry {
+    pub subscriber_id: SubscriberId,
+    pub close_signal: oneshot::Sender<()>,
+}
+
 pub struct Registry {
     pub topics: DashMap<Topic, Vec<SubscriberHandle>>,
     pub next_id: AtomicU64,
+    pub sessions: DashMap<i64, SessionEntry>,
 }
