@@ -58,25 +58,3 @@ pub async fn do_logout() -> Result<(), MeltDown> {
     }
 }
 
-pub async fn load_session() -> Result<Option<SessionContext>, MeltDown> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        use leptos::prelude::expect_context;
-        let ctx = expect_context::<crate::Ctx>();
-        Ok(ctx.session().cloned())
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        let resp = crate::transport::leptos::api_client::get_json::<SessionContext, _>("/api/auth/me", &()).await;
-        match resp {
-            Ok(s) => Ok(Some(s)),
-            Err(err) => {
-                if matches!(err.melt_type, MeltType::SessionMissing | MeltType::AuthRejected | MeltType::SessionInvalid | MeltType::SessionExpired) {
-                    Ok(None)
-                } else {
-                    Err(err)
-                }
-            }
-        }
-    }
-}

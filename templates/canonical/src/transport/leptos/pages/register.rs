@@ -56,7 +56,7 @@ pub fn RegisterPage() -> impl IntoView {
     };
 
     view! {
-        <AuthGuard mode=AuthGuardMode::Public>
+        <AuthGuard mode=AuthGuardMode::AnonOnly>
             <PageShell layout=PageLayout::Cards>
                 <h1>"Register"</h1>
                 <form on:submit=on_submit>

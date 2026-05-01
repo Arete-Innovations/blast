@@ -8,21 +8,37 @@ use crate::transport::leptos::signals::session::use_session;
 #[component]
 pub fn AuthGuard(mode: AuthGuardMode, children: ChildrenFn) -> impl IntoView {
     let session_store = use_session();
+    let children_stored = StoredValue::new(children);
 
-    view! {
-        <Show
-            when=move || allowed(mode, session_store.get().as_ref())
-            fallback=|| view! { <Redirect path="/login"/> }
-        >
-            {children()}
-        </Show>
-    }
-}
-
-fn allowed(mode: AuthGuardMode, session: Option<&crate::structs::auth::SessionContext>) -> bool {
-    match mode {
-        AuthGuardMode::Public => true,
-        AuthGuardMode::Required => session.is_some(),
-        AuthGuardMode::AdminOnly => session.is_some_and(|s| matches!(s.role, Role::Admin)),
+    move || {
+        let snapshot = session_store.get();
+        let authed = snapshot.is_some();
+        let is_admin = matches!(snapshot.as_ref().map(|s| s.role), Some(Role::Admin));
+        match mode {
+            AuthGuardMode::Public => children_stored.with_value(|c| c()).into_any(),
+            AuthGuardMode::AnonOnly => {
+                if authed {
+                    view! { <Redirect path="/dashboard"/> }.into_any()
+                } else {
+                    children_stored.with_value(|c| c()).into_any()
+                }
+            }
+            AuthGuardMode::Required => {
+                if authed {
+                    children_stored.with_value(|c| c()).into_any()
+                } else {
+                    view! { <Redirect path="/login"/> }.into_any()
+                }
+            }
+            AuthGuardMode::AdminOnly => {
+                if !authed {
+                    view! { <Redirect path="/login"/> }.into_any()
+                } else if is_admin {
+                    children_stored.with_value(|c| c()).into_any()
+                } else {
+                    view! { <Redirect path="/"/> }.into_any()
+                }
+            }
+        }
     }
 }

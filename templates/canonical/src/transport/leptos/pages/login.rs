@@ -51,7 +51,7 @@ pub fn LoginPage() -> impl IntoView {
     };
 
     view! {
-        <AuthGuard mode=AuthGuardMode::Public>
+        <AuthGuard mode=AuthGuardMode::AnonOnly>
             <PageShell layout=PageLayout::Cards>
                 <h1>"Login"</h1>
                 <form on:submit=on_submit>
