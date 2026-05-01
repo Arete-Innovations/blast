@@ -9,7 +9,11 @@ pub struct SessionStore {
 
 impl SessionStore {
     pub fn new() -> Self {
-        Self { inner: RwSignal::new(None) }
+        Self::with_initial(None)
+    }
+
+    pub fn with_initial(initial: Option<SessionContext>) -> Self {
+        Self { inner: RwSignal::new(initial) }
     }
 
     pub fn get(&self) -> Option<SessionContext> {

@@ -482,6 +482,14 @@ impl MeltDown {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+impl MeltDown {
+    pub fn log(&self) {
+        let msg: String = self.log_message();
+        web_sys::console::warn_1(&msg.into());
+    }
+}
+
 impl MeltDown {
     pub fn db_connection(details: impl Into<String>) -> Self {
         Self::new(MeltType::DatabaseConnection, details)
