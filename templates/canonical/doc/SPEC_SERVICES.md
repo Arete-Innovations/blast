@@ -23,12 +23,25 @@ If your scale needs S3, Sidekiq-style queues, or Redis rate-limit — fork. Repl
 ```
 src/services/
 ├── mod.rs
-├── crypto.rs         (existing — session token gen + sha256)
-├── storage.rs        (local-disk file storage)
-├── email.rs          (lettre SMTP transport)
-├── rate_limit.rs     (in-memory token bucket via DashMap)
-└── builders/         (query builders — separate concern)
+├── crypto.rs         (host-only — session token gen + sha256)
+├── email.rs          (host-only — lettre SMTP transport)
+├── external_http.rs  (host-only — reqwest helpers)
+├── rate_limit.rs     (host-only — in-memory token bucket)
+├── storage.rs        (host-only — local-disk file storage)
+├── time.rs           (host-only — wall-clock helpers)
+└── render/           (cross-target — SSR component builders)
+    ├── mod.rs
+    ├── table.rs / table.module.scss
+    ├── form.rs / form.module.scss
+    ├── list.rs / list.module.scss
+    ├── select.rs / select.module.scss
+    ├── detail.rs / detail.module.scss
+    └── stat.rs / stat.module.scss
 ```
+
+Host-only modules are gated `#[cfg(not(target_arch = "wasm32"))]` in `services/mod.rs`. The `render/` family is cross-target and compiles on both host (SSR) and wasm32 (hydrate). Struct/enum data definitions for render builders live in `structs/services/render/` per `STRUCTS:22`.
+
+See `SPEC_LEPTOS.md` "Render service" section for the builder API surface — `TableBuilder`, `FormBuilder`, `ListBuilder`, `SelectBuilder`, `DetailBuilder`, `StatBuilder`.
 
 ## Conventions (All Services)
 

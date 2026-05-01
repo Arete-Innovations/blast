@@ -340,6 +340,148 @@ Hand-written and codegen'd pages use the **same primitive**.
 
 Layout owns spacing. PageShell does not accept `padding`/`margin`/`gap`/`width` props.
 
+## Vendored components
+
+User-owned, hand-editable components shipped with every scaffold under `src/transport/leptos/components/`. Two-tier ownership applies — Blast never touches them after scaffold. Fork-by-default.
+
+### Cells (display primitives) — `components/cells/`
+
+Drop-in for `<td>`/`<dd>`/inline value display. Each takes a typed prop and emits a styled element with semantic markup.
+
+| Component | Prop shape | Output |
+|-----------|-----------|--------|
+| `<DateCell value=DateTime<Utc> format=DateFormat>` | `Iso` / `Short` / `Long` / `Time` | `<time datetime>` |
+| `<RelativeDateCell value=DateTime<Utc>>` | "5 minutes ago" / "in 2 hours" | `<time>` |
+| `<TimeCell value=DateTime<Utc>>` | HH:mm:ss | `<time>` |
+| `<MoneyCell amount=i64 currency=Currency>` | minor units → "$1,234.56" | `<span>` |
+| `<NumberCell value=f64 decimals=u8 thousands=bool>` | formatted number | `<span>` |
+| `<BoolCell value=bool variant=BoolVariant>` | `Check` / `YesNo` / `Badge` | glyph or pill |
+| `<EnumCell<E> value=E color=fn(&E)->&'static str>` | enum variant pill | colored `<span>` |
+| `<BadgeCell text=String color=BadgeColor>` | primitive pill | `<span>` |
+| `<JsonCell value=serde_json::Value collapsed=bool>` | pretty-printed | `<details><pre>` |
+| `<EmptyCell>` | em dash | `<span>—</span>` |
+| `<PercentCell value=f64 decimals=u8>` | "N%" | `<span>` |
+| `<DurationCell ms=i64>` | "2h 15m" | `<span>` |
+
+Enum types (`DateFormat`, `BoolVariant`, `BadgeColor`, `Currency`) live in `structs/leptos/cells.rs` per `STRUCTS:22`.
+
+### Layout / display — `components/`
+
+| Component | Purpose |
+|-----------|---------|
+| `<LinkCell to=RouteName text=String>` | Soft-nav `<A>` link styled to token. |
+| `<AvatarCell name=String url=Option<String> size=AvatarSize>` | Image fallback to initials, circle wrapper. Size: Sm/Md/Lg. |
+| `<StatusDot kind=StatusKind label=String>` | Online/Offline/Pending/Error colored dot + label. |
+| `<EmptyState title message action=Option<AnyView>>` | "no data" centered placeholder. |
+| `<Skeleton variant=SkeletonVariant>` | Line/Card/Avatar/Button shimmer. |
+| `<Pagination total_pages current_page>` | URL-state-bound page nav. Hides if total_pages ≤ 1. |
+| `<FilterBar filters=Vec<FilterDef>>` | Debounced filter inputs bound to `use_url_list_state`. |
+| `<SortHeader col label>` | Click-to-sort `<th>`, asc/desc/none arrow indicator. |
+| `<Breadcrumb items=Vec<BreadcrumbItem>>` | Chevron-separated trail. Last item not linked. |
+| `<Tabs items=Vec<TabItem>>` | URL-bound `?tab=name` tab switcher. |
+| `<Card title=Option<String>>{children}` | Token-driven card wrapper. |
+| `<Stepper steps current>` | Horizontal multi-step indicator. |
+
+### Modals + form widgets — `components/`
+
+| Component | URL-bound? | Purpose |
+|-----------|-----------|---------|
+| `<ConfirmDialog name title message confirm_label on_confirm>` | yes (`?dialog=<name>`) | Modal overlay with confirm/cancel. |
+| `<Drawer name side title>{children}` | yes (`?dialog=<name>`) | Slide-in panel from Left/Right/Top/Bottom. |
+| `<Alert kind dismissible>{children}` | no | Info/Success/Warning/Danger banner. |
+| `<FormGroup label error>{children}` | no | Label + input slot + error message below. |
+| `<FieldError message>` | no | Inline red error under an input. |
+| `<HelpText>{children}` | no | Muted hint text. |
+| `<InputGroup prefix suffix>{children}` | no | Wraps `<input>` with optional prefix/suffix. |
+
+### Toast helpers — `signals/toast.rs`
+
+Module-level fns: `toast::success(msg)`, `toast::error(msg)`, `toast::info(msg)`, `toast::warning(msg)`. Read from the singleton `ToastStore` provided in `<App>`. `<ToastHost/>` renders the active stack.
+
+### Cells vs render-service builders
+
+The cells/components above are **display primitives** consumed by hand-written pages and codegen. The **render-service builders** in `services/render/` (next section) are higher-order: they take a `Vec<T: Serialize>` or single `T` and produce a complete `<table>`/`<form>`/`<dl>` view. Builders dispatch to cells via formatter closures when fancy rendering is needed.
+
+## Render service (canonical SSR builders)
+
+Runtime SSR component builders at `src/services/render/`. The Leptos port of the rocket-era `services/builders/{table,list,select}.rs` pattern. Drop a `Vec<T>` (or single `T`), get an `impl IntoView` back. Cross-target — compiles on host AND wasm32.
+
+Six builders ship in canonical:
+
+| Builder | Use case |
+|---------|----------|
+| `TableBuilder<T>` | `Vec<T>` → `<table>` with introspected columns |
+| `ListBuilder<T>` | `Vec<T>` → `<ul>` / `<ol>` with introspected items |
+| `SelectBuilder<T>` | `Vec<T>` → `<select><option>` for forms |
+| `FormBuilder<T>` | `T` → `<form>` with typed inputs (string→text, i64→number, bool→checkbox, etc.) |
+| `DetailBuilder<T>` | single `T` → key:value `<dl>` card |
+| `StatBuilder<T>` | single `T` → headline number cards in a grid |
+
+### Common pattern
+
+All six follow the same builder API. Generic over `T: Serialize + Clone + Send + Sync + 'static`. Runtime introspection via `serde_json::to_value` — column order = struct field order (serde preserves it). Native HTML output, no third-party table crate.
+
+```rust
+use crate::services::render::TableBuilder;
+
+view! {
+    <PageShell layout=PageLayout::Table>
+        {TableBuilder::new(posts)
+            .ignore("id, content, password_hash")
+            .class_table("posts")
+            .formatter("created_at", |v| view!{ <RelativeDateCell value=parse_dt(v)/> }.into_any())
+            .formatter("status", |v| view!{ <BadgeCell text=v.to_string() color=BadgeColor::Success/> }.into_any())
+            .empty_text("No posts yet.")
+            .into_view()}
+    </PageShell>
+}
+```
+
+### Builder methods (typical)
+
+- `new(items)` — construct.
+- `.ignore("col1, col2, col3")` — comma/space-separated columns to skip.
+- `.formatter(col, closure)` — per-column override returning `AnyView`. Default: `Display` of the JSON value.
+- `.class_<part>(c: &str)` — append a class to `<table>` / `<thead>` / `<tr>` / `<td>` / etc.
+- `.empty_text(msg)` — fallback shown when list/record is empty (default "No items.").
+- `.into_view()` — consume self, return `AnyView`.
+
+`SelectBuilder` adds `.label_field`/`.value_field` (which struct field becomes option text vs value). `FormBuilder` adds `.label`/`.placeholder`/`.input_kind` overrides + `.on_submit(closure)`. `StatBuilder` requires `.stat(field, label)` calls to declare which fields render.
+
+### When to use which path
+
+| Path | Best for |
+|------|----------|
+| **Codegen pages** (`<R>ListPage`, `<R>DetailPage`, etc.) | Resources defined in a Primer. Django-admin-style — wired end to end by `blast gen all`. |
+| **Render-service builders** | Ad-hoc views over query results. Custom dashboards. Reports. Anywhere the data shape isn't a Primer resource. |
+| **Hand-rolled `view!`** | Fully bespoke layouts where neither the codegen nor the builder fits cleanly. |
+
+All three coexist; pick the lightest path that does the job.
+
+### File layout
+
+```
+src/services/render/
+├── mod.rs
+├── table.rs       (+ table.module.scss)
+├── form.rs        (+ form.module.scss)
+├── list.rs        (+ list.module.scss)
+├── select.rs      (+ select.module.scss)
+├── detail.rs      (+ detail.module.scss)
+└── stat.rs        (+ stat.module.scss)
+
+src/structs/services/render/
+├── mod.rs
+├── table.rs       (TableBuilder, TableRenderClasses, Formatter)
+├── form.rs        (FormBuilder, FieldMeta, FormPlanEntry, InputKind, ...)
+├── list.rs        (ListBuilder, ListType, ListItemTemplate)
+├── select.rs      (SelectBuilder)
+├── detail.rs      (DetailBuilder, DetailFormatter)
+└── stat.rs        (StatBuilder, StatField, StatFormatter)
+```
+
+`STRUCTS:22` forces struct/enum data definitions into `structs/`; the `services/render/` files carry only `impl` + private helpers.
+
 ## Tables (locked)
 
 Codegen for resources at `gen_level >= Components` emits a sibling `<R>TableRow` next to `<R>Public` in `src/structs/generated/<r>.rs`:
@@ -492,6 +634,25 @@ See `SPEC_VALIDATORS.md`.
 Per-component `.module.scss` files use `stylance` for hashed-classname scoping. No global styles outside `tokens.scss` / `base.scss`.
 
 OKLCH color, semantic class names, no hex outside theme overrides, no inline styles. Lint rules carry forward into a `LEPTOS:N` build.rs lint family.
+
+## Lint family (LEPTOS:1–10)
+
+Defined in `templates/canonical/build.rs`. Violations panic the compile. No `#[allow]` escape hatch.
+
+| Rule | What it bans |
+|------|--------------|
+| `LEPTOS:1` | inline `style=` / `style=format!` inside `view!` macros under `transport/leptos/`. Use `.module.scss` + stylance. |
+| `LEPTOS:2` | raw color literals (`#hex`, `rgb()`, `hsl()`, etc.) in `transport/leptos/` and `structs/`. Define tokens in `style/tokens.scss`, consume via `var(--app-color-*)`. |
+| `LEPTOS:3` | raw `px` in `transport/leptos/`. Allowed exceptions: `0.0625rem` hairline borders, `@media` query breakpoints, anything inside `style/tokens.scss` / `style/base.scss`. |
+| `LEPTOS:4` | page components (file under `transport/leptos/pages/`) without `<PageShell layout=...>` wrapping the top-level view. |
+| `LEPTOS:5` | hardcoded route paths in `nav("/...")`, `<a href="/...">`, `<A href="/...">`. Use `RouteName::*.path()`. |
+| `LEPTOS:6` | optimistic mutation of a list/map signal between `pending.set(true)` and `spawn_local(`. Mutate only after server response. Heuristic — false positives possible. |
+| `LEPTOS:7` | `"Loading..."` literal outside `Option::None =>` arms or `Suspense fallback=...`. After first load, refetch silently. |
+| `LEPTOS:8` | `ListQuery::default()` outside `signals/url.rs`. List page state lives in the URL via `use_url_list_state`. |
+| `LEPTOS:9` | `RwSignal::new(false)` adjacent to a `dialog`/`drawer`/`modal`/`popup`-named identifier. Use `use_query_dialog(name)` for URL-bound modal state. Heuristic — false positives possible. |
+| `LEPTOS:10` | `font-size:` declarations on form-control selectors (`input`/`select`/`textarea`/`button`) inside `.module.scss` that don't reference `var(--app-fs-*)` or `inherit`. UA-default control fonts bypass the rem-scaled root and stay tiny at 4K; base.scss pins them globally — per-component overrides must keep the contract. |
+
+`LEPTOS:6` and `LEPTOS:9` are heuristic. If they false-positive on legitimate code, restructure (move the offending pattern to a dedicated function, rename the binding so it doesn't carry a dialog token) rather than disabling the rule.
 
 ## WebSocket (Relay)
 

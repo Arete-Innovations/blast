@@ -199,12 +199,12 @@ If you find yourself adding a hardcoded user-facing string to the FE, a fallback
 | WebSocket multiplexer + pub/sub | `doc/SPEC_RELAY.md` |
 | Scheduled jobs | `doc/SPEC_FUSES.md` |
 | Auth tokens / session middleware | `doc/SPEC_SESSIONS.md` |
-| Leptos UI / SSR + hydrate / data fetch / forms | `doc/SPEC_LEPTOS.md` |
-| CSS tokens, stylance, OKLCH | `doc/SPEC_CSS.md` |
+| Leptos UI / SSR + hydrate / data fetch / forms / vendored cells + widgets / lint family / render service builders | `doc/SPEC_LEPTOS.md` |
+| CSS tokens, stylance, OKLCH, 4K form-control scaling | `doc/SPEC_CSS.md` |
 | `cata_log!`, tower span, JSON logs | `doc/SPEC_LOGGING.md` |
 | Single-source validator codegen | `doc/SPEC_VALIDATORS.md` |
 | Real Postgres + transaction rollback testing | `doc/SPEC_TESTING.md` |
-| Stateless adapters | `doc/SPEC_SERVICES.md` |
+| Stateless adapters + render-service builders (TableBuilder/FormBuilder/etc) | `doc/SPEC_SERVICES.md` |
 | RON state, .env layering | `doc/SPEC_CONFIG.md` |
 | Generic admin shell | `doc/SPEC_ADMIN.md` |
 
