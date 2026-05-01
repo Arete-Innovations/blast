@@ -77,27 +77,37 @@ pub async fn handle_socket(socket: WebSocket, ctx: Ctx, registry: Arc<Registry>)
             Message::Text(text) => match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(ClientMessage::Subscribe { topic }) => {
                     if !auth::can_subscribe(&ctx, &topic) {
-                        log_send(send_frame(&tx, ServerMessage::error(&topic, "forbidden")).await);
+                        if !log_send(send_frame(&tx, ServerMessage::error(&topic, "forbidden"))) {
+                            break;
+                        }
                         continue;
                     }
                     registry.subscribe(topic.clone(), handle.clone());
-                    log_send(send_frame(&tx, ServerMessage::ack(topic)).await);
+                    if !log_send(send_frame(&tx, ServerMessage::ack(topic))) {
+                        break;
+                    }
                 }
                 Ok(ClientMessage::Unsubscribe { topic }) => {
                     registry.unsubscribe(&topic, subscriber_id);
                 }
                 Ok(ClientMessage::Ping) => {
-                    log_send(send_frame(&tx, ServerMessage::pong()).await);
+                    if !log_send(send_frame(&tx, ServerMessage::pong())) {
+                        break;
+                    }
                 }
                 Err(e) => {
                     cata_log!(Debug, format!("ws frame parse: {}", e));
-                    log_send(send_frame(&tx, ServerMessage::error_global("malformed_frame")).await);
+                    if !log_send(send_frame(&tx, ServerMessage::error_global("malformed_frame"))) {
+                        break;
+                    }
                 }
             },
             Message::Ping(_payload) => {}
             Message::Pong(_) => {}
             Message::Binary(_) => {
-                log_send(send_frame(&tx, ServerMessage::error_global("binary_not_supported")).await);
+                if !log_send(send_frame(&tx, ServerMessage::error_global("binary_not_supported"))) {
+                    break;
+                }
             }
             Message::Close(_) => break,
         }
@@ -112,15 +122,21 @@ pub async fn handle_socket(socket: WebSocket, ctx: Ctx, registry: Arc<Registry>)
     }
 }
 
-async fn send_frame(tx: &mpsc::Sender<OutboundFrame>, msg: ServerMessage) -> Result<(), MeltDown> {
+fn send_frame(tx: &mpsc::Sender<OutboundFrame>, msg: ServerMessage) -> Result<(), MeltDown> {
     let encoded = serde_json::to_string(&msg).map_err(|e| MeltDown::new(MeltType::SerializationFailed, format!("ws frame encode: {}", e)))?;
-    tx.send(encoded).await.map_err(|e| MeltDown::new(MeltType::Unexpected("ws_send".into()), format!("ws send: {}", e)))?;
-    Ok(())
+    match tx.try_send(encoded) {
+        Ok(()) => Ok(()),
+        Err(mpsc::error::TrySendError::Full(_)) => Err(MeltDown::new(MeltType::Unexpected("ws_send".into()), "outbound channel full")),
+        Err(mpsc::error::TrySendError::Closed(_)) => Err(MeltDown::new(MeltType::Unexpected("ws_send".into()), "outbound channel closed")),
+    }
 }
 
-fn log_send(result: Result<(), MeltDown>) {
+fn log_send(result: Result<(), MeltDown>) -> bool {
     match result {
-        Ok(()) => {}
-        Err(e) => cata_log!(Warning, format!("ws send_frame failed: {}", e)),
+        Ok(()) => true,
+        Err(e) => {
+            cata_log!(Warning, format!("ws send_frame failed: {}", e));
+            false
+        }
     }
 }
