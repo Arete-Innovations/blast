@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Json},
+    extract::{rejection::JsonRejection, Extension, Json},
     http::StatusCode,
     routing::{get, post},
     Router,
@@ -15,13 +15,18 @@ use crate::{
     Ctx,
 };
 
+fn map_json_rejection(rej: JsonRejection) -> MeltDown {
+    MeltDown::bad_request(rej.body_text()).with_user_message("Invalid request body.")
+}
+
 pub const SESSION_COOKIE: &str = "blast_session";
 
 fn build_session_cookie(token: String) -> Cookie<'static> {
     Cookie::build((SESSION_COOKIE, token)).http_only(true).same_site(SameSite::Lax).path("/").build()
 }
 
-async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Json(body): Json<RegisterBody>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
+async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, body: Result<Json<RegisterBody>, JsonRejection>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
+    let Json(body) = body.map_err(map_json_rejection)?;
     cata_log!(Info, format!("Register attempt for email: {}", body.email));
     let output = auth::register::run(
         &ctx,
@@ -35,7 +40,8 @@ async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Js
     Ok((updated, Json(output.session)))
 }
 
-async fn login_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, Json(body): Json<LoginBody>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
+async fn login_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, body: Result<Json<LoginBody>, JsonRejection>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
+    let Json(body) = body.map_err(map_json_rejection)?;
     cata_log!(Info, format!("Login attempt for email: {}", body.email));
     let output = auth::login::run(
         &ctx,
