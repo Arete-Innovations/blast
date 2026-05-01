@@ -13,3 +13,50 @@ body {
     background: var(--app-color-bg);
     line-height: 1.5;
 }
+
+// Global nav progress bar — driven by `<NavProgress/>` reading the NavStore
+// signal. Three visual states (Idle / Pending / Settled) drive width +
+// opacity via class swap. Lives in base.scss because LEPTOS:1 bans inline
+// `style=` and LEPTOS:3 bans raw px on transport/leptos/.
+.nav-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 0.125rem;
+    background: var(--app-color-brand);
+    z-index: 9999;
+    pointer-events: none;
+    transform-origin: left center;
+}
+
+.nav-progress--idle {
+    display: none;
+}
+
+.nav-progress--pending {
+    width: 100%;
+    opacity: 1;
+    animation: nav-progress-fill 0.5s ease-out forwards, nav-progress-overrun 1s linear 0.5s infinite;
+}
+
+.nav-progress--settled {
+    width: 100%;
+    transform: scaleX(1);
+    opacity: 0;
+    transition: opacity 0.2s ease-out;
+}
+
+// Phase 1: fill 0 → 100% over the 500ms budget.
+@keyframes nav-progress-fill {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+
+// Phase 2: budget exceeded — pulse the bar to signal indeterminate progress
+// without committing to a known completion time. Loops until the route
+// settles and the class flips to `--settled`.
+@keyframes nav-progress-overrun {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.4; }
+    100% { opacity: 1; }
+}

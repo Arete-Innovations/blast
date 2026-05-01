@@ -86,6 +86,29 @@ When deciding whether a piece of state belongs in the URL (query) or in a compon
 
 If the answer is yes, use one of the URL helpers. If no, plain `RwSignal`. Never spread the same state across both layers.
 
+## Blocking navigation
+
+Hand-rolled and codegen'd pages call `use_blocking_navigate()` (NOT `use_navigate()` directly) for any user-driven nav (login redirect, post-create nav-to-detail, post-delete nav-to-list). The wrapper drives a global `<NavProgress/>` bar mounted at the top of the viewport so the user always sees that the route is in flight.
+
+```rust
+let navigate = StoredValue::new_local(use_blocking_navigate());
+// ... inside on:submit:
+navigate.with_value(|nav| nav("/dashboard"));
+// (note: single-arg signature; NavigateOptions defaulted internally)
+```
+
+**Lifecycle (locked):**
+1. **Click** → `NavState::Pending(start_at_ms)` set, target stashed in store, inner `use_navigate()` fires immediately. The progress bar fills 0 → 100% animated over a **500ms budget**.
+2. **Budget exceeded** → animation pivots to indeterminate pulse. The store does NOT cancel or change state; the visual just signals "still working" without committing to a known finish line.
+3. **Settle** → `<NavProgress/>` watches `use_location().pathname`; when it matches the stashed target, store flips `Pending → Settled`, bar fades opacity 1 → 0 over 200ms.
+4. **Reset** → `setTimeout(200ms)` flips `Settled → Idle`, target cleared, bar removed from layout.
+
+**Limitation (binding) — leptos 0.7 has no real blocking-load:** the framework does not expose nav-lifecycle events (start / pending-data-loaded / committed). `Resource::new` / `LocalResource::new` could in theory provide blocking-on-data-resolved gates, but the data-fetching pattern locked above (RwSignal + cfg-gated Effect) explicitly bypasses them. The `<NavProgress/>` settle signal is therefore **the URL change itself**, not the destination's data being ready. This means: for routes whose page-body Effect kicks off a slow `/api/*` fetch, the bar settles when the route mounts, NOT when the data lands. The destination's own `<p>"Loading..."</p>` placeholder takes over from there. This is a best-effort settle-via-pathname; proper blocking nav awaits framework support.
+
+**Position:** the bar is rendered inside `<Router>` via `<NavProgress/>` next to `<ToastHost/>` in `app.rs`. CSS lives in `style/base.scss` (`.nav-progress`, `.nav-progress--idle/--pending/--settled` + `@keyframes`) — kept out of `transport/leptos/` to satisfy `LEPTOS:1` (no inline `style=`) and `LEPTOS:3` (no raw `px`). Color: `var(--app-color-brand)`. Height: `0.125rem`. Z-index: above all page content.
+
+**Cancellation:** none. The store does not track in-flight task handles. If the user clicks a second nav while one is pending, the second call overwrites the target and start time; the old "pending" timeline is dropped silently. Leptos 0.7 task cancellation is limited and the simpler model has been adequate.
+
 ## Layered architecture (binding)
 
 Leptos UI lives under `src/transport/leptos/`. Layer rule: pages call `flows::*` and `structs::*` only — same as any other transport handler. `build.rs` `LAYER:11` enforces this.

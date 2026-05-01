@@ -3,9 +3,10 @@ use leptos_meta::{provide_meta_context, MetaTags, Title};
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 
-use crate::transport::leptos::components::ToastHost;
+use crate::transport::leptos::components::{NavProgress, ToastHost};
 use crate::transport::leptos::pages::{DashboardPage, LoginPage, LogoutPage, NotFoundPage, ProfilePage, RegisterPage, WelcomePage};
 use crate::transport::leptos::routes::GeneratedRoutes;
+use crate::transport::leptos::signals::nav::provide_nav_store;
 use crate::transport::leptos::signals::session::{provide_session_store, ssr_session_payload};
 use crate::transport::leptos::signals::theme::{provide_theme_store, ssr_theme_str};
 use crate::transport::leptos::signals::toast::provide_toast_store;
@@ -39,10 +40,12 @@ pub fn App() -> impl IntoView {
     provide_session_store();
     provide_theme_store();
     provide_toast_store();
+    provide_nav_store();
 
     view! {
         <Title text="Catablast"/>
         <Router>
+            <NavProgress/>
             <Routes fallback=NotFoundPage>
                 <Route path=path!("/") view=WelcomePage/>
                 <Route path=path!("/login") view=LoginPage/>

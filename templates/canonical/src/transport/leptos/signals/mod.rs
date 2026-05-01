@@ -1,3 +1,4 @@
+pub mod nav;
 pub mod session;
 pub mod theme;
 pub mod toast;

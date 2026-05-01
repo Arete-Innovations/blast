@@ -1,11 +1,11 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_router::hooks::use_navigate;
 
 use crate::meltdown::MeltDown;
 use crate::structs::leptos::{RegisterInput, RouteName};
 use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};
 use crate::transport::leptos::data::auth::do_register;
+use crate::transport::leptos::signals::nav::use_blocking_navigate;
 use crate::transport::leptos::signals::session::use_session;
 use crate::transport::leptos::signals::toast::use_toast;
 
@@ -13,7 +13,7 @@ use crate::transport::leptos::signals::toast::use_toast;
 pub fn RegisterPage() -> impl IntoView {
     let session_store = use_session();
     let toasts = use_toast();
-    let navigate = StoredValue::new_local(use_navigate());
+    let navigate = StoredValue::new_local(use_blocking_navigate());
 
     let email = RwSignal::new(String::new());
     let password = RwSignal::new(String::new());
@@ -43,7 +43,7 @@ pub fn RegisterPage() -> impl IntoView {
                 Ok(session) => {
                     session_store.set(Some(session));
                     toasts.success("Welcome.");
-                    navigate.with_value(|nav| nav(RouteName::Dashboard.path().as_ref(), Default::default()));
+                    navigate.with_value(|nav| nav(RouteName::Dashboard.path().as_ref()));
                 }
                 Err(err) => {
                     err.log();
