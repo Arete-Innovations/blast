@@ -11,6 +11,7 @@ pub async fn find_by_email(conn: &mut AsyncPgConnection, email: &str) -> Result<
     users_dsl::users
         .filter(users_dsl::email.eq(email))
         .filter(users_dsl::deleted_at.is_null())
+        .select(User::as_select())
         .first::<User>(conn)
         .await
         .optional()
@@ -21,6 +22,7 @@ pub async fn find_by_id(conn: &mut AsyncPgConnection, id: i64) -> Result<Option<
     users_dsl::users
         .filter(users_dsl::id.eq(id))
         .filter(users_dsl::deleted_at.is_null())
+        .select(User::as_select())
         .first::<User>(conn)
         .await
         .optional()
