@@ -9,7 +9,7 @@ use crate::{
     cata_log,
     ctx::Ctx,
     meltdown::{MeltDown, MeltType},
-    structs::fuses::registry::{FuseFn, FuseRegistry},
+    structs::fuses::{registry::{FuseFn, FuseRegistry}, running_guard::RunningGuard},
     transport::fuses::schedule::schedule_from_row,
 };
 
@@ -162,8 +162,11 @@ async fn poll_once(pool: &Pool_, fn_map: &FuseFnMap, running: &Arc<DashMap<Strin
         let row_name = row.name.clone();
 
         tokio::spawn(async move {
+            let _guard: RunningGuard = RunningGuard {
+                map: running_for_task,
+                name: row_name.clone(),
+            };
             let res = run_fuse(pool_for_task, row, run_fn).await;
-            running_for_task.remove(&row_name);
             if let Err(e) = res {
                 cata_log!(Error, format!("fuse '{}' supervisor error: {}", row_name, e.details));
             }
