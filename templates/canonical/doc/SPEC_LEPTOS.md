@@ -153,32 +153,75 @@ pub async fn load_posts_list(query: ListQuery) -> Result<ListResponse<PostPublic
 }
 ```
 
-**Pages consume the helper from a wasm-only `Effect`** (NOT `Resource::new`/`LocalResource::new` — see binding rule below):
+The `RwSignal<Option<Result<T, MeltDown>>>` + wasm-only `Effect` pattern is now wrapped in three reactivity tiers in `src/transport/leptos/signals/reactivity.rs`. All three return the same signal cell shape — pages consume the value identically; only the lifecycle differs.
+
+### Tier 1 — Static (`use_resource_effect`)
+
+Fires once on wasm mount, never again. Use for pages whose data is stable for the visit (user profile, settings, dashboards that don't need to track external mutations).
 
 ```rust
+use crate::transport::leptos::signals::use_resource_effect;
+
 #[component]
 pub fn PostListPage() -> impl IntoView {
-    let items_signal: RwSignal<Option<Result<ListResponse<PostPublic>, MeltDown>>> = RwSignal::new(None);
-
-    #[cfg(target_arch = "wasm32")]
-    Effect::new(move |_| {
-        leptos::task::spawn_local(async move {
-            let result = load_posts_list(ListQuery::default()).await;
-            items_signal.set(Some(result));
-        });
-    });
+    let items = use_resource_effect(|| load_posts_list(ListQuery::default()));
 
     view! {
         <AuthGuard mode=AuthGuardMode::Required>
             <PageShell layout=PageLayout::Table>
                 <h1>"Post list"</h1>
-                {move || match items_signal.get() {
+                {move || match items.get() {
                     None => view! { <p>"Loading..."</p> }.into_any(),
                     Some(Ok(items)) => render_list_items(&items).into_any(),
                     Some(Err(err)) => view! { <ErrorBanner error=err/> }.into_any(),
                 }}
             </PageShell>
         </AuthGuard>
+    }
+}
+```
+
+This is what codegen emits today. Switching a generated page to Polled or Live is a hand-edit (or a future Primer flag — out of scope for the current pass).
+
+### Tier 2 — Polled (`use_polled_resource`)
+
+Fires on mount, then re-fires every `interval_ms` while the document is visible. Pauses on `document.visibilityState == "hidden"` (background tab) and resumes on `visibilitychange`. Returns a `PolledResource<T>` with `signal` + `refetch()` for manual triggers (refresh button, post-mutation reconciliation).
+
+Use when external systems (other users, cron jobs) write to the resource and the page wants stale-after-N-seconds freshness without a WS budget.
+
+```rust
+use crate::transport::leptos::signals::use_polled_resource;
+
+#[component]
+pub fn FeedPage() -> impl IntoView {
+    let feed = use_polled_resource(|| load_feed(), 15_000);
+    let on_refresh = move |_| feed.refetch();
+
+    view! {
+        <button on:click=on_refresh>"Refresh"</button>
+        {move || render_feed(&feed.signal)}
+    }
+}
+```
+
+### Tier 3 — Live (`use_live_resource`)
+
+Fires on mount, opens a single multiplexed Relay WebSocket (`/ws`, cookie-authed via the same-origin upgrade), subscribes to the given topic, and re-fires the loader on **every** inbound frame regardless of payload — the DB is the source of truth, we reconcile from it (see `SPEC_RELAY.md` "Reconnect via DB"). Reconnects on close with exponential backoff (250ms → 8s cap). Closes the socket on owner cleanup.
+
+Use for resources where same-process writes drive the UI (chat threads, presence, live order status).
+
+```rust
+use crate::transport::leptos::signals::use_live_resource;
+
+#[component]
+pub fn OrderDetailPage() -> impl IntoView {
+    let order = use_live_resource(
+        || load_order(42),
+        "orders:customer:42",
+    );
+
+    view! {
+        {move || render_order(&order.signal)}
     }
 }
 ```

@@ -125,6 +125,10 @@ pub struct WsSession {
 
 Session state is held per-connection while the WS is open. When the WS closes, subscriptions are cleaned up.
 
+## Leptos consumption
+
+Pages opt into a topic via `use_live_resource(loader, topic)` from `src/transport/leptos/signals/reactivity.rs` (see `SPEC_LEPTOS.md` "Tier 3 — Live"). The helper opens a single multiplexed `/ws` connection per page mount, sends a `Subscribe` frame for the given topic, and re-runs `loader` on every inbound frame — payload-agnostic, DB-reconciliation per the rule below. Closes on owner cleanup with exponential backoff reconnect (250ms → 8s cap) for in-page disconnects.
+
 ## Reconnect Behavior (client-side)
 
 Frontend `WsClient` singleton:
