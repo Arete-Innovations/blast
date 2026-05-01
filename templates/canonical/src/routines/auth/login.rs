@@ -11,11 +11,12 @@ use crate::{
 };
 
 pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> {
+    let email = input.email.trim().to_lowercase();
     let mut conn = ctx.conn().await?;
-    let user = users::find_by_email(&mut conn, &input.email).await?.ok_or_else(MeltDown::auth_rejected)?;
+    let user = users::find_by_email(&mut conn, &email).await?.ok_or_else(MeltDown::auth_rejected)?;
 
     if !crypto::verify_password(&input.password, &user.password_hash)? {
-        cata_log!(Warning, format!("Invalid password for email: {}", input.email));
+        cata_log!(Warning, format!("Invalid password for email: {}", email));
         return Err(MeltDown::auth_rejected());
     }
 

@@ -11,7 +11,8 @@ use crate::{
 };
 
 pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, MeltDown> {
-    if input.email.trim().is_empty() {
+    let email = input.email.trim().to_lowercase();
+    if email.is_empty() {
         return Err(MeltDown::validation_failed("email is required"));
     }
     if input.password.len() < 8 {
@@ -20,12 +21,12 @@ pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, Melt
 
     let mut conn = ctx.conn().await?;
 
-    if users::find_by_email(&mut conn, &input.email).await?.is_some() {
+    if users::find_by_email(&mut conn, &email).await?.is_some() {
         return Err(MeltDown::validation_failed("email already registered"));
     }
 
     let hash = crypto::hash_password(&input.password)?;
-    let user = users::insert_new(&mut conn, &input.email, &hash).await?;
+    let user = users::insert_new(&mut conn, &email, &hash).await?;
 
     let token = crypto::mint_session_token();
     let expires_at = time::now_unix() + SESSION_TTL_SECS;
