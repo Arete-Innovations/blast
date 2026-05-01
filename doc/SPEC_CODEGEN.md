@@ -208,7 +208,7 @@ The whole crate compiles to WASM (`cargo build --target wasm32-unknown-unknown -
 Wire-in points:
 
 - `src/transport/http/generated/<r>.rs` — create handler calls `validate_<r>_insertable(&input)?` BEFORE `flow::create::run(...)`. Update handler calls `validate_<r>_patch(&patch)?` BEFORE `flow::update::run(...)`. Order tested in `http_routes::tests::create_handler_calls_validator_before_flow`.
-- `src/transport/leptos/components/generated/forms/<r>/create_form.rs` — `Action::new` body calls `validate_<r>_insertable(&input)?` before `data::generated::<r>::do_<r>_create(input).await`. Cuts a server roundtrip on locally-detectable bad input.
+- `src/transport/leptos/components/generated/forms/<r>/create_form.rs` — `on:submit` handler parses signal values into `<R>Insertable` (synchronously, in an IIFE returning `Result<<R>Insertable, MeltDown>`), then `validate_<r>_insertable(&parsed)` (synchronously, returns `Result<(), MeltDown>`), THEN `spawn_local(async move { do_<r>_create(parsed).await; ... })`. NOT `Action::new` — that pattern deadlocked the wasm event loop. Cuts a server roundtrip on locally-detectable bad input.
 
 Full spec: `templates/canonical/doc/SPEC_VALIDATORS.md`.
 
@@ -229,7 +229,7 @@ The pre-leptos pipeline emitted to a `frontend/` directory that no longer exists
 - **Vue SFC files** (`.vue`) — components, pages, forms, list views.
 - **TypeScript types** (`frontend/src/types/generated/<r>.ts` — interfaces mirroring Rust DTOs). The Rust struct compiled to WASM is the type now.
 - **TS API clients** (`frontend/src/api/generated/<r>.ts`). Replaced by isomorphic data helpers in `src/transport/leptos/data/generated/<r>.rs`.
-- **TS composables** (`frontend/src/composables/generated/<r>.ts`). Replaced by `Resource::new(...)` / `Action::new(...)` consumers of the data helpers.
+- **TS composables** (`frontend/src/composables/generated/<r>.ts`). Replaced by `RwSignal<Option<Result<T, MeltDown>>>` + `#[cfg(target_arch = "wasm32")] Effect::new(spawn_local(load_*))` consumers of the data helpers in pages, and `spawn_local` directly in form `on:submit` handlers. NOT `Resource::new`/`LocalResource::new`/`Action::new` — see SPEC_LEPTOS for the full rationale (Resource needs Serialize MeltDown, LocalResource panics on SSR via js-sys, Action+Effect deadlocks wasm event loop on submit).
 - **TS validators** (`frontend/src/validators/generated/<r>.ts`). Single Rust validator runs in WASM.
 - **vue-router config** (`frontend/src/router/generated/`). Replaced by `app_routes` codegen emitting `leptos_router` `<Route>` entries.
 - **Governor plugin shim** (`frontend/scripts/governor-plugin.js`) and `.rule_violations_whitelist`. Governor is gone — replaced by a planned `LEPTOS:N` rule family in canonical's `build.rs`.

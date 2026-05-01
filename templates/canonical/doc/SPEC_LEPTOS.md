@@ -9,14 +9,16 @@ Frontend stack for Catablast apps. Replaces the legacy Vue/TS/PrimeVue/Vite stac
 | Framework | Leptos 0.7 (Rust → WASM) |
 | Render mode | SSR + islands hydration via `cargo-leptos` |
 | Router | `leptos_router` (history mode, `<A>` for soft-nav) |
-| Component library | `thaw` (typed Leptos components) |
+| Component library | `thaw` is in deps but **NOT used by codegen** — its widgets call `wasm-bindgen` statics that panic on SSR (`js-sys-0.3.97 cannot access imported statics on non-wasm targets`). Generated forms/pages emit **native HTML** (`<input>`, `<select>`, `<textarea>`, `<form>`, `<p>`) with `prop:value` + `on:input`/`on:change` bindings. Hand-rolled wasm-only components MAY use thaw. |
 | CSS | scss compiled by cargo-leptos via grass + per-component `.module.scss` via stylance |
 | Icons | `icondata` crate (Phosphor feature default) |
-| Forms | Hand-rolled thaw inputs + `spawn_local` in `on:submit` + manual `pending`/`last_error` RwSignals (NOT `Action::new_local` — see Mutations section) |
-| Tables | `leptos-struct-table` derives on `<R>Public` |
+| Forms | Hand-rolled native HTML inputs + `spawn_local` in `on:submit` + manual `pending`/`last_error` RwSignals (NOT `Action::new_local` — see Mutations section) |
+| Data fetching (pages) | `RwSignal<Option<Result<T, MeltDown>>>` + `#[cfg(target_arch = "wasm32")] Effect::new(spawn_local(load_*))` — NOT `Resource::new`/`LocalResource::new` (both pull js-sys statics on SSR). SSR renders `<p>"Loading..."</p>` placeholder; wasm hydrate fires Effect → fetch → render. |
+| Tables | `leptos-struct-table` derives on `<R>Public` (deferred — not yet wired in codegen) |
 | Page metadata | `leptos_meta` (`Title`, `Meta`, `Link`) |
 | Wasm fetch | `gloo-net` |
 | Auth token | httpOnly SameSite=Lax cookie (no Secure flag in dev — Firefox drops Secure cookies on plain http://localhost) |
+| Session boot | `<script id="cata-session-boot">window.__cata_session = {SessionContext-JSON}</script>` injected by SSR shell from per-request Ctx; wasm reads synchronously via `js_sys::Reflect::get + JSON.stringify + serde_json::from_str` BEFORE first render. SSR + hydrate agree on `session: Option<SessionContext>` at first paint. No `/api/auth/me` round-trip on hydrate. |
 
 Stack is **locked**. Don't propose Sycamore, Yew, Dioxus, web-awesome, shoelace, tailwind.
 
@@ -87,28 +89,61 @@ PageLayout + AuthGuardMode enums live in `src/structs/leptos/` per `STRUCTS:22` 
 
 ## Data fetching pattern (locked)
 
-**Isomorphic helpers** with cfg-branched bodies:
+**Isomorphic helpers** with target-arch-cfg branched bodies. Codegen emits these into `src/transport/leptos/data/generated/<r>.rs`:
 
 ```rust
-pub async fn load_postari_list(filter: PostariFilter) -> Result<Vec<PostarePublic>, MeltDown> {
-    #[cfg(feature = "ssr")]
+pub async fn load_posts_list(query: ListQuery) -> Result<ListResponse<PostPublic>, MeltDown> {
+    #[cfg(not(target_arch = "wasm32"))]
     {
         let ctx = expect_context::<Ctx>();
-        flows::postari::list::run(&ctx, filter).await
+        crate::flows::generated::posts::list::run(&ctx, query).await
     }
-    #[cfg(not(feature = "ssr"))]
+    #[cfg(target_arch = "wasm32")]
     {
-        crate::transport::leptos::api_client::get_json("/api/postari", &filter).await
+        let path = format!("/api/posts?{}", query_to_query_string(&query));
+        crate::transport::leptos::api_client::get_json(&path).await
     }
 }
 ```
 
-Pages consume via `Resource::new` (queries) and plain `spawn_local` inside `on:submit`/`on:click` for mutations (not `Action::new_local` — see Mutations section for why).
+**Pages consume the helper from a wasm-only `Effect`** (NOT `Resource::new`/`LocalResource::new` — see binding rule below):
 
-- **SSR-side**: zero HTTP roundtrip. Page renders with data baked into the HTML payload via Leptos's hydration handoff.
-- **Client-side**: when dependencies change (URL params, filters), wasm re-fetches via `/api/<r>`.
+```rust
+#[component]
+pub fn PostListPage() -> impl IntoView {
+    let items_signal: RwSignal<Option<Result<ListResponse<PostPublic>, MeltDown>>> = RwSignal::new(None);
 
-`MeltDown` and projection structs need `Serialize + Deserialize` so the SSR result can travel to wasm.
+    #[cfg(target_arch = "wasm32")]
+    Effect::new(move |_| {
+        leptos::task::spawn_local(async move {
+            let result = load_posts_list(ListQuery::default()).await;
+            items_signal.set(Some(result));
+        });
+    });
+
+    view! {
+        <AuthGuard mode=AuthGuardMode::Required>
+            <PageShell layout=PageLayout::Table>
+                <h1>"Post list"</h1>
+                {move || match items_signal.get() {
+                    None => view! { <p>"Loading..."</p> }.into_any(),
+                    Some(Ok(items)) => render_list_items(&items).into_any(),
+                    Some(Err(err)) => view! { <ErrorBanner error=err/> }.into_any(),
+                }}
+            </PageShell>
+        </AuthGuard>
+    }
+}
+```
+
+**Why not `Resource::new` / `LocalResource::new` (binding):**
+- `Resource::new` requires `T: Serialize + Deserialize` so SSR-resolved values can travel to wasm via the HTML payload. `MeltDown` carries `Arc<dyn Error>` and is **not** Serialize. Wrapping requires either making MeltDown Serialize (large refactor) or pre-flattening the Result (loses error info).
+- `LocalResource::new` is documented as wasm-only but its `.get()` and `Suspense` interop pull `js-sys` statics during SSR rendering. On host that triggers `js-sys-0.3.97 cannot access imported statics on non-wasm targets` → tokio-rt-worker panic → 500 / connection reset. Verified empirically.
+- Plain `RwSignal<Option<Result<T, MeltDown>>>` + cfg-gated `Effect::new(spawn_local(load_*))` sidesteps both: SSR renders the Loading placeholder (signal=None), wasm hydrates with the same placeholder (signal=None at first), then Effect fires post-hydrate, fetches via `/api/<r>`, populates the signal, view re-renders. SSR ↔ hydrate render the same tree → no tachys mismatch.
+
+This means **the data is NOT pre-resolved during SSR**. The cold-load HTML payload always shows `<p>"Loading..."</p>` for resource-backed sections. If a page needs server-baked data in the SSR payload, it must use `expect_context::<Ctx>()` in the page body directly (synchronous, since `flows::*::run` returns a future that resolves immediately on SSR with a Pool-bound Ctx). This is the escape valve for hand-written pages that need SEO/perf-critical pre-rendering.
+
+**`api_client.rs`** (canonical, wasm-only) provides `get_json`, `post_json`, `post_unit`, `patch_json`, `delete`. All map BE error envelope (`{error: {melt_type, message}}`) to a `MeltDown` via `parse_or_envelope_error`.
 
 ## Auth (locked)
 
@@ -118,9 +153,14 @@ httpOnly SameSite=Lax cookie (no Secure flag in dev — Firefox + recent Chrome 
 
 **Auth middleware behavior on stale cookies (binding):** when the request carries a session cookie that no longer resolves (DB row gone, expired, malformed), the middleware MUST swallow the resolve error, log Debug, and fall through to anonymous Ctx. It MUST NOT propagate `SessionInvalid` to the response — doing so 401's `/api/auth/login` itself, making it impossible to recover from a stale cookie. See `src/transport/http/middleware/auth.rs::request_ctx_middleware`.
 
-`AuthGuard` component wraps every protected page. It reads from a global `SessionStore` signal (typed wrapper around `RwSignal<Option<SessionContext>>` defined at `src/structs/leptos/session_store.rs`). The store is provided in `<App>` via `provide_session_store()` and hydrated by an `Effect::new` that calls `load_session()` on mount. On SSR-side first render, the store starts empty (`None`); on wasm hydrate, the Effect calls `/api/auth/me` via `api_client::get_json` and populates the store. Renders `<Redirect path="/login"/>` if blocked.
+`AuthGuard` component wraps every protected page. Modes: `Public` (always render), `AnonOnly` (redirect to `/dashboard` when authed — used by `/login`/`/register`), `Required` (redirect to `/login` when anon), `AdminOnly` (redirect to `/login` when anon, `/` when non-admin). Reads from a global `SessionStore` (typed wrapper around `RwSignal<Option<SessionContext>>` at `src/structs/leptos/session_store.rs`).
 
-**Known limitation (deferred to phase 12)**: SSR-side first render shows protected pages briefly as if unauthed (then wasm corrects via the load_session Effect). The clean fix is `leptos_routes_with_context` callback that reads cookie from request headers, resolves session, and `provide_context::<Option<SessionContext>>` per-request — eliminating the flash. Currently not implemented.
+**Session boot (binding) — both targets agree on `Option<SessionContext>` at first paint:**
+- **SSR**: `leptos_routes_with_context` callback reads `axum::http::request::Parts` from leptos context, parses `SESSION_COOKIE`, resolves it via `flows::sessions::resolve` (`block_in_place + block_on` in multi-thread tokio), `provide_context::<Ctx>(ctx_with_session)`. The `shell()` function emits `<script id="cata-session-boot">window.__cata_session = {SessionContext-JSON or null}</script>` in `<head>` from the resolved Ctx. The `provide_session_store()` reads `use_context::<Ctx>()` synchronously and seeds the SessionStore.
+- **Wasm hydrate**: `provide_session_store()` reads `window.__cata_session` synchronously via `js_sys::Reflect::get + JSON.stringify + serde_json::from_str` BEFORE the first conditional render. SessionStore is seeded with the same value SSR rendered with. AuthGuard's branch is identical on both targets → no tachys hydration mismatch.
+- No `/api/auth/me` round-trip on hydrate. The injected payload is the source of truth at boot. Mutations (`do_login`, `do_register`, `do_logout`) write directly to the SessionStore.
+
+This eliminates the entire class of "tachys: expected a marker node, but found `<main>`" hydration panics that occur when SSR and hydrate disagree on a reactive value driving a conditional render.
 
 ```rust
 #[component]
@@ -200,7 +240,7 @@ let on_submit = move |ev: leptos::ev::SubmitEvent| {
 };
 ```
 
-Codegen'd forms (`<R>CreateForm`/`<R>EditForm`) follow the same pattern with thaw inputs (`<Input/>`, `<Checkbox/>`, `<Combobox/>` for enums) and `validate_<r>_*` called BEFORE the spawn_local dispatch.
+Codegen'd forms (`<R>CreateForm`/`<R>EditForm`) follow the same pattern with **native HTML** inputs (`<input>`, `<select>`, `<textarea>`, `<form>`) and `validate_<r>_*` called BEFORE the spawn_local dispatch. **Thaw widgets are banned in codegen** because they panic on SSR (`js-sys-0.3.97 cannot access imported statics on non-wasm targets`). Hand-rolled wasm-only components MAY use thaw, but anything that SSRs must stick to native HTML.
 
 No `#[server]` macro use. Plain axum handlers + Leptos pages, both calling the flow.
 
@@ -238,7 +278,22 @@ Out of scope.
 
 ## End-to-end testing
 
-Standalone `e2e/` workspace member ships with the canonical template. Drives a headless Firefox via geckodriver + fantoccini (rust webdriver) + cookie-aware reqwest. Boots `cargo leptos serve`, waits for `/api/healthz`, then exercises register → logout → login → `/api/auth/me` round-trip.
+Standalone `e2e/` workspace member ships with the canonical template. Drives a headless Firefox via geckodriver + fantoccini (rust webdriver) + cookie-aware reqwest. Boots `cargo leptos serve`, waits for `/api/healthz`, then exercises:
+
+1. `smoke_welcome` — load `/`, install console hook, sanity-check JS thread.
+2. `register_via_ui` — fill form, submit, await `/dashboard`.
+3. `logout_via_ui` — `goto /logout`, await redirect to `/login`. (NOT `logout_via_api` — fantoccini and reqwest have separate cookie jars; api logout doesn't clear the browser session.)
+4. `login_via_ui` — fill form, submit, await `/dashboard`.
+5. `cold_dashboard_after_login` — full-page `goto /dashboard`, assert URL stays, `<h1>Dashboard</h1>` present, no fatal console errors. **Catches SSR↔hydrate session mismatch.**
+6. `cold_login_redirects_when_authed` — full-page `goto /login` while authed, assert URL flips to `/dashboard`. **Catches AnonOnly regression.**
+7. `auth_me_via_api` — reqwest sanity check.
+8. `cold_posts_list` — full-page `goto /posts`, assert h1 has "post", no console errors.
+9. `cold_posts_create` — full-page `goto /posts/new`, assert `<form.posts-create-form>` rendered, no console errors.
+
+Console-error capture:
+- `install_console_hook` injects a JS hook that captures `console.log/warn/error`, `window.onerror`, `unhandledrejection` into `window.__e2e_console`.
+- `assert_no_fatal_console` drains and matches against `FATAL_CONSOLE_SUBSTRINGS` (`"hydration"`, `"panicked"`, `"unreachable executed"`, `"Unrecoverable"`, `"expected a marker node"`, `"RuntimeError"`, `"wasm-bindgen"`). Any match → step fails.
+- Called at the end of every step. Hydration panics no longer slip past silently.
 
 Wire-up:
 - `[package.metadata.leptos] end2end-cmd = "cargo run --release"` + `end2end-dir = "e2e"` in canonical's Cargo.toml.
@@ -251,7 +306,7 @@ Diagnostic patterns baked into the e2e (kept in for future debugging):
 - `setTimeout(...click(), 50)` instead of `client.click()` so we can poll the JS thread post-submit without WebDriver waiting for page-settled.
 - `tokio::time::timeout(2s, client.execute("return Date.now()"))` poll loop — if it doesn't return, the wasm hydrate has wedged the event loop (regression check for the `Action::new_local + Effect::new(action.value())` deadlock pattern).
 - fetch hook (`window.fetch = wrapper`) records all outbound XHRs so we can assert the right `/api/*` endpoint was hit even if the resulting navigate happens too fast to observe.
-- per-step `tokio::time::timeout` of `STEP_TIMEOUT` (40s) wrapping each phase. Master timeout at 120s to guarantee the suite never hangs the runner.
+- per-step `tokio::time::timeout` of `STEP_TIMEOUT` (40s) wrapping each phase. Master timeout at 180s to guarantee the suite never hangs the runner.
 
 ## Related specs
 
