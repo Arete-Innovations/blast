@@ -186,6 +186,8 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
                     default_sort: None,
                     max_page_size: None,
                 }),
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
     }
@@ -195,6 +197,8 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
             VerbState {
                 auth: AuthMode::AuthRequired,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
     }
@@ -204,6 +208,8 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
             VerbState {
                 auth: AuthMode::AuthRequired,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
     }
@@ -213,6 +219,8 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
             VerbState {
                 auth: AuthMode::AuthRequired,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
     }
@@ -222,6 +230,8 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
             VerbState {
                 auth: AuthMode::AuthRequired,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
     }

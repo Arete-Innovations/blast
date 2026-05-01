@@ -260,6 +260,8 @@ mod tests {
                     default_sort: None,
                     max_page_size: None,
                 }),
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
         let mut r = ResourceState::new(ResourceName::new(table));

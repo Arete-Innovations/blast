@@ -8,7 +8,11 @@ use crate::state::{
     names::{AuthScopeField, FieldName, ResourceName, SqlType},
 };
 
-pub const RESOURCE_SCHEMA_VERSION: u32 = 2;
+pub const RESOURCE_SCHEMA_VERSION: u32 = 3;
+
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceState {
@@ -123,6 +127,10 @@ pub struct VerbState {
     pub auth: AuthMode,
     #[serde(default)]
     pub list_options: Option<ListOptions>,
+    #[serde(default = "default_true")]
+    pub emit_rest_api: bool,
+    #[serde(default = "default_true")]
+    pub emit_html_page: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,5 +220,45 @@ impl ResourceState {
         for (k, v) in verb_pairs {
             self.verbs.insert(k, v);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verb_state_emit_flags_default_true_via_serde() {
+        let raw = r#"(
+            auth: Public,
+            list_options: None,
+        )"#;
+        let parsed: VerbState = match ron::from_str(raw) {
+            Ok(v) => v,
+            Err(e) => panic!("parse: {e}"),
+        };
+        assert!(parsed.emit_rest_api, "emit_rest_api defaults to true");
+        assert!(parsed.emit_html_page, "emit_html_page defaults to true");
+    }
+
+    #[test]
+    fn verb_state_emit_flags_round_trip_when_set_false() {
+        let original = VerbState {
+            auth: AuthMode::Public,
+            list_options: None,
+            emit_rest_api: false,
+            emit_html_page: false,
+        };
+        let body = match ron::to_string(&original) {
+            Ok(s) => s,
+            Err(e) => panic!("serialize: {e}"),
+        };
+        let parsed: VerbState = match ron::from_str(&body) {
+            Ok(v) => v,
+            Err(e) => panic!("parse: {e} body={body}"),
+        };
+        assert_eq!(parsed, original, "round-trip preserves both flags");
+        assert!(!parsed.emit_rest_api);
+        assert!(!parsed.emit_html_page);
     }
 }

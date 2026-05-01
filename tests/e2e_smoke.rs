@@ -239,6 +239,8 @@ fn write_minimal_users_resource(state_dir: &Path) {
                 default_sort: None,
                 max_page_size: Some(100),
             }),
+            emit_rest_api: true,
+            emit_html_page: true,
         },
     );
     for verb in [Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
@@ -247,6 +249,8 @@ fn write_minimal_users_resource(state_dir: &Path) {
             VerbState {
                 auth: AuthMode::AuthRequired,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
     }

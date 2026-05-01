@@ -52,6 +52,8 @@ fn sample_resource() -> ResourceState {
                 default_sort: None,
                 max_page_size: Some(100),
             }),
+            emit_rest_api: true,
+            emit_html_page: true,
         },
     );
     res.verbs.insert(
@@ -59,6 +61,8 @@ fn sample_resource() -> ResourceState {
         VerbState {
             auth: AuthMode::ScopedTo(AuthScopeField::new("owner_id")),
             list_options: None,
+            emit_rest_api: true,
+            emit_html_page: true,
         },
     );
 
@@ -268,6 +272,8 @@ fn fully_loaded_v2_resource() -> ResourceState {
                 default_sort: None,
                 max_page_size: Some(50),
             }),
+            emit_rest_api: true,
+            emit_html_page: true,
         },
     );
 
@@ -324,7 +330,7 @@ fn v2_resource_save_is_byte_stable() {
 }
 
 #[test]
-fn v1_ron_file_loads_via_upgrader_to_v2() {
+fn v1_ron_file_loads_via_upgrader_to_current() {
     let dir = tempfile::tempdir().expect("tempdir");
     let resources_dir = dir.path().join(blast::state::io::RESOURCES_DIR);
     std::fs::create_dir_all(&resources_dir).expect("mk resources dir");
@@ -371,7 +377,7 @@ fn v1_ron_file_loads_via_upgrader_to_v2() {
 
     let loaded = blast::state::io::load_resource(dir.path(), &ResourceName::new("users")).expect("upgrade-then-load v1 file");
 
-    assert_eq!(loaded.schema_version, 2, "schema_version should be bumped to 2 after upgrade");
+    assert_eq!(loaded.schema_version, 3, "schema_version should be bumped to current after upgrade");
     assert_eq!(loaded.singular_override, None, "default singular_override absent");
     assert_eq!(loaded.soft_delete, None, "default soft_delete absent");
     assert!(loaded.relations.is_empty(), "default relations empty");

@@ -129,6 +129,8 @@ mod tests {
                     default_sort: None,
                     max_page_size: None,
                 }),
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
         verbs.insert(
@@ -136,6 +138,8 @@ mod tests {
             VerbState {
                 auth: AuthMode::Public,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
 

@@ -345,6 +345,8 @@ mod tests {
                 VerbState {
                     auth: AuthMode::Public,
                     list_options: None,
+                    emit_rest_api: true,
+                    emit_html_page: true,
                 },
             );
         }

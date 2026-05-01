@@ -105,22 +105,22 @@ fn emit_resource(project_root: &Path, resource: &ResourceState, pages_dir: &Path
 
     let mut emitted_modules: Vec<&'static str> = Vec::new();
 
-    if resource.verbs.contains_key(&Verb::List) {
+    if verb_emits_html(resource, Verb::List) {
         let body = render_list_page(table, &stem, verb_auth(resource, Verb::List)?);
         write_file(&resource_pages_dir.join("list.rs"), &format!("{marker}{body}"), report)?;
         emitted_modules.push("list");
     }
-    if resource.verbs.contains_key(&Verb::Get) {
+    if verb_emits_html(resource, Verb::Get) {
         let body = render_detail_page(table, &stem, verb_auth(resource, Verb::Get)?);
         write_file(&resource_pages_dir.join("detail.rs"), &format!("{marker}{body}"), report)?;
         emitted_modules.push("detail");
     }
-    if resource.verbs.contains_key(&Verb::Create) {
+    if verb_emits_html(resource, Verb::Create) {
         let body = render_create_page(table, &stem, verb_auth(resource, Verb::Create)?);
         write_file(&resource_pages_dir.join("create.rs"), &format!("{marker}{body}"), report)?;
         emitted_modules.push("create");
     }
-    if resource.verbs.contains_key(&Verb::Update) {
+    if verb_emits_html(resource, Verb::Update) {
         let body = render_edit_page(table, &stem, verb_auth(resource, Verb::Update)?);
         write_file(&resource_pages_dir.join("edit.rs"), &format!("{marker}{body}"), report)?;
         emitted_modules.push("edit");
@@ -133,6 +133,13 @@ fn emit_resource(project_root: &Path, resource: &ResourceState, pages_dir: &Path
     emit_data_stub(project_root, resource, data_dir, report)?;
 
     Ok(())
+}
+
+fn verb_emits_html(resource: &ResourceState, verb: Verb) -> bool {
+    match resource.verbs.get(&verb) {
+        Some(state) => state.emit_html_page,
+        None => false, // allow: absent verb declaration means no HTML page emission for this verb
+    }
 }
 
 fn verb_auth(resource: &ResourceState, verb: Verb) -> BlastResult<AuthMode> {
@@ -532,6 +539,8 @@ mod tests {
             VerbState {
                 auth: AuthMode::Public,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
         verbs.insert(
@@ -539,6 +548,8 @@ mod tests {
             VerbState {
                 auth: AuthMode::Public,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
         verbs.insert(
@@ -546,6 +557,8 @@ mod tests {
             VerbState {
                 auth: AuthMode::AuthRequired,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
         verbs.insert(
@@ -553,6 +566,8 @@ mod tests {
             VerbState {
                 auth: AuthMode::AdminOnly,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
         verbs.insert(
@@ -560,6 +575,8 @@ mod tests {
             VerbState {
                 auth: AuthMode::AdminOnly,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
 
@@ -672,6 +689,23 @@ mod tests {
             let body = fs::read_to_string(&path).expect("read page");
             assert!(body.starts_with("// AUTO-GENERATED from "), "{page} must start with marker; got: {body}");
         }
+    }
+
+    #[test]
+    fn emit_html_page_false_skips_page_emission() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let mut resource = make_posts_with_all_verbs();
+        let create = match resource.verbs.get_mut(&Verb::Create) {
+            Some(v) => v,
+            None => panic!("fixture missing Create"),
+        };
+        create.emit_html_page = false;
+        seed_project(root, &[resource]);
+        run(root, &mut NullSink, &mut NullProgress).expect("run leptos_pages");
+        let base = root.join("src/transport/leptos/pages/generated/posts");
+        assert!(base.join("list.rs").exists(), "list.rs must emit");
+        assert!(!base.join("create.rs").exists(), "create.rs must NOT emit");
     }
 
     #[test]

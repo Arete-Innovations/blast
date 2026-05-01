@@ -16,7 +16,7 @@ storage/blast/state/resources/<resource_name>.ron
 
 ```ron
 ResourceState(
-    schema_version: 2,
+    schema_version: 3,
     name: "books",
     fields: { /* IndexMap<FieldName, FieldState> */ },
     verbs:  { /* IndexMap<Verb, VerbState> */ },
@@ -32,7 +32,7 @@ Authoritative Rust type: `blast::state::resource::ResourceState` (`blast/src/sta
 
 | Field | Required | Default | Notes |
 |-------|----------|---------|-------|
-| `schema_version` | yes | — | Always `2`. `RESOURCE_SCHEMA_VERSION` const. Bumped on breaking changes; loader runs upgraders. |
+| `schema_version` | yes | — | Always `3`. `RESOURCE_SCHEMA_VERSION` const. Bumped on breaking changes; loader runs upgraders. |
 | `name` | yes | — | Snake-case table name. Matches SQL `CREATE TABLE <name>`. |
 | `fields` | yes | — | `IndexMap<FieldName, FieldState>`. **Order is preserved** in serialization — used to drive struct field order in some codegen passes. |
 | `verbs` | yes | — | `IndexMap<Verb, VerbState>`. Each declared verb generates a flow + transport route. |
@@ -149,11 +149,13 @@ verbs: {
             default_sort: Some("created_at"),
             max_page_size: Some(100),
         )),
+        emit_rest_api: true,
+        emit_html_page: true,
     ),
-    Get:    VerbState(auth: Public, list_options: None),
-    Create: VerbState(auth: AuthRequired, list_options: None),
-    Update: VerbState(auth: AdminOnly, list_options: None),
-    Delete: VerbState(auth: Roles(["admin", "moderator"]), list_options: None),
+    Get:    VerbState(auth: Public,                        list_options: None, emit_rest_api: true, emit_html_page: true),
+    Create: VerbState(auth: AuthRequired,                  list_options: None, emit_rest_api: true, emit_html_page: true),
+    Update: VerbState(auth: AdminOnly,                     list_options: None, emit_rest_api: true, emit_html_page: true),
+    Delete: VerbState(auth: Roles(["admin", "moderator"]), list_options: None, emit_rest_api: true, emit_html_page: false),
 }
 ```
 
@@ -168,6 +170,15 @@ Five verbs, all optional — declare only the ones you want. Each emits:
 | `Delete` | `DELETE /<r>/:id` | `...delete` | `...delete` | — | `()` |
 
 `list_options` is required on `List` if you want pagination/filter/sort, else `None`.
+
+### Per-verb emit flags
+
+| Field | Type | Default | Effect when `false` |
+|-------|------|---------|---------------------|
+| `emit_rest_api` | bool | `true` | Skips the `/api/<r>...` axum REST handler + route entry in the generated transport file. |
+| `emit_html_page` | bool | `true` | Skips the leptos page component + axum HTML route registration for the verb. |
+
+Both default to `true` via `#[serde(default)]`, so existing primer files written without the fields keep the prior behaviour (full REST + full HTML emit). Set to `false` to author internal-only resources (HTML-only admin views) or headless data resources (JSON API only). The flag does NOT gate the underlying `flow`, `routine`, `model`, or `struct` emission — those layers are always produced when their respective `gen_level` allows; only the transport layer entry-points are gated.
 
 ### AuthMode
 
@@ -301,7 +312,7 @@ Pick the lowest level that ships your needed surface. `Composables` is right for
 
 ```ron
 ResourceState(
-    schema_version: 2,
+    schema_version: 3,
     name: "books",
     fields: {
         "id": FieldState(
@@ -368,11 +379,13 @@ ResourceState(
                 default_sort: Some("created_at"),
                 max_page_size: Some(100),
             )),
+            emit_rest_api: true,
+            emit_html_page: true,
         ),
-        Get:    VerbState(auth: Public,        list_options: None),
-        Create: VerbState(auth: AuthRequired,  list_options: None),
-        Update: VerbState(auth: AuthRequired,  list_options: None),
-        Delete: VerbState(auth: AdminOnly,     list_options: None),
+        Get:    VerbState(auth: Public,        list_options: None, emit_rest_api: true, emit_html_page: true),
+        Create: VerbState(auth: AuthRequired,  list_options: None, emit_rest_api: true, emit_html_page: true),
+        Update: VerbState(auth: AuthRequired,  list_options: None, emit_rest_api: true, emit_html_page: true),
+        Delete: VerbState(auth: AdminOnly,     list_options: None, emit_rest_api: true, emit_html_page: false),
     },
     ws_events: Some(WsEventsState(
         trigger_columns: ["title", "published"],
@@ -444,7 +457,7 @@ Errors point at the source line in the RON file.
 ## Hard rules
 
 - **One PK per resource.** Composite PKs not supported in v2.
-- **`schema_version` must be `2`.** Loader will refuse anything else (or upgrade if a v1→v2 upgrader is registered).
+- **`schema_version` must be `3`.** Loader will refuse anything newer; older files (v1, v2) auto-upgrade through the registered raw-text upgraders on load.
 - **Field name = SQL column name.** Codegen does not rename.
 - **Verbs are independent.** You may declare just `List` and `Get` (read-only resource).
 - **`fields` order is preserved** in some emitter passes — order it however reads naturally.

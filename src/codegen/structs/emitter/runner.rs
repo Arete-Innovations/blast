@@ -124,6 +124,8 @@ mod tests {
                     default_sort: None,
                     max_page_size: Some(100),
                 }),
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
 

@@ -77,7 +77,9 @@ fn build_resource_file(r: &ResourceState) -> String {
     let table = r.name.as_str();
     let type_name = pascal_case(&singularize(table));
 
-    let needs_validator_import = r.gen_level >= crate::state::GenLevel::Types && (r.verbs.contains_key(&Verb::Create) || r.verbs.contains_key(&Verb::Update));
+    let create_emits = verb_emits_rest(r, Verb::Create);
+    let update_emits = verb_emits_rest(r, Verb::Update);
+    let needs_validator_import = r.gen_level >= crate::state::GenLevel::Types && (create_emits || update_emits);
 
     let mut out = String::new();
     out.push_str("use axum::extract::Path;\n");
@@ -92,10 +94,10 @@ fn build_resource_file(r: &ResourceState) -> String {
     out.push_str(&format!("use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}Public}};\n", table = table, ty = type_name,));
     if needs_validator_import {
         let mut imports: Vec<String> = Vec::new();
-        if r.verbs.contains_key(&Verb::Create) {
+        if create_emits {
             imports.push(format!("validate_{table}_insertable", table = table));
         }
-        if r.verbs.contains_key(&Verb::Update) {
+        if update_emits {
             imports.push(format!("validate_{table}_patch", table = table));
         }
         out.push_str(&format!("use crate::structs::generated::validators::{table}::{{{names}}};\n", table = table, names = imports.join(", "),));
@@ -103,12 +105,22 @@ fn build_resource_file(r: &ResourceState) -> String {
     out.push('\n');
 
     for verb in r.verbs.keys() {
+        if !verb_emits_rest(r, *verb) {
+            continue;
+        }
         out.push_str(&handler_for_verb(*verb, &type_name, table, needs_validator_import));
         out.push('\n');
     }
 
     out.push_str(&router_fn(r));
     out
+}
+
+fn verb_emits_rest(r: &ResourceState, verb: Verb) -> bool {
+    match r.verbs.get(&verb) {
+        Some(state) => state.emit_rest_api,
+        None => false, // allow: absent verb declaration means no REST emission for this verb
+    }
 }
 
 fn handler_for_verb(verb: Verb, type_name: &str, table: &str, validators_enabled: bool) -> String {
@@ -172,11 +184,11 @@ fn delete_handler() -> String {
 }
 
 fn router_fn(r: &ResourceState) -> String {
-    let has_list = r.verbs.contains_key(&Verb::List);
-    let has_create = r.verbs.contains_key(&Verb::Create);
-    let has_get = r.verbs.contains_key(&Verb::Get);
-    let has_update = r.verbs.contains_key(&Verb::Update);
-    let has_delete = r.verbs.contains_key(&Verb::Delete);
+    let has_list = verb_emits_rest(r, Verb::List);
+    let has_create = verb_emits_rest(r, Verb::Create);
+    let has_get = verb_emits_rest(r, Verb::Get);
+    let has_update = verb_emits_rest(r, Verb::Update);
+    let has_delete = verb_emits_rest(r, Verb::Delete);
 
     let collection_chain = build_method_chain(&[(has_list, "get", "list"), (has_create, "post", "create")]);
     let item_chain = build_method_chain(&[(has_get, "get", "get_one"), (has_update, "patch", "update"), (has_delete, "delete", "delete_one")]);
@@ -320,6 +332,8 @@ mod tests {
                 VerbState {
                     auth: AuthMode::Public,
                     list_options: None,
+                    emit_rest_api: true,
+                    emit_html_page: true,
                 },
             );
         }
@@ -443,6 +457,67 @@ mod tests {
     }
 
     #[test]
+    fn emit_rest_api_false_skips_handler_and_route() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+
+        let resources_dir = root.join("storage/blast/state/resources");
+        fs::create_dir_all(&resources_dir).expect("mkdir");
+
+        let mut field_variants = BTreeSet::new();
+        field_variants.insert(FieldVariant::Db);
+        field_variants.insert(FieldVariant::Public);
+        let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
+        fields.insert(
+            FieldName::new("id"),
+            FieldState {
+                sql_type: SqlType::new("BIGSERIAL"),
+                variants: field_variants,
+                nullable: false,
+                primary_key: true,
+                validators: BTreeSet::new(),
+            },
+        );
+
+        let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
+        verbs.insert(
+            Verb::List,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
+            },
+        );
+        verbs.insert(
+            Verb::Get,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+                emit_rest_api: false,
+                emit_html_page: true,
+            },
+        );
+
+        let mut resource = ResourceState::new(ResourceName::new("widgets"));
+        resource.fields = fields;
+        resource.verbs = verbs;
+
+        let state_dir = root.join("storage/blast/state");
+        crate::state::save_resource(&state_dir, &resource).expect("save resource");
+        write_app_state(root).expect("write app state");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("http routes generation");
+
+        let body = fs::read_to_string(root.join("src/transport/http/generated/widgets.rs")).expect("read");
+        assert!(body.contains("pub async fn list("), "list handler must emit when emit_rest_api: true");
+        assert!(!body.contains("pub async fn get_one("), "get handler must NOT emit when emit_rest_api: false");
+        assert!(!body.contains(".route(\"/:id\""), "item route must NOT emit when no item REST verbs");
+    }
+
+    #[test]
     fn skips_unspecified_verbs() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
@@ -456,6 +531,8 @@ mod tests {
             VerbState {
                 auth: AuthMode::Public,
                 list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
             },
         );
         let mut resource = ResourceState::new(ResourceName::new("logs"));
