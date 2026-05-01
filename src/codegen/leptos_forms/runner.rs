@@ -21,7 +21,7 @@ pub struct EmitReport {
 }
 
 const STEP_LABEL: &str = "leptos forms generation";
-pub const FORM_EMIT_STRATEGY: &str = "hand-rolled thaw inputs + Action::new (no leptos-form derive); chosen for explicit validator-before-dispatch control + alignment with mutation UX rule (await server, no optimistic).";
+pub const FORM_EMIT_STRATEGY: &str = "hand-rolled thaw inputs + spawn_local + manual pending RwSignal (no leptos-form derive, no Action+Effect — that pattern deadlocks the wasm event loop on submit when reactive flush triggers navigation/unmount).";
 
 pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
@@ -603,6 +603,39 @@ mod tests {
         match fs::write(mig_dir.join("up.sql"), body) {
             Ok(()) => {}
             Err(e) => panic!("write up.sql: {e}"),
+        }
+    }
+
+    #[test]
+    fn forms_use_spawn_local_not_action_effect() {
+        let tmp = match TempDir::new() {
+            Ok(t) => t,
+            Err(e) => panic!("tempdir: {e}"),
+        };
+        let root = tmp.path();
+        let resource = make_users_with_email_password(GenLevel::Components);
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        match run(root, &mut sink, &mut progress) {
+            Ok(_r) => {}
+            Err(e) => panic!("run: {e}"),
+        }
+
+        for path in ["src/transport/leptos/components/generated/forms/users/create_form.rs", "src/transport/leptos/components/generated/forms/users/edit_form.rs"] {
+            let body = match fs::read_to_string(root.join(path)) {
+                Ok(s) => s,
+                Err(e) => panic!("read {path}: {e}"),
+            };
+            assert!(body.contains("use leptos::task::spawn_local;"), "{path} must import spawn_local: {body}");
+            assert!(body.contains("spawn_local(async move {"), "{path} must dispatch via spawn_local, not Action: {body}");
+            assert!(body.contains("let pending: RwSignal<bool> = RwSignal::new(false);"), "{path} must use manual pending RwSignal: {body}");
+            assert!(body.contains("let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);"), "{path} must use last_error RwSignal: {body}");
+            assert!(!body.contains("Action::new"), "{path} must NOT use Action::new (deadlocks wasm event loop): {body}");
+            assert!(!body.contains(".dispatch("), "{path} must NOT dispatch — Action+dispatch deadlocks wasm: {body}");
+            assert!(!body.contains("Effect::new"), "{path} must NOT subscribe via Effect::new on action.value(): {body}");
+            assert!(body.contains("err.log();"), "{path} must call err.log() in Err arms (canonical ERROR:18 lint): {body}");
         }
     }
 

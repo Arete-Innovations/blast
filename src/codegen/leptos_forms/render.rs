@@ -104,7 +104,6 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     let stem = type_stem_for_resource(resource);
     let component_name = format!("{stem}CreateForm");
     let insertable_type = format!("{stem}Insertable");
-    let public_type = format!("{stem}Public");
 
     let insertable_fields: Vec<(&FieldName, &FieldState)> = fields_for_variant(resource, FieldVariant::Insertable).into_iter().filter(|(_pair_name, f)| !f.primary_key).collect();
 
@@ -114,10 +113,11 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     let mut out = String::new();
     out.push_str("use leptos::ev::SubmitEvent;\n");
     out.push_str("use leptos::prelude::*;\n");
+    out.push_str("use leptos::task::spawn_local;\n");
     out.push_str(&render_thaw_imports(has_enum));
     out.push('\n');
     out.push_str("use crate::meltdown::MeltDown;\n");
-    out.push_str(&format!("use crate::structs::generated::{table}::{{{insertable_type}, {public_type}}};\n"));
+    out.push_str(&format!("use crate::structs::generated::{table}::{insertable_type};\n"));
     for ty in &used_enum_types {
         out.push_str(&format!("use crate::structs::generated::enums::{ty};\n"));
     }
@@ -132,28 +132,47 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     for (name, field) in &insertable_fields {
         out.push_str(&render_signal_decl(name.as_str(), field, enums));
     }
-    out.push('\n');
-
-    out.push_str(&format!(
-        "    let create_action: Action<(), ::std::result::Result<{public_type}, MeltDown>> = Action::new(move |_input: &()| {{\n"
-    ));
-    out.push_str("        async move {\n");
-    out.push_str(&format!("            let parsed: {insertable_type} = "));
-    out.push_str(&render_build_insertable(resource, &insertable_fields, enums));
-    out.push_str(";\n");
-    out.push_str(&format!("            validate_{table}_insertable(&parsed)?;\n"));
-    out.push_str(&format!("            do_{table}_create(parsed).await\n"));
-    out.push_str("        }\n");
-    out.push_str("    });\n");
-    out.push('\n');
-
-    out.push_str("    let pending = create_action.pending();\n");
-    out.push_str("    let value = create_action.value();\n");
+    out.push_str("    let pending: RwSignal<bool> = RwSignal::new(false);\n");
+    out.push_str("    let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);\n");
     out.push('\n');
 
     out.push_str("    let on_submit = move |ev: SubmitEvent| {\n");
     out.push_str("        ev.prevent_default();\n");
-    out.push_str("        create_action.dispatch(());\n");
+    out.push_str("        if pending.get_untracked() {\n");
+    out.push_str("            return;\n");
+    out.push_str("        }\n");
+    out.push_str(&format!("        let parsed_result: ::std::result::Result<{insertable_type}, MeltDown> = "));
+    out.push_str(&render_build_insertable(resource, &insertable_fields, enums));
+    out.push_str(";\n");
+    out.push_str(&format!("        let parsed: {insertable_type} = match parsed_result {{\n"));
+    out.push_str("            Ok(p) => p,\n");
+    out.push_str("            Err(err) => {\n");
+    out.push_str("                err.log();\n");
+    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                return;\n");
+    out.push_str("            }\n");
+    out.push_str("        };\n");
+    out.push_str(&format!("        match validate_{table}_insertable(&parsed) {{\n"));
+    out.push_str("            Ok(()) => {}\n");
+    out.push_str("            Err(err) => {\n");
+    out.push_str("                err.log();\n");
+    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                return;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        pending.set(true);\n");
+    out.push_str("        last_error.set(None);\n");
+    out.push_str("        spawn_local(async move {\n");
+    out.push_str(&format!("            let outcome = do_{table}_create(parsed).await;\n"));
+    out.push_str("            pending.set(false);\n");
+    out.push_str("            match outcome {\n");
+    out.push_str("                Ok(_created) => {}\n");
+    out.push_str("                Err(err) => {\n");
+    out.push_str("                    err.log();\n");
+    out.push_str("                    last_error.set(Some(err));\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("        });\n");
     out.push_str("    };\n");
     out.push('\n');
 
@@ -161,11 +180,7 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     for (name, field) in &insertable_fields {
         out.push_str(&render_field_view(name.as_str(), field, enums));
     }
-    out.push_str("            {move || match value.get() {\n");
-    out.push_str("                Some(Err(error)) => view! { <ErrorBanner error=error/> }.into_any(),\n");
-    out.push_str("                Some(Ok(_ok)) => view! { <span/> }.into_any(),\n");
-    out.push_str("                None => view! { <span/> }.into_any(),\n");
-    out.push_str("            }}\n");
+    out.push_str("            {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}\n");
     out.push_str("            <button type=\"submit\" prop:disabled=move || pending.get()>\n");
     out.push_str("                {move || match pending.get() {\n");
     out.push_str("                    true => \"Saving...\",\n");
@@ -194,6 +209,7 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     let mut out = String::new();
     out.push_str("use leptos::ev::SubmitEvent;\n");
     out.push_str("use leptos::prelude::*;\n");
+    out.push_str("use leptos::task::spawn_local;\n");
     out.push_str(&render_thaw_imports(has_enum));
     out.push('\n');
     out.push_str("use crate::meltdown::MeltDown;\n");
@@ -213,27 +229,48 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     for (name, field) in &patch_fields {
         out.push_str(&render_signal_decl(name.as_str(), field, enums));
     }
-    out.push('\n');
-
-    out.push_str(&format!("    let update_action: Action<(), ::std::result::Result<{public_type}, MeltDown>> = Action::new(move |_input: &()| {{\n"));
-    out.push_str("        let captured_id = row_id.clone();\n");
-    out.push_str("        async move {\n");
-    out.push_str(&format!("            let patch: {patch_type} = "));
-    out.push_str(&render_build_patch(resource, &patch_fields, enums));
-    out.push_str(";\n");
-    out.push_str(&format!("            validate_{table}_patch(&patch)?;\n"));
-    out.push_str(&format!("            do_{table}_update(captured_id, patch).await\n"));
-    out.push_str("        }\n");
-    out.push_str("    });\n");
-    out.push('\n');
-
-    out.push_str("    let pending = update_action.pending();\n");
-    out.push_str("    let value = update_action.value();\n");
+    out.push_str("    let pending: RwSignal<bool> = RwSignal::new(false);\n");
+    out.push_str("    let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);\n");
     out.push('\n');
 
     out.push_str("    let on_submit = move |ev: SubmitEvent| {\n");
     out.push_str("        ev.prevent_default();\n");
-    out.push_str("        update_action.dispatch(());\n");
+    out.push_str("        if pending.get_untracked() {\n");
+    out.push_str("            return;\n");
+    out.push_str("        }\n");
+    out.push_str(&format!("        let patch_result: ::std::result::Result<{patch_type}, MeltDown> = "));
+    out.push_str(&render_build_patch(resource, &patch_fields, enums));
+    out.push_str(";\n");
+    out.push_str(&format!("        let patch: {patch_type} = match patch_result {{\n"));
+    out.push_str("            Ok(p) => p,\n");
+    out.push_str("            Err(err) => {\n");
+    out.push_str("                err.log();\n");
+    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                return;\n");
+    out.push_str("            }\n");
+    out.push_str("        };\n");
+    out.push_str(&format!("        match validate_{table}_patch(&patch) {{\n"));
+    out.push_str("            Ok(()) => {}\n");
+    out.push_str("            Err(err) => {\n");
+    out.push_str("                err.log();\n");
+    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                return;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        pending.set(true);\n");
+    out.push_str("        last_error.set(None);\n");
+    out.push_str("        let captured_id = row_id.clone();\n");
+    out.push_str("        spawn_local(async move {\n");
+    out.push_str(&format!("            let outcome = do_{table}_update(captured_id, patch).await;\n"));
+    out.push_str("            pending.set(false);\n");
+    out.push_str("            match outcome {\n");
+    out.push_str("                Ok(_updated) => {}\n");
+    out.push_str("                Err(err) => {\n");
+    out.push_str("                    err.log();\n");
+    out.push_str("                    last_error.set(Some(err));\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("        });\n");
     out.push_str("    };\n");
     out.push('\n');
 
@@ -241,11 +278,7 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     for (name, field) in &patch_fields {
         out.push_str(&render_field_view(name.as_str(), field, enums));
     }
-    out.push_str("            {move || match value.get() {\n");
-    out.push_str("                Some(Err(error)) => view! { <ErrorBanner error=error/> }.into_any(),\n");
-    out.push_str("                Some(Ok(_ok)) => view! { <span/> }.into_any(),\n");
-    out.push_str("                None => view! { <span/> }.into_any(),\n");
-    out.push_str("            }}\n");
+    out.push_str("            {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}\n");
     out.push_str("            <button type=\"submit\" prop:disabled=move || pending.get()>\n");
     out.push_str("                {move || match pending.get() {\n");
     out.push_str("                    true => \"Saving...\",\n");
@@ -270,16 +303,16 @@ fn render_build_insertable(resource: &ResourceState, fields: &[(&FieldName, &Fie
     let stem = type_stem_for_resource(resource);
     let insertable_type = format!("{stem}Insertable");
     let mut out = String::new();
-    out.push_str("{\n");
+    out.push_str(&format!("(|| -> ::std::result::Result<{insertable_type}, MeltDown> {{\n"));
     for (name, field) in fields {
         out.push_str(&render_field_parse_let(name.as_str(), field, enums));
     }
-    out.push_str(&format!("                {insertable_type} {{\n"));
+    out.push_str(&format!("            Ok({insertable_type} {{\n"));
     for (name, field) in fields {
         out.push_str(&render_field_struct_assign(name.as_str(), field, false));
     }
-    out.push_str("                }\n");
-    out.push_str("            }");
+    out.push_str("            })\n");
+    out.push_str("        })()");
     out
 }
 
@@ -287,16 +320,16 @@ fn render_build_patch(resource: &ResourceState, fields: &[(&FieldName, &FieldSta
     let stem = type_stem_for_resource(resource);
     let patch_type = format!("{stem}Patch");
     let mut out = String::new();
-    out.push_str("{\n");
+    out.push_str(&format!("(|| -> ::std::result::Result<{patch_type}, MeltDown> {{\n"));
     for (name, field) in fields {
         out.push_str(&render_field_parse_let(name.as_str(), field, enums));
     }
-    out.push_str(&format!("                {patch_type} {{\n"));
+    out.push_str(&format!("            Ok({patch_type} {{\n"));
     for (name, field) in fields {
         out.push_str(&render_field_struct_assign(name.as_str(), field, true));
     }
-    out.push_str("                }\n");
-    out.push_str("            }");
+    out.push_str("            })\n");
+    out.push_str("        })()");
     out
 }
 
@@ -305,12 +338,12 @@ fn render_field_parse_let(name: &str, field: &FieldState, enums: &[ParsedEnum]) 
     let raw_var = format!("{name}_raw");
     match kind {
         InputKind::Bool => {
-            format!("                let {name}_val: bool = {name}.get_untracked();\n")
+            format!("            let {name}_val: bool = {name}.get_untracked();\n")
         }
         InputKind::Number => {
             let target = number_target(field);
             format!(
-                "                let {raw_var}: String = {name}.get_untracked();\n                let {name}_val: {target} = match {raw_var}.parse::<{target}>() {{\n                    Ok(v) => v,\n                    Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a number: {{}}\", parse_err))),\n                }};\n",
+                "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: {target} = match {raw_var}.parse::<{target}>() {{\n                Ok(v) => v,\n                Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a number: {{}}\", parse_err))),\n            }};\n",
                 target = target,
                 raw_var = raw_var,
                 name = name,
@@ -320,30 +353,30 @@ fn render_field_parse_let(name: &str, field: &FieldState, enums: &[ParsedEnum]) 
             let lowered = field.sql_type.as_str().to_ascii_lowercase();
             match lowered.as_str() {
                 "timestamptz" => format!(
-                    "                let {raw_var}: String = {name}.get_untracked();\n                let {name}_val: chrono::DateTime<chrono::Utc> = match chrono::DateTime::parse_from_rfc3339(&{raw_var}) {{\n                    Ok(v) => v.with_timezone(&chrono::Utc),\n                    Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid RFC3339 datetime: {{}}\", parse_err))),\n                }};\n",
+                    "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: chrono::DateTime<chrono::Utc> = match chrono::DateTime::parse_from_rfc3339(&{raw_var}) {{\n                Ok(v) => v.with_timezone(&chrono::Utc),\n                Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid RFC3339 datetime: {{}}\", parse_err))),\n            }};\n",
                     raw_var = raw_var,
                     name = name,
                 ),
                 _other => format!(
-                    "                let {raw_var}: String = {name}.get_untracked();\n                let {name}_val: chrono::NaiveDateTime = match chrono::NaiveDateTime::parse_from_str(&{raw_var}, \"%Y-%m-%dT%H:%M:%S\") {{\n                    Ok(v) => v,\n                    Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid datetime: {{}}\", parse_err))),\n                }};\n",
+                    "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: chrono::NaiveDateTime = match chrono::NaiveDateTime::parse_from_str(&{raw_var}, \"%Y-%m-%dT%H:%M:%S\") {{\n                Ok(v) => v,\n                Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid datetime: {{}}\", parse_err))),\n            }};\n",
                     raw_var = raw_var,
                     name = name,
                 ),
             }
         }
         InputKind::Date => format!(
-            "                let {raw_var}: String = {name}.get_untracked();\n                let {name}_val: chrono::NaiveDate = match chrono::NaiveDate::parse_from_str(&{raw_var}, \"%Y-%m-%d\") {{\n                    Ok(v) => v,\n                    Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid date: {{}}\", parse_err))),\n                }};\n",
+            "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: chrono::NaiveDate = match chrono::NaiveDate::parse_from_str(&{raw_var}, \"%Y-%m-%d\") {{\n                Ok(v) => v,\n                Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid date: {{}}\", parse_err))),\n            }};\n",
             raw_var = raw_var,
             name = name,
         ),
         InputKind::Enum => {
             let parsed = match find_enum_for_field(field, enums) {
                 Some(p) => p,
-                None => return format!("                let {name}_val: String = {name}.get_untracked();\n", name = name),
+                None => return format!("            let {name}_val: String = {name}.get_untracked();\n", name = name),
             };
             let ty = enum_type_name(&parsed.name);
             format!(
-                "                let {raw_var}: String = {name}.get_untracked();\n                let {name}_val: {ty} = match {ty}::parse(&{raw_var}) {{\n                    Ok(v) => v,\n                    Err(_parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", \"invalid {ty}\")),\n                }};\n",
+                "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: {ty} = match {ty}::parse(&{raw_var}) {{\n                Ok(v) => v,\n                Err(_parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", \"invalid {ty}\")),\n            }};\n",
                 raw_var = raw_var,
                 name = name,
                 ty = ty,
@@ -353,16 +386,16 @@ fn render_field_parse_let(name: &str, field: &FieldState, enums: &[ParsedEnum]) 
             let lowered = field.sql_type.as_str().to_ascii_lowercase();
             match lowered.as_str() {
                 "uuid" => format!(
-                    "                let {raw_var}: String = {name}.get_untracked();\n                let {name}_val: uuid::Uuid = match uuid::Uuid::parse_str(&{raw_var}) {{\n                    Ok(v) => v,\n                    Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid UUID: {{}}\", parse_err))),\n                }};\n",
+                    "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: uuid::Uuid = match uuid::Uuid::parse_str(&{raw_var}) {{\n                Ok(v) => v,\n                Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be a valid UUID: {{}}\", parse_err))),\n            }};\n",
                     raw_var = raw_var,
                     name = name,
                 ),
                 "json" | "jsonb" => format!(
-                    "                let {raw_var}: String = {name}.get_untracked();\n                let {name}_val: serde_json::Value = match serde_json::from_str::<serde_json::Value>(&{raw_var}) {{\n                    Ok(v) => v,\n                    Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be valid JSON: {{}}\", parse_err))),\n                }};\n",
+                    "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: serde_json::Value = match serde_json::from_str::<serde_json::Value>(&{raw_var}) {{\n                Ok(v) => v,\n                Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"must be valid JSON: {{}}\", parse_err))),\n            }};\n",
                     raw_var = raw_var,
                     name = name,
                 ),
-                _stringy_text => format!("                let {name}_val: String = {name}.get_untracked();\n", name = name),
+                _stringy_text => format!("            let {name}_val: String = {name}.get_untracked();\n", name = name),
             }
         }
     }
@@ -370,12 +403,12 @@ fn render_field_parse_let(name: &str, field: &FieldState, enums: &[ParsedEnum]) 
 
 fn render_field_struct_assign(name: &str, field: &FieldState, is_patch: bool) -> String {
     if is_patch {
-        return format!("                    {name}: Some({name}_val),\n");
+        return format!("                {name}: Some({name}_val),\n");
     }
     if field.nullable {
-        return format!("                    {name}: Some({name}_val),\n");
+        return format!("                {name}: Some({name}_val),\n");
     }
-    format!("                    {name}: {name}_val,\n")
+    format!("                {name}: {name}_val,\n")
 }
 
 fn number_target(field: &FieldState) -> &'static str {
