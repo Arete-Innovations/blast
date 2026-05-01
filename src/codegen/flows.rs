@@ -129,9 +129,11 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
     if matches!(auth, AuthMode::AdminOnly | AuthMode::Roles(_)) {
         out.push_str("use crate::structs::auth::Role;\n");
     }
-    out.push_str("use crate::structs::generated::");
-    out.push_str(table);
-    out.push_str("::*;\n");
+    if !matches!(verb, Verb::Delete) {
+        out.push_str("use crate::structs::generated::");
+        out.push_str(table);
+        out.push_str("::*;\n");
+    }
     out.push_str("use crate::Ctx;\n\n");
 
     out.push_str(&format!("pub async fn run(ctx: &Ctx{args_sig}) -> Result<{ret_ty}, MeltDown> {{\n"));

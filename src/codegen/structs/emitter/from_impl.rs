@@ -17,6 +17,7 @@ pub fn render(resource: &ResourceState, variant: FieldVariant) -> String {
     let into_name = naming::struct_name_for_variant_resource(resource, variant);
     let bind = "row";
     let mut out = String::new();
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
     out.push_str(&format!("impl From<{from_name}> for {into_name} {{\n", from_name = from_name, into_name = into_name,));
     out.push_str(&format!("    fn from({bind}: {from_name}) -> Self {{\n", bind = bind, from_name = from_name,));
     out.push_str("        Self {\n");

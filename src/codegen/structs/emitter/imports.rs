@@ -17,6 +17,7 @@ pub fn render(resource: &ResourceState) -> String {
     let present = util::collect_present_variants(resource);
     let needs_diesel_table = present.contains(&FieldVariant::Db) || present.contains(&FieldVariant::Insertable) || present.contains(&FieldVariant::Patch);
     if needs_diesel_table {
+        out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
         out.push_str(&format!("use crate::database::schema::{table};\n", table = table,));
     }
 
@@ -35,6 +36,7 @@ pub fn render(resource: &ResourceState) -> String {
     if !diesel_traits.is_empty() {
         diesel_traits.sort();
         diesel_traits.dedup();
+        out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
         out.push_str(&format!("use diesel::{{{}}};\n", diesel_traits.join(", "),));
     }
 

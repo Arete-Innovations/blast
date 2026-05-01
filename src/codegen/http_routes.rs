@@ -81,10 +81,18 @@ fn build_resource_file(r: &ResourceState) -> String {
     let update_emits = verb_emits_rest(r, Verb::Update);
     let needs_validator_import = r.gen_level >= crate::state::GenLevel::Types && (create_emits || update_emits);
 
+    let routing_head_idents = collect_routing_head_idents(r);
+
     let mut out = String::new();
     out.push_str("use axum::extract::Path;\n");
     out.push_str("use axum::http::StatusCode;\n");
-    out.push_str("use axum::routing::{delete, get, patch, post};\n");
+    if !routing_head_idents.is_empty() {
+        let body = match routing_head_idents.len() {
+            1 => routing_head_idents[0].to_string(),
+            _other => format!("{{{}}}", routing_head_idents.join(", ")),
+        };
+        out.push_str(&format!("use axum::routing::{};\n", body));
+    }
     out.push_str("use axum::{Extension, Json, Router};\n");
     out.push_str("use crate::Ctx;\n");
     out.push_str("use crate::meltdown::MeltDown;\n");
@@ -207,6 +215,29 @@ fn router_fn(r: &ResourceState) -> String {
     out.push_str("    router\n");
     out.push_str("}\n");
     out
+}
+
+fn collect_routing_head_idents(r: &ResourceState) -> Vec<&'static str> {
+    let has_list = verb_emits_rest(r, Verb::List);
+    let has_create = verb_emits_rest(r, Verb::Create);
+    let has_get = verb_emits_rest(r, Verb::Get);
+    let has_update = verb_emits_rest(r, Verb::Update);
+    let has_delete = verb_emits_rest(r, Verb::Delete);
+
+    let mut heads: Vec<&'static str> = Vec::new();
+    let collection = [(has_list, "get"), (has_create, "post")];
+    let item = [(has_get, "get"), (has_update, "patch"), (has_delete, "delete")];
+    for chain in [&collection[..], &item[..]] {
+        for (enabled, method) in chain {
+            if *enabled {
+                heads.push(method);
+                break;
+            }
+        }
+    }
+    heads.sort();
+    heads.dedup();
+    heads
 }
 
 fn build_method_chain(entries: &[(bool, &str, &str)]) -> Option<String> {

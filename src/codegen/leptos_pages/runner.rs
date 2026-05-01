@@ -4,7 +4,11 @@ use std::{
 };
 
 use crate::{
-    codegen::{header, ir_loader, structs::naming::type_stem_for_resource},
+    codegen::{
+        header, ir_loader,
+        leptos_pages::render::{render_create_page, render_detail_page, render_edit_page, render_list_page},
+        structs::naming::type_stem_for_resource,
+    },
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
     state::{AuthMode, GenLevel, ResourceState, Verb},
@@ -147,136 +151,6 @@ fn verb_auth(resource: &ResourceState, verb: Verb) -> BlastResult<AuthMode> {
         Some(state) => Ok(state.auth.clone()),
         None => Err(BlastError::Invalid(format!("verb {:?} vanished from resource {} between iter and lookup", verb, resource.name.as_str()))),
     }
-}
-
-fn auth_guard_mode_str(auth: &AuthMode) -> &'static str {
-    match auth {
-        AuthMode::Public => "AuthGuardMode::Public",
-        AuthMode::AuthRequired => "AuthGuardMode::Required",
-        AuthMode::AdminOnly => "AuthGuardMode::AdminOnly",
-        AuthMode::Roles(_roles) => "AuthGuardMode::AdminOnly",
-        AuthMode::ScopedTo(_field) => "AuthGuardMode::Required",
-    }
-}
-
-fn render_list_page(table: &str, stem: &str, auth: AuthMode) -> String {
-    let auth_mode = auth_guard_mode_str(&auth);
-    let component = format!("{stem}ListPage");
-    let public_ty = format!("{stem}Public");
-    let loader = format!("load_{table}_list");
-    format!(
-        "use leptos::prelude::*;\n\
-         use thaw::Spinner;\n\n\
-         use crate::structs::generated::{table}::{public_ty};\n\
-         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
-         use crate::transport::leptos::data::generated::{table}::{loader};\n\n\
-         #[component]\n\
-         pub fn {component}() -> impl IntoView {{\n\
-         \x20   let resource = Resource::new(|| (), |_input| async move {{ {loader}().await }});\n\
-         \x20   view! {{\n\
-         \x20       <AuthGuard mode={auth_mode}>\n\
-         \x20           <PageShell layout=PageLayout::Table>\n\
-         \x20               <h1>\"{stem} list\"</h1>\n\
-         \x20               <Suspense fallback=move || view! {{ <Spinner/> }}>\n\
-         \x20                   {{move || match resource.get() {{\n\
-         \x20                       None => view! {{ <Spinner/> }}.into_any(),\n\
-         \x20                       Some(Ok(items)) => render_list_items(&items).into_any(),\n\
-         \x20                       Some(Err(err)) => view! {{ <ErrorBanner error=err/> }}.into_any(),\n\
-         \x20                   }}}}\n\
-         \x20               </Suspense>\n\
-         \x20           </PageShell>\n\
-         \x20       </AuthGuard>\n\
-         \x20   }}\n\
-         }}\n\n\
-         fn render_list_items(items: &[{public_ty}]) -> impl IntoView {{\n\
-         \x20   let rows: Vec<String> = items.iter().map(|row| format!(\"{{:?}}\", row)).collect();\n\
-         \x20   view! {{\n\
-         \x20       <ul>\n\
-         \x20           {{rows.into_iter().map(|row| view! {{ <li>{{row}}</li> }}).collect_view()}}\n\
-         \x20       </ul>\n\
-         \x20   }}\n\
-         }}\n",
-    )
-}
-
-fn render_detail_page(table: &str, stem: &str, auth: AuthMode) -> String {
-    let auth_mode = auth_guard_mode_str(&auth);
-    let component = format!("{stem}DetailPage");
-    let public_ty = format!("{stem}Public");
-    let loader = format!("load_{table}_one");
-    format!(
-        "use leptos::prelude::*;\n\
-         use thaw::Spinner;\n\n\
-         use crate::structs::generated::{table}::{public_ty};\n\
-         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
-         use crate::transport::leptos::data::generated::{table}::{loader};\n\n\
-         #[component]\n\
-         pub fn {component}() -> impl IntoView {{\n\
-         \x20   let resource = Resource::new(|| (), |_input| async move {{ {loader}(0).await }});\n\
-         \x20   view! {{\n\
-         \x20       <AuthGuard mode={auth_mode}>\n\
-         \x20           <PageShell layout=PageLayout::Cards>\n\
-         \x20               <h1>\"{stem} detail\"</h1>\n\
-         \x20               <Suspense fallback=move || view! {{ <Spinner/> }}>\n\
-         \x20                   {{move || match resource.get() {{\n\
-         \x20                       None => view! {{ <Spinner/> }}.into_any(),\n\
-         \x20                       Some(Ok(item)) => render_detail_item(&item).into_any(),\n\
-         \x20                       Some(Err(err)) => view! {{ <ErrorBanner error=err/> }}.into_any(),\n\
-         \x20                   }}}}\n\
-         \x20               </Suspense>\n\
-         \x20           </PageShell>\n\
-         \x20       </AuthGuard>\n\
-         \x20   }}\n\
-         }}\n\n\
-         fn render_detail_item(item: &{public_ty}) -> impl IntoView {{\n\
-         \x20   let body = format!(\"{{:?}}\", item);\n\
-         \x20   view! {{ <pre>{{body}}</pre> }}\n\
-         }}\n",
-    )
-}
-
-fn render_create_page(table: &str, stem: &str, auth: AuthMode) -> String {
-    let auth_mode = auth_guard_mode_str(&auth);
-    let component = format!("{stem}CreatePage");
-    let form_component = format!("{stem}CreateForm");
-    format!(
-        "use leptos::prelude::*;\n\n\
-         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, PageLayout, PageShell}};\n\
-         use crate::transport::leptos::components::generated::forms::{table}::{form_component};\n\n\
-         #[component]\n\
-         pub fn {component}() -> impl IntoView {{\n\
-         \x20   view! {{\n\
-         \x20       <AuthGuard mode={auth_mode}>\n\
-         \x20           <PageShell layout=PageLayout::Cards>\n\
-         \x20               <h1>\"Create {stem}\"</h1>\n\
-         \x20               <{form_component}/>\n\
-         \x20           </PageShell>\n\
-         \x20       </AuthGuard>\n\
-         \x20   }}\n\
-         }}\n",
-    )
-}
-
-fn render_edit_page(table: &str, stem: &str, auth: AuthMode) -> String {
-    let auth_mode = auth_guard_mode_str(&auth);
-    let component = format!("{stem}EditPage");
-    let form_component = format!("{stem}EditForm");
-    format!(
-        "use leptos::prelude::*;\n\n\
-         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, PageLayout, PageShell}};\n\
-         use crate::transport::leptos::components::generated::forms::{table}::{form_component};\n\n\
-         #[component]\n\
-         pub fn {component}() -> impl IntoView {{\n\
-         \x20   view! {{\n\
-         \x20       <AuthGuard mode={auth_mode}>\n\
-         \x20           <PageShell layout=PageLayout::Cards>\n\
-         \x20               <h1>\"Edit {stem}\"</h1>\n\
-         \x20               <{form_component}/>\n\
-         \x20           </PageShell>\n\
-         \x20       </AuthGuard>\n\
-         \x20   }}\n\
-         }}\n",
-    )
 }
 
 fn build_resource_pages_barrel(modules: &[&'static str], stem: &str) -> String {

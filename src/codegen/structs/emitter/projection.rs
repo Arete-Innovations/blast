@@ -14,10 +14,15 @@ pub fn render(resource: &ResourceState, variant: FieldVariant) -> String {
     let table = resource.name.as_str();
     let struct_name = naming::struct_name_for_variant_resource(resource, variant);
     let derives = util::derives_for_variant(variant);
+    let diesel_derives = util::diesel_derives_for_variant(variant);
     let table_attr = util::table_attr_for_variant(variant, table);
 
     let mut out = String::new();
     out.push_str(&format!("#[derive({derives})]\n"));
+    match diesel_derives {
+        Some(extra) => out.push_str(&format!("#[cfg_attr(not(target_arch = \"wasm32\"), derive({extra}))]\n")),
+        None => {}
+    }
     match table_attr {
         Some(attr) => out.push_str(&format!("{attr}\n")),
         None => {}

@@ -141,8 +141,8 @@ fn render_query_string_helper() -> String {
     out.push_str("    parts.push(format!(\"page_size={}\", query.page_size));\n");
     out.push_str("    for sort in &query.sort {\n");
     out.push_str("        let prefix = match sort.direction {\n");
-    out.push_str("            crate::structs::list_query::Direction::Asc => \"\",\n");
-    out.push_str("            crate::structs::list_query::Direction::Desc => \"-\",\n");
+    out.push_str("            crate::structs::list_query::SortDirection::Asc => \"\",\n");
+    out.push_str("            crate::structs::list_query::SortDirection::Desc => \"-\",\n");
     out.push_str("        };\n");
     out.push_str("        parts.push(format!(\"sort={}{}\", prefix, sort.column));\n");
     out.push_str("    }\n");

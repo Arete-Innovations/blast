@@ -108,13 +108,11 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     let insertable_fields: Vec<(&FieldName, &FieldState)> = fields_for_variant(resource, FieldVariant::Insertable).into_iter().filter(|(_pair_name, f)| !f.primary_key).collect();
 
     let used_enum_types: BTreeSet<String> = collect_used_enum_types(&insertable_fields, enums);
-    let has_enum = !used_enum_types.is_empty();
 
     let mut out = String::new();
     out.push_str("use leptos::ev::SubmitEvent;\n");
     out.push_str("use leptos::prelude::*;\n");
     out.push_str("use leptos::task::spawn_local;\n");
-    out.push_str(&render_thaw_imports(has_enum));
     out.push('\n');
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str(&format!("use crate::structs::generated::{table}::{insertable_type};\n"));
@@ -204,13 +202,11 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     let patch_fields: Vec<(&FieldName, &FieldState)> = fields_for_variant(resource, FieldVariant::Patch).into_iter().filter(|(_pair_name, f)| !f.primary_key).collect();
 
     let used_enum_types: BTreeSet<String> = collect_used_enum_types(&patch_fields, enums);
-    let has_enum = !used_enum_types.is_empty();
 
     let mut out = String::new();
     out.push_str("use leptos::ev::SubmitEvent;\n");
     out.push_str("use leptos::prelude::*;\n");
     out.push_str("use leptos::task::spawn_local;\n");
-    out.push_str(&render_thaw_imports(has_enum));
     out.push('\n');
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str(&format!("use crate::structs::generated::{table}::{{{patch_type}, {public_type}}};\n"));
@@ -431,44 +427,66 @@ fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> St
     out.push_str(&format!("                <span>\"{label_text}\"</span>\n"));
 
     match kind {
-        InputKind::Bool => out.push_str(&format!("                <Checkbox checked={name}/>\n")),
-        InputKind::Textarea => out.push_str(&format!("                <Textarea value={name}/>\n")),
-        InputKind::Datetime => out.push_str(&format!("                <Input value={name} input_type=InputType::DatetimeLocal/>\n")),
-        InputKind::Date => out.push_str(&format!("                <Input value={name} input_type=InputType::Date/>\n")),
-        InputKind::Number => out.push_str(&format!("                <Input value={name} input_type=InputType::Text/>\n")),
+        InputKind::Bool => {
+            out.push_str(&format!(
+                "                <input\n                    type=\"checkbox\"\n                    prop:checked=move || {name}.get()\n                    on:change=move |ev| {name}.set(event_target_checked(&ev))\n                />\n",
+            ));
+        }
+        InputKind::Textarea => {
+            out.push_str(&format!(
+                "                <textarea\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+            ));
+        }
+        InputKind::Datetime => {
+            out.push_str(&format!(
+                "                <input\n                    type=\"datetime-local\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+            ));
+        }
+        InputKind::Date => {
+            out.push_str(&format!(
+                "                <input\n                    type=\"date\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+            ));
+        }
+        InputKind::Number => {
+            out.push_str(&format!(
+                "                <input\n                    type=\"text\"\n                    inputmode=\"numeric\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+            ));
+        }
         InputKind::Enum => match find_enum_for_field(field, enums) {
             Some(parsed) => {
-                out.push_str(&format!("                <Combobox value={name}>\n"));
+                out.push_str(&format!(
+                    "                <select\n                    prop:value=move || {name}.get()\n                    on:change=move |ev| {name}.set(event_target_value(&ev))\n                >\n",
+                ));
                 for variant in &parsed.variants {
                     let escaped = variant.replace('\\', "\\\\").replace('"', "\\\"");
-                    out.push_str(&format!("                    <ComboboxOption value=\"{escaped}\".to_string() text=\"{escaped}\".to_string()/>\n"));
+                    out.push_str(&format!("                    <option value=\"{escaped}\">\"{escaped}\"</option>\n"));
                 }
-                out.push_str("                </Combobox>\n");
+                out.push_str("                </select>\n");
             }
-            None => out.push_str(&format!("                <Input value={name} input_type=InputType::Text/>\n")),
+            None => {
+                out.push_str(&format!(
+                    "                <input\n                    type=\"text\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+                ));
+            }
         },
         InputKind::TextLine => {
-            if looks_like_password(name) {
-                out.push_str(&format!("                <Input value={name} input_type=InputType::Password/>\n"));
+            let html_type = if looks_like_password(name) {
+                "password"
             } else if looks_like_email(name) {
-                out.push_str(&format!("                <Input value={name} input_type=InputType::Email/>\n"));
+                "email"
             } else if looks_like_url(name) {
-                out.push_str(&format!("                <Input value={name} input_type=InputType::Url/>\n"));
+                "url"
             } else {
-                out.push_str(&format!("                <Input value={name} input_type=InputType::Text/>\n"));
-            }
+                "text"
+            };
+            out.push_str(&format!(
+                "                <input\n                    type=\"{html_type}\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+            ));
         }
     }
 
     out.push_str("            </label>\n");
     out
-}
-
-fn render_thaw_imports(has_enum: bool) -> String {
-    match has_enum {
-        true => "use thaw::{Checkbox, Combobox, ComboboxOption, Input, InputType, Textarea};\n".to_string(),
-        false => "use thaw::{Checkbox, Input, InputType, Textarea};\n".to_string(),
-    }
 }
 
 fn collect_used_enum_types(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> BTreeSet<String> {
@@ -515,12 +533,25 @@ fn pretty_label(name: &str) -> String {
 }
 
 pub fn render_resource_form_barrel(resource: &ResourceState) -> String {
+    let stem = type_stem_for_resource(resource);
+    let has_create = resource.verbs.contains_key(&Verb::Create);
+    let has_edit = resource.verbs.contains_key(&Verb::Update) && primary_key_field(resource).is_some();
+
     let mut out = String::new();
-    if resource.verbs.contains_key(&Verb::Create) {
+    if has_create {
         out.push_str("pub mod create_form;\n");
     }
-    if resource.verbs.contains_key(&Verb::Update) && primary_key_field(resource).is_some() {
+    if has_edit {
         out.push_str("pub mod edit_form;\n");
+    }
+    if has_create || has_edit {
+        out.push('\n');
+    }
+    if has_create {
+        out.push_str(&format!("pub use create_form::{stem}CreateForm;\n"));
+    }
+    if has_edit {
+        out.push_str(&format!("pub use edit_form::{stem}EditForm;\n"));
     }
     out
 }

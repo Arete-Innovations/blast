@@ -662,12 +662,11 @@ mod tests {
             Err(e) => panic!("read create_form: {e}"),
         };
 
-        assert!(create_body.contains("use thaw::{Checkbox, Combobox, ComboboxOption, Input, InputType, Textarea};"), "thaw imports must include Combobox + ComboboxOption: {create_body}");
         assert!(create_body.contains("use crate::structs::generated::enums::MyStatus;"), "must import the MyStatus enum: {create_body}");
-        assert!(create_body.contains("<Combobox value=status>"), "status field must be rendered as Combobox: {create_body}");
-        assert!(create_body.contains("<ComboboxOption value=\"pending\".to_string() text=\"pending\".to_string()/>"), "must list 'pending' variant: {create_body}");
-        assert!(create_body.contains("<ComboboxOption value=\"active\".to_string() text=\"active\".to_string()/>"), "must list 'active' variant: {create_body}");
-        assert!(create_body.contains("<ComboboxOption value=\"done\".to_string() text=\"done\".to_string()/>"), "must list 'done' variant: {create_body}");
+        assert!(create_body.contains("<select"), "status field must render as <select>: {create_body}");
+        assert!(create_body.contains("<option value=\"pending\">"), "must list 'pending' variant: {create_body}");
+        assert!(create_body.contains("<option value=\"active\">"), "must list 'active' variant: {create_body}");
+        assert!(create_body.contains("<option value=\"done\">"), "must list 'done' variant: {create_body}");
         assert!(create_body.contains("MyStatus::parse(&status_raw)"), "Action must call MyStatus::parse on the raw signal value: {create_body}");
         assert!(create_body.contains("MeltDown::validation_failed_field(\"status\", \"invalid MyStatus\")"), "parse failure must propagate as validation_failed_field with field+enum-name message: {create_body}");
 
@@ -676,8 +675,7 @@ mod tests {
             Err(e) => panic!("read edit_form: {e}"),
         };
 
-        assert!(edit_body.contains("use thaw::{Checkbox, Combobox, ComboboxOption, Input, InputType, Textarea};"), "edit form thaw imports must include Combobox: {edit_body}");
-        assert!(edit_body.contains("<Combobox value=status>"), "edit form must also use Combobox for enum field: {edit_body}");
+        assert!(edit_body.contains("<select"), "edit form must also use <select> for enum field: {edit_body}");
         assert!(edit_body.contains("MyStatus::parse(&status_raw)"), "edit form must parse the enum from the raw signal value: {edit_body}");
     }
 }

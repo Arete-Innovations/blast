@@ -1,12 +1,10 @@
 pub mod auth;
+pub mod generated;
 pub mod leptos;
+pub mod list_query;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod fuses;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod generated;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod list_query;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod middleware;
 #[cfg(not(target_arch = "wasm32"))]
@@ -19,7 +17,6 @@ pub use auth::{AuthResponse, LoginBody, LoginInput, LoginOutput, NewSession, New
 
 pub use auth::{Role, SessionContext};
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use list_query::*;
 #[cfg(not(target_arch = "wasm32"))]
 pub use services::*;

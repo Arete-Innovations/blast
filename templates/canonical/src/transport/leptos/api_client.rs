@@ -34,7 +34,7 @@ async fn parse_or_envelope_error<T: DeserializeOwned>(resp: gloo_net::http::Resp
     }
 }
 
-pub async fn get_json<T: DeserializeOwned, Q: Serialize + ?Sized>(path: &str, _query: &Q) -> Result<T, MeltDown> {
+pub async fn get_json<T: DeserializeOwned>(path: &str) -> Result<T, MeltDown> {
     let resp = match Request::get(path).send().await {
         Ok(r) => r,
         Err(e) => return Err(MeltDown::new(MeltType::Unexpected("network".to_string()), format!("GET {}: {}", path, e))),
@@ -42,7 +42,7 @@ pub async fn get_json<T: DeserializeOwned, Q: Serialize + ?Sized>(path: &str, _q
     parse_or_envelope_error(resp).await
 }
 
-pub async fn post_json<T: DeserializeOwned, B: Serialize + ?Sized>(path: &str, body: &B) -> Result<T, MeltDown> {
+pub async fn post_json<B: Serialize + ?Sized, T: DeserializeOwned>(path: &str, body: &B) -> Result<T, MeltDown> {
     let req = match Request::post(path).json(body) {
         Ok(r) => r,
         Err(e) => return Err(MeltDown::new(MeltType::SerializationFailed, format!("POST {}: encode: {}", path, e))),
@@ -52,6 +52,33 @@ pub async fn post_json<T: DeserializeOwned, B: Serialize + ?Sized>(path: &str, b
         Err(e) => return Err(MeltDown::new(MeltType::Unexpected("network".to_string()), format!("POST {}: {}", path, e))),
     };
     parse_or_envelope_error(resp).await
+}
+
+pub async fn patch_json<B: Serialize + ?Sized, T: DeserializeOwned>(path: &str, body: &B) -> Result<T, MeltDown> {
+    let req = match Request::patch(path).json(body) {
+        Ok(r) => r,
+        Err(e) => return Err(MeltDown::new(MeltType::SerializationFailed, format!("PATCH {}: encode: {}", path, e))),
+    };
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => return Err(MeltDown::new(MeltType::Unexpected("network".to_string()), format!("PATCH {}: {}", path, e))),
+    };
+    parse_or_envelope_error(resp).await
+}
+
+pub async fn delete(path: &str) -> Result<(), MeltDown> {
+    let resp = match Request::delete(path).send().await {
+        Ok(r) => r,
+        Err(e) => return Err(MeltDown::new(MeltType::Unexpected("network".to_string()), format!("DELETE {}: {}", path, e))),
+    };
+    if (200..300).contains(&resp.status()) {
+        Ok(())
+    } else {
+        match resp.json::<ErrorEnvelope>().await {
+            Ok(envelope) => Err(map_response_error(envelope)),
+            Err(decode_err) => Err(MeltDown::new(MeltType::Unexpected("network".to_string()), format!("DELETE {}: non-2xx; envelope decode: {}", path, decode_err))),
+        }
+    }
 }
 
 pub async fn post_unit(path: &str) -> Result<(), MeltDown> {

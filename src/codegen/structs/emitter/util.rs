@@ -51,25 +51,41 @@ pub fn projection_is_db_subset(resource: &ResourceState, variant: FieldVariant) 
     true
 }
 
-/// `#[derive(...)]` list per projection variant. The Db base struct
-/// gets the full Diesel reading set; mutation variants pick up
-/// `Insertable` / `AsChangeset`; `Public` / `Admin` are pure data.
+/// Wasm-safe `#[derive(...)]` list per projection variant. Diesel
+/// derives (`Queryable` / `Selectable` / `Identifiable` / `Insertable` /
+/// `AsChangeset`) must be gated to non-wasm via `cfg_attr` because
+/// `diesel` is not available on the `wasm32-unknown-unknown` target.
 pub fn derives_for_variant(variant: FieldVariant) -> &'static str {
     match variant {
-        FieldVariant::Db => "Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize",
-        FieldVariant::Insertable => "Debug, Clone, Insertable, Serialize, Deserialize",
-        FieldVariant::Patch => "Debug, Default, Clone, AsChangeset, Serialize, Deserialize",
-        FieldVariant::Public => "Debug, Clone, Serialize, Deserialize",
-        FieldVariant::Admin => "Debug, Clone, Serialize, Deserialize",
+        FieldVariant::Db | FieldVariant::Insertable | FieldVariant::Public | FieldVariant::Admin => "Debug, Clone, Serialize, Deserialize",
+        FieldVariant::Patch => "Debug, Default, Clone, Serialize, Deserialize",
+    }
+}
+
+/// Diesel-only derives that must be gated behind `cfg_attr(not(target_arch = "wasm32"), ...)`.
+/// Returns `None` for variants that have no Diesel derives.
+pub fn diesel_derives_for_variant(variant: FieldVariant) -> Option<&'static str> {
+    match variant {
+        FieldVariant::Db => Some("Queryable, Selectable, Identifiable"),
+        FieldVariant::Insertable => Some("Insertable"),
+        FieldVariant::Patch => Some("AsChangeset"),
+        FieldVariant::Public | FieldVariant::Admin => None,
     }
 }
 
 /// Diesel `#[diesel(table_name = ...)]` attribute, when the variant is
 /// one of the schema-bound ones. `Public` / `Admin` do not bind to a
-/// table and therefore do not get the attribute.
+/// table and therefore do not get the attribute. For Insertable / Patch
+/// the attribute is emitted as a `cfg_attr` so it is suppressed on the
+/// wasm target (those structs remain cross-target visible). For the Db
+/// row the entire struct is wasm-gated, so a plain `#[diesel(...)]` is
+/// sufficient.
 pub fn table_attr_for_variant(variant: FieldVariant, table: &str) -> Option<String> {
     match variant {
-        FieldVariant::Db | FieldVariant::Insertable | FieldVariant::Patch => Some(format!("#[diesel(table_name = {table})]")),
+        FieldVariant::Db => Some(format!("#[diesel(table_name = {table})]")),
+        FieldVariant::Insertable | FieldVariant::Patch => {
+            Some(format!("#[cfg_attr(not(target_arch = \"wasm32\"), diesel(table_name = {table}))]"))
+        }
         FieldVariant::Public | FieldVariant::Admin => None,
     }
 }

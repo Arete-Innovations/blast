@@ -13,9 +13,25 @@ use crate::{
 pub fn render(resource: &ResourceState) -> String {
     let table = resource.name.as_str();
     let type_name = naming::type_stem_for_resource(resource);
+    let derives = util::derives_for_variant(FieldVariant::Db);
+    let diesel_derives = util::diesel_derives_for_variant(FieldVariant::Db);
+    let table_attr = util::table_attr_for_variant(FieldVariant::Db, table);
+
     let mut out = String::new();
-    out.push_str("#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]\n");
-    out.push_str(&format!("#[diesel(table_name = {table})]\n", table = table));
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str(&format!("#[derive({derives})]\n"));
+    match diesel_derives {
+        Some(extra) => {
+            out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+            out.push_str(&format!("#[derive({extra})]\n"));
+        }
+        None => {}
+    }
+    match table_attr {
+        Some(attr) => out.push_str(&format!("{attr}\n")),
+        None => {}
+    }
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
     out.push_str(&format!("pub struct {type_name} {{\n"));
     for (name, field) in util::fields_for_variant(resource, FieldVariant::Db) {
         let ty = sql_map::rust_type(&field.sql_type, field.nullable);

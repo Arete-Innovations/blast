@@ -68,17 +68,6 @@ impl Sort {
     }
 }
 
-impl Default for ListQuery {
-    fn default() -> Self {
-        Self {
-            page: DEFAULT_PAGE,
-            page_size: DEFAULT_PAGE_SIZE,
-            sort: Vec::new(),
-            filter: Vec::new(),
-        }
-    }
-}
-
 impl ListQuery {
     pub fn from_query_str(raw: &str) -> Result<Self, MeltDown> {
         let mut builder = ListQueryBuilder::default();

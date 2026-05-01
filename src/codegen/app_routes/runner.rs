@@ -74,9 +74,9 @@ fn collect_route_entries(resources: &[ResourceState]) -> Vec<RouteEntry> {
         let stem = type_stem_for_resource(r);
         for (verb, page_module, component_suffix, path_lit) in [
             (Verb::List, "list", "ListPage", format!("/{table}")),
-            (Verb::Get, "detail", "DetailPage", format!("/{table}/:id")),
             (Verb::Create, "create", "CreatePage", format!("/{table}/new")),
             (Verb::Update, "edit", "EditPage", format!("/{table}/:id/edit")),
+            (Verb::Get, "detail", "DetailPage", format!("/{table}/:id")),
         ] {
             let state = match r.verbs.get(&verb) {
                 Some(s) => s,
@@ -109,7 +109,7 @@ fn render_routes_file(entries: &[RouteEntry]) -> String {
         return out;
     }
 
-    out.push_str("use ::leptos_router::components::Route;\n");
+    out.push_str("use ::leptos_router::NestedRoute;\n");
     out.push_str("use ::leptos_router::path;\n\n");
 
     let mut imports: Vec<String> = entries
@@ -125,11 +125,11 @@ fn render_routes_file(entries: &[RouteEntry]) -> String {
 
     out.push_str("#[component(transparent)]\n");
     out.push_str("pub fn GeneratedRoutes() -> impl ::leptos_router::MatchNestedRoutes + ::core::clone::Clone + ::core::marker::Send + 'static {\n");
-    out.push_str("    view! {\n");
+    out.push_str("    (\n");
     for e in entries {
-        out.push_str(&format!("        <Route path=path!(\"{}\") view={}/>\n", e.path_lit, e.component));
+        out.push_str(&format!("        NestedRoute::new(path!(\"{}\"), {}),\n", e.path_lit, e.component));
     }
-    out.push_str("    }\n");
+    out.push_str("    )\n");
     out.push_str("}\n");
     out
 }
@@ -246,7 +246,8 @@ mod tests {
         let body = render_routes_file(&entries);
         assert!(body.contains("#[component(transparent)]"));
         assert!(body.contains("pub fn GeneratedRoutes()"));
-        assert!(body.contains("view! {"));
+        assert!(body.contains("NestedRoute::new("), "must emit NestedRoute::new tuples; got: {body}");
+        assert!(!body.contains("view! {"), "must NOT wrap routes in view! macro: {body}");
         assert!(body.contains("path!(\"/posts\")"));
         assert!(body.contains("path!(\"/posts/:id\")"));
         assert!(body.contains("path!(\"/posts/new\")"));

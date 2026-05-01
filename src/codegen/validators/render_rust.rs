@@ -137,34 +137,40 @@ fn render_field_checks(field: &str, state: &FieldState, is_patch: bool) -> Strin
     let is_string = is_stringy(&state.sql_type);
     let is_numeric = is_numeric_sql_type(&state.sql_type);
     let is_optional_in_dto = is_patch || state.nullable;
-
-    let mut out = String::new();
-    let indent;
-    let value_expr: String;
     let unwrap_inner_some = is_patch && state.nullable;
 
+    let inner_indent: &str = match (is_optional_in_dto, unwrap_inner_some) {
+        (true, true) => "            ",
+        (true, false) => "        ",
+        (false, _) => "    ",
+    };
+    let value_expr: String = match is_optional_in_dto {
+        true => String::from("v"),
+        false => format!("input.{field}"),
+    };
+
+    let mut sorted_rules: Vec<&ValidatorRule> = state.validators.iter().collect();
+    sorted_rules.sort();
+
+    let mut rule_body = String::new();
+    for rule in sorted_rules {
+        rule_body.push_str(&render_rule_check(field, rule, &value_expr, inner_indent, is_string, is_numeric));
+    }
+
+    if rule_body.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::new();
     if is_optional_in_dto {
         if unwrap_inner_some {
             out.push_str(&format!("    {open} = input.{field}.as_ref() {{\n", open = if_let_some_prefix("outer"), field = field));
             out.push_str(&format!("        {open} = outer.as_ref() {{\n", open = if_let_some_prefix("v")));
-            indent = "            ";
-            value_expr = "v".to_string();
         } else {
             out.push_str(&format!("    {open} = input.{field}.as_ref() {{\n", open = if_let_some_prefix("v"), field = field));
-            indent = "        ";
-            value_expr = "v".to_string();
         }
-    } else {
-        indent = "    ";
-        value_expr = format!("input.{field}");
     }
-
-    let mut sorted_rules: Vec<&ValidatorRule> = state.validators.iter().collect();
-    sorted_rules.sort();
-    for rule in sorted_rules {
-        out.push_str(&render_rule_check(field, rule, &value_expr, indent, is_string, is_numeric));
-    }
-
+    out.push_str(&rule_body);
     if is_optional_in_dto {
         if unwrap_inner_some {
             out.push_str("        }\n");
