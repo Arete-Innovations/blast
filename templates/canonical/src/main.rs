@@ -1,6 +1,6 @@
 #![recursion_limit = "2048"]
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{extract::DefaultBodyLimit, middleware::from_fn, Router};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
@@ -74,7 +74,9 @@ async fn main() {
 
 async fn create_app(leptos_options: LeptosOptions) -> Router {
     let ctx = Ctx::anonymous(database::db::pool().clone());
+    let registry = transport::ws::Registry::new();
     let api_routes = transport::http::router(ctx.clone());
+    let ws_routes = transport::ws::router::router(ctx.clone(), Arc::clone(&registry));
 
     let routes = generate_route_list(App);
     let opts_for_leptos = leptos_options.clone();
@@ -93,6 +95,7 @@ async fn create_app(leptos_options: LeptosOptions) -> Router {
 
     let app = Router::new()
         .nest("/api", api_routes)
+        .merge(ws_routes)
         .merge(leptos_router_stateless)
         .layer(
             ServiceBuilder::new()

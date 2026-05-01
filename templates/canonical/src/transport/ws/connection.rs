@@ -1,36 +1,28 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
-use axum::{
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    response::Response,
-};
+use axum::extract::ws::{Message, WebSocket};
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use tokio::sync::mpsc;
 
 use crate::{
     cata_log,
     meltdown::{MeltDown, MeltType},
-    structs::ws::connection::UserId,
     transport::ws::{
+        auth,
         protocol::{ClientMessage, ServerMessage},
         registry::{OutboundFrame, Registry, SubscriberHandle},
     },
+    Ctx,
 };
 
 pub const OUTBOUND_QUEUE_DEPTH: usize = 64;
 
-pub fn handle_ws_upgrade(ws: WebSocketUpgrade, user_id: UserId, registry: Arc<Registry>) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, user_id, registry))
-}
-
-pub async fn handle_socket(socket: WebSocket, _user_id: UserId, registry: Arc<Registry>) {
+pub async fn handle_socket(socket: WebSocket, ctx: Ctx, registry: Arc<Registry>) {
     let (mut sink, mut stream) = socket.split();
 
     let (tx, mut rx) = mpsc::channel::<OutboundFrame>(OUTBOUND_QUEUE_DEPTH);
     let subscriber_id = registry.next_id();
     let handle = SubscriberHandle { id: subscriber_id, sender: tx.clone() };
-
-    let mut subscriptions: HashSet<String> = HashSet::new();
 
     let outbound = tokio::spawn(async move {
         loop {
@@ -57,17 +49,15 @@ pub async fn handle_socket(socket: WebSocket, _user_id: UserId, registry: Arc<Re
         match msg {
             Message::Text(text) => match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(ClientMessage::Subscribe { topic }) => {
-                    if !allow_all(&topic) {
+                    if !auth::can_subscribe(&ctx, &topic) {
                         log_send(send_frame(&tx, ServerMessage::error(&topic, "forbidden")).await);
                         continue;
                     }
                     registry.subscribe(topic.clone(), handle.clone());
-                    subscriptions.insert(topic.clone());
                     log_send(send_frame(&tx, ServerMessage::ack(topic)).await);
                 }
                 Ok(ClientMessage::Unsubscribe { topic }) => {
                     registry.unsubscribe(&topic, subscriber_id);
-                    subscriptions.remove(&topic);
                 }
                 Ok(ClientMessage::Ping) => {
                     log_send(send_frame(&tx, ServerMessage::pong()).await);
@@ -87,7 +77,6 @@ pub async fn handle_socket(socket: WebSocket, _user_id: UserId, registry: Arc<Re
     }
 
     registry.unsubscribe_all(subscriber_id);
-    subscriptions.clear();
     drop(tx);
     match outbound.await {
         Ok(()) => {}
@@ -106,8 +95,4 @@ fn log_send(result: Result<(), MeltDown>) {
         Ok(()) => {}
         Err(e) => cata_log!(Warning, format!("ws send_frame failed: {}", e)),
     }
-}
-
-fn allow_all(_topic: &str) -> bool {
-    true
 }
