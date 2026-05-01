@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use clap::CommandFactory;
 
 use crate::{
@@ -32,19 +30,17 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Arsenal { cmd: sub } => dispatch_arsenal(sub, config),
 
         Command::Stop => {
-            logger::info("Stopping server...")?;
-            let stopped = crate::daemon::stop_server(config)?;
-            if stopped {
-                logger::success("Server stopped")?;
-            } else {
-                logger::info("No running server")?;
+            let be_stopped = crate::daemon::stop_server(config)?;
+            match be_stopped {
+                true => logger::success("BE stopped")?,
+                false => logger::success("Nothing was running")?,
             }
             Ok(())
         }
 
         Command::New {
             name,
-            dev,
+            dev: _dev,
             db_url,
             force,
             no_test_db,
@@ -53,7 +49,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
             let opts = crate::project::scaffold::NewOptions {
-                use_dev_branch: dev,
                 db_url,
                 force,
                 no_test_db,
@@ -74,7 +69,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
             let opts = crate::project::scaffold::NewOptions {
-                use_dev_branch: false,
                 db_url,
                 force,
                 no_test_db,
@@ -112,9 +106,28 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Cli => crate::interactive::run_interactive_loop(config, dep_manager),
 
         Command::Migration => {
-            let mut sink = crate::io::cli_sink(false, None);
-            let mut progress = crate::io::cli_progress(None);
-            crate::database::migration_wizard::run_with_picker(&mut sink, &mut progress)?;
+            let project_root = config.project_dir.clone();
+            let outcome = crate::wizards::new_table::run_picker(&project_root)?;
+            if outcome.cancelled {
+                logger::info("New-table wizard cancelled — nothing written.")?;
+                return Ok(());
+            }
+            logger::success(&format!("Migration written: {} ({})", outcome.up_sql_path.display(), outcome.down_sql_path.display(),))?;
+            logger::success(&format!("Resource state written: {}", outcome.ron_path.display()))?;
+
+            logger::info("→ blast migrate")?;
+            if !crate::database::migrate() {
+                logger::warning("Migrations reported issues; aborting codegen pipeline. Re-run `blast migrate && blast gen all` manually after resolving.")?;
+                return Ok(());
+            }
+
+            logger::info("→ blast gen schema")?;
+            run_schema(config)?;
+
+            logger::info("→ blast gen all")?;
+            run_gen_all(config)?;
+
+            logger::success(&format!("Table '{}' is wired end-to-end.", outcome.table_name))?;
             Ok(())
         }
 
@@ -135,7 +148,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Seed { file } => {
             let success = match file {
                 Some(path) => crate::database::seed_specific_file(&path),
-                None => crate::database::seed(Some(0)),
+                None => crate::database::seed(),
             };
             if !success {
                 logger::warning("Some seeding issues occurred")?;
@@ -154,7 +167,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::RunProd => run_prod_server(config),
 
         Command::Dashboard => {
-            dep_manager.ensure_installed(&["zellij"], false)?;
+            dep_manager.ensure_installed(&["zellij"])?;
             crate::dashboard::launch_dashboard(config)?;
             Ok(())
         }
@@ -168,8 +181,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Help => print_help(),
 
         Command::Watch => run_watch(config, dep_manager),
-
-        Command::Check { verbose } => run_check(config, verbose),
     }
 }
 
@@ -204,10 +215,9 @@ fn dispatch_fuses(sub: Option<FusesCmd>, config: &Config) -> BlastResult<()> {
     }
 }
 
-fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
+fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, _dep_manager: &mut DependencyManager) -> BlastResult<()> {
     let Some(target) = sub else {
-        let chosen = crate::gen_picker::pick_gen_target()?;
-        return execute(chosen, config, dep_manager);
+        return print_gen_help();
     };
     match target {
         GenCmd::Structs => {
@@ -228,60 +238,9 @@ fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, dep_manager: &mut Depe
             }
             Ok(())
         }
-        GenCmd::Table => {
-            let mut sink = crate::io::cli_sink(false, None);
-            let mut progress = crate::io::cli_progress(None);
-            let project_root = config.project_dir.clone();
-            let outcome = crate::gen_table::run_with_picker(&project_root, &mut sink, &mut progress)?;
-            if outcome.cancelled {
-                return Ok(());
-            }
-            logger::success(&format!(
-                "table '{}' migration written: up={} down={} cols={}",
-                outcome.table_name,
-                outcome.up_sql_path.display(),
-                outcome.down_sql_path.display(),
-                outcome.column_count,
-            ))?;
-            Ok(())
-        }
-        GenCmd::Migration { custom, name } => {
-            if !custom {
-                return Err(BlastError::Invalid("blast gen migration requires --custom <name>".to_string()));
-            }
-            let resolved = name.ok_or_else(|| BlastError::Invalid("blast gen migration --custom requires a name".to_string()))?;
-            crate::gen_migration::run_custom(&resolved)
-        }
-        GenCmd::GovernorPlugin => {
-            logger::info("Emitting governor Vite plugin shim...")?;
-            let paths = crate::codegen::governor_plugin::run(&config.project_dir)?;
-            for p in &paths {
-                logger::success(&format!("emitted {}", p.display()))?;
-            }
-            Ok(())
-        }
-        GenCmd::Resource { name } => run_gen_resource(config, name),
-        GenCmd::Pages { resource } => run_gen_pages(config, resource),
-        GenCmd::Components { resource } => run_gen_components(config, resource),
-        GenCmd::Composables { resource } => run_gen_composables(config, resource),
         GenCmd::Validators { resource } => run_gen_validators(config, resource),
-        GenCmd::Api { resource } => run_gen_api(config, resource),
-        GenCmd::Types { resource } => run_gen_types(config, resource),
         GenCmd::All => run_gen_all(config),
     }
-}
-
-fn run_gen_composables(config: &Config, resource: Option<String>) -> BlastResult<()> {
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
-    crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
-    let report = match resource {
-        Some(name) => crate::codegen::composables::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
-        None => crate::codegen::composables::run(&config.project_dir, &mut sink, &mut progress)?,
-    };
-    logger::info(&format!("composables: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
-    Ok(())
 }
 
 fn run_gen_validators(config: &Config, resource: Option<String>) -> BlastResult<()> {
@@ -292,51 +251,6 @@ fn run_gen_validators(config: &Config, resource: Option<String>) -> BlastResult<
         None => crate::codegen::validators::run(&config.project_dir, &mut sink, &mut progress)?,
     };
     logger::info(&format!("validators: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
-    Ok(())
-}
-
-fn run_gen_pages(config: &Config, resource: Option<String>) -> BlastResult<()> {
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
-    crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
-    crate::codegen::composables::run(&config.project_dir, &mut sink, &mut progress)?;
-    crate::codegen::components::run(&config.project_dir, &mut sink, &mut progress)?;
-    let report = match resource {
-        Some(name) => crate::codegen::pages::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
-        None => crate::codegen::pages::run(&config.project_dir, &mut sink, &mut progress)?,
-    };
-    logger::info(&format!("pages: {} file(s) written", report.written.len()))?;
-    Ok(())
-}
-
-fn run_gen_components(config: &Config, resource: Option<String>) -> BlastResult<()> {
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
-    crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
-    crate::codegen::composables::run(&config.project_dir, &mut sink, &mut progress)?;
-    let report = match resource {
-        Some(name) => crate::codegen::components::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
-        None => crate::codegen::components::run(&config.project_dir, &mut sink, &mut progress)?,
-    };
-    logger::info(&format!("components: {} file(s) written", report.written.len()))?;
-    Ok(())
-}
-
-fn run_gen_api(config: &Config, _resource: Option<String>) -> BlastResult<()> {
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    let report = crate::codegen::frontend_api::run(&config.project_dir, &mut sink, &mut progress)?;
-    logger::info(&format!("api: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
-    Ok(())
-}
-
-fn run_gen_types(config: &Config, _resource: Option<String>) -> BlastResult<()> {
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    let report = crate::codegen::frontend_types::run(&config.project_dir, &mut sink, &mut progress)?;
-    logger::info(&format!("types: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
     Ok(())
 }
 
@@ -364,24 +278,15 @@ fn run_gen_all(config: &mut Config) -> BlastResult<()> {
     Ok(())
 }
 
-fn run_gen_resource(config: &Config, name: Option<String>) -> BlastResult<()> {
-    let project_root = config.project_dir.clone();
-    let args = crate::wizards::gen_resource::pick_args_with_name(project_root, name)?;
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    let outcome = crate::wizards::gen_resource::run(args, &mut sink, &mut progress)?;
-    match outcome.action {
-        crate::wizards::gen_resource::WriteAction::Created => {
-            logger::success(&format!("created {}", outcome.state_file.display()))?;
+fn print_gen_help() -> BlastResult<()> {
+    let mut cmd = Cli::command();
+    match cmd.find_subcommand_mut("gen") {
+        Some(gen) => {
+            gen.print_help()?;
+            println!();
         }
-        crate::wizards::gen_resource::WriteAction::Updated => {
-            logger::success(&format!("updated {}", outcome.state_file.display()))?;
-        }
-        crate::wizards::gen_resource::WriteAction::Cancelled => {
-            logger::info("resource wizard cancelled, no file written")?;
-        }
+        None => {} // allow: clap always registers the gen subcommand; defensive None arm
     }
-    logger::info("run `blast gen all` to regenerate code from the new state")?;
     Ok(())
 }
 
@@ -469,7 +374,7 @@ fn run_refresh(config: &mut Config) -> BlastResult<()> {
     let migrations_ok = crate::database::migrate();
 
     progress.set_message("Seeding database...");
-    let seed_ok = crate::database::seed(Some(0));
+    let seed_ok = crate::database::seed();
 
     progress.set_message("Generating schema...");
     let schema_ok = crate::database::generate_schema();
@@ -504,19 +409,8 @@ fn run_prod_server(config: &Config) -> BlastResult<()> {
 }
 
 fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
-    dep_manager.ensure_installed(&["cargo-watch"], true)?;
-    let pid = crate::daemon::start_server(config, crate::daemon::ServerMode::Watch)?;
-    logger::success(&format!("Watch mode started with PID: {}", pid))?;
-    Ok(())
-}
-
-fn run_check(config: &Config, verbose: bool) -> BlastResult<()> {
-    let project_root = config.project_dir.clone();
-    let outcome = crate::governor::run_check(&project_root, verbose)?;
-    print!("{}", outcome.output);
-    std::io::stdout().flush()?;
-    if outcome.violation_count > 0 {
-        return Err(BlastError::Invalid(format!("governor: {} violation(s) — see output above", outcome.violation_count)));
-    }
+    dep_manager.ensure_installed(&["cargo-watch"])?;
+    let be_pid = crate::daemon::start_server(config, crate::daemon::ServerMode::Watch)?;
+    logger::success(&format!("BE (cargo-watch) started — PID {} → storage/logs/server.log", be_pid))?;
     Ok(())
 }

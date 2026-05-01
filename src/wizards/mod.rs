@@ -1,1 +1,2 @@
-pub mod gen_resource;
+pub mod new_table;
+pub mod widgets;

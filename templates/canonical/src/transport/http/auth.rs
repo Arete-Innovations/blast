@@ -1,7 +1,6 @@
 use axum::{
-    extract::{Extension, Json, State},
+    extract::{Extension, Json},
     http::StatusCode,
-    middleware::from_fn_with_state,
     routing::{get, post},
     Router,
 };
@@ -11,16 +10,15 @@ use crate::{
     flows::auth,
     meltdown::*,
     structs::{
-        auth::{LoginBody, LoginResponse, RegisterBody, SessionContext},
+        auth::{AuthResponse, LoginBody, RegisterBody},
         UserPublic,
     },
-    transport::http::middleware::auth::session_auth_middleware,
     Ctx,
 };
 
-async fn register_handler(State(ctx): State<Ctx>, Json(body): Json<RegisterBody>) -> Result<Json<UserPublic>, MeltDown> {
+async fn register_handler(Extension(ctx): Extension<Ctx>, Json(body): Json<RegisterBody>) -> Result<Json<AuthResponse>, MeltDown> {
     cata_log!(Info, format!("Register attempt for email: {}", body.email));
-    let user = auth::register::run(
+    let output = auth::register::run(
         &ctx,
         auth::register::RegisterInput {
             email: body.email,
@@ -28,10 +26,10 @@ async fn register_handler(State(ctx): State<Ctx>, Json(body): Json<RegisterBody>
         },
     )
     .await?;
-    Ok(Json(user))
+    Ok(Json(AuthResponse { token: output.token, user: output.user }))
 }
 
-async fn login_handler(State(ctx): State<Ctx>, Json(body): Json<LoginBody>) -> Result<Json<LoginResponse>, MeltDown> {
+async fn login_handler(Extension(ctx): Extension<Ctx>, Json(body): Json<LoginBody>) -> Result<Json<AuthResponse>, MeltDown> {
     cata_log!(Info, format!("Login attempt for email: {}", body.email));
     let output = auth::login::run(
         &ctx,
@@ -41,26 +39,25 @@ async fn login_handler(State(ctx): State<Ctx>, Json(body): Json<LoginBody>) -> R
         },
     )
     .await?;
-    Ok(Json(LoginResponse { token: output.token, user: output.user }))
+    Ok(Json(AuthResponse { token: output.token, user: output.user }))
 }
 
-async fn logout_handler(State(ctx): State<Ctx>, Extension(session): Extension<SessionContext>) -> Result<StatusCode, MeltDown> {
-    auth::logout::run(&ctx, &session).await?;
+async fn logout_handler(Extension(ctx): Extension<Ctx>) -> Result<StatusCode, MeltDown> {
+    let session = ctx.require_session()?;
+    auth::logout::run(&ctx, session).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn me_handler(State(ctx): State<Ctx>, Extension(session): Extension<SessionContext>) -> Result<Json<UserPublic>, MeltDown> {
-    let user = auth::me::run(&ctx, &session).await?;
+async fn me_handler(Extension(ctx): Extension<Ctx>) -> Result<Json<UserPublic>, MeltDown> {
+    let session = ctx.require_session()?;
+    let user = auth::me::run(&ctx, session).await?;
     Ok(Json(user))
 }
 
-pub fn router(ctx: Ctx) -> Router<Ctx> {
-    let public = Router::new().route("/auth/register", post(register_handler)).route("/auth/login", post(login_handler));
-
-    let protected = Router::new()
+pub fn router() -> Router<Ctx> {
+    Router::new()
+        .route("/auth/register", post(register_handler))
+        .route("/auth/login", post(login_handler))
         .route("/auth/logout", post(logout_handler))
         .route("/auth/me", get(me_handler))
-        .layer(from_fn_with_state(ctx, session_auth_middleware));
-
-    public.merge(protected)
 }

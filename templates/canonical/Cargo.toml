@@ -3,33 +3,49 @@ name = "canonical"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "canonical"
+path = "src/main.rs"
+
 [dependencies]
+chrono = { version = "0.4.39", features = ["serde", "wasmbind"] }
+once_cell = "1.20.3"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1.41"
+icondata = "0.5"
+uuid = { version = "1.8.0", features = ["v4", "serde"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+leptos = { version = "0.7", features = ["ssr"] }
+leptos_router = { version = "0.7", features = ["ssr"] }
+leptos_meta = { version = "0.7", features = ["ssr"] }
+leptos_axum = "0.7"
+thaw = "0.4"
+
 argon2 = "0.5"
 base64 = "0.22"
-chrono = { version = "0.4.39", features = ["serde"] }
 diesel-async = { version = "0.5.2", features = ["postgres", "r2d2", "tokio", "deadpool"] }
 diesel = { version = "2.2.7", features = ["postgres", "64-column-tables", "chrono", "serde_json", "r2d2"] }
 diesel_migrations = { version = "2.2", features = ["postgres"] }
 dotenv = "0.15.0"
 flate2 = "1.0.35"
-once_cell = "1.20.3"
 axum = { version = "0.7", features = ["json", "macros", "ws"] }
 axum-extra = { version = "0.9", features = ["cookie", "form"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
-thiserror = "1.0"
 anyhow = "1.0"
-serde_json = "1.0"
-serde = { version = "1.0.217", features = ["derive"] }
 tokio = { version = "1.40.0", features = ["full"] }
 toml = "0.8.20"
-tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 notify = "5.0.0"
 rand = "0.8.5"
 sha2 = "0.10"
 bs58 = "0.5"
-uuid = { version = "1.8.0", features = ["v4", "serde"] }
 backtrace = "0.3"
 hyper = { version = "1.0", features = ["full"] }
 dashmap = "6.1"
@@ -39,17 +55,47 @@ cron = "0.12"
 async-trait = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+leptos = { version = "0.7", features = ["hydrate"] }
+leptos_router = "0.7"
+leptos_meta = "0.7"
+thaw = "0.4"
+console_error_panic_hook = "0.1"
+wasm-bindgen = "0.2"
+gloo-net = { version = "0.6", features = ["http"] }
+web-sys = { version = "0.3", features = ["Window", "Storage"] }
+
 [dev-dependencies]
 tempfile = "3"
 
 [build-dependencies]
 blake3 = "1.5"
 
+[package.metadata.leptos]
+output-name = "canonical"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+style-file = "style/main.scss"
+assets-dir = "public"
+site-addr = "127.0.0.1:8000"
+reload-port = 3001
+browserquery = "defaults"
+env = "DEV"
+
 [profile.dev]
 codegen-units = 12
 opt-level = 0
 lto = false
 debug = true
+
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.blake3]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
 
 [profile.release]
 codegen-units = 1

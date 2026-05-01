@@ -4,7 +4,7 @@ use blast::state::{
     app::{AppState, DefaultsState, ServiceBackend, ServicesState},
     names::{AuthScopeField, FieldName, ResourceName, SqlType},
     resource::{AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, PayloadShape, Relation, ResourceState, SoftDeleteConfig, SoftDeleteDefault, TopicScope, Verb, VerbState, WsEventsState},
-    AppPolicySection, FeLintState,
+    AppPolicySection,
 };
 
 fn sample_resource() -> ResourceState {
@@ -75,27 +75,6 @@ fn sample_resource() -> ResourceState {
 
 fn sample_app() -> AppState {
     let mut app = AppState::new();
-
-    let mut rules: BTreeSet<String> = BTreeSet::new();
-    rules.insert("RawColorOutsidePreset".to_string());
-    rules.insert("HardcodedPx".to_string());
-    let fe_lint = FeLintState {
-        rules,
-        exempt_color_files: BTreeSet::new(),
-        exempt_px_files: BTreeSet::new(),
-        max_lines_per_sfc: 600,
-        max_lines_per_fn: 120,
-        max_template_depth: 5,
-        max_template_loc: 200,
-        whitelist_snippets: BTreeSet::new(),
-        icon_class_patterns: BTreeSet::new(),
-        scan_globs: BTreeSet::new(),
-        hairline_border_rem: "0.0625rem".to_string(),
-        icons_file: "src/icons.ts".to_string(),
-        tokens_file: "src/styles/tokens.css".to_string(),
-        primevue_preset_file: "src/plugins/primevue.ts".to_string(),
-    };
-    app.sections.insert("fe_lint".to_string(), AppPolicySection::FeLint(fe_lint));
 
     let services = ServicesState {
         storage: ServiceBackend::LocalDisk { root: "storage/uploads".to_string() },

@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::Write,
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -25,12 +26,6 @@ impl ServerMode {
             ServerMode::Watch => "watch",
         }
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ServerStatus {
-    Running(u32),
-    Stopped,
 }
 
 const SERVER_NAME: &str = "server";
@@ -62,9 +57,11 @@ fn read_pid(pid_file: &Path) -> BlastResult<Option<u32>> {
 }
 
 fn pid_alive(pid: u32) -> bool {
-    match Command::new("kill").args(["-0", &pid.to_string()]).status() {
+    // pkill --pgroup <pgid> --signal 0 = "is anyone in this process group still alive?"
+    // (procps `/usr/bin/kill` does NOT accept negative PIDs, so we can't use `kill -0 -PID`)
+    match Command::new("pkill").args(["--pgroup", &pid.to_string(), "--signal", "0"]).stdout(Stdio::null()).stderr(Stdio::null()).status() {
         Ok(status) => status.success(),
-        Err(_io) => false, // allow: spawn failure for `kill -0` leaves us no info; treat target as dead
+        Err(_io) => false, // allow: spawn failure for `pkill` leaves us no info; treat target as dead
     }
 }
 
@@ -77,37 +74,27 @@ fn remove_pid_file(pid_file: &Path) -> BlastResult<()> {
 }
 
 fn term(pid: u32) -> BlastResult<()> {
-    Command::new("kill").arg(pid.to_string()).status()?; // allow: target may already be dead, exit code carries no actionable info
+    Command::new("pkill").args(["--pgroup", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status()?; // allow: target may already be dead, exit code carries no actionable info
     Ok(())
 }
 
 fn kill_force(pid: u32) -> BlastResult<()> {
-    Command::new("kill").args(["-9", &pid.to_string()]).status()?; // allow: target may already be dead, exit code carries no actionable info
+    Command::new("pkill")
+        .args(["--pgroup", &pid.to_string(), "--signal", "KILL"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?; // allow: target may already be dead, exit code carries no actionable info
     Ok(())
 }
 
-pub fn server_status(config: &Config) -> BlastResult<ServerStatus> {
-    match read_pid(&pid_path(config))? {
-        Some(pid) => {
-            if pid_alive(pid) {
-                Ok(ServerStatus::Running(pid))
-            } else {
-                Ok(ServerStatus::Stopped)
-            }
-        }
-        None => Ok(ServerStatus::Stopped),
-    }
-}
-
-pub fn stop_server(config: &Config) -> BlastResult<bool> {
-    let pid_file = pid_path(config);
-    let pid = match read_pid(&pid_file)? {
+fn stop_pid_file(pid_file: &Path) -> BlastResult<bool> {
+    let pid = match read_pid(pid_file)? {
         Some(p) => p,
         None => return Ok(false),
     };
 
     if !pid_alive(pid) {
-        remove_pid_file(&pid_file)?;
+        remove_pid_file(pid_file)?;
         return Ok(false);
     }
 
@@ -125,8 +112,12 @@ pub fn stop_server(config: &Config) -> BlastResult<bool> {
         kill_force(pid)?;
     }
 
-    remove_pid_file(&pid_file)?;
+    remove_pid_file(pid_file)?;
     Ok(true)
+}
+
+pub fn stop_server(config: &Config) -> BlastResult<bool> {
+    stop_pid_file(&pid_path(config))
 }
 
 pub fn start_server(config: &Config, mode: ServerMode) -> BlastResult<u32> {
@@ -155,19 +146,16 @@ fn build_command(config: &Config, mode: ServerMode) -> Command {
             c
         }
         ServerMode::Prod => {
-            let release_bin = config.project_dir.join("target").join("release").join(&config.project_name);
-            if release_bin.exists() {
-                Command::new(release_bin)
-            } else {
-                let mut c = Command::new("cargo");
-                c.args(["run", "--release", "--bin", &config.project_name]);
-                c
-            }
+            let mut c = Command::new("cargo");
+            c.args(["run", "--release", "--no-default-features", "--features", "prod", "--bin", &config.project_name]);
+            c
         }
         ServerMode::Watch => {
             let mut c = Command::new("cargo");
             let run_arg = format!("run --bin {}", &config.project_name);
-            c.arg("watch").arg("-x").arg(run_arg);
+            // whitelist watch dirs so vite's writes (frontend/.vite, node_modules/...) and
+            // the running binary's writes (storage/...) don't re-trigger rebuilds in a loop
+            c.arg("watch").arg("--watch").arg("src").arg("--watch").arg("Cargo.toml").arg("-x").arg(run_arg);
             c
         }
     };
@@ -178,12 +166,10 @@ fn build_command(config: &Config, mode: ServerMode) -> Command {
 
 fn spawn_detached(mut cmd: Command, stdout: File, stderr: File, pid_file: &Path) -> BlastResult<u32> {
     cmd.stdin(Stdio::null()).stdout(Stdio::from(stdout)).stderr(Stdio::from(stderr));
+    cmd.process_group(0); // becomes its own process group leader so we can kill the whole subtree on stop
 
     let cmd_name = cmd.get_program().to_string_lossy().to_string();
-    let child = cmd.spawn().map_err(|e| BlastError::Subprocess {
-        cmd: cmd_name,
-        detail: e.to_string(),
-    })?;
+    let child = cmd.spawn().map_err(|e| BlastError::Subprocess { cmd: cmd_name, detail: e.to_string() })?;
     let pid = child.id();
     std::mem::drop(child);
 

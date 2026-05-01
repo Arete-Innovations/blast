@@ -272,34 +272,3 @@ pub fn logs_fuse(config: &Config, name: &str) -> BlastResult<()> {
 
     Ok(())
 }
-
-pub fn remove_fuse(config: &Config, id: i32) -> BlastResult<()> {
-    ensure_fuse_dirs(config)?;
-
-    let mut conn = establish_connection(config)?;
-
-    if !check_fuses_table(&mut conn)? {
-        return Err(BlastError::Fuse("fuses table not found".to_string()));
-    }
-
-    let exists_results = sql_query(&format!("SELECT EXISTS (SELECT 1 FROM fuses WHERE id = {}) as exists", id)).load::<BoolResult>(&mut conn)?;
-
-    if exists_results.is_empty() || !exists_results[0].exists {
-        return Err(BlastError::Fuse(format!("no fuse found with ID {}", id)));
-    }
-
-    let name_results = sql_query(&format!("SELECT name as result FROM fuses WHERE id = {}", id)).load::<StringResult>(&mut conn)?;
-
-    if name_results.is_empty() {
-        return Err(BlastError::Fuse(format!("failed to get name for fuse ID {}", id)));
-    }
-
-    let fuse_name = &name_results[0].result;
-
-    sql_query(&format!("DELETE FROM fuses WHERE id = {}", id)).execute(&mut conn)?;
-
-    log_to_execution(config, &format!("Removed fuse '{}' (ID: {})", fuse_name, id))?;
-    logger::success(&format!("Removed fuse '{}' (ID: {})", fuse_name, id))?;
-
-    Ok(())
-}

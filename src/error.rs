@@ -29,9 +29,6 @@ pub enum BlastError {
     #[error("http: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("dialoguer: {0}")]
-    Dialoguer(#[from] dialoguer::Error),
-
     #[error("regex: {0}")]
     Regex(#[from] regex::Error),
 

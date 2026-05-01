@@ -21,7 +21,7 @@ pub struct LoginOutput {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct LoginResponse {
+pub struct AuthResponse {
     pub token: String,
     pub user: UserPublic,
 }

@@ -1,41 +1,32 @@
 use std::{env, io::Write};
 
-use console::Style;
-use dialoguer::{theme::ColorfulTheme, FuzzySelect};
-
 use crate::{
     commands::{ArsenalCmd, Command, FusesCmd, GenCmd, LogCmd},
     configs::Config,
     dependencies::DependencyManager,
-    error::BlastResult,
+    error::{BlastError, BlastResult},
     logger,
+    wizards::widgets::{list_select, text_input},
 };
 
+// MENU_ITEMS is a hand-picked subset of `Command` — only the operations a user
+// actually drives interactively from inside the dashboard. CI-scope commands
+// (`build`, `package`), recursive ones (`dashboard` — the menu IS a dashboard
+// pane), and codegen sub-passes (`schema`, `structs`, `models`,
+// `governor-plugin` — all subsumed by `gen all`) stay reachable as
+// `blast <subcommand>` from the shell. Same for `new` / `init` (project must
+// not already exist). When adding a new menu entry, also add a resolve arm
+// below.
 const MENU_ITEMS: &[&str] = &[
-    // ── scaffold ──────────────────────────────────────────────────────────────
-    "[SCAFFOLD] New project",
-    "[SCAFFOLD] Init in-place",
     // ── app lifecycle ─────────────────────────────────────────────────────────
+    "[APP] Watch (BE+FE HMR)",
     "[APP] Run Server (dev)",
     "[APP] Run Server (prod)",
-    "[APP] Watch Server",
     "[APP] Stop Server",
     "[APP] Refresh",
     "[APP] Toggle Dev/Prod",
-    "[APP] Dashboard",
-    "[APP] Build",
-    "[APP] Package",
     // ── codegen ───────────────────────────────────────────────────────────────
     "[CODEGEN] Gen All (full pipeline)",
-    "[CODEGEN] Gen Resource (wizard)",
-    "[CODEGEN] Schema",
-    "[CODEGEN] Structs",
-    "[CODEGEN] Models",
-    "[CODEGEN] Gen Table (wizard)",
-    "[CODEGEN] Gen Migration (--custom)",
-    "[CODEGEN] Gen Frontend",
-    "[CODEGEN] Gen Governor Plugin",
-    "[CODEGEN] Gen Test Scaffolds",
     // ── database ──────────────────────────────────────────────────────────────
     "[DB] New Migration",
     "[DB] Migrate",
@@ -51,9 +42,6 @@ const MENU_ITEMS: &[&str] = &[
     // ── logs ──────────────────────────────────────────────────────────────────
     "[LOG] View logs",
     "[LOG] Truncate Logs",
-    // ── lint ──────────────────────────────────────────────────────────────────
-    "[LINT] Governor Check",
-    "[LINT] Governor Check (verbose)",
     // ── arsenal ───────────────────────────────────────────────────────────────
     "[ARSENAL] Scan & Write JSON",
     "[ARSENAL] Serve MCP (stdio)",
@@ -61,125 +49,92 @@ const MENU_ITEMS: &[&str] = &[
     "[Exit] Kill Session",
 ];
 
-pub fn pick_command(config: &Config) -> BlastResult<Option<Command>> {
-    let prod_style = Style::new().bold().fg(console::Color::Green);
-    let dev_style = Style::new().bold().fg(console::Color::Yellow);
-
-    let prompt = match config.environment.as_str() {
-        "prod" => format!("{}->[{}] ", prod_style.apply_to(format!("[🚀{}]", config.environment.to_uppercase())), config.project_name,),
-        _other_env => format!("{}->[{}] ", dev_style.apply_to(format!("[🔧{}]", config.environment.to_uppercase())), config.project_name,),
-    };
-
-    let selection = FuzzySelect::with_theme(&ColorfulTheme::default()).with_prompt(prompt).items(MENU_ITEMS).default(0).interact()?;
-
-    resolve_selection(MENU_ITEMS[selection])
+enum SelectionOutcome {
+    Resolved(Command),
+    Quit,
+    Cancelled,
 }
 
-fn resolve_selection(label: &str) -> BlastResult<Option<Command>> {
-    match label {
-        // ── scaffold ──────────────────────────────────────────────────────────
-        "[SCAFFOLD] New project" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Project name").interact_text()?;
-            Ok(Some(Command::New {
-                name,
-                dev: false,
-                db_url: None,
-                force: false,
-                no_test_db: false,
-                no_warmup: false,
-            }))
-        }
-        "[SCAFFOLD] Init in-place" => Ok(Some(Command::Init {
-            name: None,
-            db_url: None,
-            force: false,
-            no_test_db: false,
-            no_warmup: false,
-        })),
+pub fn pick_command(config: &Config) -> BlastResult<Option<Command>> {
+    let prompt = format!("[{}]->[{}] — pick a command", config.environment.to_uppercase(), config.project_name);
 
+    loop {
+        let chosen = list_select::pick(&prompt, MENU_ITEMS)?;
+        let label = match chosen {
+            Some(i) => MENU_ITEMS[i],
+            None => return Ok(None),
+        };
+
+        match resolve_selection(label)? {
+            SelectionOutcome::Resolved(cmd) => return Ok(Some(cmd)),
+            SelectionOutcome::Quit => return Ok(None),
+            SelectionOutcome::Cancelled => continue,
+        }
+    }
+}
+
+fn resolve_selection(label: &str) -> BlastResult<SelectionOutcome> {
+    let cmd = match label {
         // ── app lifecycle ─────────────────────────────────────────────────────
-        "[APP] Refresh" => Ok(Some(Command::Refresh)),
-        "[APP] Run Server (dev)" => Ok(Some(Command::Run)),
-        "[APP] Run Server (prod)" => Ok(Some(Command::RunProd)),
-        "[APP] Watch Server" => Ok(Some(Command::Watch)),
-        "[APP] Stop Server" => Ok(Some(Command::Stop)),
-        "[APP] Toggle Dev/Prod" => Ok(Some(Command::ToggleEnv)),
-        "[APP] Dashboard" => Ok(Some(Command::Dashboard)),
-        "[APP] Build" => Ok(Some(Command::Build)),
-        "[APP] Package" => Ok(Some(Command::Package)),
+        "[APP] Refresh" => Command::Refresh,
+        "[APP] Run Server (dev)" => Command::Run,
+        "[APP] Run Server (prod)" => Command::RunProd,
+        "[APP] Watch (BE+FE HMR)" => Command::Watch,
+        "[APP] Stop Server" => Command::Stop,
+        "[APP] Toggle Dev/Prod" => Command::ToggleEnv,
 
         // ── codegen ───────────────────────────────────────────────────────────
-        "[CODEGEN] Gen All (full pipeline)" => Ok(Some(Command::Gen { cmd: Some(GenCmd::All) })),
-        "[CODEGEN] Gen Resource (wizard)" => Ok(Some(Command::Gen {
-            cmd: Some(GenCmd::Resource { name: None }),
-        })),
-        "[CODEGEN] Schema" => Ok(Some(Command::Schema)),
-        "[CODEGEN] Structs" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Structs) })),
-        "[CODEGEN] Models" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Models) })),
-        "[CODEGEN] Gen Table (wizard)" => Ok(Some(Command::Gen { cmd: Some(GenCmd::Table) })),
-        "[CODEGEN] Gen Migration (--custom)" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Migration name (snake_case)").interact_text()?;
-            Ok(Some(Command::Gen {
-                cmd: Some(GenCmd::Migration { custom: true, name: Some(name) }),
-            }))
-        }
-        "[CODEGEN] Gen Types" => Ok(Some(Command::Gen {
-            cmd: Some(GenCmd::Types { resource: None }),
-        })),
-        "[CODEGEN] Gen API" => Ok(Some(Command::Gen {
-            cmd: Some(GenCmd::Api { resource: None }),
-        })),
-        "[CODEGEN] Gen Pages" => Ok(Some(Command::Gen {
-            cmd: Some(GenCmd::Pages { resource: None }),
-        })),
-        "[CODEGEN] Gen Governor Plugin" => Ok(Some(Command::Gen { cmd: Some(GenCmd::GovernorPlugin) })),
+        "[CODEGEN] Gen All (full pipeline)" => Command::Gen { cmd: Some(GenCmd::All) },
 
         // ── database ──────────────────────────────────────────────────────────
-        "[DB] New Migration" => Ok(Some(Command::Migration)),
-        "[DB] Migrate" => Ok(Some(Command::Migrate)),
-        "[DB] Rollback" => Ok(Some(Command::Rollback)),
-        "[DB] Seed" => Ok(Some(Command::Seed { file: None })),
+        "[DB] New Migration" => Command::Migration,
+        "[DB] Migrate" => Command::Migrate,
+        "[DB] Rollback" => Command::Rollback,
+        "[DB] Seed" => Command::Seed { file: None },
 
         // ── fuses ─────────────────────────────────────────────────────────────
-        "[FUSES] Manage fuses (TUI)" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) })),
-        "[FUSES] List fuses" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::List) })),
-        "[FUSES] Toggle fuse" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Fuse name").interact_text()?;
-            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Toggle { name }) }))
-        }
-        "[FUSES] Run fuse now" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Fuse name").interact_text()?;
-            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Run { name }) }))
-        }
-        "[FUSES] Fuse logs" => {
-            let name: String = dialoguer::Input::with_theme(&ColorfulTheme::default()).with_prompt("Fuse name").interact_text()?;
-            Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Logs { name }) }))
-        }
-        "[FUSES] Live fuses table" => Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) })),
+        "[FUSES] Manage fuses (TUI)" => Command::Fuses { cmd: Some(FusesCmd::Interactive) },
+        "[FUSES] List fuses" => Command::Fuses { cmd: Some(FusesCmd::List) },
+        "[FUSES] Toggle fuse" => match text_input::ask("Fuse name", None)? {
+            Some(name) if !name.trim().is_empty() => Command::Fuses {
+                cmd: Some(FusesCmd::Toggle { name: name.trim().to_string() }),
+            },
+            _empty_or_cancel => return Ok(SelectionOutcome::Cancelled),
+        },
+        "[FUSES] Run fuse now" => match text_input::ask("Fuse name", None)? {
+            Some(name) if !name.trim().is_empty() => Command::Fuses {
+                cmd: Some(FusesCmd::Run { name: name.trim().to_string() }),
+            },
+            _empty_or_cancel => return Ok(SelectionOutcome::Cancelled),
+        },
+        "[FUSES] Fuse logs" => match text_input::ask("Fuse name", None)? {
+            Some(name) if !name.trim().is_empty() => Command::Fuses {
+                cmd: Some(FusesCmd::Logs { name: name.trim().to_string() }),
+            },
+            _empty_or_cancel => return Ok(SelectionOutcome::Cancelled),
+        },
+        "[FUSES] Live fuses table" => Command::Fuses { cmd: Some(FusesCmd::LiveTable) },
 
         // ── logs ──────────────────────────────────────────────────────────────
-        "[LOG] View logs" => {
-            let level: String = dialoguer::Input::with_theme(&ColorfulTheme::default())
-                .with_prompt("Log level (error/warn/info/debug)")
-                .default("info".to_string())
-                .interact_text()?;
-            Ok(Some(Command::Log { cmd: LogCmd::View { level } }))
-        }
-        "[LOG] Truncate Logs" => Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } })),
-
-        // ── lint ──────────────────────────────────────────────────────────────
-        "[LINT] Governor Check" => Ok(Some(Command::Check { verbose: false })),
-        "[LINT] Governor Check (verbose)" => Ok(Some(Command::Check { verbose: true })),
+        "[LOG] View logs" => match text_input::ask("Log level (error/warn/info/debug)", Some("info"))? {
+            Some(level) if !level.trim().is_empty() => Command::Log {
+                cmd: LogCmd::View { level: level.trim().to_string() },
+            },
+            _empty_or_cancel => return Ok(SelectionOutcome::Cancelled),
+        },
+        "[LOG] Truncate Logs" => Command::Log { cmd: LogCmd::Truncate { file: None } },
 
         // ── arsenal ───────────────────────────────────────────────────────────
-        "[ARSENAL] Scan & Write JSON" => Ok(Some(Command::Arsenal { cmd: None })),
-        "[ARSENAL] Serve MCP (stdio)" => Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) })),
+        "[ARSENAL] Scan & Write JSON" => Command::Arsenal { cmd: None },
+        "[ARSENAL] Serve MCP (stdio)" => Command::Arsenal { cmd: Some(ArsenalCmd::Serve) },
 
         // ── exit ──────────────────────────────────────────────────────────────
-        "[Exit] Kill Session" => Ok(None),
+        "[Exit] Kill Session" => return Ok(SelectionOutcome::Quit),
 
-        unknown => Err(crate::error::BlastError::Invalid(format!("unknown menu selection: {}", unknown))),
-    }
+        unknown => return Err(BlastError::Invalid(format!("unknown menu selection: {}", unknown))),
+    };
+
+    Ok(SelectionOutcome::Resolved(cmd))
 }
 
 pub fn run_interactive_loop(config: &mut Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
@@ -204,7 +159,10 @@ pub fn run_interactive_loop(config: &mut Config, dep_manager: &mut DependencyMan
         let cmd = match picked {
             Some(c) => c,
             None => {
-                logger::info("Killing Zellij session...")?;
+                let be_was_up = crate::daemon::stop_server(config)?;
+                if be_was_up {
+                    logger::success("BE daemon stopped")?;
+                }
                 drop(std::process::Command::new("zellij").args(["kill-session"]).spawn());
                 drop(std::process::Command::new("zellij").args(["kill-all-sessions", "-y"]).spawn());
                 break;
@@ -249,30 +207,41 @@ mod tests {
     use super::*;
     use crate::commands::{ArsenalCmd, FusesCmd, GenCmd, LogCmd};
 
+    fn unwrap_resolved(label: &str) -> Command {
+        match resolve_selection(label).expect("resolve_selection ok") {
+            SelectionOutcome::Resolved(c) => c,
+            SelectionOutcome::Quit => panic!("expected Resolved, got Quit for {}", label),
+            SelectionOutcome::Cancelled => panic!("expected Resolved, got Cancelled for {}", label),
+        }
+    }
+
+    fn assert_quit(label: &str) {
+        match resolve_selection(label).expect("resolve_selection ok") {
+            SelectionOutcome::Quit => {}
+            other_outcome => panic!(
+                "expected Quit for {}, got {}",
+                label,
+                match other_outcome {
+                    SelectionOutcome::Resolved(_) => "Resolved",
+                    SelectionOutcome::Cancelled => "Cancelled",
+                    SelectionOutcome::Quit => "Quit",
+                }
+            ),
+        }
+    }
+
     /// Items that do NOT require interactive prompting.
-    /// Each must resolve to Ok(Some(_)) without hitting the `unknown` branch.
+    /// Each must resolve to Resolved(_) or Quit without hitting Cancelled.
     #[test]
     fn non_interactive_menu_items_all_resolve() {
         let non_interactive: &[&str] = &[
             "[APP] Refresh",
             "[APP] Run Server (dev)",
             "[APP] Run Server (prod)",
-            "[APP] Watch Server",
+            "[APP] Watch (BE+FE HMR)",
             "[APP] Stop Server",
             "[APP] Toggle Dev/Prod",
-            "[APP] Dashboard",
-            "[APP] Build",
-            "[APP] Package",
-            "[SCAFFOLD] Init in-place",
             "[CODEGEN] Gen All (full pipeline)",
-            "[CODEGEN] Gen Resource (wizard)",
-            "[CODEGEN] Schema",
-            "[CODEGEN] Structs",
-            "[CODEGEN] Models",
-            "[CODEGEN] Gen Table (wizard)",
-            "[CODEGEN] Gen Frontend",
-            "[CODEGEN] Gen Governor Plugin",
-            "[CODEGEN] Gen Test Scaffolds",
             "[DB] New Migration",
             "[DB] Migrate",
             "[DB] Rollback",
@@ -281,8 +250,6 @@ mod tests {
             "[FUSES] List fuses",
             "[FUSES] Live fuses table",
             "[LOG] Truncate Logs",
-            "[LINT] Governor Check",
-            "[LINT] Governor Check (verbose)",
             "[ARSENAL] Scan & Write JSON",
             "[ARSENAL] Serve MCP (stdio)",
             "[Exit] Kill Session",
@@ -290,14 +257,7 @@ mod tests {
 
         // Every label in MENU_ITEMS must be listed in either non_interactive or
         // the interactive set below (i.e. there are no unhandled labels).
-        let interactive_labels: &[&str] = &[
-            "[SCAFFOLD] New project",
-            "[CODEGEN] Gen Migration (--custom)",
-            "[FUSES] Toggle fuse",
-            "[FUSES] Run fuse now",
-            "[FUSES] Fuse logs",
-            "[LOG] View logs",
-        ];
+        let interactive_labels: &[&str] = &["[FUSES] Toggle fuse", "[FUSES] Run fuse now", "[FUSES] Fuse logs", "[LOG] View logs"];
 
         let all_handled: Vec<&str> = non_interactive.iter().chain(interactive_labels.iter()).copied().collect();
 
@@ -314,20 +274,13 @@ mod tests {
     /// expected Command variants.
     #[test]
     fn spot_check_command_routing() {
-        assert!(matches!(resolve_selection("[APP] Run Server (dev)"), Ok(Some(Command::Run))));
-        assert!(matches!(resolve_selection("[APP] Run Server (prod)"), Ok(Some(Command::RunProd))));
-        assert!(matches!(resolve_selection("[CODEGEN] Gen All (full pipeline)"), Ok(Some(Command::Gen { cmd: Some(GenCmd::All) }))));
-        assert!(matches!(
-            resolve_selection("[CODEGEN] Gen Resource (wizard)"),
-            Ok(Some(Command::Gen {
-                cmd: Some(GenCmd::Resource { name: None })
-            }))
-        ));
-        assert!(matches!(resolve_selection("[FUSES] Manage fuses (TUI)"), Ok(Some(Command::Fuses { cmd: Some(FusesCmd::Interactive) }))));
-        assert!(matches!(resolve_selection("[FUSES] Live fuses table"), Ok(Some(Command::Fuses { cmd: Some(FusesCmd::LiveTable) }))));
-        assert!(matches!(resolve_selection("[LOG] Truncate Logs"), Ok(Some(Command::Log { cmd: LogCmd::Truncate { file: None } }))));
-        assert!(matches!(resolve_selection("[LINT] Governor Check (verbose)"), Ok(Some(Command::Check { verbose: true }))));
-        assert!(matches!(resolve_selection("[ARSENAL] Serve MCP (stdio)"), Ok(Some(Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }))));
-        assert!(matches!(resolve_selection("[Exit] Kill Session"), Ok(None)));
+        assert!(matches!(unwrap_resolved("[APP] Run Server (dev)"), Command::Run));
+        assert!(matches!(unwrap_resolved("[APP] Run Server (prod)"), Command::RunProd));
+        assert!(matches!(unwrap_resolved("[CODEGEN] Gen All (full pipeline)"), Command::Gen { cmd: Some(GenCmd::All) }));
+        assert!(matches!(unwrap_resolved("[FUSES] Manage fuses (TUI)"), Command::Fuses { cmd: Some(FusesCmd::Interactive) }));
+        assert!(matches!(unwrap_resolved("[FUSES] Live fuses table"), Command::Fuses { cmd: Some(FusesCmd::LiveTable) }));
+        assert!(matches!(unwrap_resolved("[LOG] Truncate Logs"), Command::Log { cmd: LogCmd::Truncate { file: None } }));
+        assert!(matches!(unwrap_resolved("[ARSENAL] Serve MCP (stdio)"), Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }));
+        assert_quit("[Exit] Kill Session");
     }
 }

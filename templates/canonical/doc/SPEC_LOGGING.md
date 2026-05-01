@@ -49,22 +49,42 @@ Use `cata_log!` for plain text messages. Use `tracing::*` macros directly when a
 
 ## Tower Trace Layer
 
-The Axum app installs `tower_http::trace::TraceLayer` on every request. This creates a `tracing::Span` per HTTP request containing:
+The Axum app installs `tower_http::trace::TraceLayer` on every request. `CatalystMakeSpan` (in `transport/http/middleware/trace.rs`) creates a `tracing::Span` per HTTP request containing:
 
-- `http.method`
-- `http.uri`
-- `http.status_code` (populated on response)
-- Latency measurement
+- `method`
+- `uri`
+- `status` (populated on response by `CatalystOnResponse`)
+- `latency_ms` (populated on response)
+- `request_id` — **only emitted in prod** (`cfg!(feature = "prod")`). Dev omits it to keep dev logs uncluttered.
 
 Wired in `src/main.rs` via `ServiceBuilder`:
 
 ```rust
 ServiceBuilder::new()
-    .layer(TraceLayer::new_for_http())
-
+    .layer(transport::http::middleware::trace::make_trace_layer())
 ```
 
-All `cata_log!` calls inside a request's async task are automatically associated with this span, so structured log backends (JSON, OTLP) can correlate them by request.
+All `cata_log!` calls inside a request's async task are automatically associated with this span, so structured log backends (JSON, OTLP) can correlate them by request (in prod via `request_id`).
+
+The error-handling middleware (`error_handler.rs`) emits the per-request access log line (`200 OK - 0ms` style) at the end of `next.run()`. **Method and URI are NOT in the message body** — the trace span already attaches them as fields, so duplicating them in the body produces noisy double-printed lines.
+
+## Boot order: dotenv before tracing
+
+`src/main.rs` MUST load `.env` BEFORE calling `init_tracing()`:
+
+```rust
+#[tokio::main]
+async fn main() {
+    if let Err(e) = dotenv::dotenv() {
+        eprintln!("Could not load .env file: {}", e);
+    }
+    cata_log::init_tracing();
+    bootstrap(MIGRATIONS).await;
+    // ...
+}
+```
+
+`init_tracing` calls `EnvFilter::try_from_default_env()` which reads `RUST_LOG`/`LOG_LEVEL` from the process env. `dotenv::dotenv()` populates env vars from `.env` BUT does NOT override existing ones. If you call `init_tracing` first and then `dotenv` later, any values in `.env` are silently invisible to the filter — fallback default kicks in.
 
 ## Subscriber Init
 

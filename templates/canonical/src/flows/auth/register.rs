@@ -1,7 +1,7 @@
-pub use crate::structs::auth::RegisterInput;
-use crate::{crank::Crank, meltdown::*, routines, structs::UserPublic, Ctx};
+pub use crate::structs::auth::{RegisterInput, RegisterOutput};
+use crate::{crank::Crank, meltdown::*, routines, Ctx};
 
-pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<UserPublic, MeltDown> {
+pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, MeltDown> {
     Crank::none()
         .run(|| {
             routines::auth::register::run(

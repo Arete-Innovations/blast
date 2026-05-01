@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use axum::{
-    extract::State,
+    extract::Extension,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
@@ -17,7 +17,7 @@ pub fn router() -> Router<Ctx> {
     Router::new().route("/healthz", get(handler))
 }
 
-async fn handler(State(ctx): State<Ctx>) -> Response {
+async fn handler(Extension(ctx): Extension<Ctx>) -> Response {
     match timeout(POOL_TIMEOUT, ctx.conn()).await {
         Ok(Ok(conn)) => {
             drop(conn);

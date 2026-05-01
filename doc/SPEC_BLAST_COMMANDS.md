@@ -14,7 +14,7 @@ blast rollback [--steps N]       # roll back N migrations (default 1)
 blast seed [file]                # run seed SQL file
 blast schema                     # regenerate src/database/schema.rs from DB
 
-blast gen                        # interactive TUI picker
+blast gen                        # prints clap help for `blast gen` (no picker)
 blast gen <target>               # see targets below
 blast gen all                    # full pipeline
 
@@ -22,11 +22,13 @@ blast check                      # run Governor lint on frontend
 
 blast run                        # dev server (backend + Vite HMR proxy)
 blast run-prod                   # production server (backend only, serving dist/)
-blast stop                       # kill background blast run process
-blast watch                      # cargo-watch on backend
+blast stop                       # tear down BE + FE daemons (pkill --pgroup) + cleanup pid files
+blast watch                      # BE: cargo-watch -x run --watch src --watch Cargo.toml
+                                 # FE: vite dev (auto npm-install on first start)
+                                 # Both spawn as detached pgroup leaders — pid files at storage/blast/{server,frontend}.pid
 
 blast dashboard                  # Zellij-based TUI dashboard
-blast cli                        # dialoguer FuzzySelect menu
+blast cli                        # ratatui list-select menu (Command registry)
 
 blast fuses                      # interactive fuses TUI
 blast fuses list                 # list registered fuses
@@ -63,9 +65,6 @@ blast gen pages [<resource>]     # resource state → frontend/src/pages/generat
 blast gen env-example             # app state env spec → .env.example
 blast gen governor-plugin         # app state fe_lint section → frontend/scripts/governor-plugin.js + .rule_violations_whitelist
 blast gen fe-scaffold             # seed tokens.css, base.css, primevue.ts (idempotent — first-run seed)
-blast gen table [name]            # interactive migration wizard; emits up.sql / down.sql in migrations/
-blast gen migration [--custom] <name>  # empty migration scaffold (custom = hand-written SQL: views/triggers/etc.)
-blast gen resource [name]         # TUI wizard to author/edit storage/blast/state/resources/<name>.ron
 blast gen test [--flow|--route]   # resource state → *.test.rs scaffolds per flow + per route (idempotent on existing files)
 blast gen all                     # full pipeline (see below)
 ```
@@ -85,66 +84,77 @@ All `blast gen` targets read from `storage/blast/state/` (see `SPEC_STATE.md`). 
 6.  flows generation            (codegen::flows::run — auth check + Crank::none wrapping the routine)
 7.  http routes generation      (codegen::http_routes::run)
 8.  frontend types generation   (codegen::frontend_types::run)
-9.  frontend api generation     (codegen::frontend_api::run — typed fetch wrappers per resource)
+9.  frontend api generation     (codegen::frontend_api::run — one-line fetchers per resource that delegate to apiFetch)
 10. composables generation      (codegen::composables::run — Vue 3 reactive composables per resource: list/get/create/update/delete)
 11. validators generation       (codegen::validators::run — paired Rust + TS field validators from FieldState.validators)
-12. theme codegen                (codegen::theme::run — emits tokens.css + primevue.ts from app.ron theme section)
-13. icons codegen                (codegen::icons::run — emits icons.ts from app.ron icons section)
-14. .env.example generation     (codegen::env_example::run)
-15. governor plugin emission    (codegen::governor_plugin::run)
+12. components generation       (codegen::components::run — Vue Create/Edit form components per resource at gen_level >= Components)
+13. pages generation             (codegen::pages::run — Vue List/Detail/Create/Edit pages per resource at gen_level >= Pages)
+14. frontend router generation  (codegen::frontend_router::run — routes.ts table that maps resource pages to vue-router entries; gen_level >= Pages)
+15. .env.example generation     (codegen::env_example::run)
+16. governor plugin emission    (codegen::governor_plugin::run)
 ```
 
-(Vue components, crud pages, router, ws topics, test scaffold are opt-in via dedicated `blast gen <subcmd>` invocations once their pipeline slots land — see backlog.)
+Steps short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping"). Each pass filters resources by `gen_level`:
+- routines + flows: `>= Route`
+- frontend types/api/validators: `>= Types`
+- composables: `>= Composables` (default for new resources)
+- components: `>= Components`
+- pages + frontend_router: `>= Pages`
 
-Steps short-circuit cleanly when zero resource state files are declared (logged as "no resources declared; skipping"). Routines + flows additionally filter by `gen_level >= GenLevel::Route`. Frontend types/api/validators filter by `gen_level >= GenLevel::Types`. Composables filter by `gen_level >= GenLevel::Composables` (the default for new resources).
+The `migration` wizard offers a `gen_level` picker on its Form screen — select `Pages` to scaffold a fully-wired CRUD UI end-to-end without a separate `blast gen pages` invocation. Theme tokens and icons are NOT codegen — they ship as user-owned files (`frontend/src/{styles/tokens.css, plugins/primevue.ts, icons.ts}`).
 
 Implementation lives in `src/commands/gen_all.rs` as `pub fn run(args, config, sink, progress) -> BlastResult<Outcome>`. `Outcome` carries cumulative `steps_run`, `files_written`, `files_skipped`.
 
 ## TUI Flows
 
-### `blast gen resource [name]`
+### `blast migration` — the chained new-table wizard
 
-Interactive resource state authoring, powered by dialoguer (`FuzzySelect`, `MultiSelect`, `Input`, `Confirm`). Produces or updates `storage/blast/state/resources/<name>.ron`. Does not run codegen — user runs `blast gen all` after.
+One ratatui state-machine wizard (no dialoguer) that handles every step from migration SQL to working CRUD endpoints. Lives under `src/wizards/new_table/`. Three screens, linear progression, all Tab-navigable.
 
-The wizard is implemented as **a wizard, not a command**: it lives under `src/wizards/gen_resource/` and produces a fully-resolved `Args` struct that gets handed to the same `run` fn as the CLI. Wizards never execute work themselves — they only resolve arguments.
+**Screen 1 — Form:**
+- Table name (snake_case input, validated)
+- Auto-features (4 individually-focusable checkboxes): `id BIGSERIAL PRIMARY KEY`, `created_at`, `updated_at`, `deleted_at` (soft-delete)
+- Codegen depth picker (`gen_level`): cycles Struct / Model / Route / Types / Composables / Components / Pages
+- Verb checkboxes (5 individually-focusable): List / Get / Create / Update / Delete
+- `[ Next: Columns → ]` button
 
-Steps (each step is a sub-module in `src/wizards/gen_resource/`):
+**Screen 2 — Columns loop:** existing column list at top, draft form below. Per-column draft:
+- Name input (snake_case)
+- Type picker — cycles TEXT / VARCHAR(255) / INTEGER / BIGINT / BOOLEAN / TIMESTAMPTZ / UUID / JSONB / NUMERIC + dynamic Enum entries (from existing `CREATE TYPE`) + dynamic FK entries (`BIGINT REFERENCES <table>(id)` for every existing table). Enum entries only appear when the project actually declares enums.
+- `NOT NULL` checkbox (default on)
+- `Public-visible` checkbox (default on; auto-flips off when the name matches `password_hash`, `*_secret`, `*_token`, `*_key`)
+- Validator picker — cycles None / Required / Email / MaxLen(255)
+- `[ + Add column ]`, `[ – Delete last column ]`, `[ ← Back ]`, `[ Done — Preview → ]`
 
-1. **`pick`** — if `[name]` not provided, list tables from `schema.rs`, user picks via `FuzzySelect`. If the resource already has a state file, it's loaded as the seed.
+**Screen 3 — Preview + commit:** shows the generated `up.sql`, `down.sql`, and `storage/blast/state/resources/<name>.ron` side-by-side. Two buttons: `[ ← Back ]` or `[ Commit + Run Pipeline → ]`.
 
-2. **`schema_diff`** (only when editing an existing resource) — compares the on-disk `schema.rs` columns against the resource's stored fields and renders a three-section drift report:
-   - `+` columns present in `schema.rs` but missing from state (added)
-   - `-` columns present in state but missing from `schema.rs` (removed)
-   - `~` columns whose `sql_type` differs (type-changed)
+**On commit, the wizard chains the full pipeline:**
 
-   When **added** columns are present, the wizard prompts to apply them automatically with smart-default variants. Removed/type-changed are surfaced as warnings only — the user resolves them by re-running the wizard's field/verb steps or by editing the state file directly. No silent migrations.
+1. Writes `migrations/<timestamp>_create_<table>/up.sql` + `down.sql`.
+2. Writes `storage/blast/state/resources/<table>.ron` via atomic `.tmp` + rename. Per-column policy is mapped from the wizard:
+   - `Public-visible = true` → variants `Db, Insertable, Patch, Public, Admin`
+   - `Public-visible = false` → variants `Db, Insertable, Patch, Admin` (no Public)
+   - Auto-features get system-correct variants (id is `Db, Public, Admin`; `created_at`/`updated_at` same; `deleted_at` is `Db, Admin`).
+   - Validator picker maps to `ValidatorRule::{Required, Email, MaxLen(255)}`.
+   - All enabled verbs default to `AuthMode::AuthRequired`.
+3. `blast migrate` (applies the migration).
+4. `blast gen schema` (refreshes `src/database/schema.rs`).
+5. `blast gen all` (runs the full codegen pipeline).
 
-3. **`fields`** — per field: multi-select which variants it belongs to (`Db`, `Insertable`, `Patch`, `Public`, `Admin`). Defaults are smart:
-   - Primary keys: `Db + Public`
-   - `password_hash`, `*_secret`: `Db` only
-   - `created_at`, `updated_at`: `Db + Public` (readonly)
-   - Everything else: all variants
+**Keys:** Tab/Shift-Tab cycle focus, Space toggles checkboxes, ←/→ cycle pickers, Enter activates buttons, Esc cancels.
 
-4. **`verbs`** — per verb (list/get/create/update/delete): toggle on/off. For each enabled verb, pick auth mode:
-   - `public`
-   - `auth_required`
-   - `admin_only`
-   - `scoped_to:<field>` — dialoguer shows available field names
-   - `roles:[...]` — multi-select from known role enum variants
+**What the wizard does NOT cover (hand-edit RON for these):**
+- Per-verb auth modes other than `AuthRequired` (admin_only / scoped_to / roles).
+- Variant fine-grain (e.g. Insertable but not Patch).
+- WebSocket events.
+- Validator rules beyond Required/Email/MaxLen(255) (Pattern, OneOf, MinLen, MinValue, MaxValue).
+- schema_diff (drift between `schema.rs` and RON). `blast gen all` already errors loud on hash mismatch.
 
-5. **`list`** — list-specific: toggle `.paginated()`, multi-select filterable columns.
-
-6. **`ws`** — WebSocket events: toggle, pick trigger columns, pick payload shape (`FullPublicRow` or `IdOnly`), pick topic scope.
-
-7. **`confirm`** — show state file preview, confirm → return `WriteAction::{Created,Updated,Cancelled}`.
-
-8. **Atomic write** — on confirm, `state::save_resource` writes `storage/blast/state/resources/<name>.ron` via the atomic `.tmp` + rename pattern (see `SPEC_STATE.md`).
-
-There is no `raw_rust` field in state files. If the TUI can't express something, the user writes Rust at the top of `src/<layer>/<resource>/` (anywhere outside `<layer>/generated/`). The two-tier user-owned/generated split is the escape hatch.
+These were intentionally cut to keep the wizard ship-fast. Hand-editing the RON file (which is short and human-readable) is the escape hatch.
 
 ### `blast gen` (no args)
 
-Launches a dialoguer `Select` menu (`src/gen_picker.rs`) listing every `GenCmd` variant. User picks → the matched variant runs through the same `commands::execute` dispatch as the CLI. `gen resource` and `gen table` then enter their own dialoguer wizards.
+Launches a ratatui list-select menu listing every `GenCmd` variant. User picks → the matched variant runs through the same `commands::execute` dispatch as the CLI. The new-table chained wizard is reachable via `blast migration`, not via this picker.
 
 ## Dashboard (`blast dashboard`)
 
@@ -161,28 +171,26 @@ Dashboard is a presentation layer. All actual work goes through the same `run()`
 
 ## Interactive CLI (`blast cli`)
 
-Simpler alternative to dashboard. `FuzzySelect` menu backed by the `Command` registry:
+Ratatui list-select menu backed by a hand-picked subset of the `Command` registry. Only operations a user actually drives interactively from inside the dashboard live here. CI-scope commands (`blast build`, `blast package`), recursive ones (`blast dashboard` — the menu IS a dashboard pane), codegen sub-passes subsumed by `gen all` (`schema`, `structs`, `models`, `governor-plugin`), and `blast new`/`init` (project must not already exist) stay reachable as `blast <subcommand>` from the shell, never as menu entries.
+
+19 entries total:
 
 ```
-> blast cli
-? Select a Blast command:
-❯ [GEN]      Generate all (full pipeline)
-  [GEN]      Generate resource (interactive)
-  [GEN]      Generate flows
-  [GEN]      Generate frontend
-  [DB]       Run migrations
-  [DB]       Rollback migration
-  [DB]       Seed data
-  [SERVER]   Run dev
-  [SERVER]   Run prod
-  [FUSES]    Manage fuses
-  [LINT]     Run blast check
-  [UTIL]     Toggle env
-  [UTIL]     Refresh project
-  [EXIT]     Kill session
+[APP] Run Server (dev)              [DB]   New Migration       [LOG]     View logs
+[APP] Run Server (prod)             [DB]   Migrate             [LOG]     Truncate Logs
+[APP] Watch (BE+FE HMR)             [DB]   Rollback            [LINT]    Governor Check
+[APP] Stop Server                   [DB]   Seed                [LINT]    Governor Check (verbose)
+[APP] Refresh                       [FUSES] Manage fuses (TUI) [ARSENAL] Scan & Write JSON
+[APP] Toggle Dev/Prod               [FUSES] List fuses         [ARSENAL] Serve MCP (stdio)
+[CODEGEN] Gen All (full pipeline)   [FUSES] Toggle fuse        [Exit]    Kill Session
+                                    [FUSES] Run fuse now
+                                    [FUSES] Fuse logs
+                                    [FUSES] Live fuses table
 ```
 
-Selection drops into that command's handler (possibly another TUI, possibly a direct execution with log output).
+Up/Down/j/k navigation, Enter to confirm, Esc/Ctrl-C to cancel. `text_input::ask` widget covers fuse-name + log-level prompts. Selection drops into that command's handler — possibly another TUI, possibly direct execution.
+
+Adding a new entry: add to `MENU_ITEMS` in `src/interactive.rs` AND add a `resolve_selection` arm AND list it in the parity test (`non_interactive_menu_items_all_resolve` or the interactive sub-prompt list). Compile-time test enforces no orphan labels.
 
 ## Post-Scaffold Initialization Pipeline
 
@@ -215,6 +223,7 @@ blast new <name> [--db-url <url>] [--no-test-db] [--force]
 | `--db-url <url>` | Postgres URL for the new project. If omitted, prompts interactively. |
 | `--no-test-db` | Skip creation of the `<dbname>_test` database and `.env.test` file. |
 | `--force` | Drop and recreate target databases if they already contain tables. |
+| `--no-warmup` | Skip `npm install` + `npm run build` in `frontend/`. Still execs into the dashboard at the new project root afterwards (use `BLAST_NO_TUI_FOR_TESTS=1` to also suppress the dashboard exec — internal-only escape hatch for verification scripts). |
 
 Scaffold walks the vendored tree, substitutes `{{project_name}}` in both file paths and file bodies, and writes everything to `./<name>/`.
 
@@ -281,27 +290,6 @@ Step 4: Drop test DB (unless --no-drop)
 
 See `catalyst/doc/SPEC_TESTING.md` for the full testing strategy.
 
-## `blast gen table [name]`
-
-Interactive migration wizard. Emits a Diesel migration (`up.sql` / `down.sql`) in `migrations/`. Does not apply; user runs `blast migrate` after.
-
-The wizard covers the 80% case: common column types, standard `NOT NULL` / `DEFAULT` choices, single-table FKs, standard indexes. Escape hatch: at the confirm step, user can drop into `$EDITOR` to edit the raw SQL before the file is written.
-
-Steps:
-
-1. **Table name** — prompted if `[name]` not provided. Must be `snake_case` plural. Blast warns on casing violations.
-2. **Columns** — interactive loop: column name → type (FuzzySelect from common types: `text`, `varchar(n)`, `integer`, `bigint`, `boolean`, `timestamp`, `timestamptz`, `uuid`, `jsonb`, `numeric`) → nullability → default. Repeat until done.
-3. **Primary key** — auto-added `id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY` unless user opts for a custom PK.
-4. **Timestamps** — opt-in to auto-add `created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` and `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`.
-5. **Foreign keys** — opt-in to add `REFERENCES <table>(id)` on any column. Only tables present in `schema.rs` are offered.
-6. **Indexes** — opt-in to add standard single-column indexes.
-7. **Preview** — show generated `up.sql` and `down.sql`. Confirm or edit.
-8. **Write** — emits `migrations/<timestamp>_<name>/up.sql` and `down.sql`.
-
-`down.sql` is `DROP TABLE IF EXISTS <name>;` by default.
-
-After the wizard exits, run `blast migrate` → `blast gen schema` → `blast gen resource <name>` to complete the new-resource flow.
-
 ## `blast gen test`
 
 Scaffolds baseline test files for all generated flows and routes. Idempotent on existing files — does not overwrite tests the user has already modified.
@@ -339,6 +327,8 @@ See `catalyst/doc/SPEC_TESTING.md` for what the scaffolds contain and how the ca
 - `cronjobs` commands — renamed to `blast fuses`. Removed.
 - `blast spark` — plugin system killed. No sparks. Removed.
 - `blast gen primer`, `blast gen blueprint` — the DSL sub-crates (`catalyst_primer`, `catalyst_blueprint`) are deleted. State lives in `storage/blast/state/` RON files. Removed.
+- `blast gen table`, `blast gen resource` — the standalone wizards are gone. Both are now folded into `blast migration` as one chained ratatui wizard (table SQL + RON state + migrate + gen schema + gen all in a single flow).
+- `blast gen migration --custom` — the empty/$EDITOR-driven migration skeleton is gone. Hand-write the SQL file directly if you need raw migrations (views/triggers/etc.); the wizard is for opinionated CRUD tables only.
 
 ## Config Source
 
@@ -368,7 +358,8 @@ File log at `storage/blast/blast.log` for post-hoc review (`blast log view`).
 
 ```
 src/cli.rs          ← clap derive → Command::Args
-src/tui/...         ← dialoguer wizards → Command::Args (wizards never execute)
+src/wizards/...     ← ratatui wizards → Command::Args (wizards never execute)
+src/wizards/widgets ← shared list_select / text_input ratatui primitives
 src/commands/       ← pure command core (this is the surface)
   └─ <verb>.rs      ← fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome>
 ```
@@ -377,7 +368,7 @@ src/commands/       ← pure command core (this is the surface)
 
 1. **Args fully resolved at front-end boundary.** The function signature for every command is `fn run(args: FullyTypedArgs, sink, progress) -> BlastResult<Outcome>`. No `Option<T>` for "ask if missing" — the front-end already asked. Commands take ground truth.
 
-2. **No prompting inside command bodies.** Zero `dialoguer::*` calls under `src/commands/`. Wizards live in `src/tui/<wizard>/` and *output* a fully-resolved arg struct that gets passed to the core command.
+2. **No prompting inside command bodies.** Zero TUI prompt calls under `src/commands/`. Wizards live in `src/wizards/<wizard>/` and *output* a fully-resolved arg struct that gets passed to the core command. The dialoguer dep is gone — all interactive surfaces use the shared ratatui widgets at `src/wizards/widgets/`.
 
 3. **No direct stdout/stderr.** Zero `println!`, `eprintln!`, raw `print!`. Commands emit through an injected `Sink` trait:
    ```rust
@@ -416,7 +407,7 @@ src/commands/       ← pure command core (this is the surface)
 ### What this kills
 
 - The `commands.rs` custom parser + `interactive.rs` dispatch + dashboard menu wiring as three separate sites of truth.
-- Any command body that does `dialoguer::FuzzySelect::new()...interact()`.
+- Any command body that pops a TUI prompt directly. Prompts belong in wizards.
 - `logger::info(...)` calls inside command bodies (the CLI `Sink` impl does that, not the command).
 - Hand-written menu lists in `interactive.rs` and `dashboard.rs` that drift from the CLI surface.
 - "Dashboard suppress stdout" branch in the old logger.

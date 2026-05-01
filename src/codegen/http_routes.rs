@@ -45,11 +45,17 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
         sink.info(format!("emitted {}", target.display()));
     }
 
-    let barrel = out_dir.join("mod.rs");
     let barrel_marker = header::marker_for_app(project_root)?;
-    let barrel_body = format!("{}{}", barrel_marker, build_barrel(&resources));
+
+    let barrel = out_dir.join("mod.rs");
+    let barrel_body = format!("{}{}", barrel_marker, build_mod_rs(&resources));
     write_file(&barrel, barrel_body.as_bytes(), &mut report)?;
     sink.info(format!("emitted {}", barrel.display()));
+
+    let router_file = out_dir.join("router.rs");
+    let router_body = format!("{}{}", barrel_marker, build_router_rs(&resources));
+    write_file(&router_file, router_body.as_bytes(), &mut report)?;
+    sink.info(format!("emitted {}", router_file.display()));
 
     progress.step_done(STEP_LABEL);
     Ok(report)
@@ -74,10 +80,10 @@ fn build_resource_file(r: &ResourceState) -> String {
     let needs_validator_import = r.gen_level >= crate::state::GenLevel::Types && (r.verbs.contains_key(&Verb::Create) || r.verbs.contains_key(&Verb::Update));
 
     let mut out = String::new();
-    out.push_str("use axum::extract::{Path, State};\n");
+    out.push_str("use axum::extract::Path;\n");
     out.push_str("use axum::http::StatusCode;\n");
     out.push_str("use axum::routing::{delete, get, patch, post};\n");
-    out.push_str("use axum::{Json, Router};\n");
+    out.push_str("use axum::{Extension, Json, Router};\n");
     out.push_str("use crate::Ctx;\n");
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str("use crate::structs::list_query::{ListQuery, ListResponse};\n");
@@ -92,11 +98,7 @@ fn build_resource_file(r: &ResourceState) -> String {
         if r.verbs.contains_key(&Verb::Update) {
             imports.push(format!("validate_{table}_patch", table = table));
         }
-        out.push_str(&format!(
-            "use crate::structs::generated::validators::{table}::{{{names}}};\n",
-            table = table,
-            names = imports.join(", "),
-        ));
+        out.push_str(&format!("use crate::structs::generated::validators::{table}::{{{names}}};\n", table = table, names = imports.join(", "),));
     }
     out.push('\n');
 
@@ -121,7 +123,7 @@ fn handler_for_verb(verb: Verb, type_name: &str, table: &str, validators_enabled
 
 fn list_handler(type_name: &str) -> String {
     format!(
-        "pub async fn list(\n\x20   State(ctx): State<Ctx>,\n\x20   params: ListQuery,\n) -> Result<Json<ListResponse<{ty}Public>>, MeltDown> {{\n\x20   let result = flow::list::run(&ctx, \
+        "pub async fn list(\n\x20   Extension(ctx): Extension<Ctx>,\n\x20   params: ListQuery,\n) -> Result<Json<ListResponse<{ty}Public>>, MeltDown> {{\n\x20   let result = flow::list::run(&ctx, \
          params).await?;\n\x20   Ok(Json(result))\n}}\n",
         ty = type_name,
     )
@@ -129,7 +131,7 @@ fn list_handler(type_name: &str) -> String {
 
 fn get_handler(type_name: &str) -> String {
     format!(
-        "pub async fn get_one(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n\x20   let result = flow::get::run(&ctx, id).await?;\n\x20   \
+        "pub async fn get_one(\n\x20   Extension(ctx): Extension<Ctx>,\n\x20   Path(id): Path<i64>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n\x20   let result = flow::get::run(&ctx, id).await?;\n\x20   \
          Ok(Json(result))\n}}\n",
         ty = type_name,
     )
@@ -142,7 +144,7 @@ fn create_handler(type_name: &str, table: &str, validators_enabled: bool) -> Str
         String::new()
     };
     format!(
-        "pub async fn create(\n\x20   State(ctx): State<Ctx>,\n\x20   Json(input): Json<{ty}Insertable>,\n) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n{validator}\x20   let result = flow::create::run(&ctx, \
+        "pub async fn create(\n\x20   Extension(ctx): Extension<Ctx>,\n\x20   Json(input): Json<{ty}Insertable>,\n) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n{validator}\x20   let result = flow::create::run(&ctx, \
          input).await?;\n\x20   Ok((StatusCode::CREATED, Json(result)))\n}}\n",
         ty = type_name,
         validator = validator_call,
@@ -156,7 +158,7 @@ fn update_handler(type_name: &str, table: &str, validators_enabled: bool) -> Str
         String::new()
     };
     format!(
-        "pub async fn update(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n\x20   Json(patch): Json<{ty}Patch>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n{validator}\x20   let result = \
+        "pub async fn update(\n\x20   Extension(ctx): Extension<Ctx>,\n\x20   Path(id): Path<i64>,\n\x20   Json(patch): Json<{ty}Patch>,\n) -> Result<Json<{ty}Public>, MeltDown> {{\n{validator}\x20   let result = \
          flow::update::run(&ctx, id, patch).await?;\n\x20   Ok(Json(result))\n}}\n",
         ty = type_name,
         validator = validator_call,
@@ -165,7 +167,7 @@ fn update_handler(type_name: &str, table: &str, validators_enabled: bool) -> Str
 
 fn delete_handler() -> String {
     String::from(
-        "pub async fn delete_one(\n\x20   State(ctx): State<Ctx>,\n\x20   Path(id): Path<i64>,\n) -> Result<StatusCode, MeltDown> {\n\x20   flow::delete::run(&ctx, id).await?;\n\x20   Ok(StatusCode::NO_CONTENT)\n}\n",
+        "pub async fn delete_one(\n\x20   Extension(ctx): Extension<Ctx>,\n\x20   Path(id): Path<i64>,\n) -> Result<StatusCode, MeltDown> {\n\x20   flow::delete::run(&ctx, id).await?;\n\x20   Ok(StatusCode::NO_CONTENT)\n}\n",
     )
 }
 
@@ -212,7 +214,7 @@ fn build_method_chain(entries: &[(bool, &str, &str)]) -> Option<String> {
     Some(acc)
 }
 
-fn build_barrel(resources: &[ResourceState]) -> String {
+fn build_mod_rs(resources: &[ResourceState]) -> String {
     let mut names: Vec<&str> = resources.iter().map(|r| r.name.as_str()).collect();
     names.sort();
 
@@ -220,14 +222,24 @@ fn build_barrel(resources: &[ResourceState]) -> String {
     for name in &names {
         out.push_str(&format!("pub mod {};\n", name));
     }
+    out.push_str("pub mod router;\n");
     out.push('\n');
+    out.push_str("pub use router::router;\n");
+    out
+}
+
+fn build_router_rs(resources: &[ResourceState]) -> String {
+    let mut names: Vec<&str> = resources.iter().map(|r| r.name.as_str()).collect();
+    names.sort();
+
+    let mut out = String::new();
     out.push_str("use axum::Router;\n");
     out.push_str("use crate::Ctx;\n");
     out.push('\n');
     out.push_str("pub fn router() -> Router<Ctx> {\n");
     out.push_str("    let mut router = Router::new();\n");
     for name in &names {
-        out.push_str(&format!("    router = router.nest(\"/{name}\", {name}::router());\n", name = name,));
+        out.push_str(&format!("    router = router.nest(\"/{name}\", super::{name}::router());\n", name = name,));
     }
     out.push_str("    router\n");
     out.push_str("}\n");
@@ -346,10 +358,13 @@ mod tests {
 
         let resource_file = root.join("src/transport/http/generated/users.rs");
         let barrel = root.join("src/transport/http/generated/mod.rs");
+        let router_file = root.join("src/transport/http/generated/router.rs");
         assert!(resource_file.exists(), "per-resource file missing");
         assert!(barrel.exists(), "barrel mod.rs missing");
+        assert!(router_file.exists(), "router.rs missing");
         assert!(report.written.contains(&resource_file));
         assert!(report.written.contains(&barrel));
+        assert!(report.written.contains(&router_file));
 
         let body = fs::read_to_string(&resource_file).expect("read resource file");
         assert!(body.contains("pub async fn list("), "list handler missing");
@@ -363,7 +378,12 @@ mod tests {
 
         let barrel_body = fs::read_to_string(&barrel).expect("read barrel");
         assert!(barrel_body.contains("pub mod users;"), "barrel module missing");
-        assert!(barrel_body.contains(".nest(\"/users\", users::router())"), "barrel nest missing",);
+        assert!(barrel_body.contains("pub mod router;"), "barrel router module missing");
+        assert!(barrel_body.contains("pub use router::router;"), "barrel re-export missing");
+
+        let router_body = fs::read_to_string(&router_file).expect("read router.rs");
+        assert!(router_body.contains("pub fn router() -> Router<Ctx>"), "top router fn missing");
+        assert!(router_body.contains(".nest(\"/users\", super::users::router())"), "nest missing in router.rs",);
     }
 
     #[test]

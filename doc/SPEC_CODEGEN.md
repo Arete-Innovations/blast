@@ -183,7 +183,9 @@ src/transport/http/generated/mod.rs
 src/transport/ws/generated/mod.rs
 ```
 
-`structs`, `models`, `routines`, `flows`, `http_routes`, `ws_topics` are emitted by **separate** codegen passes (`src/codegen/{structs/, models/, routines/, flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`. Pipeline order: `schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → validators → components → pages → theme → icons → env_example → governor_plugin`.
+`structs`, `models`, `routines`, `flows`, `http_routes`, `ws_topics` are emitted by **separate** codegen passes (`src/codegen/{structs/, models/, routines/, flows.rs, http_routes.rs, ws_topics.rs}`), each invoked as its own step in `blast gen all`. Pipeline order: `schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → validators → components → pages → frontend_router → env_example → governor_plugin`.
+
+Each pass that emits per-resource frontend output filters by the resource's `gen_level` (Struct < Model < Route < Types < Composables < Components < Pages). `components` requires `>= Components`, `pages` and `frontend_router` require `>= Pages`. A resource defaulting to `Composables` will skip components/pages/router emission silently. Theme tokens and icons are **not** codegen — they ship as user-owned files (`frontend/src/{styles/tokens.css, plugins/primevue.ts, icons.ts}`).
 
 ### Enum output (Postgres `CREATE TYPE` → Rust enum + Diesel impls)
 
@@ -279,33 +281,17 @@ frontend/src/generated/validators/<r>.ts
 
 `gen_level` filter: `r.gen_level >= GenLevel::Types`. Validators are useful as soon as types exist; doesn't wait for components/pages.
 
-### Theme codegen output
+### Theme + icons (NOT codegen)
 
-Driven by `ThemeConfig` in `app.ron`. Emitted by `src/codegen/theme/tokens.rs` and `src/codegen/theme/primevue.rs`. Both carry an `app.ron` blake3 hash-marker in their header — stale detection fires on `cargo check` like any other generated file.
-
-```
-frontend/src/generated/styles/tokens.css
-  - CSS custom-property token file (colours, spacing, radii, etc.)
-  - Source of truth for all design tokens; scoped component styles reference these vars
-
-frontend/src/generated/plugins/primevue.ts
-  - PrimeVue `definePreset()` call parameterised from ThemeConfig
-  - Registered in main.ts; DO NOT import from user-owned code
-```
-
-These files are **state-driven codegen**, not static templates.
-
-### Icons codegen output
-
-Driven by `IconConfig` in `app.ron`. Emitted by `src/codegen/icons/emit.rs`. Carries an `app.ron` blake3 hash-marker.
+Theme tokens, PrimeVue preset, and icon registry are **user-owned** files shipped pre-populated by the canonical template:
 
 ```
-frontend/src/generated/icons.ts
-  - Typed icon-name union + icon-set export
-  - Imported by components; DO NOT extend by hand
+frontend/src/styles/tokens.css     — CSS custom properties (--app-fs-*, --app-space-*, etc.). Edit freely.
+frontend/src/plugins/primevue.ts   — PrimeVue `definePreset()` call. Edit freely.
+frontend/src/icons.ts              — IC.<name> registry mapping to PrimeIcons class strings. Edit freely.
 ```
 
-Also **state-driven codegen**.
+Codegen does NOT touch these. Component/page codegen emits `var(--app-*)` and `IC.<name>` references on the contract that the names exist — values stay in the user's hands.
 
 ### Admin shell route output
 
@@ -463,10 +449,8 @@ When the user renames a resource (e.g. `User` → `Account`) via the TUI wizard,
 ## Regeneration Behavior
 
 `blast gen <target>`:
-- `blast gen table [name]` — TUI migration wizard; emits a diesel migration (up.sql / down.sql) in `migrations/`. Does not apply; user runs `blast migrate` after.
-- `blast gen migration [--custom] <name>` — empty migration scaffold (`--custom` = hand-written SQL: views/triggers/partial indexes/etc.)
+- `blast migration` — chained ratatui wizard (`src/wizards/new_table/`); writes `migrations/<ts>_create_<table>/up.sql + down.sql`, writes `storage/blast/state/resources/<table>.ron`, then auto-chains `blast migrate` → `blast gen schema` → `blast gen all`. One command, working CRUD on the other side. (No standalone `gen table` / `gen resource` / `gen migration --custom` — all collapsed into this.)
 - `blast gen schema` — runs `diesel print-schema`; writes `src/database/schema.rs`
-- `blast gen resource [name]` — TUI wizard; writes/updates `storage/blast/state/resources/<name>.ron`. Does NOT run codegen.
 - `blast gen structs` — reads schema.rs + resource state files; writes `src/structs/generated/`
 - `blast gen models` — reads schema.rs + resource state files; writes `src/models/generated/` (legacy generator slated for v2 rewrite)
 - `blast gen flows` — reads resource state files; writes `src/flows/generated/`
@@ -474,12 +458,10 @@ When the user renames a resource (e.g. `User` → `Account`) via the TUI wizard,
 - `blast gen api [<resource>]` — reads schema.rs + resource state files; writes `frontend/src/generated/api/<r>.ts` (typed fetch wrappers, `listX` returns `{ data, error, total, total_pages, page, page_size }`)
 - `blast gen composables [<resource>]` — reads schema.rs + resource state files; writes `frontend/src/generated/composables/<r>.ts` (filter `gen_level >= GenLevel::Composables`)
 - `blast gen components [<resource>]` — reads resource state files; writes `frontend/src/components/generated/forms/<r>/{CreateForm,EditForm}.vue` consuming the composable mutation factories
-- `blast gen theme` — reads `app.ron` (`ThemeConfig`); writes `frontend/src/generated/styles/tokens.css` + `frontend/src/generated/plugins/primevue.ts` (hash-marker keyed off `app.ron`)
-- `blast gen icons` — reads `app.ron` (`IconConfig`); writes `frontend/src/generated/icons.ts` (hash-marker keyed off `app.ron`)
 - `blast gen env-example` — reads app.ron env spec; writes `.env.example`
 - `blast gen governor-plugin` — reads app.ron fe_lint section; writes `frontend/scripts/governor-plugin.js` + `.rule_violations_whitelist`
 - `blast gen test [--flow|--route]` — reads resource state files; scaffolds `*.test.rs` per flow + per route; idempotent on existing files
-- `blast gen all` — full pipeline; step order: schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → theme → icons → env_example → governor_plugin. See `SPEC_BLAST_COMMANDS.md` for the exact step list. Vue components and CRUD pages are opt-in via `blast gen components` / `blast gen pages`.
+- `blast gen all` — full pipeline; step order: schema → enums → structs → models → routines → flows → http_routes → frontend_types → frontend_api → composables → validators → components → pages → frontend_router → env_example → governor_plugin. See `SPEC_BLAST_COMMANDS.md` for the exact step list. Components, pages, and the FE router table are gated by each resource's `gen_level` (`>= Components` / `>= Pages`); resources at lower levels are skipped without error. Theme/icons are NOT codegen — they ship as user-owned files (`frontend/src/{styles/tokens.css, plugins/primevue.ts, icons.ts}`).
 
 **Hard order:** `schema.rs` must exist before resource state can be validated (column references checked). Resource state must exist before structs/models/flows can generate. `blast gen all` enforces this implicitly via step ordering; individual targets fail loudly if their prerequisites are missing.
 
@@ -546,7 +528,7 @@ Blast reads: `storage/blast/state/*.ron` + `resources/*.ron` + `schema.rs` (Dies
 
 ## TUI-Driven Generation
 
-`blast gen` with no args launches TUI (dialoguer). User picks what to generate. For `blast gen resource [name]` specifically, TUI walks through field variants, flow verbs, auth, and WS events — producing a `storage/blast/state/resources/<name>.ron` file. The wizard calls the same command core `run` fn as the CLI; it only resolves args, never executes directly. See `SPEC_BLAST_COMMANDS.md`.
+`blast gen` with no args launches a ratatui list picker over the `GenCmd` variants. User picks, dispatch flows through `commands::execute`. For new resources, `blast migration` is the entry point: it produces both the SQL migration and the matching RON state file in one chained wizard, then runs the full codegen pipeline. See `SPEC_BLAST_COMMANDS.md`.
 
 ## Anti-Patterns (for Blast maintainers)
 
@@ -560,7 +542,7 @@ Blast reads: `storage/blast/state/*.ron` + `resources/*.ron` + `schema.rs` (Dies
 - Timestamps, random seeds, or env-var reads inside generator logic.
 - Reaching for the old string-constant emitter modules (`fe_runtime.rs`, `fe_runtime_composables.rs`, `fe_runtime_extras.rs`, `frontend_scaffold.rs`) — those ~1750 LOC of embedded string constants are gone. Static FE framework files live in `blast/templates/canonical/frontend/` and are picked up by `include_dir!()`.
 - Writing `frontend/src/composables/bus.ts` from a codegen pass — `bus.ts` is a static vendored file, not codegen. Per-resource composables that emit on the bus are codegen'd; `bus.ts` itself is not.
-- Treating `frontend/src/generated/styles/tokens.css`, `frontend/src/generated/plugins/primevue.ts`, or `frontend/src/generated/icons.ts` as static templates — all three are state-driven codegen keyed off `app.ron` and must carry hash-markers.
+- Touching `frontend/src/styles/tokens.css`, `frontend/src/plugins/primevue.ts`, or `frontend/src/icons.ts` from any codegen pass — those three are user-owned files shipped pre-populated by the canonical template. Codegen only ever emits `var(--app-*)` and `IC.<name>` references against them.
 
 ## Related Specs
 

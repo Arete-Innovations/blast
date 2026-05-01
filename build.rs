@@ -248,7 +248,7 @@ fn main() {
     }
 }
 
-const TEMPLATE_ARTIFACT_DIRS: &[&str] = &["target", "node_modules", "dist", ".vite", ".turbo", ".next", ".git"];
+const TEMPLATE_ARTIFACT_DIRS: &[&str] = &["target", "node_modules", "dist", ".vite", ".turbo", ".next", ".git", "site", "pkg", ".cargo-leptos"];
 
 fn emit_rerun_for_tree(root: &Path) {
     println!("cargo:rerun-if-changed={}", root.display());

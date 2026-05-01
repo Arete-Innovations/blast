@@ -28,14 +28,9 @@ pub trait SinkExt: Sink {
     fn debug(&mut self, msg: impl Into<String>) {
         self.emit(SinkEvent::Debug(msg.into()));
     }
-
-    fn diagnostic(&mut self, kind: impl Into<String>, fields: Vec<(String, String)>) {
-        self.emit(SinkEvent::StructuredDiagnostic { kind: kind.into(), fields });
-    }
 }
 
-impl<T: Sink + ?Sized> SinkExt for T {
-}
+impl<T: Sink + ?Sized> SinkExt for T {}
 
 pub trait ProgressExt: Progress {
     fn step_start(&mut self, label: impl Into<String>) {
@@ -58,5 +53,4 @@ pub trait ProgressExt: Progress {
     }
 }
 
-impl<T: Progress + ?Sized> ProgressExt for T {
-}
+impl<T: Progress + ?Sized> ProgressExt for T {}

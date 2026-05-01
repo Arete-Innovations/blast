@@ -19,22 +19,13 @@ pub struct BinCheck {
     pub required: bool,
 }
 
-/// The canonical set of pre-flight bins. Hard-fails on missing
-/// `cargo`/`npm`/`node`/`psql`/`zellij`. Warns if `git` is absent.
+/// Canonical pre-flight bins. Hard-fails on missing `cargo`/`psql`/`zellij`.
+/// Warns if `git` or `cargo-leptos` is absent (latter required for FE
+/// development but not at scaffold time).
 const CHECKS: &[BinCheck] = &[
     BinCheck {
         name: "cargo",
         install_hint: "rustup: https://rustup.rs",
-        required: true,
-    },
-    BinCheck {
-        name: "npm",
-        install_hint: "install Node.js (which ships npm) — e.g. nvm, fnm, or your distro's nodejs package",
-        required: true,
-    },
-    BinCheck {
-        name: "node",
-        install_hint: "install Node.js — e.g. nvm, fnm, or your distro's nodejs package",
         required: true,
     },
     BinCheck {
@@ -50,6 +41,11 @@ const CHECKS: &[BinCheck] = &[
     BinCheck {
         name: "git",
         install_hint: "install git — recommended for first-commit sanity, not strictly required",
+        required: false,
+    },
+    BinCheck {
+        name: "cargo-leptos",
+        install_hint: "`cargo install cargo-leptos --locked` — required for FE dev/build (not blocking scaffold)",
         required: false,
     },
 ];

@@ -96,34 +96,16 @@ pub const FILTER_SUFFIX: &str = "Filter";
 /// shape). Not a `FieldVariant`; derived from `ListOptions.sortable_columns`.
 pub const SORT_SUFFIX: &str = "Sort";
 
-/// Final emitted struct name for a given variant, e.g.
-/// (`users`, `Insertable`) -> `UserInsertable`.
-pub fn struct_name_for_variant(table: &str, variant: FieldVariant) -> String {
-    format!("{}{}", type_stem(table), variant_suffix(variant))
-}
-
 /// Final emitted struct name for a given variant, honoring the
 /// resource's optional `singular_override`.
 pub fn struct_name_for_variant_resource(resource: &ResourceState, variant: FieldVariant) -> String {
     format!("{}{}", type_stem_for_resource(resource), variant_suffix(variant))
 }
 
-/// Final emitted struct name for the filter projection, e.g.
-/// `users` -> `UserFilter`.
-pub fn filter_struct_name(table: &str) -> String {
-    format!("{}{}", type_stem(table), FILTER_SUFFIX)
-}
-
 /// Final emitted struct name for the filter projection, honoring
 /// `singular_override`.
 pub fn filter_struct_name_for_resource(resource: &ResourceState) -> String {
     format!("{}{}", type_stem_for_resource(resource), FILTER_SUFFIX)
-}
-
-/// Final emitted enum name for the sort projection, e.g.
-/// `users` -> `UserSort`.
-pub fn sort_enum_name(table: &str) -> String {
-    format!("{}{}", type_stem(table), SORT_SUFFIX)
 }
 
 /// Final emitted enum name for the sort projection, honoring
@@ -214,15 +196,6 @@ mod tests {
     }
 
     #[test]
-    fn struct_name_for_variant_drops_suffix_for_db() {
-        assert_eq!(struct_name_for_variant("users", FieldVariant::Db), "User");
-        assert_eq!(struct_name_for_variant("users", FieldVariant::Insertable), "UserInsertable");
-        assert_eq!(struct_name_for_variant("users", FieldVariant::Patch), "UserPatch");
-        assert_eq!(struct_name_for_variant("users", FieldVariant::Public), "UserPublic");
-        assert_eq!(struct_name_for_variant("users", FieldVariant::Admin), "UserAdmin");
-    }
-
-    #[test]
     fn struct_name_for_variant_resource_honors_override() {
         let mut resource = ResourceState::new(ResourceName::new("data"));
         resource.singular_override = Some("datum".to_string());
@@ -231,22 +204,10 @@ mod tests {
     }
 
     #[test]
-    fn filter_struct_name_uses_filter_suffix() {
-        assert_eq!(filter_struct_name("users"), "UserFilter");
-        assert_eq!(filter_struct_name("user_accounts"), "UserAccountFilter");
-    }
-
-    #[test]
     fn filter_struct_name_for_resource_honors_override() {
         let mut resource = ResourceState::new(ResourceName::new("data"));
         resource.singular_override = Some("datum".to_string());
         assert_eq!(filter_struct_name_for_resource(&resource), "DatumFilter");
-    }
-
-    #[test]
-    fn sort_enum_name_uses_sort_suffix() {
-        assert_eq!(sort_enum_name("users"), "UserSort");
-        assert_eq!(sort_enum_name("user_accounts"), "UserAccountSort");
     }
 
     #[test]

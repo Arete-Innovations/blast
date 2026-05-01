@@ -1,6 +1,5 @@
 pub mod connection;
 pub mod migration_skeleton;
-pub mod migration_wizard;
 pub mod migrations;
 pub mod schema_gen;
 pub mod seeds;

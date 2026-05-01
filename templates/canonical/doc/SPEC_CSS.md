@@ -1,299 +1,198 @@
 # SPEC_CSS
 
-Monolithic design-token file + scoped SFC styles. No Tailwind. No utility-class layer. Build-time lint enforces the rules.
+Monolithic SCSS design-token file + per-component scoped styles via `stylance`. Compiled by `cargo-leptos` (using `grass`). No node, no PostCSS, no Tailwind.
 
 ## Rules (Law)
 
-1. **One monolithic `tokens.css`** = single source of truth for all design values.
-2. **Semantic token names.** `--app-color`, `--app-accent`, `--app-warning`, `--app-fs-md`, `--app-space-lg`. NEVER `--blue`, `--red`, `--green`, `--16px`, etc.
-3. **No inline colors** anywhere in SFCs (`.vue`), TypeScript, or CSS. Use `var(--app-*)` or `var(--p-*)`.
+1. **One monolithic `style/tokens.scss`** = single source of truth for all design values.
+2. **Semantic token names.** `--app-color-brand`, `--app-color-danger`, `--app-fs-md`, `--app-space-lg`. NEVER `--blue`, `--red`, `--16px`.
+3. **No inline colors** anywhere in Leptos components or scss. Use `var(--app-*)` or `var(--thaw-*)`.
 4. **No `px` units** outside niches:
-   - `0.0625rem` allowed for hairline borders (1px-equivalent in rem)
-   - `@media` query breakpoints (viewport-pinned, not scaled)
-   - Three specific files exempt: `src/plugins/primevue.ts`, `src/styles/tokens.css`, `src/styles/base.css`
+   - `0.0625rem` allowed for hairline borders (1px-equivalent in rem).
+   - `@media` query breakpoints (viewport-pinned, not scaled).
+   - Three exempt files: `style/tokens.scss`, `style/base.scss`, the thaw theme override file.
 5. **`rem` + responsive** (`clamp()`, `vw`) for everything else. Root scales with viewport.
-6. **Scoped styles with `@layer app`.** No global styles outside `base.css` and `tokens.css`.
-7. **Scoped `<style>` blocks get the same hammer as global CSS.** All color/px/rem rules apply identically inside per-SFC `<style scoped>`. There is no "I'm in a scoped block so I can hardcode" exception. Inline `style=` and `:style=` directives also subject to the same rules — actually banned outright (`InlineStyle` rule), but if they sneak through they still fail color/px checks.
-8. **Enforcement via `blast check` / Governor** (see `blast/doc/SPEC_GOVERNOR.md`). Fail the build on violation. Lints both `generated/` and all user-authored files in `src/`.
+6. **Per-component styles via stylance** (`.module.scss` files with hashed classnames). No global styles outside `tokens.scss` / `base.scss`.
+7. **OKLCH only** — modern browsers, no fallbacks.
 
-## Root Font Scaling
+## File layout
 
-```css
+```
+style/
+├── main.scss      cargo-leptos entry; @use's tokens + base
+├── tokens.scss    design tokens (--app-*) — single source of truth
+└── base.scss      reset + root font scaling + body defaults
+```
 
+Per-component scoped styles live alongside their `.rs` files:
+
+```
+src/transport/leptos/components/
+├── page_shell.rs
+├── page_shell.module.scss   <-- stylance hashes the classnames
+└── error_banner.module.scss
+```
+
+Stylance scans for `.module.scss` files at build time and emits a generated module per source `.rs` exposing typed constants for each class (e.g. `style::page_shell::CARD`).
+
+## Theme structure
+
+`tokens.scss` is split into three sections:
+
+1. **Palette knobs** (~9 vars) at the top of `:root`:
+   - `--app-brand-hue`, `--app-brand-chroma`
+   - `--app-neutral-hue`, `--app-neutral-chroma`
+   - `--app-status-chroma`, `--app-info-hue`, `--app-success-hue`, `--app-warning-hue`, `--app-danger-hue`
+
+2. **Light block** — `:root { ... }` declares every `--app-*` token. Color ramps via OKLCH.
+
+3. **Dark block** — `@media (prefers-color-scheme: dark) { :root { ... } }` re-declares **every** token. Colors flip; spacing/radius/font/motion/z-index keep identical values.
+
+Default behavior follows OS preference. A dark-mode toggle is supported via thaw's `ConfigProvider` (decision #26: OS preference + manual toggle).
+
+## Token categories
+
+```scss
+:root {
+    // ── typography (rem-scaled) ──────────────────────
+    --app-fs-2xs: 0.75rem;
+    --app-fs-xs:  0.875rem;
+    --app-fs-md:  1rem;
+    --app-fs-lg:  1.125rem;
+    --app-fs-xl:  1.25rem;
+
+    // ── responsive headings ──────────────────────────
+    --app-fs-h1-resp: clamp(1.5rem, 3vw, 2.25rem);
+    --app-fs-h2-resp: clamp(1.25rem, 2.5vw, 1.875rem);
+
+    // ── spacing ──────────────────────────────────────
+    --app-space-xs: 0.25rem;
+    --app-space-sm: 0.5rem;
+    --app-space-md: 0.75rem;
+    --app-space-lg: 1rem;
+    --app-space-xl: 1.5rem;
+
+    // ── radius ───────────────────────────────────────
+    --app-radius-sm: 0.25rem;
+    --app-radius-md: 0.5rem;
+
+    // ── color (OKLCH) ────────────────────────────────
+    --app-color-bg: oklch(0.98 0 0);
+    --app-color-fg: oklch(0.18 0 0);
+    --app-color-brand: oklch(0.55 var(--app-brand-chroma) var(--app-brand-hue));
+    --app-color-danger: oklch(0.55 0.18 25);
+    --app-color-success: oklch(0.55 0.16 145);
+
+    // ── z-index ──────────────────────────────────────
+    --app-z-modal: 80;
+    --app-z-toast: 120;
+}
+```
+
+## Root font scaling
+
+```scss
 html {
     font-size: clamp(14px, calc(100vw / 120), 32px);
 }
 ```
 
-Root font scales 14px → 32px based on viewport width. Everything downstream in `rem` auto-scales. No media queries needed for responsive typography or spacing.
+Root font scales 14px → 32px based on viewport width. Everything downstream in `rem` auto-scales. No media queries needed for responsive typography.
 
-On a 4K monitor at 100% browser zoom, root hits 32px; UI reads comfortably without 200% zoom. On mobile, root clamps to 14px. No breakpoint gymnastics.
+## Per-component pattern (stylance)
 
-## Token Categories
+```rust
+use stylance::import_style;
 
-```css
+import_style!(style, "page_shell.module.scss");
 
-@layer app {
-    :root {
-        
-        --app-fs-2xs: 0.75rem;
-        --app-fs-xs:  0.875rem;
-        --app-fs-sm:  0.9375rem;
-        --app-fs-md:  1rem;
-        --app-fs-lg:  1.125rem;
-        --app-fs-xl:  1.25rem;
-        --app-fs-2xl: 1.5rem;
-        --app-fs-3xl: 1.875rem;
-        --app-fs-4xl: 2.25rem;
-        --app-fs-5xl: 3rem;
-
-        
-        --app-fs-body-resp:    clamp(0.9375rem, 1.5vw, 1.125rem);
-        --app-fs-h1-resp:      clamp(1.5rem, 3vw, 2.25rem);
-        --app-fs-h2-resp:      clamp(1.25rem, 2.5vw, 1.875rem);
-        --app-fs-display-lg:   clamp(2rem, 5vw, 3.5rem);
-
-        
-        --app-space-0:   0;
-        --app-space-xs:  0.25rem;
-        --app-space-sm:  0.5rem;
-        --app-space-md:  0.75rem;
-        --app-space-lg:  1rem;
-        --app-space-xl:  1.5rem;
-        --app-space-2xl: 2rem;
-        --app-space-3xl: 3rem;
-        --app-space-4xl: 4rem;
-        --app-space-5xl: 5rem;
-
-        
-        --app-icon-xs: 0.875rem;
-        --app-icon-sm: 1rem;
-        --app-icon-md: 1.25rem;
-        --app-icon-lg: 1.5rem;
-        --app-icon-xl: 2rem;
-
-        
-        --app-container-xs: 26rem;
-        --app-container-sm: 40rem;
-        --app-container-md: 56rem;
-        --app-container-lg: 72rem;
-        --app-container-xl: 90rem;
-
-        
-        --app-pad-section-sm: clamp(2rem, 5vw, 4rem);
-        --app-pad-section-md: clamp(4rem, 10vw, 7.5rem);
-
-        
-        --app-z-content:   1;
-        --app-z-nav:       10;
-        --app-z-dropdown:  50;
-        --app-z-modal:     80;
-        --app-z-overlay:   100;
-        --app-z-toast:     120;
-
-        
-        --app-transition-fast:   120ms ease;
-        --app-transition-normal: 200ms ease;
-        --app-transition-slow:   320ms ease;
-
-        
-        --app-radius-sm: 0.25rem;
-        --app-radius-md: 0.5rem;
-        --app-radius-lg: 0.75rem;
-        --app-radius-xl: 1rem;
-        --app-radius-full: 9999px;
-
-        
-        
+#[component]
+pub fn PageShell(layout: PageLayout, children: Children) -> impl IntoView {
+    view! {
+        <main class=style::SHELL data-layout=layout.as_str()>
+            {children()}
+        </main>
     }
 }
 ```
 
-Edit this file directly — it's the source of truth. Never inline a value in an SFC.
+```scss
+// page_shell.module.scss
+.shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-md);
 
-## Color Tokens via PrimeVue
-
-Colors live in the PrimeVue preset (`src/plugins/primevue.ts`). That file is the only location allowed to contain hex values; Governor exempts it explicitly. App tokens map onto PrimeVue tokens:
-
-```ts
-
-export const PRESET_SEMANTIC = definePreset(Aura, {
-    semantic: {
-        primary: {
-            50:  '#faf5ff',
-            500: '#7c3aed',
-            900: '#4c1d95',
-        },
-        colorScheme: {
-            light: {
-                surface: {
-                    0:   '#ffffff',
-                    100: '#f5f5f5',
-                },
-                text: { color: '{surface.950}' },
-                content: { background: '{surface.0}', borderColor: '{surface.200}' },
-            },
-            dark: {  },
-        },
-    },
-});
-```
-
-SFCs reference colors as `var(--p-text-color)`, `var(--p-content-border-color)`, `var(--p-primary-color)` — PrimeVue-emitted CSS variables. Since PrimeVue tokens flow from the preset, changing the preset swaps the whole palette.
-
-For colors NOT provided by PrimeVue (app-specific e.g. per-platform chart colors), define `--app-color-*` tokens directly in `tokens.css`.
-
-## CSS Layer Order
-
-```ts
-
-import PrimeVue from 'primevue/config';
-app.use(PrimeVue, {
-    theme: {
-        preset: PRESET_SEMANTIC,
-        options: {
-            cssLayer: { name: 'primevue', order: 'reset, primevue, app' },
-        },
-    },
-});
-```
-
-App layer comes last → app styles override PrimeVue's. `reset` is a minimal CSS reset first; `primevue` is PrimeVue internals; `app` is Catablast SFC + token styles.
-
-## SFC Style Pattern
-
-```vue
-<script setup lang="ts">
-defineProps<{ order: OrderPublic }>();
-</script>
-
-<template>
-    <article class="card">
-        <header>
-            <h3 class="title">{{ order.display_name }}</h3>
-            <span class="status" :data-status="order.status">{{ order.status }}</span>
-        </header>
-        <footer>
-            <time>{{ formatRelative(order.updated_at) }}</time>
-        </footer>
-    </article>
-</template>
-
-<style scoped>
-@layer app {
-    .card {
-        display: flex;
-        flex-direction: column;
-        gap: var(--app-space-md);
+    &[data-layout="cards"] {
         padding: var(--app-space-xl);
-        border: 0.0625rem solid var(--p-content-border-color);
-        border-radius: var(--app-radius-md);
-        background: var(--p-content-background);
     }
 
-    .title {
-        font-size: var(--app-fs-h2-resp);
-        color: var(--p-text-color);
+    &[data-layout="bleed"] {
+        padding: 0;
     }
-
-    .status {
-        font-size: var(--app-fs-sm);
-        color: var(--p-text-muted-color);
-    }
-
-    .status[data-status="failed"] {
-        color: var(--app-color-danger);
-    }
-</style>
-```
-
-All values from tokens. Semantic class names (`.card`, `.status`), not color-named (`.red-card`).
-
-## Responsive
-
-Use `clamp()` + `vw` tokens instead of media queries where possible:
-
-```css
-
-font-size: var(--app-fs-h1-resp);    
-padding: var(--app-pad-section-md);  
-```
-
-Media queries allowed but rare:
-
-```css
-
-@media (min-width: 768px) {
-    .grid { grid-template-columns: 1fr 1fr; }
 }
 ```
 
-## Exempt Files
+Stylance hashes `.shell` to `.shell_<hash>` so component-local class names never collide globally.
 
-Three files are allowed to violate the rules (and lint whitelists them):
+## Thaw integration
 
-- `src/plugins/primevue.ts` — PrimeVue preset, only file with hex colors
-- `src/styles/tokens.css` — defines raw rem values
-- `src/styles/base.css` — defines root font-size clamp
+Thaw provides `--thaw-*` CSS custom properties (e.g. `--thaw-color-brand-foreground-1`). Catablast's tokens map onto thaw's via the thaw `Theme` provider in `<App>`:
 
-A `.rule_violations_whitelist` file allows additional per-pattern exceptions (e.g. schema.org URLs, SVG xmlns constants) — configured in `storage/blast/state/app.ron` under `fe_lint`.
-
-## Anti-Patterns
-
-**Inline style attribute:**
-```vue
-
-<div :style="{ padding: '16px', color: '#333' }">
+```rust
+let theme = create_signal(Theme::dark());
+view! {
+    <ConfigProvider theme>
+        <Routes ...>
+    </ConfigProvider>
+}
 ```
 
-Banned entirely. Use classes.
+The thaw preset can be customized to remap `--thaw-*` → `var(--app-*)` so swapping the preset swaps the whole palette. Thaw components consume the remapped tokens transparently.
 
-**Hex in SFC:**
-```css
+## Anti-patterns
 
-.button { background: #7c3aed; }
+**Inline `style=` attribute:**
+```rust
+<div style=format!("padding: 16px;")> // BANNED
 ```
+Use a class + module scss with `var(--app-space-lg)`.
 
-Use token.
+**Hex outside theme override:**
+```scss
+.button { background: #7c3aed; } // BANNED
+```
+Use a token.
 
 **Px outside niches:**
-```css
-
-.box { margin: 16px; }
+```scss
+.box { margin: 16px; } // BANNED
 ```
-
 Use `var(--app-space-lg)`.
 
-**Raw rem outside tokens.css:**
-```css
-
-.box { padding: 1rem; }
+**Raw rem outside `tokens.scss`:**
+```scss
+.box { padding: 1rem; } // BANNED
 ```
+Use `var(--app-space-lg)`.
 
-Even rem is disallowed outside `tokens.css`. Use `var(--app-space-lg)`. Governor catches this.
-
-**Color-named classes:**
-```css
-
-.red-text { color: red; }
+**Tailwind / utility class sprinkling:**
+```rust
+<div class="p-4 m-2 text-sm"> // BANNED
 ```
+Define a semantic class in `.module.scss` and style with tokens.
 
-Use semantic names: `.error-text { color: var(--app-color-danger); }`.
+## Lint enforcement (planned)
 
-**Utility class sprinkling:**
-```vue
+A `LEPTOS:*` rule family in `build.rs` will enforce:
+- `LEPTOS:1` — no inline `style=` attributes in `view!` macros
+- `LEPTOS:2` — no hex / rgb / hsl outside `style/` dir
+- `LEPTOS:3` — no `px` outside niches
+- `LEPTOS:4` — every page component wraps top-level view in `<PageShell layout=...>`
 
-<div class="p-4 m-2 text-sm text-gray-700">
-```
+Currently scaffolded in phase 4 but not active.
 
-Banned pattern. Define a semantic class and style it with tokens.
+## Related specs
 
-## Seeded From
-
-The pattern is modeled after `/home/tragdate/codumeu/upnumbers/frontend/` — specifically `src/styles/tokens.css`, `src/styles/base.css`, `src/plugins/primevue.ts`. Blast scaffolds new apps with these seed files adapted to Catablast's naming.
-
-## Related Specs
-
-- `SPEC_FRONTEND.md` — Vue/TS/Vite integration
-- `blast/doc/SPEC_GOVERNOR.md` — enforcement rules
-- `SPEC_CONFIG.md` — `app.ron` fe_lint section for rule configuration
+- `SPEC_LEPTOS.md` — Leptos UI integration
+- `blast/doc/SPEC_GOVERNOR.md` — DELETED. Replaced by `LEPTOS:*` family in canonical's `build.rs`.

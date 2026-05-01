@@ -58,11 +58,6 @@ pub fn type_stem_for(resource: &ResourceState) -> String {
     pascal_case(&singularize(table))
 }
 
-/// Convenience for fns that only have a string in hand.
-pub fn type_stem(table: &str) -> String {
-    pascal_case(&singularize(table))
-}
-
 /// `<Type>Query` — fluent builder type name.
 pub fn query_type(stem: &str) -> String {
     format!("{stem}Query")
@@ -107,7 +102,6 @@ mod tests {
     fn type_stem_combines() {
         let r = ResourceState::new(ResourceName::new("user_accounts"));
         assert_eq!(type_stem_for(&r), "UserAccount");
-        assert_eq!(type_stem("companies"), "Company");
     }
 
     #[test]

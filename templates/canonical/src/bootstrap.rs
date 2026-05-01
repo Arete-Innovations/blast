@@ -10,11 +10,6 @@ use crate::{
 
 pub async fn bootstrap(migrations: EmbeddedMigrations) {
     cata_log!(Info, "Starting Catalyst bootstrap...");
-
-    if let Err(e) = dotenv::dotenv() {
-        cata_log!(Warning, format!("Could not load .env file: {}", e));
-    }
-
     cata_log!(Info, "Running pending migrations");
     let database_url = match env::var("DATABASE_URL") {
         Ok(u) => u,

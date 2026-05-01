@@ -56,29 +56,6 @@ impl CliSink {
         }
     }
 
-    pub fn with_writers(out: Box<dyn Write + Send>, err: Box<dyn Write + Send>, cfg: CliSinkConfig) -> Self {
-        Self {
-            out,
-            err,
-            log_file: cfg.log_file,
-            verbose: cfg.verbose,
-            quiet: cfg.quiet,
-            colorize: cfg.colorize,
-        }
-    }
-
-    pub fn set_verbose(&mut self, verbose: bool) {
-        self.verbose = verbose;
-    }
-
-    pub fn set_quiet(&mut self, quiet: bool) {
-        self.quiet = quiet;
-    }
-
-    pub fn set_log_file(&mut self, path: Option<PathBuf>) {
-        self.log_file = path;
-    }
-
     fn write_log_file(&self, level: SinkLevel, body: &str) -> BlastResult<()> {
         let path = match &self.log_file {
             Some(p) => p,
@@ -95,9 +72,7 @@ impl CliSink {
         let target_is_err = matches!(level, SinkLevel::Error);
         let line = if self.colorize {
             match level {
-                SinkLevel::Info | SinkLevel::Debug | SinkLevel::Diagnostic => {
-                    format!("{} {}", icon, body)
-                }
+                SinkLevel::Info | SinkLevel::Debug => format!("{} {}", icon, body),
                 SinkLevel::Warn => format!("{} {}", icon, style(body).yellow()),
                 SinkLevel::Error => format!("{} {}", icon, style(body).red().bold()),
                 SinkLevel::Success => format!("{} {}", icon, style(body).green()),
@@ -155,14 +130,6 @@ impl Sink for CliSink {
 pub fn render_body(event: &SinkEvent) -> String {
     match event {
         SinkEvent::Info(msg) | SinkEvent::Warn(msg) | SinkEvent::Error(msg) | SinkEvent::Success(msg) | SinkEvent::Debug(msg) => msg.clone(),
-        SinkEvent::StructuredDiagnostic { kind, fields } => {
-            let mut buf = String::new();
-            buf.push_str(kind);
-            for (k, v) in fields {
-                buf.push_str(&format!("\n  {} = {}", k, v));
-            }
-            buf
-        }
     }
 }
 
@@ -188,14 +155,6 @@ impl CliProgress {
     pub fn new(cfg: CliProgressConfig) -> Self {
         let bar = build_bar(cfg.total);
         Self { bar, total: cfg.total, quiet: cfg.quiet }
-    }
-
-    pub fn set_quiet(&mut self, quiet: bool) {
-        self.quiet = quiet;
-    }
-
-    pub fn raw_bar(&self) -> &ProgressBar {
-        &self.bar
     }
 
     fn step_start(&mut self, label: &str) {

@@ -4,13 +4,11 @@ use crate::{
     models::auth::{sessions, users},
     services::{crypto, time},
     structs::{
-        auth::{LoginInput, LoginOutput, SessionContext},
+        auth::{LoginInput, LoginOutput, SessionContext, SESSION_TTL_SECS},
         UserPublic,
     },
     Ctx,
 };
-
-pub const SESSION_TTL_SECS: i64 = 60 * 60 * 24 * 7;
 
 pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> {
     let mut conn = ctx.conn().await?;

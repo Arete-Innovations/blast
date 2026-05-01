@@ -11,4 +11,4 @@ pub mod runner;
 pub mod scopes;
 pub mod soft_delete;
 
-pub use runner::{run, EmitReport};
+pub use runner::run;

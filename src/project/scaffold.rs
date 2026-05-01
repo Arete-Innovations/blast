@@ -15,17 +15,14 @@ use std::{
 use include_dir::{include_dir, Dir};
 
 use crate::{
-    codegen::{build_rs_template, icons as icons_codegen, theme as theme_codegen},
+    codegen::build_rs_template,
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
     project::{
         db_bootstrap::{self, BootstrapArgs, BootstrapOutcome, RealDbAdmin},
         post_install, preflight, templates,
     },
-    state::{
-        app::{ICONS_SECTION_KEY, THEME_SECTION_KEY},
-        save_app, AppPolicySection, AppState, IconConfig, ThemeConfig,
-    },
+    state::{save_app, AppState},
 };
 
 /// Framework source tree, baked into the blast binary at compile time.
@@ -52,10 +49,6 @@ pub type PostSeedHook = dyn Fn(&Path, &mut dyn Sink, &mut dyn Progress) -> Blast
 
 #[derive(Default)]
 pub struct NewOptions {
-    /// Legacy flag retained for CLI compatibility — no longer affects
-    /// dep resolution (which doesn't exist anymore). Vendored canonical
-    /// is the only path now.
-    pub use_dev_branch: bool,
     pub db_url: Option<String>,
     pub force: bool,
     pub no_test_db: bool,
@@ -238,36 +231,16 @@ pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> Blas
     write_env_files(&args, &mut count)?;
     progress.step_done("write env files");
 
-    progress.step_start("seed app.ron with default theme and icons");
+    progress.step_start("seed app.ron");
     seed_default_app_state(&args.project_root)?;
     count += 1;
-    progress.step_done("seed app.ron with default theme and icons");
-
-    let theme_report = theme_codegen::run(&args.project_root, sink, progress)?;
-    count += theme_report.written.len();
-
-    let icons_report = icons_codegen::run(&args.project_root, sink, progress)?;
-    if icons_report.written.is_some() {
-        count += 1;
-    }
+    progress.step_done("seed app.ron");
 
     progress.step_start("emit build.rs hash check");
     let build_outcome = build_rs_template::run(build_rs_template::Args { project_root: args.project_root.clone() })?;
     sink.debug(format!("build.rs -> {}", build_outcome.written.display()));
     count += 1;
     progress.step_done("emit build.rs hash check");
-
-    progress.step_start("seed dashboard.kdl");
-    let dashboard_path = args.project_root.join("storage").join("blast").join("dashboard.kdl");
-    if !dashboard_path.exists() {
-        match dashboard_path.parent() {
-            Some(parent) => fs::create_dir_all(parent)?,
-            None => {} // allow: dashboard_path always has a parent (built from join chain), nothing to create
-        }
-        fs::write(&dashboard_path, templates::dashboard_kdl())?;
-        count += 1;
-    }
-    progress.step_done("seed dashboard.kdl");
 
     Ok(Outcome {
         project_root: args.project_root,
@@ -320,7 +293,7 @@ fn write_dir_recursive(dir: &Dir<'_>, project_root: &Path, project_name: &str, c
 /// trap) but MUST NOT bleed into scaffolded user apps. Skipped wholesale
 /// during vendor copy.
 fn is_canonical_only_path(rel: &Path) -> bool {
-    matches!(rel.to_string_lossy().as_ref(), ".cargo" | ".cargo/config.toml")
+    matches!(rel.to_string_lossy().as_ref(), ".cargo" | ".cargo/config.toml" | ".env" | ".env.test" | ".env.example")
 }
 
 fn substitute_path_component(rel: &Path, project_name: &str) -> PathBuf {
@@ -352,9 +325,7 @@ fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
 }
 
 fn seed_default_app_state(project_root: &Path) -> BlastResult<()> {
-    let mut state = AppState::new();
-    state.sections.insert(THEME_SECTION_KEY.to_string(), AppPolicySection::Theme(ThemeConfig::default()));
-    state.sections.insert(ICONS_SECTION_KEY.to_string(), AppPolicySection::Icons(IconConfig::default()));
+    let state = AppState::new();
     let state_dir = project_root.join("storage").join("blast").join("state");
     save_app(&state_dir, &state)
 }
@@ -421,14 +392,11 @@ mod tests {
     #[test]
     fn scaffold_writes_vendored_canonical() {
         let (_dir, outcome) = run_in_tempdir("acme");
-        // Sentinel files lifted from current catalyst master. If the
-        // canonical layout shifts, refresh these.
         let root = &outcome.project_root;
         assert!(root.join("src").join("lib.rs").is_file(), "src/lib.rs not vendored");
         assert!(root.join("src").join("bootstrap.rs").is_file(), "src/bootstrap.rs not vendored");
         assert!(root.join("src").join("meltdown.rs").is_file(), "src/meltdown.rs not vendored");
         assert!(root.join("src").join("database").join("migrations").is_dir(), "src/database/migrations not vendored");
-        assert!(root.join("frontend").is_dir(), "frontend dir not vendored");
     }
 
     #[test]
@@ -475,10 +443,10 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_kdl_is_seeded() {
+    fn dashboard_kdl_is_vendored() {
         let (_dir, outcome) = run_in_tempdir("acme");
         let path = outcome.project_root.join("storage").join("blast").join("dashboard.kdl");
-        assert!(path.is_file(), "dashboard.kdl not seeded at {}", path.display());
+        assert!(path.is_file(), "dashboard.kdl not vendored at {}", path.display());
     }
 
     #[test]
@@ -495,7 +463,6 @@ mod tests {
         // fires BEFORE bootstrap, so the test still asserts the right thing
         // without needing a live Postgres.
         let opts = NewOptions {
-            use_dev_branch: false,
             db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
             force: false,
             no_test_db: true,
@@ -518,7 +485,6 @@ mod tests {
         let mut sink = NullSink;
         let mut progress = NullProgress;
         let opts = NewOptions {
-            use_dev_branch: false,
             db_url: Some("postgres://nobody@127.0.0.1:1/x".to_string()),
             force: false,
             no_test_db: true,

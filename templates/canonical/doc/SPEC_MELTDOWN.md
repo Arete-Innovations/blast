@@ -207,6 +207,19 @@ Response envelope is always:
 }
 ```
 
+### Public vs internal split (binding)
+
+`MeltDown` carries two distinct strings:
+
+- `details: String` — internal-only. Goes into `log_message()`, never crosses the wire. Use it for diagnostic context: `MeltDown::validation_failed("user lookup row mapper expected 1 column, got 3")`.
+- `user_message: Option<String>` (with per-variant `default_user_message()` fallback) — what `IntoResponse` serializes as `error.message`. Safe to display to end-users; redact PII or stack-trace-shaped detail here.
+
+When the default per-variant message is too leaky for a given call site, override it: `MeltDown::new(MeltType::DatabaseError, "select users where email=...").with_user_message("We couldn't process that.")`. The internal `details` still gets logged; the user sees the generic message.
+
+### Frontend consumption
+
+The frontend's `apiFetch` wrapper (`frontend/src/api/fetch.ts`) parses the envelope and **unwraps it**: callers receive `error: MeltDownError | null` directly, not `error: MeltDownResponse`. So pages render `error.message` (single dot), not `error.error.message`. Only `apiFetch` may fabricate FE-side strings (`'Network error'`, `'Request aborted'`) — and only for true transport failures where no envelope arrived. Every other user-facing error string in the FE comes from the BE byte-for-byte. The `Governor.ApiHardcodedMessage` rule enforces this outside `fetch.ts`.
+
 ## Logging
 
 **MeltDown does NOT log itself.** Logging is a middleware concern.

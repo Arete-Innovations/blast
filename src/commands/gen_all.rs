@@ -1,14 +1,12 @@
 //! `blast gen all` — default codegen pipeline.
 //!
-//! Pipeline order:
-//!     schema → structs → models → flows → http_routes
-//!            → frontend_types → frontend_api → composables
-//!            → theme → icons → env_example → governor_plugin
+//! Pipeline order (post-phase-2 leptos-shaped):
+//!     schema → enums → structs → validators → models → routines → flows
+//!            → http_routes (REST /api/*) → leptos_pages → leptos_forms
+//!            → leptos_tables → app_routes → env_example
 //!
-//! FE Vue components / CRUD pages are opt-in via `blast gen pages
-//! [<resource>]` / `blast gen components [<resource>]`. The default
-//! pipeline stops at composables — enough for users to author their own
-//! Vue templates against typed reactive primitives.
+//! Leptos passes are stubs as of phase 4 skeleton; real emitters land per
+//! resource verb in subsequent iterations.
 
 use std::path::{Path, PathBuf};
 
@@ -42,14 +40,12 @@ const STEP_MODELS: &str = "models generation";
 const STEP_ROUTINES: &str = "routines generation";
 const STEP_FLOWS: &str = "flows generation";
 const STEP_HTTP_ROUTES: &str = "http routes generation";
-const STEP_FRONTEND_TYPES: &str = "frontend types generation";
-const STEP_FRONTEND_API: &str = "frontend api generation";
-const STEP_COMPOSABLES: &str = "composables generation";
 const STEP_VALIDATORS: &str = "validators generation";
-const STEP_THEME: &str = "theme codegen";
-const STEP_ICONS: &str = "icons codegen";
+const STEP_LEPTOS_PAGES: &str = "leptos pages generation";
+const STEP_LEPTOS_FORMS: &str = "leptos forms generation";
+const STEP_LEPTOS_TABLES: &str = "leptos tables generation";
+const STEP_APP_ROUTES: &str = "leptos app routes generation";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
-const STEP_GOVERNOR_PLUGIN: &str = "governor plugin emission";
 
 pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
     sink.info(format!("blast gen all: pipeline starting at {}", args.project_root.display()));
@@ -72,14 +68,12 @@ pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut 
     run_routines_step(&args.project_root, sink, progress, &mut outcome)?;
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_frontend_types_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_frontend_api_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_composables_step(&args.project_root, sink, progress, &mut outcome)?;
     run_validators_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_theme_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_icons_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_leptos_pages_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_leptos_forms_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_leptos_tables_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_app_routes_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_governor_plugin_step(&args.project_root, sink, progress, &mut outcome)?;
 
     warn_on_orphan_generated(&args.project_root, sink);
 
@@ -121,35 +115,9 @@ fn warn_resource_orphans(project_root: &Path, resource: &ResourceState, sink: &m
         ),
         (
             GenLevel::Types,
-            project_root.join("frontend").join("src").join("generated").join("types").join(format!("{table}.ts")),
-            "frontend/types/generated",
-        ),
-        (
-            GenLevel::Types,
-            project_root.join("frontend").join("src").join("generated").join("api").join(format!("{table}.ts")),
-            "frontend/api/generated",
-        ),
-        (
-            GenLevel::Types,
             project_root.join("src").join("structs").join("generated").join("validators").join(format!("{table}.rs")),
             "structs/generated/validators",
         ),
-        (
-            GenLevel::Types,
-            project_root.join("frontend").join("src").join("generated").join("validators").join(format!("{table}.ts")),
-            "frontend/generated/validators",
-        ),
-        (
-            GenLevel::Composables,
-            project_root.join("frontend").join("src").join("generated").join("composables").join(format!("{table}.ts")),
-            "frontend/generated/composables",
-        ),
-        (
-            GenLevel::Components,
-            project_root.join("frontend").join("src").join("components").join("generated").join("forms").join(table),
-            "frontend/components/generated/forms",
-        ),
-        (GenLevel::Pages, project_root.join("frontend").join("src").join("pages").join(table), "frontend/pages"),
     ];
 
     for (required_level, path, label) in checks {
@@ -312,54 +280,6 @@ fn run_http_routes_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &
     }
 }
 
-fn run_frontend_types_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
-    match codegen::frontend_types::run(project_root, sink, progress) {
-        Ok(report) => {
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!("{}: {} written, {} skipped", STEP_FRONTEND_TYPES, report.written.len(), report.skipped.len()));
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            sink.error(format!("{}: {}", STEP_FRONTEND_TYPES, err));
-            Err(err)
-        }
-    }
-}
-
-fn run_frontend_api_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
-    match codegen::frontend_api::run(project_root, sink, progress) {
-        Ok(report) => {
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!("{}: {} written, {} skipped", STEP_FRONTEND_API, report.written.len(), report.skipped.len()));
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            sink.error(format!("{}: {}", STEP_FRONTEND_API, err));
-            Err(err)
-        }
-    }
-}
-
-fn run_composables_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
-    match codegen::composables::run(project_root, sink, progress) {
-        Ok(report) => {
-            outcome.files_written += report.written.len();
-            outcome.files_skipped += report.skipped.len();
-            sink.info(format!("{}: {} written, {} skipped", STEP_COMPOSABLES, report.written.len(), report.skipped.len()));
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            sink.error(format!("{}: {}", STEP_COMPOSABLES, err));
-            Err(err)
-        }
-    }
-}
-
 fn run_validators_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::validators::run(project_root, sink, progress) {
         Ok(report) => {
@@ -371,6 +291,66 @@ fn run_validators_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &m
         }
         Err(err) => {
             sink.error(format!("{}: {}", STEP_VALIDATORS, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_leptos_pages_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::leptos_pages::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_LEPTOS_PAGES, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_leptos_forms_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::leptos_forms::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_LEPTOS_FORMS, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_leptos_tables_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::leptos_tables::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_LEPTOS_TABLES, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_app_routes_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::app_routes::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_APP_ROUTES, err));
             Err(err)
         }
     }
@@ -400,53 +380,3 @@ fn run_env_example_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &
     }
 }
 
-fn run_theme_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
-    match codegen::theme::run(project_root, sink, progress) {
-        Ok(report) => {
-            outcome.files_written += report.written.len();
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            sink.error(format!("{}: {}", STEP_THEME, err));
-            Err(err)
-        }
-    }
-}
-
-fn run_icons_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
-    match codegen::icons::run(project_root, sink, progress) {
-        Ok(report) => {
-            if report.written.is_some() {
-                outcome.files_written += 1;
-            }
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            sink.error(format!("{}: {}", STEP_ICONS, err));
-            Err(err)
-        }
-    }
-}
-
-fn run_governor_plugin_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
-    progress.step_start(STEP_GOVERNOR_PLUGIN);
-    match codegen::governor_plugin::run(project_root) {
-        Ok(emitted) => {
-            for path in &emitted {
-                sink.info(format!("emitted {}", path.display()));
-            }
-            outcome.files_written += emitted.len();
-            progress.step_done(STEP_GOVERNOR_PLUGIN);
-            outcome.steps_run += 1;
-            Ok(())
-        }
-        Err(err) => {
-            let reason = err.to_string();
-            progress.step_fail(STEP_GOVERNOR_PLUGIN, &reason);
-            sink.error(format!("{}: {}", STEP_GOVERNOR_PLUGIN, reason));
-            Err(err)
-        }
-    }
-}

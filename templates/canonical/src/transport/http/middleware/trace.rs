@@ -16,18 +16,28 @@ pub fn make_trace_layer() -> TraceLayer<tower_http::classify::SharedClassifier<t
 
 impl<B> MakeSpan<B> for CatalystMakeSpan {
     fn make_span(&mut self, request: &Request<B>) -> Span {
-        let request_id = Uuid::new_v4().to_string();
         let method = request.method().as_str();
         let uri = request.uri().to_string();
 
-        tracing::info_span!(
-            "request",
-            request_id = %request_id,
-            method     = %method,
-            uri        = %uri,
-            status     = tracing::field::Empty,
-            latency_ms = tracing::field::Empty,
-        )
+        if cfg!(feature = "prod") {
+            let request_id = Uuid::new_v4().to_string();
+            tracing::info_span!(
+                "request",
+                request_id = %request_id,
+                method     = %method,
+                uri        = %uri,
+                status     = tracing::field::Empty,
+                latency_ms = tracing::field::Empty,
+            )
+        } else {
+            tracing::info_span!(
+                "request",
+                method     = %method,
+                uri        = %uri,
+                status     = tracing::field::Empty,
+                latency_ms = tracing::field::Empty,
+            )
+        }
     }
 }
 

@@ -19,17 +19,15 @@ use regex::Regex;
 use crate::{
     error::{BlastError, BlastResult},
     state::{
-        app::{AppPolicySection, AppState, APP_SCHEMA_VERSION, ICONS_SECTION_KEY, THEME_SECTION_KEY},
-        icons::IconConfig,
+        app::{AppState, APP_SCHEMA_VERSION},
         resource::{ResourceState, RESOURCE_SCHEMA_VERSION},
-        theme::ThemeConfig,
     },
 };
 
 type AppUpgrader = fn(&mut AppState) -> BlastResult<()>;
 type ResourceRawUpgrader = fn(&str) -> BlastResult<String>;
 
-const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[(1, upgrade_app_v1_to_v2), (2, upgrade_app_v2_to_v3), (3, upgrade_app_v3_to_v4)];
+const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[(1, upgrade_app_v1_to_v2), (2, upgrade_app_v2_to_v3)];
 
 /// Raw-text upgraders, indexed by `from_version`. Each entry takes the
 /// RON text at `from_version` and returns the text at `from_version+1`,
@@ -48,20 +46,6 @@ fn upgrade_app_v1_to_v2(state: &mut AppState) -> BlastResult<()> {
 /// v2 files load cleanly with no nav or pages sections.
 fn upgrade_app_v2_to_v3(state: &mut AppState) -> BlastResult<()> {
     state.schema_version = 3;
-    Ok(())
-}
-
-/// v3 → v4: additive. Inject `theme` and `icons` sections with their
-/// `Default` content if absent. Existing keys are preserved untouched —
-/// users may already have customized one or both sections by hand.
-fn upgrade_app_v3_to_v4(state: &mut AppState) -> BlastResult<()> {
-    state.schema_version = 4;
-    if !state.sections.contains_key(THEME_SECTION_KEY) {
-        state.sections.insert(THEME_SECTION_KEY.to_string(), AppPolicySection::Theme(ThemeConfig::default()));
-    }
-    if !state.sections.contains_key(ICONS_SECTION_KEY) {
-        state.sections.insert(ICONS_SECTION_KEY.to_string(), AppPolicySection::Icons(IconConfig::default()));
-    }
     Ok(())
 }
 

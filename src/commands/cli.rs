@@ -82,7 +82,7 @@ pub enum Command {
     #[command(about = "Launch Zellij dashboard")]
     Dashboard,
 
-    #[command(about = "Launch dialoguer interactive menu")]
+    #[command(about = "Launch interactive menu")]
     Cli,
 
     #[command(name = "toggle-env", about = "Flip Env::Dev <-> Env::Prod", alias = "env")]
@@ -99,12 +99,6 @@ pub enum Command {
 
     #[command(about = "Show top-level help")]
     Help,
-
-    #[command(about = "Run frontend lint engine (Governor)")]
-    Check {
-        #[arg(long)]
-        verbose: bool,
-    },
 
     #[command(about = "Manage scheduler fuses")]
     Fuses {
@@ -166,60 +160,14 @@ pub enum GenCmd {
     #[command(about = "Generate model implementations")]
     Models,
 
-    #[command(about = "Interactive CREATE TABLE wizard")]
-    Table,
-
-    #[command(about = "Scaffold an empty migration and open $EDITOR")]
-    Migration {
-        #[arg(long)]
-        custom: bool,
-        name: Option<String>,
-    },
-
-    #[command(about = "Emit per-resource TS interface types into frontend/src/generated/types/")]
-    Types {
-        #[arg(value_name = "RESOURCE")]
-        resource: Option<String>,
-    },
-
-    #[command(about = "Emit per-resource TS API client (typed fetch fns) into frontend/src/generated/api/")]
-    Api {
-        #[arg(value_name = "RESOURCE")]
-        resource: Option<String>,
-    },
-
-    #[command(about = "Emit per-resource Vue 3 composables into frontend/src/generated/composables/")]
-    Composables {
-        #[arg(value_name = "RESOURCE")]
-        resource: Option<String>,
-    },
-
-    #[command(about = "Emit paired Rust + TS field validators (src/structs/generated/validators + frontend/src/generated/validators)")]
+    #[command(about = "Emit Rust field validators (src/structs/generated/validators)")]
     Validators {
         #[arg(value_name = "RESOURCE")]
         resource: Option<String>,
     },
 
-    #[command(about = "Emit per-resource Vue CRUD page scaffolds into frontend/src/pages/generated/<resource>/")]
-    Pages {
-        #[arg(value_name = "RESOURCE")]
-        resource: Option<String>,
-    },
-
-    #[command(about = "Emit per-resource Vue form components into frontend/src/components/generated/forms/<resource>/")]
-    Components {
-        #[arg(value_name = "RESOURCE")]
-        resource: Option<String>,
-    },
-
-    #[command(name = "governor-plugin", about = "Emit governor Vite plugin shim")]
-    GovernorPlugin,
-
-    #[command(about = "Run the default codegen pipeline (backend + types + theme + icons + governor)")]
+    #[command(about = "Run the default codegen pipeline (backend only — leptos passes pending phase 4)")]
     All,
-
-    #[command(about = "TUI wizard to author/edit a resource state file")]
-    Resource { name: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]

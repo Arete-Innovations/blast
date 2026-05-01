@@ -3,4 +3,4 @@ pub mod naming;
 pub mod runner;
 pub mod sql_map;
 
-pub use runner::{run, EmitReport};
+pub use runner::run;

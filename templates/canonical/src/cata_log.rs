@@ -5,24 +5,24 @@ use crate::meltdown::*;
 #[macro_export]
 macro_rules! cata_log {
     (Debug, $msg:expr) => {
-        $crate::cata_log::log_debug($msg)
+        ::tracing::debug!("{}", $msg)
     };
     (Info, $msg:expr) => {
-        $crate::cata_log::log_info($msg)
+        ::tracing::info!("{}", $msg)
     };
     (Warning, $msg:expr) => {
-        $crate::cata_log::log_warn($msg)
+        ::tracing::warn!("{}", $msg)
     };
     (Error, $msg:expr) => {
-        $crate::cata_log::log_error($msg)
+        ::tracing::error!("{}", $msg)
     };
     (Trace, $msg:expr) => {
-        $crate::cata_log::log_trace($msg)
+        ::tracing::trace!("{}", $msg)
     };
 }
 
 pub fn init_tracing() {
-    let is_prod = std::env::var("BUILD_MODE").is_ok_and(|v| v.to_lowercase() == "prod");
+    let is_prod = cfg!(feature = "prod");
 
     let default_filter = if is_prod {
         "info,tower_http=info,axum::rejection=trace"
@@ -31,13 +31,12 @@ pub fn init_tracing() {
     };
 
     let filter = resolve_env_filter(default_filter);
-
     let registry = tracing_subscriber::registry().with(filter);
 
     if is_prod {
-        registry.with(tracing_subscriber::fmt::layer().json()).init();
+        registry.with(tracing_subscriber::fmt::layer().json().with_file(true).with_line_number(true)).init();
     } else {
-        registry.with(tracing_subscriber::fmt::layer()).init();
+        registry.with(tracing_subscriber::fmt::layer().compact().with_target(false).with_file(true).with_line_number(true)).init();
     }
 }
 
@@ -53,34 +52,4 @@ fn resolve_env_filter(default: &str) -> EnvFilter {
 
 fn try_env_filter() -> Result<EnvFilter, MeltDown> {
     EnvFilter::try_from_default_env().map_err(|e| MeltDown::new(MeltType::ConfigurationError, format!("env filter: {}", e)))
-}
-
-#[track_caller]
-pub fn log_debug(msg: impl AsRef<str>) {
-    let loc = std::panic::Location::caller();
-    tracing::debug!(src.file = loc.file(), src.line = loc.line(), "{}", msg.as_ref());
-}
-
-#[track_caller]
-pub fn log_info(msg: impl AsRef<str>) {
-    let loc = std::panic::Location::caller();
-    tracing::info!(src.file = loc.file(), src.line = loc.line(), "{}", msg.as_ref());
-}
-
-#[track_caller]
-pub fn log_warn(msg: impl AsRef<str>) {
-    let loc = std::panic::Location::caller();
-    tracing::warn!(src.file = loc.file(), src.line = loc.line(), "{}", msg.as_ref());
-}
-
-#[track_caller]
-pub fn log_error(msg: impl AsRef<str>) {
-    let loc = std::panic::Location::caller();
-    tracing::error!(src.file = loc.file(), src.line = loc.line(), "{}", msg.as_ref());
-}
-
-#[track_caller]
-pub fn log_trace(msg: impl AsRef<str>) {
-    let loc = std::panic::Location::caller();
-    tracing::trace!(src.file = loc.file(), src.line = loc.line(), "{}", msg.as_ref());
 }

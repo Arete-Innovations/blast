@@ -39,8 +39,6 @@ fn imports_block(table: &str, stem: &str) -> String {
     let insertable = naming::insertable_type(stem);
     let patch = naming::patch_type(stem);
     let mut out = String::new();
-    out.push_str("//! Generated model layer for this resource. Persistence primitives,\n");
-    out.push_str("//! the fluent query builder, and auto-conn convenience wrappers.\n\n");
     out.push_str("#![allow(unused_imports, dead_code, clippy::needless_borrow)]\n\n");
     out.push_str("use ::diesel::{BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgTextExpressionMethods, QueryDsl};\n");
     out.push_str(&format!("use crate::structs::generated::{table}::{{{stem}, {insertable}, {patch}}};\n",));

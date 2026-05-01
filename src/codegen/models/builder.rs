@@ -31,11 +31,7 @@ pub fn emit(out: &mut String, resource: &ResourceState, relations: &[Relation], 
 
 fn emit_query_struct(out: &mut String, table: &str, q_ty: &str, relations: &[Relation]) {
     let head = format!(
-        r#"/// Fluent query builder. Push filters via the auto-derived scope
-/// methods, then `.await` to execute (auto-acquires a pooled connection)
-/// or call `.paginate(page, page_size)` to wrap the result in a
-/// ListResponse envelope.
-pub struct {q_ty} {{
+        r#"pub struct {q_ty} {{
     pub(crate) inner: ::diesel::query_builder::BoxedSelectStatement<
         'static,
         crate::database::schema::{table}::SqlType,
@@ -157,9 +153,7 @@ fn emit_into_future_for_query(out: &mut String, stem: &str, q_ty: &str) {
 
 fn emit_paginated_struct(out: &mut String, q_ty: &str, p_ty: &str) {
     let body = format!(
-        r#"/// Terminal builder produced by `{q_ty}::paginate`. Awaiting it
-/// executes the page-fetch with auto-acquired connection.
-pub struct {p_ty} {{
+        r#"pub struct {p_ty} {{
     pub(crate) base: {q_ty},
     pub(crate) page: u32,
     pub(crate) page_size: u32,

@@ -78,6 +78,9 @@ fn category_for(rule: &str) -> &'static str {
     if rule.starts_with("STRUCTS:") {
         return "STRUCTS";
     }
+    if rule.starts_with("TRANSPORT:") {
+        return "TRANSPORT";
+    }
     "OTHER"
 }
 
@@ -89,6 +92,7 @@ fn category_spirit(cat: &str) -> &'static str {
         "DEAD" => "code that isn't serving the program right now is noise. noise misleads. delete it.",
         "LAYER" => "the chain is law. transport → flow → routine → models/services → database. only models reach the basement. you may import down, never up, never sideways across siblings.",
         "STRUCTS" => "data shapes belong in src/structs/. behavior layers are for behavior; defining types inline scatters the data model and gives codegen one more place to look.",
+        "TRANSPORT" => "every http handler runs through `request_ctx_middleware`, which builds a per-request `Ctx` (with session loaded if a token was sent) and inserts it as `Extension<Ctx>`. handlers MUST extract `Extension<Ctx>` so `ctx.require_session()` sees the loaded session. `State<Ctx>` returns the global anonymous ctx — silently fails auth.",
         _ => "",
     }
 }
@@ -190,11 +194,16 @@ fn rule_help(rule: &str) -> &'static str {
             "    declaring `struct` or `enum` inside a layer dir scatters the data model. move the type to src/structs/<resource>/<file>.rs and import it where needed.\n",
             "    exempt: src/structs/, src/meltdown.rs, src/ctx.rs, src/crank.rs, src/cata_log.rs, src/bootstrap.rs, src/lib.rs, src/main.rs, src/database/schema.rs.",
         ),
+        "TRANSPORT:23" => concat!(
+            "http handler signatures must use `Extension(ctx): Extension<Ctx>` — never `State(ctx): State<Ctx>`.\n",
+            "    `request_ctx_middleware` builds the per-request `Ctx` (with session) and inserts it as Extension. `State<Ctx>` returns the global anonymous ctx — `ctx.require_session()` then returns `None` and every protected route silently 401s.\n",
+            "    exempt: src/transport/http/middleware/ (middleware legitimately extracts State<Ctx> to build the per-request Ctx).",
+        ),
         _ => "",
     }
 }
 
-const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "ERROR", "TYPE", "DEAD"];
+const CATEGORY_ORDER: &[&str] = &["DECOMPOSITION", "LAYER", "STRUCTS", "TRANSPORT", "ERROR", "TYPE", "DEAD"];
 
 fn format_report(hits: &[Hit]) -> String {
     let mut by_rule: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -363,6 +372,42 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
     check_err_arm_handling(rel, &content, hits);
     check_no_comments(rel, &content, hits);
     check_inline_data_definitions(rel, &content, hits);
+    check_handler_state_ctx(rel, &content, hits);
+}
+
+fn check_handler_state_ctx(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    let path_str = rel.to_string_lossy().replace('\\', "/");
+    if !path_str.contains("src/transport/http/") {
+        return;
+    }
+    if path_str.contains("src/transport/http/middleware/") {
+        return;
+    }
+    let mut in_block_comment = false;
+    for (line_no, raw) in content.lines().enumerate() {
+        let trimmed = raw.trim();
+        if trimmed.contains("/*") {
+            in_block_comment = true;
+        }
+        if trimmed.contains("*/") {
+            in_block_comment = false;
+            continue;
+        }
+        if in_block_comment {
+            continue;
+        }
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        if !trimmed.contains("State<Ctx>") && !trimmed.contains("State(ctx)") {
+            continue;
+        }
+        hits.push(Hit {
+            rule: "TRANSPORT:23",
+            file: path_str.clone(),
+            line: line_no + 1,
+        });
+    }
 }
 
 fn check_switchboard_purity(rel: &Path, content: &str, hits: &mut Vec<Hit>) {

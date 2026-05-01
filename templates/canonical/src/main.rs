@@ -2,11 +2,10 @@ use std::net::SocketAddr;
 
 use axum::{extract::DefaultBodyLimit, middleware::from_fn, Router};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
+use leptos::prelude::*;
+use leptos_axum::{file_and_error_handler, generate_route_list, LeptosRoutes};
 use tower::ServiceBuilder;
-use tower_http::{
-    cors::CorsLayer,
-    services::{ServeDir, ServeFile},
-};
+use tower_http::cors::CorsLayer;
 
 mod bootstrap;
 mod crank;
@@ -25,29 +24,42 @@ mod cata_log;
 use bootstrap::bootstrap;
 use ctx::Ctx;
 use transport::http::middleware::*;
+use transport::leptos::app::{shell, App};
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/database/migrations");
 
 #[tokio::main]
 async fn main() {
+    if let Err(e) = dotenv::dotenv() {
+        eprintln!("Could not load .env file: {}", e);
+    }
     cata_log::init_tracing();
 
     bootstrap(MIGRATIONS).await;
     cata_log!(Info, "Starting Axum server...");
 
-    let app = create_app().await;
+    let leptos_conf = match leptos::prelude::get_configuration(None) {
+        Ok(c) => c,
+        Err(e) => {
+            cata_log!(Error, format!("leptos config failed: {}", e));
+            std::process::exit(1);
+        }
+    };
+    let leptos_options = leptos_conf.leptos_options;
+    let addr = leptos_options.site_addr;
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
+    let app = create_app(leptos_options).await;
+
     cata_log!(Info, format!("Server listening on {}", addr));
 
-    let listener = match tokio::net::TcpListener::bind(addr).await {
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => listener,
         Err(e) => {
             cata_log!(Error, format!("failed to bind {}: {}", addr, e));
             std::process::exit(1);
         }
     };
-    match axum::serve(listener, app).await {
+    match axum::serve(listener, app.into_make_service()).await {
         Ok(()) => {}
         Err(e) => {
             cata_log!(Error, format!("axum serve exited: {}", e));
@@ -56,19 +68,29 @@ async fn main() {
     }
 }
 
-async fn create_app() -> Router {
+async fn create_app(leptos_options: LeptosOptions) -> Router {
     let ctx = Ctx::anonymous(database::db::pool().clone());
     let api_routes = transport::http::router(ctx);
 
-    let static_files = ServeDir::new("frontend/dist").not_found_service(ServeFile::new("frontend/dist/index.html"));
+    let routes = generate_route_list(App);
+    let opts_for_leptos = leptos_options.clone();
 
-    let app = Router::new().nest("/api", api_routes).fallback_service(static_files).layer(
-        ServiceBuilder::new()
-            .layer(transport::http::middleware::trace::make_trace_layer())
-            .layer(CorsLayer::permissive())
-            .layer(DefaultBodyLimit::max(1024 * 1024))
-            .layer(from_fn(error_handling_middleware)),
-    );
+    let leptos_router: Router<LeptosOptions> = Router::new()
+        .leptos_routes(&leptos_options, routes, move || shell(opts_for_leptos.clone()))
+        .fallback(file_and_error_handler::<LeptosOptions, _>(shell));
+
+    let leptos_router_stateless: Router = leptos_router.with_state(leptos_options);
+
+    let app = Router::new()
+        .nest("/api", api_routes)
+        .merge(leptos_router_stateless)
+        .layer(
+            ServiceBuilder::new()
+                .layer(transport::http::middleware::trace::make_trace_layer())
+                .layer(CorsLayer::permissive())
+                .layer(DefaultBodyLimit::max(1024 * 1024))
+                .layer(from_fn(error_handling_middleware)),
+        );
 
     app
 }

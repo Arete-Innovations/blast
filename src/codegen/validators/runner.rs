@@ -4,10 +4,7 @@ use std::{
 };
 
 use crate::{
-    codegen::{
-        header, ir_loader,
-        validators::render::{build_resource_validators_rust, build_resource_validators_ts},
-    },
+    codegen::{header, ir_loader, validators::render::build_resource_validators_rust},
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
     state::{GenLevel, ResourceState},
@@ -37,24 +34,17 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     let resources: Vec<ResourceState> = all_resources.into_iter().filter(|r| r.gen_level >= GenLevel::Types).collect();
 
     let rust_dir = rust_validators_dir(project_root);
-    let ts_dir = ts_validators_dir(project_root);
     fs::create_dir_all(&rust_dir)?;
-    fs::create_dir_all(&ts_dir)?;
 
     let mut report = EmitReport::default();
 
     if resources.is_empty() {
         let rust_keep = rust_dir.join(".gitkeep");
         write_file(&rust_keep, "", &mut report)?;
-        let ts_keep = ts_dir.join(".gitkeep");
-        write_file(&ts_keep, "", &mut report)?;
         let rust_barrel = rust_dir.join("mod.rs");
         let app_marker = header::marker_for_app(project_root)?;
         let empty_barrel = format!("{app_marker}\n");
         write_file(&rust_barrel, &empty_barrel, &mut report)?;
-        let ts_barrel = ts_dir.join("index.ts");
-        let empty_index = format!("{app_marker}export {{}}\n");
-        write_file(&ts_barrel, &empty_index, &mut report)?;
         sink.info(format!("{STEP_LABEL}: no resources at gen_level >= Types; emitted barrels"));
         progress.step_done(STEP_LABEL);
         return Ok(report);
@@ -68,11 +58,6 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
         let rust_path = rust_dir.join(format!("{table}.rs"));
         write_file(&rust_path, &rust_body, &mut report)?;
         sink.info(format!("emitted {}", rust_path.display()));
-
-        let ts_body = format!("{marker}{}", build_resource_validators_ts(r));
-        let ts_path = ts_dir.join(format!("{table}.ts"));
-        write_file(&ts_path, &ts_body, &mut report)?;
-        sink.info(format!("emitted {}", ts_path.display()));
     }
 
     let app_marker = header::marker_for_app(project_root)?;
@@ -80,11 +65,6 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     let rust_barrel_body = format!("{app_marker}{}", build_rust_barrel(&resources));
     write_file(&rust_barrel, &rust_barrel_body, &mut report)?;
     sink.info(format!("emitted {}", rust_barrel.display()));
-
-    let ts_barrel = ts_dir.join("index.ts");
-    let ts_barrel_body = format!("{app_marker}{}", build_ts_barrel(&resources));
-    write_file(&ts_barrel, &ts_barrel_body, &mut report)?;
-    sink.info(format!("emitted {}", ts_barrel.display()));
 
     ensure_parent_structs_barrel_includes_validators(project_root, &mut report)?;
 
@@ -122,9 +102,7 @@ pub fn run_for_resource(project_root: &Path, resource_name: &str, sink: &mut dyn
     progress.step_start(STEP_LABEL);
 
     let rust_dir = rust_validators_dir(project_root);
-    let ts_dir = ts_validators_dir(project_root);
     fs::create_dir_all(&rust_dir)?;
-    fs::create_dir_all(&ts_dir)?;
 
     let mut report = EmitReport::default();
     for r in &filtered {
@@ -135,11 +113,6 @@ pub fn run_for_resource(project_root: &Path, resource_name: &str, sink: &mut dyn
         let rust_path = rust_dir.join(format!("{table}.rs"));
         write_file(&rust_path, &rust_body, &mut report)?;
         sink.info(format!("emitted {}", rust_path.display()));
-
-        let ts_body = format!("{marker}{}", build_resource_validators_ts(r));
-        let ts_path = ts_dir.join(format!("{table}.ts"));
-        write_file(&ts_path, &ts_body, &mut report)?;
-        sink.info(format!("emitted {}", ts_path.display()));
     }
 
     progress.step_done(STEP_LABEL);
@@ -150,35 +123,12 @@ fn rust_validators_dir(project_root: &Path) -> PathBuf {
     project_root.join("src").join("structs").join("generated").join("validators")
 }
 
-fn ts_validators_dir(project_root: &Path) -> PathBuf {
-    project_root.join("frontend").join("src").join("generated").join("validators")
-}
-
 fn build_rust_barrel(resources: &[ResourceState]) -> String {
     let mut names: Vec<&str> = resources.iter().map(|r| r.name.as_str()).collect();
     names.sort();
     let mut out = String::new();
     for name in &names {
         out.push_str(&format!("pub mod {name};\n"));
-    }
-    out
-}
-
-fn build_ts_barrel(resources: &[ResourceState]) -> String {
-    let mut sorted: Vec<&ResourceState> = resources.iter().collect();
-    sorted.sort_by(|a, b| a.name.as_str().cmp(b.name.as_str()));
-    let mut out = String::new();
-    for r in &sorted {
-        let table = r.name.as_str();
-        let stem = crate::codegen::structs::naming::type_stem_for_resource(r);
-        out.push_str(&format!(
-            "export {{ validate{stem}Insertable, validate{stem}Patch }} from './{table}'\n",
-            stem = stem,
-            table = table,
-        ));
-    }
-    if out.is_empty() {
-        out.push_str("export {}\n");
     }
     out
 }
@@ -291,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn emits_per_resource_files_in_both_dirs() {
+    fn emits_per_resource_files() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         let resource = make_users_with_email();
@@ -302,15 +252,12 @@ mod tests {
         let report = run(root, &mut sink, &mut progress).expect("run validators");
 
         let rust_file = root.join("src/structs/generated/validators/users.rs");
-        let ts_file = root.join("frontend/src/generated/validators/users.ts");
         assert!(rust_file.exists(), "rust validator file must exist");
-        assert!(ts_file.exists(), "ts validator file must exist");
         assert!(report.written.iter().any(|p| p == &rust_file));
-        assert!(report.written.iter().any(|p| p == &ts_file));
     }
 
     #[test]
-    fn emits_barrels_in_both_dirs() {
+    fn emits_barrel() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         let resource = make_users_with_email();
@@ -321,17 +268,10 @@ mod tests {
         run(root, &mut sink, &mut progress).expect("run validators");
 
         let rust_barrel = root.join("src/structs/generated/validators/mod.rs");
-        let ts_barrel = root.join("frontend/src/generated/validators/index.ts");
         assert!(rust_barrel.exists(), "rust barrel must exist");
-        assert!(ts_barrel.exists(), "ts barrel must exist");
 
         let rust_body = fs::read_to_string(&rust_barrel).expect("read rust barrel");
         assert!(rust_body.contains("pub mod users;"));
-
-        let ts_body = fs::read_to_string(&ts_barrel).expect("read ts barrel");
-        assert!(ts_body.contains("validateUserInsertable"));
-        assert!(ts_body.contains("validateUserPatch"));
-        assert!(ts_body.contains("from './users'"));
     }
 
     #[test]
@@ -346,11 +286,8 @@ mod tests {
         run(root, &mut sink, &mut progress).expect("run validators");
 
         let rust_file = root.join("src/structs/generated/validators/users.rs");
-        let ts_file = root.join("frontend/src/generated/validators/users.ts");
         let rust_body = fs::read_to_string(&rust_file).expect("read rust");
-        let ts_body = fs::read_to_string(&ts_file).expect("read ts");
         assert!(rust_body.starts_with("// AUTO-GENERATED from "));
-        assert!(ts_body.starts_with("// AUTO-GENERATED from "));
     }
 
     #[test]
@@ -366,9 +303,7 @@ mod tests {
         run(root, &mut sink, &mut progress).expect("run validators");
 
         let rust_file = root.join("src/structs/generated/validators/users.rs");
-        let ts_file = root.join("frontend/src/generated/validators/users.ts");
         assert!(!rust_file.exists(), "must NOT emit when gen_level < Types");
-        assert!(!ts_file.exists(), "must NOT emit when gen_level < Types");
     }
 
     #[test]
@@ -388,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn no_resources_emits_gitkeep_and_empty_barrels() {
+    fn no_resources_emits_gitkeep_and_empty_barrel() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         seed_project(root, &[]);
@@ -398,8 +333,6 @@ mod tests {
         run(root, &mut sink, &mut progress).expect("run validators");
 
         let rust_keep = root.join("src/structs/generated/validators/.gitkeep");
-        let ts_keep = root.join("frontend/src/generated/validators/.gitkeep");
         assert!(rust_keep.exists(), ".gitkeep must exist when no resources");
-        assert!(ts_keep.exists(), ".gitkeep must exist when no resources");
     }
 }

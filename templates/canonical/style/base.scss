@@ -1,0 +1,15 @@
+html {
+    font-size: clamp(14px, calc(100vw / 120), 32px);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--app-color-fg);
+    background: var(--app-color-bg);
+    line-height: 1.5;
+}

@@ -102,21 +102,24 @@ pub async fn login(State(ctx), Json(input)) -> Result<impl IntoResponse, MeltDow
 
 ### Mobile / API (Bearer)
 
-Login route for API clients returns the token in the body:
+Both `/api/auth/login` and `/api/auth/register` return the same `AuthResponse` shape — register mints a session inline, so the client is logged in immediately after sign-up:
 
 ```json
 {
   "token": "cb_abc...",
-  "user": { ... },
-  "expires_at": "2026-05-24T00:00:00Z"
+  "user": { "id": 1, "email": "u@x.com", "role": "Member" }
 }
 ```
+
+`AuthResponse { token, user }` is defined in `src/structs/auth/login.rs` and shared by both handlers. The login routine returns `LoginOutput { token, user, session }`; the register routine returns `RegisterOutput` with the same field set. Transport drops the internal `session` and serializes only `AuthResponse`. `SESSION_TTL_SECS` lives in `src/structs/auth/sessions.rs` and is shared between both routines.
 
 Client stores in Keychain / Keystore, sends on every request:
 
 ```
 Authorization: Bearer cb_abc...
 ```
+
+The frontend stores the bearer token via `frontend/src/persistence/auth_token.ts` (the only module that touches `localStorage` for this token). `frontend/src/api/fetch.ts::apiFetch` reads from it on every request and injects the `Authorization` header.
 
 ## Middleware
 

@@ -74,7 +74,7 @@ pub fn launch_dashboard(config: &Config) -> BlastResult<()> {
 
     let layout_path = prepare_layout(project_dir)?;
 
-    let auto_mode = if config.environment == "prod" { crate::daemon::ServerMode::Prod } else { crate::daemon::ServerMode::Dev };
+    let auto_mode = if config.environment == "prod" { crate::daemon::ServerMode::Prod } else { crate::daemon::ServerMode::Watch };
     match crate::daemon::start_server(config, auto_mode) {
         Ok(pid) => println!("Auto-started backend daemon (PID {})", pid),
         Err(e) => eprintln!("warning: failed to auto-start backend daemon: {}", e),
@@ -91,13 +91,20 @@ pub fn launch_dashboard(config: &Config) -> BlastResult<()> {
     std::thread::sleep(std::time::Duration::from_millis(300));
 
     println!("Creating new Blast dashboard session...");
-
-    use std::os::unix::process::CommandExt;
-
     println!("Launching Zellij with layout: {}", layout_path);
 
-    let err = Command::new("zellij").arg("-l").arg(&layout_path).exec();
+    let zellij_status = Command::new("zellij").arg("-l").arg(&layout_path).status()?;
 
-    return Err(BlastError::Dashboard(format!("Failed to exec Zellij: {}", err)));
+    println!("\nDashboard exited. Stopping backend daemon...");
+    match crate::daemon::stop_server(config) {
+        Ok(true) => println!("Backend daemon stopped."),
+        Ok(false) => println!("No backend daemon was running."),
+        Err(e) => eprintln!("warning: failed to stop backend daemon: {}", e),
+    }
+
+    if zellij_status.success() {
+        Ok(())
+    } else {
+        Err(BlastError::Dashboard(format!("zellij exited with status {:?}", zellij_status.code())))
+    }
 }
-

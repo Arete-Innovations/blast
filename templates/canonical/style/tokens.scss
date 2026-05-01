@@ -1,0 +1,44 @@
+// Catablast design tokens — single source of truth.
+// Edit freely; semantic names only.
+
+:root {
+    --app-brand-hue: 268;
+    --app-brand-chroma: 0.18;
+
+    --app-fs-2xs: 0.75rem;
+    --app-fs-xs:  0.875rem;
+    --app-fs-sm:  0.9375rem;
+    --app-fs-md:  1rem;
+    --app-fs-lg:  1.125rem;
+    --app-fs-xl:  1.25rem;
+    --app-fs-2xl: 1.5rem;
+    --app-fs-3xl: 1.875rem;
+
+    --app-space-xs:  0.25rem;
+    --app-space-sm:  0.5rem;
+    --app-space-md:  0.75rem;
+    --app-space-lg:  1rem;
+    --app-space-xl:  1.5rem;
+    --app-space-2xl: 2rem;
+    --app-space-3xl: 3rem;
+
+    --app-radius-sm: 0.25rem;
+    --app-radius-md: 0.5rem;
+    --app-radius-lg: 0.75rem;
+
+    --app-color-bg: oklch(0.98 0 0);
+    --app-color-fg: oklch(0.18 0 0);
+    --app-color-brand: oklch(0.55 var(--app-brand-chroma) var(--app-brand-hue));
+    --app-color-danger: oklch(0.55 0.18 25);
+    --app-color-success: oklch(0.55 0.16 145);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --app-color-bg: oklch(0.18 0 0);
+        --app-color-fg: oklch(0.95 0 0);
+        --app-color-brand: oklch(0.70 var(--app-brand-chroma) var(--app-brand-hue));
+        --app-color-danger: oklch(0.70 0.16 25);
+        --app-color-success: oklch(0.70 0.14 145);
+    }
+}

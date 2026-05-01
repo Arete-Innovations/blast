@@ -24,8 +24,7 @@ pub fn emit_all(out: &mut String, table: &str, stem: &str, soft_delete_cfg: Opti
 
 fn emit_list(out: &mut String, table: &str, stem: &str) {
     let body = format!(
-        r#"/// Page-fetch rows under the locked list contract.
-pub async fn list(
+        r#"pub async fn list(
     conn: &mut ::diesel_async::AsyncPgConnection,
     query: &crate::structs::list_query::ListQuery,
 ) -> ::std::result::Result<
@@ -62,8 +61,7 @@ pub async fn list(
 
 fn emit_get(out: &mut String, table: &str, stem: &str) {
     let body = format!(
-        r#"/// Fetch a single row by primary key.
-pub async fn get(
+        r#"pub async fn get(
     conn: &mut ::diesel_async::AsyncPgConnection,
     id: i64,
 ) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
@@ -90,8 +88,7 @@ pub async fn get(
 fn emit_create(out: &mut String, table: &str, stem: &str) {
     let insertable = naming::insertable_type(stem);
     let body = format!(
-        r#"/// Insert a new row, returning the inserted record.
-pub async fn create(
+        r#"pub async fn create(
     conn: &mut ::diesel_async::AsyncPgConnection,
     input: &{insertable},
 ) -> ::std::result::Result<{stem}, crate::meltdown::MeltDown> {{
@@ -112,8 +109,7 @@ pub async fn create(
 fn emit_update(out: &mut String, table: &str, stem: &str) {
     let patch = naming::patch_type(stem);
     let body = format!(
-        r#"/// Patch an existing row by primary key.
-pub async fn update(
+        r#"pub async fn update(
     conn: &mut ::diesel_async::AsyncPgConnection,
     id: i64,
     patch: &{patch},
@@ -139,9 +135,7 @@ pub async fn update(
 }
 
 fn emit_delete(out: &mut String, table: &str, soft_delete_cfg: Option<&SoftDeleteConfig>) {
-    let header = "/// Delete a row by primary key. Returns MeltDown::not_found when no row is affected.\n";
     let signature = "pub async fn delete(\n    conn: &mut ::diesel_async::AsyncPgConnection,\n    id: i64,\n) -> ::std::result::Result<(), crate::meltdown::MeltDown> {\n";
-    out.push_str(header);
     out.push_str(signature);
     match soft_delete_cfg {
         Some(cfg) => {

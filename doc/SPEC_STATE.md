@@ -30,13 +30,13 @@ State files are how the user communicates intent to Blast. They live in the user
                 └── ...
 ```
 
-Blast creates `storage/blast/state/` on `blast new` and `blast init`. Resource files are created by `blast gen resource [name]` (TUI wizard) or by hand.
+Blast creates `storage/blast/state/` on `blast new` and `blast init`. Resource files are created by `blast migration` (the chained new-table wizard at `src/wizards/new_table/`) or by hand.
 
 ## `app.ron` Schema
 
 ```ron
 AppState(
-    schema_version: 4,
+    schema_version: 3,
 
     fe_lint: FeLintConfig(
         max_lines_per_sfc: 600,
@@ -149,97 +149,11 @@ AppState(
         EnvVar(key: "SMTP_HOST", required: false, description: "SMTP server hostname"),
     ],
 
-    // v4: design-token catalog + PrimeVue palette preset
-    theme: Theme(ThemeConfig(
-        tokens: TokenCatalog(
-            fonts: FontTokens(
-                mono: "'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
-                sans: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-            ),
-            font_sizes: {
-                Size2Xs: Rem(0.75), Xs: Rem(0.8125), Sm: Rem(0.875), Md: Rem(1.0),
-                Lg: Rem(1.125), Xl: Rem(1.25), Size2Xl: Rem(1.5),
-                Size3Xl: Rem(1.75), Size4Xl: Rem(2.25), Size5Xl: Rem(3.5),
-            },
-            spacing: {
-                Zero: Zero, Size3Xs: Rem(0.0625), Size2Xs: Rem(0.125),
-                Xs: Rem(0.25), Sm: Rem(0.375), Md: Rem(0.5), Lg: Rem(0.75),
-                Xl: Rem(1.0), Size2Xl: Rem(1.25), Size3Xl: Rem(1.5),
-                Size4Xl: Rem(2.0), Size5Xl: Rem(2.5), Size6Xl: Rem(3.0), Size7Xl: Rem(4.0),
-            },
-            icon_sizes: {
-                Xs: Rem(1.0), Sm: Rem(1.25), Md: Rem(1.5),
-                Lg: Rem(1.75), Xl: Rem(2.0), Size2Xl: Rem(2.5),
-            },
-            container_widths: {
-                Xs: Rem(28.0), Sm: Rem(32.0), Md: Rem(40.0),
-                Lg: Rem(50.0), Xl: Rem(60.0), Size2Xl: Rem(72.0),
-            },
-            responsive_font_sizes: {
-                "body-resp": ClampValue(min: Rem(0.9375), vw: 1.5, max: Rem(1.125)),
-                "sub-resp":  ClampValue(min: Rem(1.125),  vw: 1.7, max: Rem(1.375)),
-                "h3-resp":   ClampValue(min: Rem(1.25),   vw: 2.5, max: Rem(1.75)),
-                "h2-resp":   ClampValue(min: Rem(1.5),    vw: 2.6, max: Rem(2.0)),
-                "h1-resp":   ClampValue(min: Rem(1.5),    vw: 3.0, max: Rem(2.25)),
-                "display-sm": ClampValue(min: Rem(1.75),  vw: 4.0, max: Rem(2.75)),
-                "display-lg": ClampValue(min: Rem(2.25),  vw: 6.0, max: Rem(4.5)),
-            },
-            responsive_padding: {
-                "section-sm": ClampValue(min: Rem(3.0), vw: 8.0,  max: Rem(5.0)),
-                "section-md": ClampValue(min: Rem(4.0), vw: 10.0, max: Rem(7.5)),
-                "section-lg": ClampValue(min: Rem(5.0), vw: 12.0, max: Rem(10.0)),
-            },
-            z_index: {
-                "content": 1, "sidebar": 20, "topbar": 30,
-                "overlay": 100, "toast": 120,
-            },
-            transitions: {
-                "fast": "0.12s ease", "med": "0.18s ease", "slow": "0.32s ease",
-            },
-            border_radii: {
-                "sm": Rem(0.25), "md": Rem(0.5), "lg": Rem(0.75),
-                "xl": Rem(1.0), "pill": Px(999),
-            },
-        ),
-        primevue: PrimeVuePreset(
-            primary:       ColorScaleRef(palette: PaletteRef(palette: "violet"), direction: Forward),
-            light_surface: ColorScaleRef(palette: PaletteRef(palette: "slate"),  direction: Forward),
-            dark_surface:  ColorScaleRef(palette: PaletteRef(palette: "slate"),  direction: Reversed),
-            light_surface_zero: HexColor("#ffffff"),
-            dark_surface_zero:  HexColor("#0a0a0a"),
-        ),
-    )),
-
-    // v4: icon registry — friendly key → PrimeIcons CSS class
-    icons: Icons(IconConfig(
-        registry: {
-            "add": IconClass("pi pi-plus"),
-            "back": IconClass("pi pi-arrow-left"),
-            "cancel": IconClass("pi pi-times"),
-            "cog": IconClass("pi pi-cog"),
-            "dashboard": IconClass("pi pi-th-large"),
-            "delete": IconClass("pi pi-trash"),
-            "edit": IconClass("pi pi-pencil"),
-            "error": IconClass("pi pi-times-circle"),
-            "filter": IconClass("pi pi-filter"),
-            "home": IconClass("pi pi-home"),
-            "info": IconClass("pi pi-info-circle"),
-            "refresh": IconClass("pi pi-refresh"),
-            "save": IconClass("pi pi-check"),
-            "search": IconClass("pi pi-search"),
-            "settings": IconClass("pi pi-cog"),
-            "sort": IconClass("pi pi-sort"),
-            "success": IconClass("pi pi-check-circle"),
-            "tools": IconClass("pi pi-wrench"),
-            "user": IconClass("pi pi-user"),
-            "users": IconClass("pi pi-users"),
-            "warning": IconClass("pi pi-exclamation-triangle"),
-        },
-    )),
-
     default_derives: ["Debug", "Clone", "Serialize", "Deserialize"],
 )
 ```
+
+**Theme + icons are NOT in `app.ron`.** They live as user-owned files shipped pre-populated by the canonical template — `frontend/src/styles/tokens.css`, `frontend/src/plugins/primevue.ts`, `frontend/src/icons.ts`. Edit them directly. Codegen never touches them; component/page codegen only emits `var(--app-*)` and `IC.<name>` references against the contract that the names exist.
 
 All keys under `app.ron` are optional except `schema_version`. Missing keys fall back to defaults baked into Blast.
 
@@ -276,50 +190,6 @@ CRUD routes for resources are auto-emitted from each Primer file's verbs — the
 | `Entry.roles` | [Role] | Per-entry visibility (must be subset of route's auth requirement; codegen validates). |
 
 **Drift impossibility**: every `Entry.route` is validated against the resolved route set at codegen time. Renamed routes break codegen, not runtime. There is no manual `ROUTE_TO_KEY` table.
-
-### `theme` and `icons` (codegen'd FE design system)
-
-Both sections are present by default at `schema_version: 4`. The v3→v4 upgrader injects defaults when they are absent (see Schema Versioning below).
-
-**`theme: Theme(ThemeConfig(...))`** is the single source of truth for two generated FE files:
-
-- `frontend/src/generated/styles/tokens.css` — CSS custom properties for fonts, font-sizes (`--app-fs-*`), spacing (`--app-space-*`), icon sizes (`--app-icon-*`), container widths (`--app-container-*`), responsive clamps (`--app-fs-*-resp`, `--app-pad-*`), z-indices (`--app-z-*`), transitions (`--app-transition-*`), and border radii (`--app-radius-*`).
-- `frontend/src/generated/plugins/primevue.ts` — PrimeVue Aura preset overlay that sets the semantic `primary` scale and the `light`/`dark` surface scales.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `tokens.fonts.mono` | string | CSS font-family stack for monospace. |
-| `tokens.fonts.sans` | string | CSS font-family stack for sans-serif. |
-| `tokens.font_sizes` | BTreeMap\<SizeKey, DimValue\> | Keys: `Size2Xs`..`Size5Xl`. Emitted as `--app-fs-<suffix>`. |
-| `tokens.spacing` | BTreeMap\<SizeKey, DimValue\> | Keys: `Zero`, `Size3Xs`..`Size7Xl`. Emitted as `--app-space-<suffix>`. |
-| `tokens.icon_sizes` | BTreeMap\<SizeKey, DimValue\> | Keys: `Xs`..`Size2Xl`. Emitted as `--app-icon-<suffix>`. |
-| `tokens.container_widths` | BTreeMap\<SizeKey, DimValue\> | Keys: `Xs`..`Size2Xl`. Emitted as `--app-container-<suffix>`. |
-| `tokens.responsive_font_sizes` | BTreeMap\<String, ClampValue\> | Each value becomes a `clamp(...)` expression, e.g. `--app-fs-body-resp`. |
-| `tokens.responsive_padding` | BTreeMap\<String, ClampValue\> | Emitted as `--app-pad-<key>`. |
-| `tokens.z_index` | BTreeMap\<String, u32\> | Emitted as `--app-z-<key>`. |
-| `tokens.transitions` | BTreeMap\<String, String\> | Free-form CSS timing values. Emitted as `--app-transition-<key>`. |
-| `tokens.border_radii` | BTreeMap\<String, DimValue\> | `DimValue::Px(999)` emits `999px`; others emit `<n>rem`. |
-| `primevue.primary` | ColorScaleRef | Palette + direction driving the `primary` semantic scale. Default: `violet`, `Forward`. |
-| `primevue.light_surface` | ColorScaleRef | Light-mode surface scale. Default: `slate`, `Forward`. |
-| `primevue.dark_surface` | ColorScaleRef | Dark-mode surface scale. Default: `slate`, `Reversed`. |
-| `primevue.light_surface_zero` | HexColor | Literal hex for surface-zero in light mode. Default: `#ffffff`. |
-| `primevue.dark_surface_zero` | HexColor | Literal hex for surface-zero in dark mode. Default: `#0a0a0a`. |
-
-`DimValue` variants: `Rem(f64)` → `"<n>rem"`, `Px(u32)` → `"<n>px"`, `Zero` → `"0"`.
-`SizeKey` maps to CSS suffixes: `Zero`→`0`, `Size3Xs`→`3xs`, `Size2Xs`→`2xs`, `Xs`→`xs`, `Sm`→`sm`, `Md`→`md`, `Lg`→`lg`, `Xl`→`xl`, `Size2Xl`→`2xl`, etc.
-`SurfaceDirection::Forward` walks palette `50→950`; `Reversed` maps surface `50` to palette `950` (dark-mode inversion).
-
-The Governor lint rule `RawColorOutsidePreset` enforces that no raw hex/rgb colors appear outside the preset file. The preset file is exempt from that rule.
-
-**`icons: Icons(IconConfig(...))`** is the single source of truth for `frontend/src/generated/icons.ts` — a typed registry of `IC.<name>` constants (TypeScript `as const` object) mapping friendly icon names to PrimeIcons CSS class strings.
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `registry` | BTreeMap\<IconKey, IconClass\> | Key: `[a-z][a-z0-9_-]*`. Value: must start with `"pi pi-"`. Iterated in `BTreeMap` order for deterministic codegen. |
-
-The Governor lint rule `IconClassOutsideIconsFile` enforces that no literal `"pi pi-foo"` strings appear outside the generated `src/icons.ts`. Components import `IC` and use `IC.home`, `IC.dashboard`, etc. The `IconName` type is a union of the exact keys.
-
-To add an icon: add an entry to `registry` in `app.ron`, then run `blast gen all`.
 
 ## `resources/<name>.ron` Schema
 
@@ -408,7 +278,7 @@ Struct < Model < Route < Types < Composables < Components < Pages
 
 Default: `Composables`. See `SPEC_CODEGEN.md` for the full level-by-level output table and rationale. Each level implies all prior levels.
 
-Wizard exposes a single dropdown asking "how far do you want generation for this resource?" Power users hand-edit RON.
+The `blast migration` wizard exposes a single ←/→ picker asking "how far do you want generation for this resource?" on its Form screen. Power users hand-edit RON to change `gen_level` after the fact.
 
 Level downgrade preserves stale generated files (Blast does NOT delete on level lower); it only stops emitting. Blast warns on next `gen` about orphan dirs above current `gen_level` so the user can clean up.
 
@@ -433,7 +303,6 @@ If `schema_version` is unknown (higher than Blast's max), Blast errors out with 
 |------|----------|
 | v1 → v2 | No-op. Version token bump only. |
 | v2 → v3 | No-op. Adds optional `nav` / `pages` sections — both default to absent, so existing files load cleanly with no migration. |
-| v3 → v4 | **Additive.** Injects `Theme(ThemeConfig::default())` at key `"theme"` and `Icons(IconConfig::default())` at key `"icons"` if those keys are absent. If a key is already present (user added it by hand), it is preserved untouched. Default values are byte-identical to the previous static `TOKENS_CSS` / `PRIMEVUE_TS` / `ICONS_TS` constants, so existing generated output is unchanged after upgrade. |
 
 The typed app upgraders (`upgrade_app_v*_to_v*` in `src/state/upgraders.rs`) operate on a fully-deserialized `AppState`. Resource upgraders that must reshape a field type before deserialization use a separate raw-text path (`ResourceRawUpgrader`).
 
@@ -456,8 +325,9 @@ Hash algorithm choice: blake3 (single global dep, faster than SHA-256 on the typ
 **Mutate → Regen is always explicit.** Blast never auto-regens on state file change.
 
 ```
-1. blast gen resource users   # TUI wizard mutates resources/users.ron
-2. blast gen all              # reads state files → rewrites src/*/generated/ + frontend/src/generated/
+1. blast migration            # chained wizard: SQL migration + resources/<table>.ron + migrate + gen schema + gen all
+2. (manual) edit resources/<table>.ron  # if you need policy beyond the wizard's defaults (per-verb auth, WS events, full variant fine-grain)
+3. blast gen all              # reads state files → rewrites src/*/generated/ + frontend/src/generated/
 ```
 
 This is intentional. Auto-regen on file save would:
@@ -500,17 +370,13 @@ If the TUI wizard cannot express what the user needs, the user writes Rust at th
 
 ## Rename Detection and Refusal
 
-When the user renames a resource (e.g. `User` → `Account`) via the TUI, Blast:
+When the user renames a resource (`User` → `Account`) by hand-editing RON, Blast does not magic-patch user-owned code. The next `blast gen all` run regenerates the `generated/` subtree under the new name; user-owned files (everything outside `<layer>/generated/`) keep referring to the old symbol and fail to compile until the user fixes the references manually.
 
-1. Greps user-owned files (everything outside `src/**/generated/`) for the old symbol (`User`, `UserPublic`, `NewUser`, etc.) before writing the updated state file.
-2. If old symbols are found, prints them with file:line context and **refuses to write** (or emits a loud warning, depending on flag).
-3. User resolves the references manually — then reruns the wizard to confirm.
-
-There is no magic AST patching. Manual resolution keeps user-owned code intentional and readable. The grep is text-based (conservative: may have false positives for common names). User can override with `--force-rename` after reviewing the list.
+This is by design: the layer split is the escape hatch. There is no auto-rename path because grep-based AST rewriting is unreliable on a real codebase.
 
 ## Related Specs
 
 - `SPEC_CODEGEN.md` — how state files drive generated output, hash marker format
-- `SPEC_BLAST_COMMANDS.md` — `blast gen resource` wizard, `blast gen all`
+- `SPEC_BLAST_COMMANDS.md` — `blast migration` chained wizard, `blast gen all`
 - `SPEC_GOVERNOR.md` — `app.ron` fe_lint section drives Governor
 - `catalyst/doc/SPEC_ARCHITECTURE.md` — where generated files land

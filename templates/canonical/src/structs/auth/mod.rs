@@ -5,9 +5,9 @@ pub mod session_context;
 pub mod sessions;
 pub mod users;
 
-pub use login::{LoginBody, LoginInput, LoginOutput, LoginResponse};
-pub use register::{RegisterBody, RegisterInput};
+pub use login::{AuthResponse, LoginBody, LoginInput, LoginOutput};
+pub use register::{RegisterBody, RegisterInput, RegisterOutput};
 pub use role::Role;
 pub use session_context::SessionContext;
-pub use sessions::{NewSession, Session};
+pub use sessions::{NewSession, Session, SESSION_TTL_SECS};
 pub use users::{NewUser, User, UserPublic};

@@ -1,13 +1,16 @@
 use crate::{
     cata_log,
     meltdown::*,
-    models::auth::users,
-    services::crypto,
-    structs::{auth::RegisterInput, UserPublic},
+    models::auth::{sessions, users},
+    services::{crypto, time},
+    structs::{
+        auth::{RegisterInput, RegisterOutput, SessionContext, SESSION_TTL_SECS},
+        UserPublic,
+    },
     Ctx,
 };
 
-pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<UserPublic, MeltDown> {
+pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, MeltDown> {
     if input.email.trim().is_empty() {
         return Err(MeltDown::validation_failed("email is required"));
     }
@@ -24,6 +27,15 @@ pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<UserPublic, MeltDown
     let hash = crypto::hash_password(&input.password)?;
     let user = users::insert_new(&mut conn, &input.email, &hash).await?;
 
+    let token = crypto::mint_session_token();
+    let expires_at = time::now_unix() + SESSION_TTL_SECS;
+    let session_row = sessions::insert_session(&mut conn, user.id, &token, expires_at).await?;
+
     cata_log!(Info, format!("Registered user id={} email={}", user.id, user.email));
-    Ok(UserPublic::from(user))
+    let session_ctx = SessionContext::new(session_row.id, user.id, user.role, &token);
+    Ok(RegisterOutput {
+        token,
+        user: UserPublic::from(user),
+        session: session_ctx,
+    })
 }

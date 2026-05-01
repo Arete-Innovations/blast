@@ -230,16 +230,6 @@ impl Progress {
         self
     }
 
-    pub fn inc(&mut self, delta: u64) -> &mut Self {
-        if get_mode() == RuntimeMode::Dashboard {
-            return self;
-        }
-        if !is_quiet() {
-            self.inner.raw_bar().inc(delta);
-        }
-        self
-    }
-
     pub fn success(&mut self, msg: &str) {
         if get_mode() == RuntimeMode::Dashboard {
             drop(success(msg));
@@ -264,19 +254,6 @@ impl Progress {
                 },
             );
         }
-    }
-
-    pub fn warning(&mut self, msg: &str) -> BlastResult<()> {
-        if get_mode() == RuntimeMode::Dashboard {
-            warning(msg)?;
-            return Ok(());
-        }
-        if !is_quiet() {
-            self.inner.raw_bar().suspend(|| {
-                println!("{} {}", SinkLevel::Warn.icon(), style(msg).yellow());
-            });
-        }
-        Ok(())
     }
 }
 

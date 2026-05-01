@@ -1,87 +1,8 @@
-use std::{collections::HashSet, fs, path::Path};
+use std::{fs, path::Path};
 
-use dialoguer::{theme::ColorfulTheme, Select};
 use diesel::{pg::PgConnection, prelude::*};
 
 use crate::{database::connection::establish_connection, progress::ProgressManager};
-
-pub fn get_existing_tables() -> Vec<String> {
-    let migrations_dir = Path::new("src/database/migrations");
-    let mut tables_set = HashSet::new();
-
-    if migrations_dir.exists() {
-        let read_result = fs::read_dir(migrations_dir);
-        match read_result {
-            Ok(entries) => {
-                populate_tables_from_entries(entries, &mut tables_set);
-            }
-            Err(e) => {
-                drop(e);
-            }
-        }
-    }
-
-    let mut tables: Vec<String> = tables_set.into_iter().collect();
-    tables.sort();
-    tables
-}
-
-fn populate_tables_from_entries(entries: std::fs::ReadDir, tables_set: &mut HashSet<String>) {
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let is_diesel_setup = match path.file_name().and_then(|name| name.to_str()) {
-            Some(s) => s.contains("diesel_initial_setup"),
-            None => false, // allow: missing or non-UTF-8 filename ≠ diesel migration
-        };
-
-        if is_diesel_setup {
-            continue;
-        }
-
-        let up_file_path = path.join("up.sql");
-        if !up_file_path.exists() {
-            continue;
-        }
-
-        let contents = match fs::read_to_string(&up_file_path) {
-            Ok(c) => c,
-            Err(e) => {
-                drop(e);
-                continue;
-            }
-        };
-
-        for line in contents.lines() {
-            let line = line.trim();
-            if !line.to_uppercase().starts_with("CREATE TABLE") {
-                continue;
-            }
-
-            let Some(table_pos) = line.find("TABLE") else {
-                continue;
-            };
-            let rest_of_line = line[table_pos + "TABLE".len()..].trim();
-            let table_name_part = match rest_of_line.strip_prefix("IF NOT EXISTS") {
-                Some(s) => s.trim(),
-                None => rest_of_line.trim(),
-            };
-
-            let table_name_candidate = table_name_part.split_whitespace().next().and_then(|name| name.split('.').last());
-
-            match table_name_candidate {
-                Some(table_name) => {
-                    let clean_table_name = table_name.trim_matches(|c| c == '(' || c == '`' || c == ';' || c == '"');
-                    tables_set.insert(clean_table_name.to_string());
-                }
-                None => {}
-            }
-        }
-    }
-}
 
 fn process_seed_files(connection: &mut PgConnection, seed_files: Vec<String>) -> (bool, Vec<String>, Vec<String>) {
     let mut all_succeeded = true;
@@ -128,7 +49,7 @@ pub fn seed_specific_file(file_name: &str) -> bool {
     result
 }
 
-pub fn seed(selection: Option<usize>) -> bool {
+pub fn seed() -> bool {
     let progress = ProgressManager::new_spinner();
     progress.set_message("Running database seed operations...");
 
@@ -181,41 +102,7 @@ pub fn seed(selection: Option<usize>) -> bool {
         }
     };
 
-    if selection.is_some() {
-        return run_all_seed_files(&mut connection, seed_files);
-    }
-
-    let items: Vec<&str> = std::iter::once("All").chain(seed_files.iter().map(|s| s.as_str())).collect();
-
-    let chosen = match Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select a seed file to run or choose All")
-        .default(0)
-        .items(&items)
-        .interact()
-    {
-        Ok(idx) => idx,
-        Err(e) => {
-            progress.error(&format!("Interaction error: {}", e));
-            return false;
-        }
-    };
-
-    if chosen == 0 {
-        run_all_seed_files(&mut connection, seed_files)
-    } else {
-        let file = &seed_files[chosen - 1];
-        let seed_progress = ProgressManager::new_spinner();
-        seed_progress.set_message(&format!("Seeding {}", file));
-
-        let result = run_seed_file(&mut connection, file);
-        if result {
-            seed_progress.success(&format!("Seed file {} executed successfully", file));
-        } else {
-            seed_progress.error(&format!("Failed to execute seed file {}", file));
-        }
-
-        result
-    }
+    run_all_seed_files(&mut connection, seed_files)
 }
 
 fn run_all_seed_files(connection: &mut PgConnection, seed_files: Vec<String>) -> bool {

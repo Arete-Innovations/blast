@@ -15,8 +15,6 @@ use crate::{cata_log, meltdown::MeltDown};
 pub async fn error_handling_middleware(request: Request, next: Next) -> Response {
     let start = Instant::now();
     let request_id = Uuid::new_v4().to_string();
-    let method = request.method().clone();
-    let uri = request.uri().clone();
 
     let mut response = next.run(request).await;
 
@@ -42,10 +40,10 @@ pub async fn error_handling_middleware(request: Request, next: Next) -> Response
     let duration = start.elapsed();
 
     match status.as_u16() {
-        200..=299 => cata_log!(Info, format!("{} {} {} - {}ms", method, uri, status, duration.as_millis())),
-        400..=499 => cata_log!(Warning, format!("{} {} {} - {}ms", method, uri, status, duration.as_millis())),
-        500..=599 => cata_log!(Error, format!("{} {} {} - {}ms", method, uri, status, duration.as_millis())),
-        other => cata_log!(Debug, format!("{} {} {} - {}ms", method, uri, other, duration.as_millis())),
+        200..=299 => cata_log!(Info, format!("{} - {}ms", status, duration.as_millis())),
+        400..=499 => cata_log!(Warning, format!("{} - {}ms", status, duration.as_millis())),
+        500..=599 => cata_log!(Error, format!("{} - {}ms", status, duration.as_millis())),
+        other => cata_log!(Debug, format!("{} - {}ms", other, duration.as_millis())),
     }
 
     response

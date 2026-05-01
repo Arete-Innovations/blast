@@ -1,28 +1,21 @@
 use crate::{
-    codegen::{
-        components::input_map,
-        validators::render::{any_field_uses_regex, escape_rust_string, is_stringy, pattern_const_name, EMAIL_REGEX, URL_REGEX},
-    },
-    state::{FieldName, FieldState, ValidatorRule},
+    codegen::validators::render::{any_field_uses_regex, escape_rust_string, is_stringy, pattern_const_name, EMAIL_REGEX, URL_REGEX},
+    state::{FieldName, FieldState, SqlType, ValidatorRule},
 };
+
+fn is_numeric_sql_type(sql: &SqlType) -> bool {
+    matches!(
+        sql.as_str().to_ascii_lowercase().as_str(),
+        "int2" | "int4" | "int8" | "smallint" | "integer" | "bigint" | "float4" | "float8" | "real" | "double" | "numeric" | "decimal"
+    )
+}
 
 pub fn render_validators_rust_body(table: &str, insertable_type: &str, patch_type: &str, insertable_fields: &[(&FieldName, &FieldState)], patch_fields: &[(&FieldName, &FieldState)]) -> String {
     let needs_regex = any_field_uses_regex(insertable_fields) || any_field_uses_regex(patch_fields);
     let regex_imports = if needs_regex { "use ::once_cell::sync::Lazy;\nuse ::regex::Regex;\n" } else { "" };
     let regex_constants = render_regex_constants_rust(insertable_fields, patch_fields);
 
-    let mut import_types: Vec<String> = Vec::new();
-    if !insertable_fields.is_empty() {
-        import_types.push(insertable_type.to_string());
-    }
-    if !patch_fields.is_empty() {
-        import_types.push(patch_type.to_string());
-    }
-    let types_use = if import_types.is_empty() {
-        String::new()
-    } else {
-        format!("use crate::structs::generated::{table}::{{{names}}};\n", table = table, names = import_types.join(", "))
-    };
+    let types_use = format!("use crate::structs::generated::{table}::{{{insertable_type}, {patch_type}}};\n");
 
     let insertable_fn = render_insertable_validator(table, insertable_type, insertable_fields);
     let patch_fn = render_patch_validator(table, patch_type, patch_fields);
@@ -66,15 +59,25 @@ fn render_regex_constants_rust(insertable_fields: &[(&FieldName, &FieldState)], 
     let mut out = String::new();
     if needs_email {
         let crash = crash_macro_call("hardcoded email regex failed to compile");
-        out.push_str(&format!("static EMAIL_RE: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n", re = EMAIL_REGEX, crash = crash));
+        out.push_str(&format!(
+            "static EMAIL_RE: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n",
+            re = EMAIL_REGEX,
+            crash = crash
+        ));
     }
     if needs_url {
         let crash = crash_macro_call("hardcoded url regex failed to compile");
-        out.push_str(&format!("static URL_RE: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n", re = URL_REGEX, crash = crash));
+        out.push_str(&format!(
+            "static URL_RE: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n",
+            re = URL_REGEX,
+            crash = crash
+        ));
     }
     for (const_name, re) in &patterns {
         let crash = crash_macro_call("pattern regex failed to compile");
-        out.push_str(&format!("static {const_name}: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n"));
+        out.push_str(&format!(
+            "static {const_name}: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n"
+        ));
     }
     if !out.is_empty() {
         out.push('\n');
@@ -132,7 +135,7 @@ fn render_patch_validator(table: &str, type_name: &str, fields: &[(&FieldName, &
 
 fn render_field_checks(field: &str, state: &FieldState, is_patch: bool) -> String {
     let is_string = is_stringy(&state.sql_type);
-    let is_numeric = input_map::is_number(&state.sql_type);
+    let is_numeric = is_numeric_sql_type(&state.sql_type);
     let is_optional_in_dto = is_patch || state.nullable;
 
     let mut out = String::new();

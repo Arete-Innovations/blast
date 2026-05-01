@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::database::schema::sessions;
 
+pub const SESSION_TTL_SECS: i64 = 60 * 60 * 24 * 7;
+
 #[derive(Debug, Clone, Queryable, Selectable, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = sessions)]
 pub struct Session {

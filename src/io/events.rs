@@ -7,7 +7,6 @@ pub enum SinkEvent {
     Error(String),
     Success(String),
     Debug(String),
-    StructuredDiagnostic { kind: String, fields: Vec<(String, String)> },
 }
 
 impl SinkEvent {
@@ -18,7 +17,6 @@ impl SinkEvent {
             SinkEvent::Error(_) => SinkLevel::Error,
             SinkEvent::Success(_) => SinkLevel::Success,
             SinkEvent::Debug(_) => SinkLevel::Debug,
-            SinkEvent::StructuredDiagnostic { .. } => SinkLevel::Diagnostic,
         }
     }
 }
@@ -30,7 +28,6 @@ pub enum SinkLevel {
     Warn,
     Error,
     Success,
-    Diagnostic,
 }
 
 impl SinkLevel {
@@ -41,7 +38,6 @@ impl SinkLevel {
             SinkLevel::Warn => "⚠️",
             SinkLevel::Error => "❌",
             SinkLevel::Success => "✅",
-            SinkLevel::Diagnostic => "📋",
         }
     }
 
@@ -52,7 +48,6 @@ impl SinkLevel {
             SinkLevel::Warn => "WARNING",
             SinkLevel::Error => "ERROR",
             SinkLevel::Success => "SUCCESS",
-            SinkLevel::Diagnostic => "DIAG",
         }
     }
 }

@@ -69,15 +69,12 @@ fn extract_env_spec(section: Option<&AppPolicySection>) -> BlastResult<Option<En
     };
     match section {
         AppPolicySection::EnvSpec(state) => Ok(Some(state.clone())),
-        AppPolicySection::FeLint(_) => Ok(None),
         AppPolicySection::Admin(_) => Ok(None),
         AppPolicySection::Fuses(_) => Ok(None),
         AppPolicySection::Services(_) => Ok(None),
         AppPolicySection::Defaults(_) => Ok(None),
         AppPolicySection::Nav(_) => Ok(None),
         AppPolicySection::Pages(_) => Ok(None),
-        AppPolicySection::Theme(_) => Ok(None),
-        AppPolicySection::Icons(_) => Ok(None),
     }
 }
 
@@ -136,7 +133,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        io::{null::NullProgress, recorder::RecorderSink},
+        io::null::{NullProgress, NullSink},
         state::{AppPolicySection, AppState, EnvSpecState, EnvVarSpec},
     };
 
@@ -185,7 +182,7 @@ mod tests {
         let state = make_state_with_env_spec();
         write_app_ron(&dir, &state);
 
-        let mut sink = RecorderSink::new();
+        let mut sink = NullSink;
         let mut progress = NullProgress;
         let report = run(dir.path(), &mut sink, &mut progress).unwrap();
 
@@ -227,7 +224,7 @@ mod tests {
         let state = AppState::new();
         write_app_ron(&dir, &state);
 
-        let mut sink = RecorderSink::new();
+        let mut sink = NullSink;
         let mut progress = NullProgress;
         let report = run(dir.path(), &mut sink, &mut progress).unwrap();
 
