@@ -3,13 +3,16 @@
 //! Pipeline order (post-phase-2 leptos-shaped):
 //!     schema → enums → structs → validators → models → routines → flows
 //!            → http_routes (REST /api/*) → leptos_forms → leptos_pages
-//!            → leptos_tables → app_routes → env_example
+//!            → leptos_data → leptos_tables → app_routes → env_example
 //!
 //! Leptos forms run before leptos pages because pages reference form
 //! components (e.g. `<UserCreateForm/>`) emitted by the forms pass. Both
-//! passes touch `transport/leptos/data/generated/` for stub helpers — the
-//! later (pages) emitter is a strict superset, so its writes overwrite
-//! the earlier (forms) writes when both qualify.
+//! passes write per-resource placeholder helpers under
+//! `transport/leptos/data/generated/` (returning
+//! `MeltDown::Unexpected("not_implemented")`); leptos_data runs LAST and
+//! overwrites those placeholders with real isomorphic helpers
+//! (cfg-branched: SSR calls flow direct, wasm calls `/api/*` via the
+//! emitted `transport/leptos/api_client.rs`).
 
 use std::path::{Path, PathBuf};
 
@@ -46,6 +49,7 @@ const STEP_HTTP_ROUTES: &str = "http routes generation";
 const STEP_VALIDATORS: &str = "validators generation";
 const STEP_LEPTOS_PAGES: &str = "leptos pages generation";
 const STEP_LEPTOS_FORMS: &str = "leptos forms generation";
+const STEP_LEPTOS_DATA: &str = "leptos data generation";
 const STEP_LEPTOS_TABLES: &str = "leptos tables generation";
 const STEP_APP_ROUTES: &str = "leptos app routes generation";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
@@ -74,6 +78,7 @@ pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut 
     run_validators_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_forms_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_pages_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_leptos_data_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_tables_step(&args.project_root, sink, progress, &mut outcome)?;
     run_app_routes_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -329,6 +334,21 @@ fn run_leptos_forms_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: 
     }
 }
 
+fn run_leptos_data_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::leptos_data::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_LEPTOS_DATA, err));
+            Err(err)
+        }
+    }
+}
+
 fn run_leptos_tables_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
     match codegen::leptos_tables::run(project_root, sink, progress) {
         Ok(report) => {
@@ -382,4 +402,3 @@ fn run_env_example_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &
         }
     }
 }
-
