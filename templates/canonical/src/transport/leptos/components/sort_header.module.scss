@@ -1,0 +1,38 @@
+.th {
+    text-align: left;
+    padding: 0;
+    background: var(--app-color-bg);
+    color: var(--app-color-fg);
+    border-bottom: 0.0625rem solid var(--app-color-border-subtle);
+    font-size: var(--app-fs-sm);
+    font-weight: 600;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--app-space-xs);
+    width: 100%;
+    padding: var(--app-space-sm) var(--app-space-md);
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+
+    &:hover {
+        color: var(--app-color-brand);
+    }
+}
+
+.label {
+    font-size: inherit;
+    font-weight: inherit;
+}
+
+.arrow {
+    color: var(--app-color-brand);
+    font-size: var(--app-fs-2xs);
+    line-height: 1;
+}
