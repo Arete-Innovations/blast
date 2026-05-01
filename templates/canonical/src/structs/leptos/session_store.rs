@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::structs::auth::SessionContext;
+use crate::structs::auth::{Role, SessionContext};
 
 #[derive(Clone, Copy)]
 pub struct SessionStore {
@@ -22,6 +22,14 @@ impl SessionStore {
 
     pub fn set(&self, value: Option<SessionContext>) {
         self.inner.set(value);
+    }
+
+    pub fn is_authed(&self) -> bool {
+        self.inner.get().is_some()
+    }
+
+    pub fn has_role(&self, role: Role) -> bool {
+        self.inner.get().is_some_and(|ctx| ctx.role == role)
     }
 }
 
