@@ -14,6 +14,34 @@ body {
     line-height: 1.5;
 }
 
+// HTML form controls inherit UA-default fonts (`-webkit-small-control`,
+// `-apple-system`, fixed pixel font-size) that bypass the rem-scaled root
+// font and stay tiny at 4K. Force the cascade: inherit family from <body>,
+// pin font-size to a rem token, and apply tokenised padding/border/radius
+// so native inputs match the design system without per-component scss.
+input,
+select,
+textarea,
+button {
+    font: inherit;
+    font-size: var(--app-fs-md);
+    line-height: var(--app-line-height-base);
+    padding: var(--app-space-sm) var(--app-space-md);
+    border-radius: var(--app-radius-sm);
+    border: 0.0625rem solid var(--app-color-border);
+    background: var(--app-color-bg);
+    color: var(--app-color-fg);
+}
+
+button {
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 // Global nav progress bar — driven by `<NavProgress/>` reading the NavStore
 // signal. Three visual states (Idle / Pending / Settled) drive width +
 // opacity via class swap. Lives in base.scss because LEPTOS:1 bans inline
