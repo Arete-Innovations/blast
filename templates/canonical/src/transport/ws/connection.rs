@@ -58,7 +58,10 @@ pub async fn handle_socket(socket: WebSocket, ctx: Ctx, registry: Arc<Registry>)
 
     loop {
         let msg = tokio::select! {
-            _ = &mut close_rx => break,
+            _ = &mut close_rx => {
+                cata_log!(Debug, format!("ws: subscriber {} evicted via close_signal", subscriber_id));
+                break;
+            }
             maybe_msg = stream.next() => {
                 let Some(stream_item) = maybe_msg else { break; };
                 match stream_item {
