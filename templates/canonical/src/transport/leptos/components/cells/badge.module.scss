@@ -1,0 +1,30 @@
+.badge {
+    display: inline-block;
+    padding: var(--app-space-xs) var(--app-space-sm);
+    border-radius: var(--app-radius-sm);
+    font-size: var(--app-fs-xs);
+    font-weight: 600;
+    line-height: 1;
+    background: oklch(0.88 0.01 0);
+    color: var(--app-color-fg);
+}
+
+.success {
+    background: var(--app-color-success);
+    color: oklch(0.98 0 0);
+}
+
+.danger {
+    background: var(--app-color-danger);
+    color: oklch(0.98 0 0);
+}
+
+.warning {
+    background: oklch(0.75 0.12 70);
+    color: oklch(0.18 0 0);
+}
+
+.info {
+    background: var(--app-color-info);
+    color: oklch(0.98 0 0);
+}

@@ -1,0 +1,23 @@
+.pre {
+    font-family: monospace;
+    font-size: var(--app-fs-xs);
+    background: oklch(0.94 0.005 250);
+    color: var(--app-color-fg);
+    padding: var(--app-space-sm);
+    border-radius: var(--app-radius-sm);
+    overflow-x: auto;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.details {
+    display: block;
+}
+
+.summary {
+    cursor: pointer;
+    font-size: var(--app-fs-xs);
+    color: var(--app-color-brand);
+    padding: var(--app-space-xs) 0;
+}

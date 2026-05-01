@@ -1,0 +1,33 @@
+.check,
+.yesno {
+    font-weight: 600;
+}
+
+.check.true-val,
+.yesno.true-val {
+    color: var(--app-color-success);
+}
+
+.check.false-val,
+.yesno.false-val {
+    color: var(--app-color-danger);
+}
+
+.badge {
+    display: inline-block;
+    padding: var(--app-space-xs) var(--app-space-sm);
+    border-radius: var(--app-radius-sm);
+    font-size: var(--app-fs-xs);
+    font-weight: 600;
+    line-height: 1;
+}
+
+.badge-true {
+    background: var(--app-color-success);
+    color: var(--app-color-bg);
+}
+
+.badge-false {
+    background: var(--app-color-danger);
+    color: var(--app-color-bg);
+}
