@@ -63,7 +63,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    match axum::serve(listener, app.into_make_service()).await {
+    match axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await {
         Ok(()) => {}
         Err(e) => {
             cata_log!(Error, format!("axum serve exited: {}", e));
