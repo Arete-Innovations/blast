@@ -17,7 +17,8 @@ fn map_response_error(envelope: ErrorEnvelope) -> MeltDown {
         "BadRequest" => MeltType::BadRequest,
         _other => MeltType::Unexpected(envelope.error.melt_type),
     };
-    MeltDown::new(kind, envelope.error.message)
+    let msg = envelope.error.message;
+    MeltDown::new(kind, msg.clone()).with_user_message(msg)
 }
 
 async fn parse_or_envelope_error<T: DeserializeOwned>(resp: gloo_net::http::Response) -> Result<T, MeltDown> {
