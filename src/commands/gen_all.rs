@@ -2,11 +2,14 @@
 //!
 //! Pipeline order (post-phase-2 leptos-shaped):
 //!     schema → enums → structs → validators → models → routines → flows
-//!            → http_routes (REST /api/*) → leptos_pages → leptos_forms
+//!            → http_routes (REST /api/*) → leptos_forms → leptos_pages
 //!            → leptos_tables → app_routes → env_example
 //!
-//! Leptos passes are stubs as of phase 4 skeleton; real emitters land per
-//! resource verb in subsequent iterations.
+//! Leptos forms run before leptos pages because pages reference form
+//! components (e.g. `<UserCreateForm/>`) emitted by the forms pass. Both
+//! passes touch `transport/leptos/data/generated/` for stub helpers — the
+//! later (pages) emitter is a strict superset, so its writes overwrite
+//! the earlier (forms) writes when both qualify.
 
 use std::path::{Path, PathBuf};
 
@@ -69,8 +72,8 @@ pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut 
     run_flows_step(&args.project_root, sink, progress, &mut outcome)?;
     run_http_routes_step(&args.project_root, sink, progress, &mut outcome)?;
     run_validators_step(&args.project_root, sink, progress, &mut outcome)?;
-    run_leptos_pages_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_forms_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_leptos_pages_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_tables_step(&args.project_root, sink, progress, &mut outcome)?;
     run_app_routes_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;

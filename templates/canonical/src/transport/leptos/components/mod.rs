@@ -7,3 +7,4 @@ pub use error_banner::ErrorBanner;
 pub use page_shell::PageShell;
 
 pub use crate::structs::leptos::{AuthGuardMode, PageLayout};
+pub mod generated;
