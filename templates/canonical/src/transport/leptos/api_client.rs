@@ -18,7 +18,12 @@ fn map_response_error(envelope: ErrorEnvelope) -> MeltDown {
         _other => MeltType::Unexpected(envelope.error.melt_type),
     };
     let msg = envelope.error.message;
-    MeltDown::new(kind, msg.clone()).with_user_message(msg)
+    let melt = MeltDown::new(kind, msg.clone());
+    if msg.trim().is_empty() {
+        melt
+    } else {
+        melt.with_user_message(msg)
+    }
 }
 
 async fn parse_or_envelope_error<T: DeserializeOwned>(resp: gloo_net::http::Response) -> Result<T, MeltDown> {
