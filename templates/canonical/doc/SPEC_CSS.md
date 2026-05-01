@@ -19,9 +19,11 @@ Monolithic SCSS design-token file + per-component scoped styles via `stylance`. 
 
 ```
 style/
-├── main.scss      cargo-leptos entry; @use's tokens + base
-├── tokens.scss    design tokens (--app-*) — single source of truth
-└── base.scss      reset + root font scaling + body defaults
+├── main.scss        cargo-leptos entry; @use's tokens + base + generated
+├── tokens.scss      design tokens (--app-*) — single source of truth
+├── base.scss        reset + root font scaling + body defaults
+└── generated/       stylance-cli output (gitignored; bootstrap stub created by build.rs)
+    └── _index.scss  @use'd from main.scss
 ```
 
 Per-component scoped styles live alongside their `.rs` files:
@@ -30,10 +32,13 @@ Per-component scoped styles live alongside their `.rs` files:
 src/transport/leptos/components/
 ├── page_shell.rs
 ├── page_shell.module.scss   <-- stylance hashes the classnames
-└── error_banner.module.scss
+├── error_banner.module.scss
+└── toast_host.module.scss
 ```
 
-Stylance scans for `.module.scss` files at build time and emits a generated module per source `.rs` exposing typed constants for each class (e.g. `style::page_shell::CARD`).
+Stylance scans for `.module.scss` files at build time. The `import_crate_style!` proc-macro emits typed `&'static str` constants for each class (e.g. `style::shell` → `"shell-7d12abf"`), and the `stylance` CLI bundles transformed SCSS files into `style/generated/` where `_index.scss` `@use`s every module.
+
+`style/generated/` is gitignored (build artifact). Run `stylance .` from project root before `cargo leptos build` to populate it; `build.rs` writes a no-op stub `_index.scss` on cold checkout so dart-sass can compile `main.scss` even before the first `stylance` run.
 
 ## Theme structure
 
@@ -99,17 +104,23 @@ html {
 
 Root font scales 14px → 32px based on viewport width. Everything downstream in `rem` auto-scales. No media queries needed for responsive typography.
 
-## Per-component pattern (stylance)
+## Per-component pattern (stylance) — live
+
+`PageShell`, `ErrorBanner`, and `ToastHost` ship using `import_crate_style!`. The macro reads the SCSS module at compile time and exposes one `&'static str` per CSS class as a module-level identifier (lowercase, snake_case to match the CSS class name).
 
 ```rust
-use stylance::import_style;
+// src/transport/leptos/components/page_shell.rs
+use leptos::prelude::*;
+use stylance::import_crate_style;
 
-import_style!(style, "page_shell.module.scss");
+use crate::structs::leptos::PageLayout;
+
+import_crate_style!(style, "src/transport/leptos/components/page_shell.module.scss");
 
 #[component]
 pub fn PageShell(layout: PageLayout, children: Children) -> impl IntoView {
     view! {
-        <main class=style::SHELL data-layout=layout.as_str()>
+        <main class=style::shell data-layout=layout.as_str()>
             {children()}
         </main>
     }
@@ -117,23 +128,50 @@ pub fn PageShell(layout: PageLayout, children: Children) -> impl IntoView {
 ```
 
 ```scss
-// page_shell.module.scss
+// src/transport/leptos/components/page_shell.module.scss
 .shell {
     display: flex;
     flex-direction: column;
     gap: var(--app-space-md);
+    min-height: 100vh;
+    padding: var(--app-space-xl);
+    background: var(--app-color-bg);
+    color: var(--app-color-fg);
 
-    &[data-layout="cards"] {
-        padding: var(--app-space-xl);
-    }
-
-    &[data-layout="bleed"] {
-        padding: 0;
-    }
+    &[data-layout="cards"]  { padding: var(--app-space-xl); }
+    &[data-layout="split"]  { padding: 0 var(--app-space-xl) 0 0; }
+    &[data-layout="table"]  { padding: 0; }
+    &[data-layout="bleed"]  { padding: 0; }
+    &[data-layout="tabbed"] { padding: 0 var(--app-space-md); }
 }
 ```
 
-Stylance hashes `.shell` to `.shell_<hash>` so component-local class names never collide globally.
+Stylance hashes `.shell` to `.shell-<hash>` so component-local class names never collide globally.
+
+### Cargo.toml metadata
+
+```toml
+[package.metadata.stylance]
+output_dir = "./style/generated/"
+folders = ["./src/"]
+extensions = [".module.scss"]
+hash_len = 7
+class_name_pattern = "[name]-[hash]"
+```
+
+### Combining multiple classes
+
+For dynamic class composition (e.g. variant + base), build a string:
+
+```rust
+class=move || format!("{} {}", style::toast, style::success)
+```
+
+`stylance::classes!` is also available for cleaner composition.
+
+### `import_crate_style!` vs `import_style!`
+
+`import_style!` (relative path) requires a Rust nightly feature. `import_crate_style!` (path from crate root) works on stable. Catablast uses `import_crate_style!`.
 
 ## Thaw integration
 
@@ -182,15 +220,15 @@ Use `var(--app-space-lg)`.
 ```
 Define a semantic class in `.module.scss` and style with tokens.
 
-## Lint enforcement (planned)
+## Lint enforcement
 
-A `LEPTOS:*` rule family in `build.rs` will enforce:
+The `LEPTOS:*` rule family in `build.rs` enforces (live):
 - `LEPTOS:1` — no inline `style=` attributes in `view!` macros
 - `LEPTOS:2` — no hex / rgb / hsl outside `style/` dir
-- `LEPTOS:3` — no `px` outside niches
+- `LEPTOS:3` — no `px` outside niches (hairline borders, `@media` breakpoints, `style/tokens.scss`, `style/base.scss`)
 - `LEPTOS:4` — every page component wraps top-level view in `<PageShell layout=...>`
 
-Currently scaffolded in phase 4 but not active.
+Violations panic the build. There is no separate `blast check` pass — `cargo check` runs `build.rs`.
 
 ## Related specs
 

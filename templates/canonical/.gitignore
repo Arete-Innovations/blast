@@ -4,6 +4,7 @@ Cargo.lock
 
 # Generated files
 /public
+/style/generated
 
 # Log files
 /storage/logs/*.log

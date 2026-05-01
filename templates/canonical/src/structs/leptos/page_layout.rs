@@ -8,13 +8,13 @@ pub enum PageLayout {
 }
 
 impl PageLayout {
-    pub fn class(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
-            PageLayout::Cards => "page-shell layout-cards",
-            PageLayout::Split => "page-shell layout-split",
-            PageLayout::Table => "page-shell layout-table",
-            PageLayout::Bleed => "page-shell layout-bleed",
-            PageLayout::Tabbed => "page-shell layout-tabbed",
+            PageLayout::Cards => "cards",
+            PageLayout::Split => "split",
+            PageLayout::Table => "table",
+            PageLayout::Bleed => "bleed",
+            PageLayout::Tabbed => "tabbed",
         }
     }
 }

@@ -1,0 +1,15 @@
+.shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-md);
+    min-height: 100vh;
+    padding: var(--app-space-xl);
+    background: var(--app-color-bg);
+    color: var(--app-color-fg);
+
+    &[data-layout="cards"] { padding: var(--app-space-xl); }
+    &[data-layout="split"]  { padding: 0 var(--app-space-xl) 0 0; }
+    &[data-layout="table"]  { padding: 0; }
+    &[data-layout="bleed"]  { padding: 0; }
+    &[data-layout="tabbed"] { padding: 0 var(--app-space-md); }
+}

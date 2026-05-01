@@ -295,7 +295,7 @@ fn main() {
     let src_dir = manifest_dir.join("src");
     let mut hits: Vec<Hit> = Vec::new();
 
-    ensure_stylance_bundle_stub(&manifest_dir);
+    bootstrap_stylance_index(&manifest_dir);
 
     if src_dir.is_dir() {
         scan_dir(&manifest_dir, &src_dir, &mut hits);
@@ -306,17 +306,14 @@ fn main() {
     }
 }
 
-fn ensure_stylance_bundle_stub(manifest_dir: &Path) {
-    let bundle = manifest_dir.join("style").join("generated").join("stylance.scss");
-    if bundle.exists() {
+fn bootstrap_stylance_index(manifest_dir: &Path) {
+    let dir = manifest_dir.join("style").join("generated");
+    let index = dir.join("_index.scss");
+    if index.exists() {
         return;
     }
-    if let Some(parent) = bundle.parent() {
-        if fs::create_dir_all(parent).is_err() {
-            return;
-        }
-    }
-    let _ = fs::write(&bundle, "");
+    let _ = fs::create_dir_all(&dir);
+    let _ = fs::write(&index, "// stylance: run `stylance .` from project root to populate.\n");
 }
 
 fn hit(hits: &mut Vec<Hit>, rule: &'static str, file: &Path, line: usize) {
