@@ -14,7 +14,7 @@ Frontend stack for Catablast apps. Replaces the legacy Vue/TS/PrimeVue/Vite stac
 | Icons | `icondata` crate (Phosphor feature default) |
 | Forms | Hand-rolled native HTML inputs + `spawn_local` in `on:submit` + manual `pending`/`last_error` RwSignals (NOT `Action::new_local` — see Mutations section) |
 | Data fetching (pages) | `RwSignal<Option<Result<T, MeltDown>>>` + `#[cfg(target_arch = "wasm32")] Effect::new(spawn_local(load_*))` — NOT `Resource::new`/`LocalResource::new` (both pull js-sys statics on SSR). SSR renders `<p>"Loading..."</p>` placeholder; wasm hydrate fires Effect → fetch → render. |
-| Tables | `leptos-struct-table` derives on `<R>Public` (deferred — not yet wired in codegen) |
+| Tables | `leptos-struct-table` 0.14.0-beta2 — wired via codegen-emitted `<R>TableRow` (sibling of `<R>Public`) carrying the `TableRow` derive + `impl_vec_data_provider`. List page renders `<TableContent rows />` |
 | Page metadata | `leptos_meta` (`Title`, `Meta`, `Link`) |
 | Wasm fetch | `gloo-net` |
 | Auth token | httpOnly SameSite=Lax cookie (no Secure flag in dev — Firefox drops Secure cookies on plain http://localhost) |
@@ -339,6 +339,77 @@ Hand-written and codegen'd pages use the **same primitive**.
 | `Tabbed` | Tab container; child tabs pick own layout. |
 
 Layout owns spacing. PageShell does not accept `padding`/`margin`/`gap`/`width` props.
+
+## Tables (locked)
+
+Codegen for resources at `gen_level >= Components` emits a sibling `<R>TableRow` next to `<R>Public` in `src/structs/generated/<r>.rs`:
+
+```rust
+#[derive(Debug, Clone, ::leptos_struct_table::TableRow)]
+#[table(impl_vec_data_provider)]
+pub struct PostTableRow {
+    pub id: i64,
+    pub title: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    // ... display-safe Public fields only
+}
+
+impl From<PostPublic> for PostTableRow { /* field-by-field move */ }
+```
+
+**Why a sibling and not a derive on `<R>Public`:** the derive's macro expansion generates code that calls `leptos_struct_table::CellValue::render_value(...)` for every field. `<R>Public` may legitimately carry types that have no `CellValue` impl (`serde_json::Value` from `Jsonb`, `Vec<u8>` from `Bytea`, `rust_decimal::Decimal` from `Numeric`, custom enums). Stamping the derive on `<R>Public` would fail compilation as soon as the schema introduces any of those columns. The sibling `<R>TableRow` is built off only the display-safe subset of `<R>Public` fields, so the derive stays green regardless of the underlying schema. The skip-list for SQL types is in `blast/src/codegen/structs/emitter/table_row.rs::is_display_safe`.
+
+**Generated List page renders the table:**
+
+```rust
+fn render_list_items(items: ListResponse<PostPublic>) -> impl IntoView {
+    let rows: Vec<PostTableRow> = items.items.into_iter().map(PostTableRow::from).collect();
+    let has_rows = !rows.is_empty();
+    let rows_signal = RwSignal::new(rows);
+    view! {
+        <Show when=move || has_rows fallback=|| view! { <p>"No items."</p> }>
+            <table>
+                <TableContent rows=rows_signal.get_untracked() scroll_container="html" />
+            </table>
+        </Show>
+    }
+}
+```
+
+The `Vec<<R>TableRow>` is the data provider (via `#[table(impl_vec_data_provider)]`); no separate provider struct needed for the canonical pagination-via-`?page` flow. Empty state branches via `<Show when=has_rows fallback>` so the `<table>` element is only emitted when there are rows. Loading state stays the wider page-level `Option::None` arm with `<p>"Loading..."</p>`.
+
+## Wasm-only widgets
+
+For hand-rolled components that call into `wasm-bindgen` statics (date pickers, color pickers, anything from `thaw` or `web-sys` that panics at SSR-render time with `js-sys-0.3.97 cannot access imported statics on non-wasm targets`), gate the mount on hydration completion via the global hydration signal.
+
+`src/transport/leptos/signals/hydration.rs` provides:
+
+```rust
+pub fn provide_hydration_store() -> RwSignal<bool>;  // wired in <App> alongside session/toast stores
+pub fn use_hydration() -> RwSignal<bool>;            // pulled by widgets that need to know
+```
+
+SSR seeds the signal at `false` and never flips it. Wasm hydrate seeds the signal at `false` then an `Effect::new` (cfg-gated to wasm32) flips it to `true` once after mount.
+
+Pattern for wasm-only widgets:
+
+```rust
+use crate::transport::leptos::signals::hydration::use_hydration;
+
+#[component]
+pub fn DatePickerIsland(/* props */) -> impl IntoView {
+    let hydrated = use_hydration();
+    view! {
+        <Show when=move || hydrated.get() fallback=move || view! { <div class="date-picker-skeleton" /> }>
+            <thaw::DatePicker /* ... */ />
+        </Show>
+    }
+}
+```
+
+SSR renders only the `<div class="date-picker-skeleton" />` — no `thaw::DatePicker` body, so no `js-sys` static access during SSR render. Wasm hydrate renders the skeleton too at first paint (signal still `false`), then the post-mount Effect flips the signal, the `Show` swaps to the children branch, and the real widget mounts. The fallback skeleton is what bridges the SSR ↔ hydrate render-tree match — anything that diverges between `Show`'s `false` arm on SSR and `false` arm on wasm-pre-mount risks tachys hydration mismatch.
+
+This pattern is **only for hand-rolled wasm-only components** that pull `wasm-bindgen` statics during render. Codegen'd forms and pages stick to native HTML and don't need it.
 
 ## Mutations
 

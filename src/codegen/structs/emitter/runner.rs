@@ -11,11 +11,12 @@
 //! 2. base `<Type>` (when any field has `Db` variant)
 //! 3. `<Type>{Insertable, Patch, Public, Admin}` (when present)
 //! 4. `From<<Type>>` impls for `Public` / `Admin` (when projection is a Db subset and the Db base struct itself is present)
-//! 5. `<Type>Filter` (when `filterable_columns` non-empty)
-//! 6. `<Type>Sort` (when `sortable_columns` non-empty)
+//! 5. `<Type>TableRow` + `From<<Type>Public>` impl (when `gen_level >= Components` and `Public` is present)
+//! 6. `<Type>Filter` (when `filterable_columns` non-empty)
+//! 7. `<Type>Sort` (when `sortable_columns` non-empty)
 
-use super::{db, filter, from_impl, imports, projection, sort, util};
-use crate::state::{FieldVariant, ResourceState};
+use super::{db, filter, from_impl, imports, projection, sort, table_row, util};
+use crate::state::{FieldVariant, GenLevel, ResourceState};
 
 pub fn render_resource_body(resource: &ResourceState) -> String {
     let mut out = String::new();
@@ -52,6 +53,15 @@ pub fn render_resource_body(resource: &ResourceState) -> String {
             out.push_str(&from_impl::render(resource, variant));
             out.push('\n');
         }
+    }
+
+    // TableRow + From<Public> — leptos-struct-table display projection.
+    // Gated on gen_level >= Components so resources that opt out of FE
+    // codegen don't pull leptos-struct-table into their type graph; the
+    // derive macro expansion calls into the leptos_struct_table crate.
+    if resource.gen_level >= GenLevel::Components && present_variants.contains(&FieldVariant::Public) {
+        out.push_str(&table_row::render(resource));
+        out.push('\n');
     }
 
     match util::list_options(resource) {
@@ -445,5 +455,47 @@ mod tests {
         let with_sort = sortable_resource();
         let sort_body = render_resource_body(&with_sort);
         assert!(sort_body.contains("use std::str::FromStr"));
+    }
+
+    #[test]
+    fn table_row_emitted_when_gen_level_at_least_components() {
+        let mut resource = full_resource("users");
+        resource.gen_level = GenLevel::Components;
+        let body = render_resource_body(&resource);
+        assert!(body.contains("pub struct UserTableRow {"), "TableRow must emit at gen_level=Components:\n{body}");
+        assert!(body.contains("::leptos_struct_table::TableRow"));
+        assert!(body.contains("#[table(impl_vec_data_provider)]"));
+        assert!(body.contains("impl From<UserPublic> for UserTableRow"));
+        assert!(body.contains("use leptos_struct_table::*;"));
+    }
+
+    #[test]
+    fn table_row_emitted_at_pages_gen_level() {
+        let mut resource = full_resource("users");
+        resource.gen_level = GenLevel::Pages;
+        let body = render_resource_body(&resource);
+        assert!(body.contains("pub struct UserTableRow {"));
+    }
+
+    #[test]
+    fn table_row_skipped_below_components_gen_level() {
+        let mut resource = full_resource("users");
+        resource.gen_level = GenLevel::Composables;
+        let body = render_resource_body(&resource);
+        assert!(!body.contains("UserTableRow"), "TableRow must NOT emit at gen_level<Components:\n{body}");
+        assert!(!body.contains("use leptos_struct_table::*;"));
+    }
+
+    #[test]
+    fn table_row_skipped_when_public_variant_absent() {
+        use crate::state::names::ResourceName;
+        let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
+        fields.insert(FieldName::new("id"), field("Int8", &[FieldVariant::Db, FieldVariant::Admin], false, true));
+        let mut resource = ResourceState::new(ResourceName::new("admins"));
+        resource.fields = fields;
+        resource.gen_level = GenLevel::Components;
+        resource.canonicalize();
+        let body = render_resource_body(&resource);
+        assert!(!body.contains("AdminTableRow"));
     }
 }

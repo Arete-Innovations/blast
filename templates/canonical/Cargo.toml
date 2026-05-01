@@ -26,6 +26,7 @@ leptos = { version = "0.7", features = ["ssr"] }
 leptos_router = { version = "0.7", features = ["ssr"] }
 leptos_meta = { version = "0.7", features = ["ssr"] }
 leptos_axum = "0.7"
+leptos-struct-table = { version = "0.14.0-beta2", features = ["chrono", "uuid"] }
 thaw = "0.4"
 
 argon2 = "0.5"
@@ -60,6 +61,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 leptos = { version = "0.7", features = ["hydrate"] }
 leptos_router = "0.7"
 leptos_meta = "0.7"
+leptos-struct-table = { version = "0.14.0-beta2", features = ["chrono", "uuid"] }
 thaw = "0.4"
 console_error_panic_hook = "0.1"
 wasm-bindgen = "=0.2.120"

@@ -7,6 +7,7 @@ use leptos_router::path;
 use crate::transport::leptos::components::{AppSidebar, NavProgress, ToastHost};
 use crate::transport::leptos::pages::{DashboardPage, LoginPage, LogoutPage, NotFoundPage, ProfilePage, RegisterPage, WelcomePage};
 use crate::transport::leptos::routes::GeneratedRoutes;
+use crate::transport::leptos::signals::hydration::provide_hydration_store;
 use crate::transport::leptos::signals::nav::provide_nav_store;
 use crate::transport::leptos::signals::session::{provide_session_store, ssr_session_payload};
 use crate::transport::leptos::signals::theme::{provide_theme_store, ssr_theme_str};
@@ -42,6 +43,7 @@ pub fn App() -> impl IntoView {
     provide_theme_store();
     provide_toast_store();
     provide_nav_store();
+    provide_hydration_store();
 
     view! {
         <Title text="Catablast"/>

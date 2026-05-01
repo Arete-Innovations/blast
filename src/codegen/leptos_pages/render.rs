@@ -14,13 +14,15 @@ pub fn render_list_page(table: &str, stem: &str, auth: AuthMode) -> String {
     let auth_mode = auth_guard_mode_str(&auth);
     let component = format!("{stem}ListPage");
     let public_ty = format!("{stem}Public");
+    let row_ty = format!("{stem}TableRow");
     let loader = format!("load_{table}_list");
     format!(
         "use leptos::prelude::*;\n\
+         use leptos_struct_table::*;\n\
          \n\
          use crate::meltdown::MeltDown;\n\
-         use crate::structs::generated::{table}::{public_ty};\n\
-         use crate::structs::list_query::ListResponse;\n\
+         use crate::structs::generated::{table}::{{{public_ty}, {row_ty}}};\n\
+         use crate::structs::list_query::{{ListQuery, ListResponse}};\n\
          use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
          #[cfg(target_arch = \"wasm32\")]\n\
          use crate::transport::leptos::data::generated::{table}::{loader};\n\
@@ -45,19 +47,23 @@ pub fn render_list_page(table: &str, stem: &str, auth: AuthMode) -> String {
          \x20               <h1>\"{stem} list\"</h1>\n\
          \x20               {{move || match items_signal.get() {{\n\
          \x20                   None => view! {{ <p>\"Loading...\"</p> }}.into_any(),\n\
-         \x20                   Some(Ok(items)) => render_list_items(&items).into_any(),\n\
+         \x20                   Some(Ok(items)) => render_list_items(items).into_any(),\n\
          \x20                   Some(Err(err)) => view! {{ <ErrorBanner error=err/> }}.into_any(),\n\
          \x20               }}}}\n\
          \x20           </PageShell>\n\
          \x20       </AuthGuard>\n\
          \x20   }}\n\
          }}\n\n\
-         fn render_list_items(items: &ListResponse<{public_ty}>) -> impl IntoView {{\n\
-         \x20   let rows: Vec<String> = items.items.iter().map(|row| format!(\"{{:?}}\", row)).collect();\n\
+         fn render_list_items(items: ListResponse<{public_ty}>) -> impl IntoView {{\n\
+         \x20   let rows: Vec<{row_ty}> = items.items.into_iter().map({row_ty}::from).collect();\n\
+         \x20   let has_rows = !rows.is_empty();\n\
+         \x20   let rows_signal = RwSignal::new(rows);\n\
          \x20   view! {{\n\
-         \x20       <ul>\n\
-         \x20           {{rows.into_iter().map(|row| view! {{ <li>{{row}}</li> }}).collect_view()}}\n\
-         \x20       </ul>\n\
+         \x20       <Show when=move || has_rows fallback=|| view! {{ <p>\"No items.\"</p> }}>\n\
+         \x20           <table>\n\
+         \x20               <TableContent rows=rows_signal.get_untracked() scroll_container=\"html\" />\n\
+         \x20           </table>\n\
+         \x20       </Show>\n\
          \x20   }}\n\
          }}\n",
     )
