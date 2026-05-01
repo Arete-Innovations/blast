@@ -65,8 +65,13 @@ pub async fn request_ctx_middleware(State(ctx): State<Ctx>, mut request: Request
                 Ctx::with_session(ctx.pool().clone(), session_ctx)
             }
             Err(err) => {
-                cata_log!(Debug, format!("stale/invalid session cookie ignored: {}", err));
-                ctx.clone()
+                if err.is_permanent() {
+                    cata_log!(Debug, format!("stale/invalid session cookie ignored: {}", err));
+                    ctx.clone()
+                } else {
+                    cata_log!(Warning, format!("transient error resolving session: {}", err));
+                    return Err(err);
+                }
             }
         },
     };
