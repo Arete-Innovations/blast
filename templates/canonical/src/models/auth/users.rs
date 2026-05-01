@@ -1,4 +1,4 @@
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl};
+use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 
 use crate::{
@@ -35,6 +35,7 @@ pub async fn insert_new(conn: &mut AsyncPgConnection, email: &str, password_hash
 
     diesel::insert_into(users_dsl::users)
         .values(&new_user)
+        .returning(User::as_select())
         .get_result::<User>(conn)
         .await
         .map_err(|e| MeltDown::from(e).with_context("operation", "insert_new_user"))
@@ -43,6 +44,7 @@ pub async fn insert_new(conn: &mut AsyncPgConnection, email: &str, password_hash
 pub async fn set_role(conn: &mut AsyncPgConnection, id: i64, role: Role) -> Result<User, MeltDown> {
     diesel::update(users_dsl::users.filter(users_dsl::id.eq(id)))
         .set(users_dsl::role.eq(role))
+        .returning(User::as_select())
         .get_result::<User>(conn)
         .await
         .map_err(|e| MeltDown::from(e).with_context("operation", "set_user_role"))

@@ -16,6 +16,7 @@ pub async fn insert_session(conn: &mut AsyncPgConnection, user_id: i64, token: &
 
     diesel::insert_into(sessions_dsl::sessions)
         .values(&new_session)
+        .returning(Session::as_select())
         .get_result::<Session>(conn)
         .await
         .map_err(|e| MeltDown::from(e).with_context("operation", "insert_session"))
