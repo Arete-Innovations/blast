@@ -1,7 +1,13 @@
+#[cfg(not(target_arch = "wasm32"))]
 pub mod crypto;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod email;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod external_http;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod rate_limit;
 pub mod render;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod storage;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod time;

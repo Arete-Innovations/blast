@@ -2,13 +2,12 @@ pub mod auth;
 pub mod generated;
 pub mod leptos;
 pub mod list_query;
+pub mod services;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod fuses;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod middleware;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod services;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ws;
 

@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 pub mod meltdown;
 pub mod structs;
 pub mod transport;
@@ -25,7 +27,6 @@ pub mod models;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod routines;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub mod services;
 
 #[cfg(not(target_arch = "wasm32"))]
