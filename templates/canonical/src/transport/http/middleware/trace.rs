@@ -26,6 +26,7 @@ impl<B> MakeSpan<B> for CatalystMakeSpan {
                 request_id = %request_id,
                 method     = %method,
                 uri        = %uri,
+                user_id    = tracing::field::Empty,
                 status     = tracing::field::Empty,
                 latency_ms = tracing::field::Empty,
             )
@@ -34,6 +35,7 @@ impl<B> MakeSpan<B> for CatalystMakeSpan {
                 "request",
                 method     = %method,
                 uri        = %uri,
+                user_id    = tracing::field::Empty,
                 status     = tracing::field::Empty,
                 latency_ms = tracing::field::Empty,
             )

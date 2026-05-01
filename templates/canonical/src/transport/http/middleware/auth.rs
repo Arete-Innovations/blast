@@ -61,6 +61,7 @@ pub async fn request_ctx_middleware(State(ctx): State<Ctx>, mut request: Request
         None => ctx.clone(),
         Some(raw_token) => match resolve::run(&ctx, &raw_token).await {
             Ok(session_ctx) => {
+                tracing::Span::current().record("user_id", session_ctx.user_id);
                 request.extensions_mut().insert(session_ctx.clone());
                 Ctx::with_session(ctx.pool().clone(), session_ctx)
             }
