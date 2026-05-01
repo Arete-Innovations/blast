@@ -311,6 +311,7 @@ fn main() {
     // build hard-fails here BEFORE silently letting layer escapes through.
     verify_layer_resolver_invariants();
     verify_cfg_test_scope_invariants();
+    verify_flow_crank_invariants();
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let src_dir = manifest_dir.join("src");
@@ -371,6 +372,40 @@ fn verify_cfg_test_scope_invariants() {
     let lines: Vec<&str> = "#[cfg(test)]\nmod t {}\nfn x() {}".lines().collect();
     let end = line_after_cfg_test_item(&lines, 0);
     assert_eq!(end, 2, "single-line block item ends at idx 2 (next line)");
+}
+
+fn verify_flow_crank_invariants() {
+    fn run_check(rel: &str, content: &str) -> Vec<Hit> {
+        let mut hits = Vec::new();
+        check_flow_crank_declaration(&PathBuf::from(rel), content, &mut hits);
+        hits
+    }
+
+    let with_none = "use crate::crank::Crank;\npub async fn run(ctx: &Ctx) -> Result<(), MeltDown> {\n    Crank::none().run(|| async { Ok(()) }).await\n}\n";
+    assert!(run_check("flows/auth/login.rs", with_none).is_empty(), "flow w/ Crank::none must pass");
+
+    let with_backoff = "pub async fn run(ctx: &Ctx) -> Result<(), MeltDown> {\n    Crank::backoff(2, std::time::Duration::from_millis(50)).run(|| async { Ok(()) }).await\n}\n";
+    assert!(run_check("flows/sessions/resolve.rs", with_backoff).is_empty(), "flow w/ Crank::backoff must pass");
+
+    let no_crank = "pub async fn run(ctx: &Ctx) -> Result<(), MeltDown> {\n    routines::auth::login::run(ctx).await\n}\n";
+    let hits = run_check("flows/auth/probe.rs", no_crank);
+    assert_eq!(hits.len(), 1, "flow w/o Crank must hit FLOW:24");
+    assert_eq!(hits[0].rule, "FLOW:24");
+
+    let non_flow_path = "pub async fn run(ctx: &Ctx) -> Result<(), MeltDown> {\n    Ok(())\n}\n";
+    assert!(run_check("transport/http/auth.rs", non_flow_path).is_empty(), "non-flow path must skip");
+
+    let mod_rs = "pub mod login;\npub mod logout;\n";
+    assert!(run_check("flows/auth/mod.rs", mod_rs).is_empty(), "mod.rs under flows must skip");
+
+    let generated = "pub async fn run(ctx: &Ctx) -> Result<(), MeltDown> {\n    Ok(())\n}\n";
+    assert!(run_check("flows/generated/users/list.rs", generated).is_empty(), "generated/ flows skipped");
+
+    let no_run_fn = "pub fn helper() {}\n";
+    assert!(run_check("flows/auth/probe.rs", no_run_fn).is_empty(), "no `pub async fn run` → no hit");
+
+    let crank_in_helper = "fn make_policy() -> Crank<Immediate> { Crank::none() }\npub async fn run(ctx: &Ctx) -> Result<(), MeltDown> {\n    make_policy().run(|| async { Ok(()) }).await\n}\n";
+    assert!(run_check("flows/auth/login.rs", crank_in_helper).is_empty(), "Crank invoked via helper still passes (substring search is whole-file)");
 }
 
 fn verify_layer_resolver_invariants() {
@@ -596,8 +631,7 @@ fn check_flow_crank_declaration(rel: &Path, content: &str, hits: &mut Vec<Hit>) 
     let Some(run_pos) = content.find("pub async fn run(") else {
         return;
     };
-    let body = &content[run_pos..];
-    if body.contains("Crank::") {
+    if content.contains("Crank::") {
         return;
     }
     let line_no = content[..run_pos].lines().count();
