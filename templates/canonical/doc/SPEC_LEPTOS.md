@@ -12,7 +12,7 @@ Frontend stack for Catablast apps. Replaces the legacy Vue/TS/PrimeVue/Vite stac
 | Component library | `thaw` (typed Leptos components) |
 | CSS | scss compiled by cargo-leptos via grass + per-component `.module.scss` via stylance |
 | Icons | `icondata` crate (Phosphor feature default) |
-| Forms | `leptos-form` derives on `<R>Insertable` / `<R>Patch` |
+| Forms | Hand-rolled thaw inputs + `Action::new_local` (no leptos-form derive) |
 | Tables | `leptos-struct-table` derives on `<R>Public` |
 | Page metadata | `leptos_meta` (`Title`, `Meta`, `Link`) |
 | Wasm fetch | `gloo-net` |
@@ -71,7 +71,7 @@ src/transport/leptos/
 ├── mod.rs                      barrel
 ├── app.rs                      <App> root + <Routes> tree + shell()
 ├── client.rs                   wasm hydrate entry (#[cfg(feature = "hydrate")])
-├── api_client.rs               wasm-only HTTP wrapper (planned phase 4)
+├── api_client.rs               wasm-only HTTP wrapper (emitted by leptos_data codegen pass)
 ├── auth_storage.rs             cookie-only — no JS storage
 ├── components/
 │   ├── auth_guard.rs           <AuthGuard mode=...> wraps page bodies
@@ -103,7 +103,7 @@ pub async fn load_postari_list(filter: PostariFilter) -> Result<Vec<PostarePubli
 }
 ```
 
-Pages consume via `Resource::new` (queries) and `Action::new` (mutations).
+Pages consume via `Resource::new` (queries) and `Action::new_local` (mutations — `_local` because `gloo_net` futures aren't Send).
 
 - **SSR-side**: zero HTTP roundtrip. Page renders with data baked into the HTML payload via Leptos's hydration handoff.
 - **Client-side**: when dependencies change (URL params, filters), wasm re-fetches via `/api/<r>`.
@@ -114,7 +114,9 @@ Pages consume via `Resource::new` (queries) and `Action::new` (mutations).
 
 httpOnly secure SameSite=Strict cookie. Server reads cookie on SSR request, knows session immediately, can render full page or redirect. Wasm has no JS access (httpOnly). All `/api/*` calls send cookie automatically.
 
-`AuthGuard` component wraps every protected page. On SSR side, it reads `Option<SessionContext>` from Leptos context (provided per-request by the route handler that decoded the cookie). Renders `<Redirect path="/login"/>` if blocked.
+`AuthGuard` component wraps every protected page. It reads from a global `SessionStore` signal (typed wrapper around `RwSignal<Option<SessionContext>>` defined at `src/structs/leptos/session_store.rs`). The store is provided in `<App>` via `provide_session_store()` and hydrated by an `Effect::new` that calls `load_session()` on mount. On SSR-side first render, the store starts empty (`None`); on wasm hydrate, the Effect calls `/api/auth/me` via `api_client::get_json` and populates the store. Renders `<Redirect path="/login"/>` if blocked.
+
+**Known limitation (deferred to phase 12)**: SSR-side first render shows protected pages briefly as if unauthed (then wasm corrects via the load_session Effect). The clean fix is `leptos_routes_with_context` callback that reads cookie from request headers, resolves session, and `provide_context::<Option<SessionContext>>` per-request — eliminating the flash. Currently not implemented.
 
 ```rust
 #[component]
@@ -157,7 +159,7 @@ Toast singleton signal in `src/transport/leptos/signals/toast.rs`, rendered by `
 
 ## Form submission
 
-Forms require JS hydration (no `<noscript>` fallback). Hand-written forms use `<form on:submit=...>` + `Action::new`. Codegen'd forms use `leptos-form` derives on `<R>Insertable`/`<R>Patch` — derive emits `<R>CreateForm`/`<R>EditForm` components that wrap an Action and render thaw inputs.
+Forms require JS hydration (no `<noscript>` fallback). Both hand-written and codegen'd forms use `<form on:submit=...>` + `Action::new_local` (the local variant is required because `gloo_net::http::Request::send()` returns a non-Send future). Codegen'd forms (`<R>CreateForm`/`<R>EditForm`) emit thaw inputs (`<Input/>`, `<Checkbox/>`, `<Combobox/>` for enums, etc.) and call `validate_<r>_*` BEFORE dispatching the Action. No `leptos-form` derive crate dependency — hand-rolled rendering for full control over the validator-before-dispatch sequence.
 
 No `#[server]` macro use. Plain axum handlers + Leptos pages, both calling the flow.
 
