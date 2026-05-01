@@ -2,5 +2,6 @@
 //
 // Do not edit by hand. Run `blast gen all` after mutating state.
 
-pub mod forms;
-pub mod nav;
+pub mod app_nav;
+
+pub use app_nav::AppNav;
