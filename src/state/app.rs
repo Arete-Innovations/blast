@@ -35,6 +35,14 @@ pub struct Entry {
     /// Route name. Must resolve to an auto-emitted CRUD route or a declared
     /// `Page.route`.  Codegen fails on dangling references.
     pub route: String,
+    /// Optional override label for this entry. Falls back to the referenced
+    /// `Page.label` (or the route name) at codegen time when None.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Optional icon registry key override.  Falls back to the referenced
+    /// `Page.icon` at codegen time when None.
+    #[serde(default)]
+    pub icon: Option<String>,
     /// Optional per-entry visibility restriction.  Must be a subset of the
     /// referenced route's own role requirement.
     #[serde(default)]
@@ -338,10 +346,14 @@ mod tests {
                     entries: vec![
                         Entry {
                             route: "dashboard".to_string(),
+                            label: None,
+                            icon: None,
                             roles: None,
                         },
                         Entry {
                             route: "users.list".to_string(),
+                            label: None,
+                            icon: None,
                             roles: Some(vec![Role::Admin]),
                         },
                     ],
@@ -353,6 +365,8 @@ mod tests {
                     roles: Some(vec![Role::Admin]),
                     entries: vec![Entry {
                         route: "fuses.list".to_string(),
+                        label: None,
+                        icon: None,
                         roles: None,
                     }],
                 },
