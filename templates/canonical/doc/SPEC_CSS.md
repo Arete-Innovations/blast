@@ -53,7 +53,9 @@ Stylance scans for `.module.scss` files at build time. The `import_crate_style!`
 
 3. **Dark block** — `@media (prefers-color-scheme: dark) { :root { ... } }` re-declares **every** token. Colors flip; spacing/radius/font/motion/z-index keep identical values.
 
-Default behavior follows OS preference. A dark-mode toggle is supported via thaw's `ConfigProvider` (decision #26: OS preference + manual toggle).
+4. **Manual override blocks** — `:root[data-theme="light"] { ... }` and `:root[data-theme="dark"] { ... }` mirror the same color overrides. Higher specificity than the bare `:root` and the `@media` `:root` blocks → manual toggle wins via cascade.
+
+Default behavior is `data-theme="system"` which falls through to the bare `:root` (light) or the `@media` block (dark) based on OS preference. The `<DarkModeToggle/>` component cycles `Light → Dark → System` and persists the choice in a `theme` cookie. SSR reads the cookie and emits `<html data-theme=...>` directly — no light-flash. See `SPEC_LEPTOS.md` "Dark mode" for the full wire shape.
 
 ## Token categories
 

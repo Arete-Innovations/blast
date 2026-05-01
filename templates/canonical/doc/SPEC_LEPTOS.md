@@ -294,7 +294,26 @@ Per-page `<Title text="..."/>` via `leptos_meta`. `<MetaTags/>` mounted in `<App
 
 ## Dark mode
 
-OS preference default + manual toggle. Thaw `<ConfigProvider theme>` driven by signal. Toggle persists in cookie (server reads on next SSR for no light-flash).
+Three states: `Light`, `Dark`, `System` (the default). System follows the browser's `prefers-color-scheme` media query; `Light` and `Dark` force the palette regardless of OS preference. Defined as `Theme` enum at `src/structs/leptos/theme.rs`.
+
+**Wire shape (locked):**
+- Persistence: `theme=light|dark|system` cookie (`SameSite=Lax`, `Path=/`, `Max-Age=31536000`). NOT httpOnly — wasm needs read/write to mirror signal changes back.
+- Boot:
+  - **SSR**: `signals/theme.rs::ssr_resolve_theme()` reads `axum::http::request::Parts` from leptos context, parses the `theme` cookie. `app.rs::shell()` emits `<html lang="en" data-theme="light|dark|system">` directly in the served HTML — no flash. `provide_theme_store()` re-resolves from the same `Parts` and seeds `RwSignal<Theme>` in context.
+  - **Wasm hydrate**: `provide_theme_store()` reads `document.cookie` synchronously via `web_sys::HtmlDocument::cookie()` BEFORE the first conditional render. Same value SSR rendered with → no hydration mismatch.
+- Mirror Effect (wasm only, inside `provide_theme_store`): on every signal change → `document.documentElement.setAttribute("data-theme", value)` AND `document.cookie = "theme=<v>; SameSite=Lax; Path=/; Max-Age=31536000"`. No round-trip; the next SSR will read the freshly-written cookie.
+
+**Toggle component:** `<DarkModeToggle/>` at `src/transport/leptos/components/dark_mode_toggle.rs`. Cycles `Light → Dark → System → Light`. Mounted in the dashboard header by default — re-use anywhere via `use crate::transport::leptos::components::DarkModeToggle`.
+
+**CSS cascade (binding, in `style/tokens.scss`):**
+1. `:root { ... }` — light tokens (default, also the "system + OS=light" case).
+2. `@media (prefers-color-scheme: dark) { :root { ... } }` — dark tokens for "System + OS=dark".
+3. `:root[data-theme="light"] { ... }` — explicit Light wins over OS dark preference.
+4. `:root[data-theme="dark"] { ... }` — explicit Dark wins over OS light preference.
+
+Specificity: `:root[data-theme=...]` (0,1,1) beats `:root` and the `@media` `:root` (both 0,0,1). Manual toggle always wins; System falls through to the `@media` block when present.
+
+**No flash, no JS-required boot:** the SSR-emitted `<html data-theme>` is correct on first byte. Tokens are CSS-only — no JS needed to apply the theme. WASM hydration only takes over for live toggles after the user clicks.
 
 ## i18n
 

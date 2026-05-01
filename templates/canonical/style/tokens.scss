@@ -47,3 +47,19 @@
         --app-color-info: oklch(0.70 0.13 235);
     }
 }
+
+:root[data-theme="light"] {
+    --app-color-bg: oklch(0.98 0 0);
+    --app-color-fg: oklch(0.18 0 0);
+    --app-color-brand: oklch(0.55 var(--app-brand-chroma) var(--app-brand-hue));
+    --app-color-danger: oklch(0.55 0.18 25);
+    --app-color-success: oklch(0.55 0.16 145);
+}
+
+:root[data-theme="dark"] {
+    --app-color-bg: oklch(0.18 0 0);
+    --app-color-fg: oklch(0.95 0 0);
+    --app-color-brand: oklch(0.70 var(--app-brand-chroma) var(--app-brand-hue));
+    --app-color-danger: oklch(0.70 0.16 25);
+    --app-color-success: oklch(0.70 0.14 145);
+}
