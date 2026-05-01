@@ -25,3 +25,4 @@ Thumbs.db
 template_example/
 result
 check_errors.sh
+.claude/

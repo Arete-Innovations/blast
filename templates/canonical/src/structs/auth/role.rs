@@ -1,5 +1,7 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::Write;
 
+#[cfg(not(target_arch = "wasm32"))]
 use diesel::{
     backend::Backend,
     deserialize::{self, FromSql, FromSqlRow},
@@ -9,10 +11,14 @@ use diesel::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{database::schema::sql_types::UserRole, meltdown::*};
+use crate::meltdown::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]
-#[diesel(sql_type = UserRole)]
+#[cfg(not(target_arch = "wasm32"))]
+use crate::database::schema::sql_types::UserRole;
+
+#[cfg_attr(not(target_arch = "wasm32"), derive(AsExpression, FromSqlRow))]
+#[cfg_attr(not(target_arch = "wasm32"), diesel(sql_type = UserRole))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
     Admin,
     Member,
@@ -35,6 +41,7 @@ impl Role {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl FromSql<UserRole, Pg> for Role {
     fn from_sql(bytes: <Pg as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         match bytes.as_bytes() {
@@ -45,6 +52,7 @@ impl FromSql<UserRole, Pg> for Role {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl ToSql<UserRole, Pg> for Role {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         out.write_all(self.as_str().as_bytes())?;

@@ -1,14 +1,18 @@
 use std::{collections::HashMap, io::Error as IoError, time::Duration};
 
+#[cfg(not(target_arch = "wasm32"))]
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use diesel::result::{DatabaseErrorKind, Error as DieselError};
+#[cfg(not(target_arch = "wasm32"))]
 use serde_json::json;
 use thiserror::Error;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::cata_log;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,6 +233,7 @@ impl MeltDown {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn status_code(&self) -> StatusCode {
         match self.melt_type {
             MeltType::AuthRejected | MeltType::SessionExpired | MeltType::SessionInvalid | MeltType::SessionMissing | MeltType::Unauthorized => StatusCode::UNAUTHORIZED,
@@ -325,11 +330,41 @@ impl MeltDown {
             return MeltCategory::Transient;
         }
 
-        let code = self.status_code().as_u16();
-        if (400..500).contains(&code) {
-            MeltCategory::Client
-        } else {
-            MeltCategory::Server
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let code = self.status_code().as_u16();
+            if (400..500).contains(&code) {
+                return MeltCategory::Client;
+            }
+            return MeltCategory::Server;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            match &self.melt_type {
+                MeltType::AuthRejected
+                | MeltType::SessionExpired
+                | MeltType::SessionInvalid
+                | MeltType::SessionMissing
+                | MeltType::Unauthorized
+                | MeltType::InsufficientPermissions
+                | MeltType::Forbidden
+                | MeltType::FilePermissionDenied
+                | MeltType::ValidationFailed
+                | MeltType::UnprocessableEntity
+                | MeltType::BadRequest
+                | MeltType::CheckViolation
+                | MeltType::NotNullViolation
+                | MeltType::NotFound
+                | MeltType::RecordNotFound
+                | MeltType::FileNotFound
+                | MeltType::MethodNotAllowed
+                | MeltType::UniqueViolation
+                | MeltType::ForeignKeyViolation
+                | MeltType::Conflict
+                | MeltType::TooManyRequests => MeltCategory::Client,
+                _other => MeltCategory::Server,
+            }
         }
     }
 
@@ -347,6 +382,7 @@ impl From<std::env::VarError> for MeltDown {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<DieselError> for MeltDown {
     fn from(err: DieselError) -> Self {
         match err {
@@ -408,6 +444,7 @@ impl From<IoError> for MeltDown {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl IntoResponse for MeltDown {
     fn into_response(self) -> Response {
         let status = self.status_code();
@@ -435,6 +472,7 @@ impl IntoResponse for MeltDown {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl MeltDown {
     pub fn log(&self) {
         match self.status_code().as_u16() {

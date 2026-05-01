@@ -1,8 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::{
-    error::BlastResult,
+    codegen::{header, ir_loader, structs::naming::type_stem_for_resource},
+    error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
+    state::{AuthMode, GenLevel, ResourceState, Verb},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -13,9 +18,711 @@ pub struct EmitReport {
 
 const STEP_LABEL: &str = "leptos pages generation";
 
-pub fn run(_project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
+pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<EmitReport> {
     progress.step_start(STEP_LABEL);
-    sink.info(format!("{STEP_LABEL}: stub — leptos page emitter pending phase 4 follow-up"));
+
+    let all_resources = match ir_loader::load_resource_states(project_root) {
+        Ok(rs) => rs,
+        Err(err) => {
+            let reason = err.to_string();
+            progress.step_fail(STEP_LABEL, &reason);
+            sink.error(format!("{STEP_LABEL}: {reason}"));
+            return Err(err);
+        }
+    };
+
+    let resources: Vec<ResourceState> = all_resources.into_iter().filter(|r| r.gen_level >= GenLevel::Pages).collect();
+
+    let pages_dir = pages_generated_dir(project_root);
+    let data_dir = data_generated_dir(project_root);
+    fs::create_dir_all(&pages_dir)?;
+    fs::create_dir_all(&data_dir)?;
+
+    let mut report = EmitReport::default();
+
+    if resources.is_empty() {
+        let pages_keep = pages_dir.join(".gitkeep");
+        write_file(&pages_keep, "", &mut report)?;
+        let data_keep = data_dir.join(".gitkeep");
+        write_file(&data_keep, "", &mut report)?;
+
+        let app_marker = header::marker_for_app(project_root)?;
+        let pages_barrel = pages_dir.join("mod.rs");
+        let pages_barrel_body = format!("{app_marker}\n");
+        write_file(&pages_barrel, &pages_barrel_body, &mut report)?;
+        let data_barrel = data_dir.join("mod.rs");
+        let data_barrel_body = format!("{app_marker}\n");
+        write_file(&data_barrel, &data_barrel_body, &mut report)?;
+
+        sink.info(format!("{STEP_LABEL}: no resources at gen_level >= Pages; emitted barrels"));
+        progress.step_done(STEP_LABEL);
+        return Ok(report);
+    }
+
+    let mut emitted_tables: Vec<String> = Vec::with_capacity(resources.len());
+    for r in &resources {
+        emit_resource(project_root, r, &pages_dir, &data_dir, &mut report)?;
+        emitted_tables.push(r.name.as_str().to_string());
+        sink.info(format!("emitted leptos pages for {}", r.name.as_str()));
+    }
+    emitted_tables.sort();
+
+    let app_marker = header::marker_for_app(project_root)?;
+    let pages_barrel = pages_dir.join("mod.rs");
+    let pages_barrel_body = format!("{app_marker}{}", build_top_barrel(&emitted_tables));
+    write_file(&pages_barrel, &pages_barrel_body, &mut report)?;
+
+    let data_barrel = data_dir.join("mod.rs");
+    let data_barrel_body = format!("{app_marker}{}", build_top_barrel(&emitted_tables));
+    write_file(&data_barrel, &data_barrel_body, &mut report)?;
+
+    ensure_parent_pages_barrel(project_root, &mut report)?;
+    ensure_parent_data_barrel(project_root, &mut report)?;
+    ensure_leptos_mod_includes_data(project_root, &mut report)?;
+
+    sink.info(format!("{STEP_LABEL}: {} written, {} skipped", report.written.len(), report.skipped.len()));
     progress.step_done(STEP_LABEL);
-    Ok(EmitReport::default())
+    Ok(report)
+}
+
+fn pages_generated_dir(project_root: &Path) -> PathBuf {
+    project_root.join("src").join("transport").join("leptos").join("pages").join("generated")
+}
+
+fn data_generated_dir(project_root: &Path) -> PathBuf {
+    project_root.join("src").join("transport").join("leptos").join("data").join("generated")
+}
+
+fn emit_resource(project_root: &Path, resource: &ResourceState, pages_dir: &Path, data_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
+    let table = resource.name.as_str();
+    let marker = header::marker_for_resource(project_root, table)?;
+
+    let resource_pages_dir = pages_dir.join(table);
+    fs::create_dir_all(&resource_pages_dir)?;
+
+    let stem = type_stem_for_resource(resource);
+
+    let mut emitted_modules: Vec<&'static str> = Vec::new();
+
+    if resource.verbs.contains_key(&Verb::List) {
+        let body = render_list_page(table, &stem, verb_auth(resource, Verb::List)?);
+        write_file(&resource_pages_dir.join("list.rs"), &format!("{marker}{body}"), report)?;
+        emitted_modules.push("list");
+    }
+    if resource.verbs.contains_key(&Verb::Get) {
+        let body = render_detail_page(table, &stem, verb_auth(resource, Verb::Get)?);
+        write_file(&resource_pages_dir.join("detail.rs"), &format!("{marker}{body}"), report)?;
+        emitted_modules.push("detail");
+    }
+    if resource.verbs.contains_key(&Verb::Create) {
+        let body = render_create_page(table, &stem, verb_auth(resource, Verb::Create)?);
+        write_file(&resource_pages_dir.join("create.rs"), &format!("{marker}{body}"), report)?;
+        emitted_modules.push("create");
+    }
+    if resource.verbs.contains_key(&Verb::Update) {
+        let body = render_edit_page(table, &stem, verb_auth(resource, Verb::Update)?);
+        write_file(&resource_pages_dir.join("edit.rs"), &format!("{marker}{body}"), report)?;
+        emitted_modules.push("edit");
+    }
+
+    let resource_barrel = resource_pages_dir.join("mod.rs");
+    let resource_barrel_body = format!("{marker}{}", build_resource_pages_barrel(&emitted_modules, &stem));
+    write_file(&resource_barrel, &resource_barrel_body, report)?;
+
+    emit_data_stub(project_root, resource, data_dir, report)?;
+
+    Ok(())
+}
+
+fn verb_auth(resource: &ResourceState, verb: Verb) -> BlastResult<AuthMode> {
+    match resource.verbs.get(&verb) {
+        Some(state) => Ok(state.auth.clone()),
+        None => Err(BlastError::Invalid(format!("verb {:?} vanished from resource {} between iter and lookup", verb, resource.name.as_str()))),
+    }
+}
+
+fn auth_guard_mode_str(auth: &AuthMode) -> &'static str {
+    match auth {
+        AuthMode::Public => "AuthGuardMode::Public",
+        AuthMode::AuthRequired => "AuthGuardMode::Required",
+        AuthMode::AdminOnly => "AuthGuardMode::AdminOnly",
+        AuthMode::Roles(_roles) => "AuthGuardMode::AdminOnly",
+        AuthMode::ScopedTo(_field) => "AuthGuardMode::Required",
+    }
+}
+
+fn render_list_page(table: &str, stem: &str, auth: AuthMode) -> String {
+    let auth_mode = auth_guard_mode_str(&auth);
+    let component = format!("{stem}ListPage");
+    let public_ty = format!("{stem}Public");
+    let loader = format!("load_{table}_list");
+    format!(
+        "use leptos::prelude::*;\n\
+         use thaw::Spinner;\n\n\
+         use crate::structs::generated::{table}::{public_ty};\n\
+         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
+         use crate::transport::leptos::data::generated::{table}::{loader};\n\n\
+         #[component]\n\
+         pub fn {component}() -> impl IntoView {{\n\
+         \x20   let resource = Resource::new(|| (), |_input| async move {{ {loader}().await }});\n\
+         \x20   view! {{\n\
+         \x20       <AuthGuard mode={auth_mode}>\n\
+         \x20           <PageShell layout=PageLayout::Table>\n\
+         \x20               <h1>\"{stem} list\"</h1>\n\
+         \x20               <Suspense fallback=move || view! {{ <Spinner/> }}>\n\
+         \x20                   {{move || match resource.get() {{\n\
+         \x20                       None => view! {{ <Spinner/> }}.into_any(),\n\
+         \x20                       Some(Ok(items)) => render_list_items(&items).into_any(),\n\
+         \x20                       Some(Err(err)) => view! {{ <ErrorBanner error=err/> }}.into_any(),\n\
+         \x20                   }}}}\n\
+         \x20               </Suspense>\n\
+         \x20           </PageShell>\n\
+         \x20       </AuthGuard>\n\
+         \x20   }}\n\
+         }}\n\n\
+         fn render_list_items(items: &[{public_ty}]) -> impl IntoView {{\n\
+         \x20   let rows: Vec<String> = items.iter().map(|row| format!(\"{{:?}}\", row)).collect();\n\
+         \x20   view! {{\n\
+         \x20       <ul>\n\
+         \x20           {{rows.into_iter().map(|row| view! {{ <li>{{row}}</li> }}).collect_view()}}\n\
+         \x20       </ul>\n\
+         \x20   }}\n\
+         }}\n",
+    )
+}
+
+fn render_detail_page(table: &str, stem: &str, auth: AuthMode) -> String {
+    let auth_mode = auth_guard_mode_str(&auth);
+    let component = format!("{stem}DetailPage");
+    let public_ty = format!("{stem}Public");
+    let loader = format!("load_{table}_one");
+    format!(
+        "use leptos::prelude::*;\n\
+         use thaw::Spinner;\n\n\
+         use crate::structs::generated::{table}::{public_ty};\n\
+         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
+         use crate::transport::leptos::data::generated::{table}::{loader};\n\n\
+         #[component]\n\
+         pub fn {component}() -> impl IntoView {{\n\
+         \x20   let resource = Resource::new(|| (), |_input| async move {{ {loader}(0).await }});\n\
+         \x20   view! {{\n\
+         \x20       <AuthGuard mode={auth_mode}>\n\
+         \x20           <PageShell layout=PageLayout::Cards>\n\
+         \x20               <h1>\"{stem} detail\"</h1>\n\
+         \x20               <Suspense fallback=move || view! {{ <Spinner/> }}>\n\
+         \x20                   {{move || match resource.get() {{\n\
+         \x20                       None => view! {{ <Spinner/> }}.into_any(),\n\
+         \x20                       Some(Ok(item)) => render_detail_item(&item).into_any(),\n\
+         \x20                       Some(Err(err)) => view! {{ <ErrorBanner error=err/> }}.into_any(),\n\
+         \x20                   }}}}\n\
+         \x20               </Suspense>\n\
+         \x20           </PageShell>\n\
+         \x20       </AuthGuard>\n\
+         \x20   }}\n\
+         }}\n\n\
+         fn render_detail_item(item: &{public_ty}) -> impl IntoView {{\n\
+         \x20   let body = format!(\"{{:?}}\", item);\n\
+         \x20   view! {{ <pre>{{body}}</pre> }}\n\
+         }}\n",
+    )
+}
+
+fn render_create_page(table: &str, stem: &str, auth: AuthMode) -> String {
+    let auth_mode = auth_guard_mode_str(&auth);
+    let component = format!("{stem}CreatePage");
+    let form_component = format!("{stem}CreateForm");
+    format!(
+        "use leptos::prelude::*;\n\n\
+         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, PageLayout, PageShell}};\n\
+         use crate::transport::leptos::components::generated::forms::{table}::{form_component};\n\n\
+         #[component]\n\
+         pub fn {component}() -> impl IntoView {{\n\
+         \x20   view! {{\n\
+         \x20       <AuthGuard mode={auth_mode}>\n\
+         \x20           <PageShell layout=PageLayout::Cards>\n\
+         \x20               <h1>\"Create {stem}\"</h1>\n\
+         \x20               <{form_component}/>\n\
+         \x20           </PageShell>\n\
+         \x20       </AuthGuard>\n\
+         \x20   }}\n\
+         }}\n",
+    )
+}
+
+fn render_edit_page(table: &str, stem: &str, auth: AuthMode) -> String {
+    let auth_mode = auth_guard_mode_str(&auth);
+    let component = format!("{stem}EditPage");
+    let form_component = format!("{stem}EditForm");
+    format!(
+        "use leptos::prelude::*;\n\n\
+         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, PageLayout, PageShell}};\n\
+         use crate::transport::leptos::components::generated::forms::{table}::{form_component};\n\n\
+         #[component]\n\
+         pub fn {component}() -> impl IntoView {{\n\
+         \x20   view! {{\n\
+         \x20       <AuthGuard mode={auth_mode}>\n\
+         \x20           <PageShell layout=PageLayout::Cards>\n\
+         \x20               <h1>\"Edit {stem}\"</h1>\n\
+         \x20               <{form_component}/>\n\
+         \x20           </PageShell>\n\
+         \x20       </AuthGuard>\n\
+         \x20   }}\n\
+         }}\n",
+    )
+}
+
+fn build_resource_pages_barrel(modules: &[&'static str], stem: &str) -> String {
+    let mut out = String::new();
+    let mut sorted: Vec<&&'static str> = modules.iter().collect();
+    sorted.sort();
+    for m in &sorted {
+        out.push_str(&format!("pub mod {};\n", m));
+    }
+    if !sorted.is_empty() {
+        out.push('\n');
+    }
+    for m in &sorted {
+        let component_suffix = match **m {
+            "list" => "ListPage",
+            "detail" => "DetailPage",
+            "create" => "CreatePage",
+            "edit" => "EditPage",
+            _other => continue,
+        };
+        out.push_str(&format!("pub use {m}::{stem}{component_suffix};\n"));
+    }
+    out
+}
+
+fn build_top_barrel(tables: &[String]) -> String {
+    let mut out = String::new();
+    for t in tables {
+        out.push_str(&format!("pub mod {t};\n"));
+    }
+    out
+}
+
+fn emit_data_stub(project_root: &Path, resource: &ResourceState, data_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
+    let table = resource.name.as_str();
+    let marker = header::marker_for_resource(project_root, table)?;
+    let stem = type_stem_for_resource(resource);
+    let body = render_data_stub(table, &stem, resource);
+    let path = data_dir.join(format!("{table}.rs"));
+    write_file(&path, &format!("{marker}{body}"), report)?;
+    Ok(())
+}
+
+fn render_data_stub(table: &str, stem: &str, resource: &ResourceState) -> String {
+    let public_ty = format!("{stem}Public");
+    let insertable_ty = format!("{stem}Insertable");
+    let patch_ty = format!("{stem}Patch");
+
+    let mut out = String::new();
+    out.push_str("use crate::meltdown::{MeltDown, MeltType};\n");
+    out.push_str(&format!("use crate::structs::generated::{table}::*;\n\n"));
+
+    let stub_err = format!("|| MeltDown::new(MeltType::Unexpected(\"data helper not implemented for {table}\".to_string()), \"data helper stub\")");
+
+    if resource.verbs.contains_key(&Verb::List) {
+        out.push_str(&format!(
+            "pub async fn load_{table}_list() -> Result<Vec<{public_ty}>, MeltDown> {{\n\
+             \x20   Err(({stub_err})())\n\
+             }}\n\n",
+        ));
+    }
+    if resource.verbs.contains_key(&Verb::Get) {
+        out.push_str(&format!(
+            "pub async fn load_{table}_one(_id: i64) -> Result<{public_ty}, MeltDown> {{\n\
+             \x20   Err(({stub_err})())\n\
+             }}\n\n",
+        ));
+    }
+    if resource.verbs.contains_key(&Verb::Create) {
+        out.push_str(&format!(
+            "pub async fn do_{table}_create(_input: {insertable_ty}) -> Result<{public_ty}, MeltDown> {{\n\
+             \x20   Err(({stub_err})())\n\
+             }}\n\n",
+        ));
+    }
+    if resource.verbs.contains_key(&Verb::Update) {
+        out.push_str(&format!(
+            "pub async fn do_{table}_update(_id: i64, _input: {patch_ty}) -> Result<{public_ty}, MeltDown> {{\n\
+             \x20   Err(({stub_err})())\n\
+             }}\n\n",
+        ));
+    }
+    if resource.verbs.contains_key(&Verb::Delete) {
+        out.push_str(&format!(
+            "pub async fn do_{table}_delete(_id: i64) -> Result<(), MeltDown> {{\n\
+             \x20   Err(({stub_err})())\n\
+             }}\n",
+        ));
+    }
+    out
+}
+
+fn ensure_parent_pages_barrel(project_root: &Path, report: &mut EmitReport) -> BlastResult<()> {
+    let parent_barrel = project_root.join("src").join("transport").join("leptos").join("pages").join("mod.rs");
+    let existing = match fs::read_to_string(&parent_barrel) {
+        Ok(s) => s,
+        Err(_io_err) => return Ok(()),
+    };
+    if existing.contains("pub mod generated;") {
+        return Ok(());
+    }
+    let updated = if existing.ends_with('\n') {
+        format!("{existing}\npub mod generated;\n")
+    } else {
+        format!("{existing}\n\npub mod generated;\n")
+    };
+    fs::write(&parent_barrel, &updated)?;
+    report.written.push(parent_barrel);
+    Ok(())
+}
+
+fn ensure_parent_data_barrel(project_root: &Path, report: &mut EmitReport) -> BlastResult<()> {
+    let parent_barrel = project_root.join("src").join("transport").join("leptos").join("data").join("mod.rs");
+    let existing = fs::read_to_string(&parent_barrel);
+    let body = match existing {
+        Ok(prev) => {
+            if prev.contains("pub mod generated;") {
+                return Ok(());
+            }
+            if prev.ends_with('\n') {
+                format!("{prev}\npub mod generated;\n")
+            } else {
+                format!("{prev}\n\npub mod generated;\n")
+            }
+        }
+        Err(_io_err) => "pub mod generated;\n".to_string(),
+    };
+    fs::create_dir_all(parent_barrel.parent().ok_or_else(|| BlastError::Invalid(format!("data parent has no dir: {}", parent_barrel.display())))?)?;
+    fs::write(&parent_barrel, &body)?;
+    report.written.push(parent_barrel);
+    Ok(())
+}
+
+fn ensure_leptos_mod_includes_data(project_root: &Path, report: &mut EmitReport) -> BlastResult<()> {
+    let mod_path = project_root.join("src").join("transport").join("leptos").join("mod.rs");
+    let existing = match fs::read_to_string(&mod_path) {
+        Ok(s) => s,
+        Err(_io_err) => return Ok(()),
+    };
+    if existing.contains("pub mod data;") {
+        return Ok(());
+    }
+    let updated = if existing.ends_with('\n') {
+        format!("{existing}pub mod data;\n")
+    } else {
+        format!("{existing}\npub mod data;\n")
+    };
+    fs::write(&mod_path, &updated)?;
+    report.written.push(mod_path);
+    Ok(())
+}
+
+fn read_existing(target: &Path) -> BlastResult<Option<String>> {
+    if !target.exists() {
+        return Ok(None);
+    }
+    let body = fs::read_to_string(target)?;
+    Ok(Some(body))
+}
+
+fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult<()> {
+    let parent = target.parent().ok_or_else(|| BlastError::Invalid(format!("leptos pages target has no parent: {}", target.display())))?;
+    fs::create_dir_all(parent)?;
+
+    let existing = read_existing(target)?;
+    match existing {
+        Some(prev) if prev == body => {
+            report.skipped.push(target.to_path_buf());
+            return Ok(());
+        }
+        Some(_different) => {
+            fs::write(target, body)?;
+        }
+        None => {
+            fs::write(target, body)?;
+        }
+    }
+    report.written.push(target.to_path_buf());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use indexmap::IndexMap;
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::{
+        io::null::{NullProgress, NullSink},
+        state::{
+            names::{FieldName, ResourceName},
+            resource::{AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+            save_app, save_resource, AppState, SqlType,
+        },
+    };
+
+    fn make_posts_with_all_verbs() -> ResourceState {
+        let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
+        let id_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Public, FieldVariant::Admin].into_iter().collect();
+        let body_v: BTreeSet<FieldVariant> = [FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Public, FieldVariant::Admin].into_iter().collect();
+
+        fields.insert(
+            FieldName::new("id"),
+            FieldState {
+                sql_type: SqlType::new("Int8"),
+                variants: id_v,
+                nullable: false,
+                primary_key: true,
+                validators: BTreeSet::new(),
+            },
+        );
+        fields.insert(
+            FieldName::new("title"),
+            FieldState {
+                sql_type: SqlType::new("Text"),
+                variants: body_v,
+                nullable: false,
+                primary_key: false,
+                validators: BTreeSet::new(),
+            },
+        );
+
+        let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
+        verbs.insert(
+            Verb::List,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+            },
+        );
+        verbs.insert(
+            Verb::Get,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+            },
+        );
+        verbs.insert(
+            Verb::Create,
+            VerbState {
+                auth: AuthMode::AuthRequired,
+                list_options: None,
+            },
+        );
+        verbs.insert(
+            Verb::Update,
+            VerbState {
+                auth: AuthMode::AdminOnly,
+                list_options: None,
+            },
+        );
+        verbs.insert(
+            Verb::Delete,
+            VerbState {
+                auth: AuthMode::AdminOnly,
+                list_options: None,
+            },
+        );
+
+        ResourceState {
+            schema_version: RESOURCE_SCHEMA_VERSION,
+            name: ResourceName::new("posts"),
+            fields,
+            verbs,
+            ws_events: None,
+            singular_override: None,
+            soft_delete: None,
+            relations: BTreeMap::new(),
+            gen_level: GenLevel::Pages,
+        }
+    }
+
+    fn seed_project(root: &Path, resources: &[ResourceState]) {
+        let state_dir = root.join("storage").join("blast").join("state");
+        save_app(&state_dir, &AppState::new()).expect("save app");
+        for r in resources {
+            save_resource(&state_dir, r).expect("save resource");
+        }
+    }
+
+    #[test]
+    fn emits_all_four_pages_for_full_verb_set() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        let report = run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let base = root.join("src/transport/leptos/pages/generated/posts");
+        let list = base.join("list.rs");
+        let detail = base.join("detail.rs");
+        let create = base.join("create.rs");
+        let edit = base.join("edit.rs");
+        let resource_barrel = base.join("mod.rs");
+        let top_barrel = root.join("src/transport/leptos/pages/generated/mod.rs");
+
+        assert!(list.exists(), "list.rs must exist");
+        assert!(detail.exists(), "detail.rs must exist");
+        assert!(create.exists(), "create.rs must exist");
+        assert!(edit.exists(), "edit.rs must exist");
+        assert!(resource_barrel.exists(), "per-resource mod.rs must exist");
+        assert!(top_barrel.exists(), "top-level pages/generated/mod.rs must exist");
+
+        for path in [&list, &detail, &create, &edit, &resource_barrel, &top_barrel] {
+            assert!(report.written.iter().any(|p| p == path), "report must include {}", path.display());
+        }
+    }
+
+    #[test]
+    fn list_page_uses_table_layout_others_use_cards() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let list_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/list.rs")).expect("read list");
+        let detail_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/detail.rs")).expect("read detail");
+        let create_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/create.rs")).expect("read create");
+
+        assert!(list_body.contains("PageLayout::Table"), "list page must use Table layout");
+        assert!(detail_body.contains("PageLayout::Cards"), "detail page must use Cards layout");
+        assert!(create_body.contains("PageLayout::Cards"), "create page must use Cards layout");
+    }
+
+    #[test]
+    fn auth_mode_maps_correctly_per_verb() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let list_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/list.rs")).expect("read list");
+        let create_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/create.rs")).expect("read create");
+        let edit_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/edit.rs")).expect("read edit");
+
+        assert!(list_body.contains("AuthGuardMode::Public"), "list (Public auth) must map to AuthGuardMode::Public");
+        assert!(create_body.contains("AuthGuardMode::Required"), "create (AuthRequired) must map to AuthGuardMode::Required");
+        assert!(edit_body.contains("AuthGuardMode::AdminOnly"), "edit (AdminOnly) must map to AuthGuardMode::AdminOnly");
+    }
+
+    #[test]
+    fn marker_header_present_on_each_emitted_file() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let pages = ["list.rs", "detail.rs", "create.rs", "edit.rs", "mod.rs"];
+        for page in pages {
+            let path = root.join(format!("src/transport/leptos/pages/generated/posts/{page}"));
+            let body = fs::read_to_string(&path).expect("read page");
+            assert!(body.starts_with("// AUTO-GENERATED from "), "{page} must start with marker; got: {body}");
+        }
+    }
+
+    #[test]
+    fn skips_resources_below_pages_gen_level() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let mut resource = make_posts_with_all_verbs();
+        resource.gen_level = GenLevel::Components;
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let posts_dir = root.join("src/transport/leptos/pages/generated/posts");
+        assert!(!posts_dir.exists(), "must NOT emit posts/ when gen_level < Pages");
+    }
+
+    #[test]
+    fn idempotent_second_run_skips_unchanged_files() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        let _first = run(root, &mut sink, &mut progress).expect("first run");
+        let second = run(root, &mut sink, &mut progress).expect("second run");
+
+        assert!(!second.skipped.is_empty(), "second run must skip unchanged files");
+    }
+
+    #[test]
+    fn no_resources_emits_gitkeep_and_empty_barrel() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        seed_project(root, &[]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let pages_keep = root.join("src/transport/leptos/pages/generated/.gitkeep");
+        let data_keep = root.join("src/transport/leptos/data/generated/.gitkeep");
+        let pages_barrel = root.join("src/transport/leptos/pages/generated/mod.rs");
+        let data_barrel = root.join("src/transport/leptos/data/generated/mod.rs");
+        assert!(pages_keep.exists(), ".gitkeep must exist for pages when no resources");
+        assert!(data_keep.exists(), ".gitkeep must exist for data when no resources");
+        assert!(pages_barrel.exists(), "empty pages barrel must exist");
+        assert!(data_barrel.exists(), "empty data barrel must exist");
+    }
+
+    #[test]
+    fn data_stub_emits_per_verb_helpers() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let data = fs::read_to_string(root.join("src/transport/leptos/data/generated/posts.rs")).expect("read data stub");
+        assert!(data.contains("pub async fn load_posts_list"), "missing load_posts_list");
+        assert!(data.contains("pub async fn load_posts_one"), "missing load_posts_one");
+        assert!(data.contains("pub async fn do_posts_create"), "missing do_posts_create");
+        assert!(data.contains("pub async fn do_posts_update"), "missing do_posts_update");
+        assert!(data.contains("pub async fn do_posts_delete"), "missing do_posts_delete");
+    }
+
+    #[test]
+    fn top_barrel_lists_emitted_resources() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        let resource = make_posts_with_all_verbs();
+        seed_project(root, &[resource]);
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("run leptos_pages");
+
+        let top_barrel = fs::read_to_string(root.join("src/transport/leptos/pages/generated/mod.rs")).expect("read barrel");
+        assert!(top_barrel.contains("pub mod posts;"), "top barrel must list posts: {top_barrel}");
+    }
 }
