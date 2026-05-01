@@ -1,4 +1,4 @@
-// AUTO-GENERATED from storage/blast/state/app.ron @ 57e4e34dd57f639337dbbd0478ab873b79bb22b729ddfb335dce76b06eacb997
+// AUTO-GENERATED from storage/blast/state/app.ron @ c196c9b8f01e3089f6efceef8e0b434aa0652e9351ec4f2f7b42fca54207b6f1
 //
 // Do not edit by hand. Run `blast gen all` after mutating state.
 
