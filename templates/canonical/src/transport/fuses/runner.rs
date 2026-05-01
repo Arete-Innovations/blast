@@ -9,10 +9,8 @@ use crate::{
     cata_log,
     ctx::Ctx,
     meltdown::{MeltDown, MeltType},
-    structs::fuses::{
-        registry::{FuseFn, FuseRegistry},
-        schedule::Schedule,
-    },
+    structs::fuses::registry::{FuseFn, FuseRegistry},
+    transport::fuses::schedule::schedule_from_row,
 };
 
 pub type Pool_ = Pool<AsyncPgConnection>;
@@ -109,41 +107,6 @@ pub async fn launch(pool: Pool_, registry: FuseRegistry) -> Result<(), MeltDown>
 }
 
 const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
-
-fn schedule_from_row(kind: &str, spec: &str) -> Option<Schedule> {
-    match kind {
-        "interval" => {
-            let stripped = spec.strip_prefix("every:")?.strip_suffix('s')?;
-            let secs: u64 = match stripped.parse() {
-                Ok(n) => n,
-                Err(e) => {
-                    cata_log!(Debug, format!("schedule_from_row interval parse '{}': {}", stripped, e));
-                    return None;
-                }
-            };
-            Some(Schedule::Every(std::time::Duration::from_secs(secs)))
-        }
-        "cron" => {
-            let expr = spec.strip_prefix("cron:")?;
-            Some(Schedule::Cron(expr.to_string()))
-        }
-        "daily_at" => {
-            let raw = spec.strip_prefix("daily_at:")?;
-            let t = match chrono::NaiveTime::parse_from_str(raw, "%H:%M:%S") {
-                Ok(time) => time,
-                Err(e) => {
-                    cata_log!(Debug, format!("schedule_from_row daily_at parse '{}': {}", raw, e));
-                    return None;
-                }
-            };
-            Some(Schedule::DailyAt(t))
-        }
-        other => {
-            cata_log!(Debug, format!("schedule_from_row: unknown kind '{}'", other));
-            None
-        }
-    }
-}
 
 pub(crate) async fn run_loop(pool: Pool_, fn_map: FuseFnMap) {
     let running: Arc<DashMap<String, ()>> = Arc::new(DashMap::new());

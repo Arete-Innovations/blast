@@ -34,6 +34,41 @@ impl Schedule {
     }
 }
 
+pub fn schedule_from_row(kind: &str, spec: &str) -> Option<Schedule> {
+    match kind {
+        "interval" => {
+            let stripped = spec.strip_prefix("every:")?.strip_suffix('s')?;
+            let secs: u64 = match stripped.parse() {
+                Ok(n) => n,
+                Err(e) => {
+                    cata_log!(Debug, format!("schedule_from_row interval parse '{}': {}", stripped, e));
+                    return None;
+                }
+            };
+            Some(Schedule::Every(Duration::from_secs(secs)))
+        }
+        "cron" => {
+            let expr = spec.strip_prefix("cron:")?;
+            Some(Schedule::Cron(expr.to_string()))
+        }
+        "daily_at" => {
+            let raw = spec.strip_prefix("daily_at:")?;
+            let t = match NaiveTime::parse_from_str(raw, "%H:%M:%S") {
+                Ok(time) => time,
+                Err(e) => {
+                    cata_log!(Debug, format!("schedule_from_row daily_at parse '{}': {}", raw, e));
+                    return None;
+                }
+            };
+            Some(Schedule::DailyAt(t))
+        }
+        other => {
+            cata_log!(Debug, format!("schedule_from_row: unknown kind '{}'", other));
+            None
+        }
+    }
+}
+
 impl Schedule {
     pub fn next_run_after(&self, now: DateTime<Utc>) -> DateTime<Utc> {
         match self {
