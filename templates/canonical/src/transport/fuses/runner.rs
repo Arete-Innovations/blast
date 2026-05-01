@@ -214,6 +214,26 @@ async fn run_fuse(pool: Pool_, row: FuseRow, run_fn: FuseFn) -> Result<(), MeltD
     let started = Utc::now();
     cata_log!(Info, format!("fuse_run_started name={} attempt={}", row.name, row.run_count + 1));
 
+    let next_at = match schedule_from_row(&row.schedule_kind, &row.schedule_spec) {
+        Some(sched) => sched.next_run_after(Utc::now()),
+        None => {
+            let err_msg = format!("schedule_parse_error: kind='{}' spec='{}'", row.schedule_kind, row.schedule_spec);
+            let mut conn = pool_conn(&pool).await?;
+            diesel::update(fuses::table.filter(fuses::id.eq(row.id)))
+                .set((
+                    fuses::last_run_status.eq(Some("schedule_parse_error".to_string())),
+                    fuses::last_error.eq(Some(err_msg.clone())),
+                    fuses::enabled.eq(false),
+                    fuses::updated_at.eq(Utc::now()),
+                ))
+                .execute(&mut conn)
+                .await
+                .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: mark-schedule-parse-error failed: {}", e)))?;
+            cata_log!(Error, format!("fuse_disabled name={} reason='{}'", row.name, err_msg));
+            return Ok(());
+        }
+    };
+
     {
         let mut conn = pool_conn(&pool).await?;
         diesel::update(fuses::table.filter(fuses::id.eq(row.id)))
@@ -222,14 +242,6 @@ async fn run_fuse(pool: Pool_, row: FuseRow, run_fn: FuseFn) -> Result<(), MeltD
             .await
             .map_err(|e| MeltDown::new(MeltType::DatabaseError, format!("fuses: mark-running failed: {}", e)))?;
     }
-
-    let next_at = match schedule_from_row(&row.schedule_kind, &row.schedule_spec) {
-        Some(sched) => sched.next_run_after(Utc::now()),
-        _absent => {
-            cata_log!(Warning, format!("schedule_from_row returned None for fuse '{}'; defaulting to 60s", row.name));
-            Utc::now() + chrono::Duration::seconds(60)
-        }
-    };
 
     let ctx = Ctx::system(pool.clone());
     let result = run_fn(&ctx).await;
