@@ -1,6 +1,8 @@
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
+use crate::meltdown::MeltDown;
 use crate::structs::leptos::RegisterInput;
 use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};
 use crate::transport::leptos::data::auth::do_register;
@@ -11,39 +13,45 @@ use crate::transport::leptos::signals::toast::use_toast;
 pub fn RegisterPage() -> impl IntoView {
     let session_store = use_session();
     let toasts = use_toast();
-    let navigate = use_navigate();
+    let navigate = StoredValue::new_local(use_navigate());
 
     let email = RwSignal::new(String::new());
     let password = RwSignal::new(String::new());
     let confirm = RwSignal::new(String::new());
-
-    let action = Action::new_local(move |input: &RegisterInput| {
-        let input = input.clone();
-        async move { do_register(input).await }
-    });
-
-    Effect::new(move |_| match action.value().get() {
-        Some(Ok(out)) => {
-            session_store.set(Some(out.session.clone()));
-            toasts.success("Welcome.");
-            navigate("/dashboard", Default::default());
-        }
-        Some(Err(e)) => {
-            let msg: String = format!("{}", e);
-            toasts.error(msg);
-        }
-        None => {}
-    });
+    let pending = RwSignal::new(false);
+    let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        if password.get() != confirm.get() {
+        if pending.get_untracked() {
+            return;
+        }
+        if password.get_untracked() != confirm.get_untracked() {
             toasts.error("Passwords do not match.");
             return;
         }
-        action.dispatch(RegisterInput {
-            email: email.get(),
-            password: password.get(),
+        pending.set(true);
+        last_error.set(None);
+        let input = RegisterInput {
+            email: email.get_untracked(),
+            password: password.get_untracked(),
+        };
+        spawn_local(async move {
+            let result = do_register(input).await;
+            pending.set(false);
+            match result {
+                Ok(out) => {
+                    session_store.set(Some(out.session.clone()));
+                    toasts.success("Welcome.");
+                    navigate.with_value(|nav| nav("/dashboard", Default::default()));
+                }
+                Err(err) => {
+                    err.log();
+                    let msg: String = format!("{}", err);
+                    toasts.error(msg);
+                    last_error.set(Some(err));
+                }
+            }
         });
     };
 
@@ -79,13 +87,10 @@ pub fn RegisterPage() -> impl IntoView {
                             on:input=move |ev| confirm.set(event_target_value(&ev))
                         />
                     </label>
-                    <button type="submit" disabled=move || action.pending().get()>
-                        {move || if action.pending().get() { "Creating…" } else { "Create account" }}
+                    <button type="submit" disabled=move || pending.get()>
+                        {move || if pending.get() { "Creating…" } else { "Create account" }}
                     </button>
-                    {move || match action.value().get() {
-                        Some(Err(e)) => Some(view! { <ErrorBanner error=e/> }.into_any()),
-                        _ignored => None,
-                    }}
+                    {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
                 </form>
                 <p><a href="/login">"Already have an account? Login"</a></p>
             </PageShell>
