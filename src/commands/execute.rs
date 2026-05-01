@@ -105,7 +105,19 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
         Command::Cli => crate::interactive::run_interactive_loop(config, dep_manager),
 
-        Command::Migration => {
+        Command::Migration { name } => {
+            match name {
+                Some(migration_name) => {
+                    let migration_dir = crate::database::write_migration(&migration_name, "", "")?;
+                    let up_path = migration_dir.join("up.sql");
+                    let down_path = migration_dir.join("down.sql");
+                    logger::success(&format!("Migration skeleton written: {} ({})", up_path.display(), down_path.display(),))?;
+                    logger::info("Edit up.sql / down.sql, then run `blast migrate` (and `blast gen schema && blast gen all` if you want codegen).")?;
+                    return Ok(());
+                }
+                None => {} // allow: ERROR:3 forbids `if let Some`; fall through to interactive wizard below
+            }
+
             let project_root = config.project_dir.clone();
             let outcome = crate::wizards::new_table::run_picker(&project_root)?;
             if outcome.cancelled {

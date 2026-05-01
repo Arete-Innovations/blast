@@ -53,7 +53,12 @@ pub enum Command {
     },
 
     #[command(about = "Create a new Diesel migration skeleton")]
-    Migration,
+    Migration {
+        /// If provided, write an empty migration skeleton with this name and skip the interactive wizard.
+        /// Migration name must match snake_case (^[a-z][a-z0-9_]*$). Required for non-TTY contexts (CI, scripts).
+        #[arg(long)]
+        name: Option<String>,
+    },
 
     #[command(about = "Run pending migrations")]
     Migrate,
@@ -288,6 +293,28 @@ mod tests {
                 assert!(no_warmup);
             }
             other => panic!("expected Init, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn migration_command_without_name_runs_wizard() {
+        let cli = Cli::try_parse_from(["blast", "migration"]).expect("parse");
+        match cli.cmd {
+            Some(Command::Migration { name }) => {
+                assert!(name.is_none(), "no --name → wizard path; got {:?}", name);
+            }
+            other => panic!("expected Migration, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn migration_command_with_name_skips_wizard() {
+        let cli = Cli::try_parse_from(["blast", "migration", "--name", "create_widgets"]).expect("parse");
+        match cli.cmd {
+            Some(Command::Migration { name }) => {
+                assert_eq!(name.as_deref(), Some("create_widgets"), "--name <foo> → non-interactive skeleton path");
+            }
+            other => panic!("expected Migration, got {:?}", other),
         }
     }
 }

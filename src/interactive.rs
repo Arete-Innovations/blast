@@ -91,7 +91,7 @@ fn resolve_selection(label: &str) -> BlastResult<SelectionOutcome> {
         "[E2E] Run end-to-end tests (cargo leptos end-to-end)" => Command::E2e,
 
         // ── database ──────────────────────────────────────────────────────────
-        "[DB] New Migration" => Command::Migration,
+        "[DB] New Migration" => Command::Migration { name: None },
         "[DB] Migrate" => Command::Migrate,
         "[DB] Rollback" => Command::Rollback,
         "[DB] Seed" => Command::Seed { file: None },
