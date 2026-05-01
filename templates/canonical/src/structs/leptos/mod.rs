@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod auth_guard_mode;
+pub mod cells;
 pub mod nav_store;
 pub mod page_layout;
 pub mod polled_state;
@@ -24,6 +25,7 @@ pub use theme::Theme;
 pub use toast::{Toast, ToastKind};
 pub use toast_store::ToastStore;
 pub use url_state::{QueryDialog, UrlListState};
+pub use cells::{BadgeColor, BoolVariant, Currency, DateFormat};
 pub use wire::{ErrorBody, ErrorEnvelope};
 
 #[cfg(target_arch = "wasm32")]
