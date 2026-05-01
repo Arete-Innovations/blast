@@ -301,6 +301,7 @@ fn main() {
     // If anyone breaks `module_path_for_rel` / `resolve_to_crate_path`, the
     // build hard-fails here BEFORE silently letting layer escapes through.
     verify_layer_resolver_invariants();
+    verify_cfg_test_scope_invariants();
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let src_dir = manifest_dir.join("src");
@@ -315,6 +316,52 @@ fn main() {
     if !hits.is_empty() {
         panic!("\n{}", format_report(&hits));
     }
+}
+
+fn verify_cfg_test_scope_invariants() {
+    // Canonical pattern: standalone attr, block item, balanced close brace.
+    let canonical = "fn prod() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
+    let mask = cfg_test_line_mask(canonical);
+    assert_eq!(mask, vec![false, true, true, true, true], "canonical cfg(test) mask");
+
+    // Production code AFTER nested test block stays unmasked — the actual bug
+    // FIX-011 closes (the old `in_test_module` flag never reset).
+    let nested = "mod outer {\n    fn before() {}\n    #[cfg(test)]\n    mod inner {\n        fn t() {}\n    }\n    fn after() {}\n}\n";
+    let mask = cfg_test_line_mask(nested);
+    assert!(!mask[6], "fn after() (line 6) must NOT be in test mask — that's the bug being closed");
+    assert!(mask[3] && mask[4] && mask[5], "inner test mod lines (3,4,5) must be masked");
+
+    // Stray attr at EOF with no following item: fallback masks rest of file.
+    let stray = "fn prod() {}\n#[cfg(test)]\n";
+    let mask = cfg_test_line_mask(stray);
+    assert_eq!(mask, vec![false, true], "stray cfg(test) at EOF masks attr line as fallback");
+
+    // Empty file.
+    let empty = "";
+    let mask = cfg_test_line_mask(empty);
+    assert!(mask.is_empty(), "empty file → empty mask");
+
+    // No cfg(test) anywhere.
+    let none = "fn a() {}\nfn b() {}\n";
+    let mask = cfg_test_line_mask(none);
+    assert_eq!(mask, vec![false, false], "no cfg(test) → all unmasked");
+
+    // Inline `#[cfg(test)] use foo;` (attr + item on same line) is NOT
+    // detected (exact-match required) — same as old behavior, NOT a regression.
+    let inline = "fn prod() {}\n#[cfg(test)] use foo::Bar;\nfn after() {}\n";
+    let mask = cfg_test_line_mask(inline);
+    assert_eq!(mask, vec![false, false, false], "inline attr+item not detected; same as pre-FIX behavior");
+
+    // String containing `{` and `}` inside test mod doesn't escape brace tracker.
+    let str_braces = "#[cfg(test)]\nmod tests {\n    let s = \"hello { world }\";\n    fn t() {}\n}\nfn prod() {}\n";
+    let mask = cfg_test_line_mask(str_braces);
+    assert!(mask[0] && mask[1] && mask[2] && mask[3] && mask[4], "test mod with string-braces masks correctly");
+    assert!(!mask[5], "production fn after string-brace test mod stays unmasked");
+
+    // line_after_cfg_test_item edge cases:
+    let lines: Vec<&str> = "#[cfg(test)]\nmod t {}\nfn x() {}".lines().collect();
+    let end = line_after_cfg_test_item(&lines, 0);
+    assert_eq!(end, 2, "single-line block item ends at idx 2 (next line)");
 }
 
 fn verify_layer_resolver_invariants() {
