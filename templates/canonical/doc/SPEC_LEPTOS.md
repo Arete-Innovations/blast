@@ -12,11 +12,11 @@ Frontend stack for Catablast apps. Replaces the legacy Vue/TS/PrimeVue/Vite stac
 | Component library | `thaw` (typed Leptos components) |
 | CSS | scss compiled by cargo-leptos via grass + per-component `.module.scss` via stylance |
 | Icons | `icondata` crate (Phosphor feature default) |
-| Forms | Hand-rolled thaw inputs + `Action::new_local` (no leptos-form derive) |
+| Forms | Hand-rolled thaw inputs + `spawn_local` in `on:submit` + manual `pending`/`last_error` RwSignals (NOT `Action::new_local` — see Mutations section) |
 | Tables | `leptos-struct-table` derives on `<R>Public` |
 | Page metadata | `leptos_meta` (`Title`, `Meta`, `Link`) |
 | Wasm fetch | `gloo-net` |
-| Auth token | httpOnly secure SameSite=Strict cookie |
+| Auth token | httpOnly SameSite=Lax cookie (no Secure flag in dev — Firefox drops Secure cookies on plain http://localhost) |
 
 Stack is **locked**. Don't propose Sycamore, Yew, Dioxus, web-awesome, shoelace, tailwind.
 
@@ -103,7 +103,7 @@ pub async fn load_postari_list(filter: PostariFilter) -> Result<Vec<PostarePubli
 }
 ```
 
-Pages consume via `Resource::new` (queries) and `Action::new_local` (mutations — `_local` because `gloo_net` futures aren't Send).
+Pages consume via `Resource::new` (queries) and plain `spawn_local` inside `on:submit`/`on:click` for mutations (not `Action::new_local` — see Mutations section for why).
 
 - **SSR-side**: zero HTTP roundtrip. Page renders with data baked into the HTML payload via Leptos's hydration handoff.
 - **Client-side**: when dependencies change (URL params, filters), wasm re-fetches via `/api/<r>`.
@@ -112,7 +112,11 @@ Pages consume via `Resource::new` (queries) and `Action::new_local` (mutations �
 
 ## Auth (locked)
 
-httpOnly secure SameSite=Strict cookie. Server reads cookie on SSR request, knows session immediately, can render full page or redirect. Wasm has no JS access (httpOnly). All `/api/*` calls send cookie automatically.
+httpOnly SameSite=Lax cookie (no Secure flag in dev — Firefox + recent Chrome drop Secure cookies on plain http://localhost). Server reads cookie on SSR request, knows session immediately, can render full page or redirect. Wasm has no JS access (httpOnly). All `/api/*` calls send cookie automatically.
+
+**Wire shape:** `/api/auth/{login,register,me}` all return `SessionContext` (`{session_id, user_id, role}`) directly. `SessionContext.token` carries `#[serde(skip_serializing, default)]` so the cookie token never leaks into the JSON body. The httpOnly cookie is the only place the token lives client-side.
+
+**Auth middleware behavior on stale cookies (binding):** when the request carries a session cookie that no longer resolves (DB row gone, expired, malformed), the middleware MUST swallow the resolve error, log Debug, and fall through to anonymous Ctx. It MUST NOT propagate `SessionInvalid` to the response — doing so 401's `/api/auth/login` itself, making it impossible to recover from a stale cookie. See `src/transport/http/middleware/auth.rs::request_ctx_middleware`.
 
 `AuthGuard` component wraps every protected page. It reads from a global `SessionStore` signal (typed wrapper around `RwSignal<Option<SessionContext>>` defined at `src/structs/leptos/session_store.rs`). The store is provided in `<App>` via `provide_session_store()` and hydrated by an `Effect::new` that calls `load_session()` on mount. On SSR-side first render, the store starts empty (`None`); on wasm hydrate, the Effect calls `/api/auth/me` via `api_client::get_json` and populates the store. Renders `<Redirect path="/login"/>` if blocked.
 
@@ -150,16 +154,53 @@ Layout owns spacing. PageShell does not accept `padding`/`margin`/`gap`/`width` 
 ## Mutations
 
 Optimistic updates are **banned** (carries forward governor rule). Pattern:
-1. User action → `Action::dispatch(input)`
+1. User action → `on:submit` handler `spawn_local`s the future
 2. Wasm awaits server response
-3. On success: refetch invalidating Resource → render fresh data → toast success
-4. On error: toast `MeltDown.message` byte-for-byte from server
+3. On success: set the relevant signals (e.g. `session_store.set(...)`) → toast success → `navigate(...)` if applicable
+4. On error: `err.log()` → toast `MeltDown.message` byte-for-byte from server → optionally stash in a `last_error` signal for an inline `<ErrorBanner/>`
 
 Toast singleton signal in `src/transport/leptos/signals/toast.rs`, rendered by `<ToastHost/>` in `<App>`.
 
+**Why not `Action::new_local`?** The combo `Action::new_local(...)` + `Effect::new(move |_| match action.value().get() { Some(Ok(out)) => navigate(...) })` deadlocks the wasm event loop on submit: navigate's reactive flush unmounts the page mid-Effect, leaving the runtime in a recursive state. We learned this the hard way (see WIP doc, "Hard lessons"). Plain `spawn_local` runs the future at microtask time, no flush re-entry.
+
 ## Form submission
 
-Forms require JS hydration (no `<noscript>` fallback). Both hand-written and codegen'd forms use `<form on:submit=...>` + `Action::new_local` (the local variant is required because `gloo_net::http::Request::send()` returns a non-Send future). Codegen'd forms (`<R>CreateForm`/`<R>EditForm`) emit thaw inputs (`<Input/>`, `<Checkbox/>`, `<Combobox/>` for enums, etc.) and call `validate_<r>_*` BEFORE dispatching the Action. No `leptos-form` derive crate dependency — hand-rolled rendering for full control over the validator-before-dispatch sequence.
+Forms require JS hydration (no `<noscript>` fallback). Pattern (hand-written + codegen'd):
+
+```rust
+let pending = RwSignal::new(false);
+let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);
+let navigate = StoredValue::new_local(use_navigate());
+// ^ StoredValue wrap because use_navigate() returns `impl Fn + Clone` (no Copy);
+//   capturing-by-move makes the on_submit closure FnOnce, which view! rejects.
+
+let on_submit = move |ev: leptos::ev::SubmitEvent| {
+    ev.prevent_default();
+    if pending.get_untracked() { return; }
+    // optional client-side validation (validate_<r>_* fns from validators codegen)
+    pending.set(true);
+    last_error.set(None);
+    let input = /* parse RwSignal values into typed <R>Insertable */;
+    spawn_local(async move {
+        let result = do_<r>_create(input).await;
+        pending.set(false);
+        match result {
+            Ok(out) => {
+                toasts.success("...");
+                navigate.with_value(|nav| nav("/somewhere", Default::default()));
+                // or call refetch on the parent Resource
+            }
+            Err(err) => {
+                err.log();
+                toasts.error(format!("{}", err));
+                last_error.set(Some(err));
+            }
+        }
+    });
+};
+```
+
+Codegen'd forms (`<R>CreateForm`/`<R>EditForm`) follow the same pattern with thaw inputs (`<Input/>`, `<Checkbox/>`, `<Combobox/>` for enums) and `validate_<r>_*` called BEFORE the spawn_local dispatch.
 
 No `#[server]` macro use. Plain axum handlers + Leptos pages, both calling the flow.
 
@@ -194,6 +235,23 @@ OS preference default + manual toggle. Thaw `<ConfigProvider theme>` driven by s
 ## i18n
 
 Out of scope.
+
+## End-to-end testing
+
+Standalone `e2e/` workspace member ships with the canonical template. Drives a headless Firefox via geckodriver + fantoccini (rust webdriver) + cookie-aware reqwest. Boots `cargo leptos serve`, waits for `/api/healthz`, then exercises register → logout → login → `/api/auth/me` round-trip.
+
+Wire-up:
+- `[package.metadata.leptos] end2end-cmd = "cargo run --release"` + `end2end-dir = "e2e"` in canonical's Cargo.toml.
+- `cargo leptos end-to-end` (or `blast e2e`) builds + serves + runs the e2e binary.
+- pre-req: `pacman -S geckodriver firefox` (or chromedriver — fantoccini handles either; default in this template is geckodriver since Firefox is the primary dev browser).
+
+The e2e binary spawns its own geckodriver on port 4444 in a subprocess and kills it on exit. It does NOT touch the user's running Firefox — geckodriver creates an isolated profile per session. Headless mode via `moz:firefoxOptions.args = ["-headless"]`.
+
+Diagnostic patterns baked into the e2e (kept in for future debugging):
+- `setTimeout(...click(), 50)` instead of `client.click()` so we can poll the JS thread post-submit without WebDriver waiting for page-settled.
+- `tokio::time::timeout(2s, client.execute("return Date.now()"))` poll loop — if it doesn't return, the wasm hydrate has wedged the event loop (regression check for the `Action::new_local + Effect::new(action.value())` deadlock pattern).
+- fetch hook (`window.fetch = wrapper`) records all outbound XHRs so we can assert the right `/api/*` endpoint was hit even if the resulting navigate happens too fast to observe.
+- per-step `tokio::time::timeout` of `STEP_TIMEOUT` (40s) wrapping each phase. Master timeout at 120s to guarantee the suite never hangs the runner.
 
 ## Related specs
 
