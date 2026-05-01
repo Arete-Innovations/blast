@@ -43,7 +43,7 @@ pub fn RegisterPage() -> impl IntoView {
                 Ok(session) => {
                     session_store.set(Some(session));
                     toasts.success("Welcome.");
-                    navigate.with_value(|nav| nav(RouteName::Dashboard.path(), Default::default()));
+                    navigate.with_value(|nav| nav(RouteName::Dashboard.path().as_ref(), Default::default()));
                 }
                 Err(err) => {
                     err.log();
@@ -92,7 +92,7 @@ pub fn RegisterPage() -> impl IntoView {
                     </button>
                     {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
                 </form>
-                <p><a href=RouteName::Login.path()>"Already have an account? Login"</a></p>
+                <p><a href={RouteName::Login.path().to_string()}>"Already have an account? Login"</a></p>
             </PageShell>
         </AuthGuard>
     }

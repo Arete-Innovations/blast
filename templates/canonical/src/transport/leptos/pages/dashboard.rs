@@ -10,7 +10,7 @@ pub fn DashboardPage() -> impl IntoView {
             <PageShell layout=PageLayout::Cards>
                 <h1>"Dashboard"</h1>
                 <p>"Authenticated landing page."</p>
-                <p><a href=RouteName::Logout.path()>"Sign out"</a></p>
+                <p><a href={RouteName::Logout.path().to_string()}>"Sign out"</a></p>
             </PageShell>
         </AuthGuard>
     }

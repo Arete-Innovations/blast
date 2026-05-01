@@ -10,9 +10,9 @@ pub fn WelcomePage() -> impl IntoView {
             <h1>"Catablast"</h1>
             <p>"Strongly-typed Rust web-app stack."</p>
             <p>
-                <a href=RouteName::Login.path()>"Login"</a>
+                <a href={RouteName::Login.path().to_string()}>"Login"</a>
                 " | "
-                <a href=RouteName::Register.path()>"Register"</a>
+                <a href={RouteName::Register.path().to_string()}>"Register"</a>
             </p>
         </PageShell>
     }

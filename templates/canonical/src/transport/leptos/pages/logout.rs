@@ -21,7 +21,7 @@ pub fn LogoutPage() -> impl IntoView {
                 Ok(()) => {
                     session_store.set(None);
                     toasts.success("Signed out.");
-                    navigate.with_value(|nav| nav(RouteName::Login.path(), Default::default()));
+                    navigate.with_value(|nav| nav(RouteName::Login.path().as_ref(), Default::default()));
                 }
                 Err(err) => {
                     err.log();

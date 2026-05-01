@@ -50,6 +50,11 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     let mod_path = routes_dir.join("mod.rs");
     write_file(&mod_path, &mod_body, &mut report)?;
 
+    let alignment_path = route_alignment_test_path(project_root);
+    let crate_name = read_crate_name(project_root)?;
+    let alignment_body = render_route_alignment_test(&entries, &crate_name);
+    write_file(&alignment_path, &format!("{app_marker}{alignment_body}"), &mut report)?;
+
     sink.info(format!("{STEP_LABEL}: {} routes for {} resources", entries.len(), resources.len()));
     progress.step_done(STEP_LABEL);
     Ok(report)
@@ -59,12 +64,53 @@ fn routes_generated_dir(project_root: &Path) -> PathBuf {
     project_root.join("src").join("transport").join("leptos").join("routes").join("generated")
 }
 
+fn route_alignment_test_path(project_root: &Path) -> PathBuf {
+    project_root.join("tests").join("route_alignment_generated.rs")
+}
+
+/// Read the package name from the project's Cargo.toml so the generated test
+/// file can `use <crate>::structs::leptos::RouteName`. Falls back to
+/// `canonical` (the in-place dev crate name) when the file cannot be parsed —
+/// the canonical dev loop runs `blast gen all` against `templates/canonical/`
+/// itself, where the crate is literally named `canonical`.
+fn read_crate_name(project_root: &Path) -> BlastResult<String> {
+    let cargo_path = project_root.join("Cargo.toml");
+    let body = match fs::read_to_string(&cargo_path) {
+        Ok(s) => s,
+        Err(_missing) => return Ok("canonical".to_string()),
+    };
+    let parsed: ::toml::Value = ::toml::from_str(&body).map_err(|e| BlastError::Invalid(format!("Cargo.toml parse error: {e}")))?;
+    let raw_name = parsed.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("canonical"); // allow: documented fallback when Cargo.toml has no [package].name; canonical dev loop relies on the literal default
+    // Cargo permits hyphens in package names; the crate identifier replaces them with underscores.
+    Ok(raw_name.replace('-', "_"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RouteKind {
+    List,
+    Detail,
+    Create,
+    Edit,
+}
+
+impl RouteKind {
+    fn enum_variant(self) -> &'static str {
+        match self {
+            RouteKind::List => "ResourceList",
+            RouteKind::Detail => "ResourceDetail",
+            RouteKind::Create => "ResourceCreate",
+            RouteKind::Edit => "ResourceEdit",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct RouteEntry {
     table: String,
     page_module: &'static str,
     component: String,
     path_lit: String,
+    kind: RouteKind,
 }
 
 fn collect_route_entries(resources: &[ResourceState]) -> Vec<RouteEntry> {
@@ -72,11 +118,11 @@ fn collect_route_entries(resources: &[ResourceState]) -> Vec<RouteEntry> {
     for r in resources {
         let table = r.name.as_str();
         let stem = type_stem_for_resource(r);
-        for (verb, page_module, component_suffix, path_lit) in [
-            (Verb::List, "list", "ListPage", format!("/{table}")),
-            (Verb::Create, "create", "CreatePage", format!("/{table}/new")),
-            (Verb::Update, "edit", "EditPage", format!("/{table}/:id/edit")),
-            (Verb::Get, "detail", "DetailPage", format!("/{table}/:id")),
+        for (verb, page_module, component_suffix, path_lit, kind) in [
+            (Verb::List, "list", "ListPage", format!("/{table}"), RouteKind::List),
+            (Verb::Create, "create", "CreatePage", format!("/{table}/new"), RouteKind::Create),
+            (Verb::Update, "edit", "EditPage", format!("/{table}/:id/edit"), RouteKind::Edit),
+            (Verb::Get, "detail", "DetailPage", format!("/{table}/:id"), RouteKind::Detail),
         ] {
             let state = match r.verbs.get(&verb) {
                 Some(s) => s,
@@ -90,6 +136,7 @@ fn collect_route_entries(resources: &[ResourceState]) -> Vec<RouteEntry> {
                 page_module,
                 component: format!("{stem}{component_suffix}"),
                 path_lit,
+                kind,
             });
         }
     }
@@ -98,6 +145,9 @@ fn collect_route_entries(resources: &[ResourceState]) -> Vec<RouteEntry> {
 
 fn render_routes_file(entries: &[RouteEntry]) -> String {
     let mut out = String::new();
+    out.push_str("//! `path!(...)` is a macro requiring a literal — it cannot accept a function call.\n");
+    out.push_str("//! Each route below is paired with the canonical `RouteName` variant in a comment;\n");
+    out.push_str("//! the test in `tests/route_alignment_generated.rs` asserts they stay in lockstep.\n\n");
     out.push_str("use ::leptos::prelude::*;\n");
 
     if entries.is_empty() {
@@ -127,10 +177,70 @@ fn render_routes_file(entries: &[RouteEntry]) -> String {
     out.push_str("pub fn GeneratedRoutes() -> impl ::leptos_router::MatchNestedRoutes + ::core::clone::Clone + ::core::marker::Send + 'static {\n");
     out.push_str("    (\n");
     for e in entries {
+        out.push_str(&format!(
+            "        // RouteName::{}(\"{}\"{})\n",
+            e.kind.enum_variant(),
+            e.table,
+            match e.kind {
+                RouteKind::Detail | RouteKind::Edit => ", <i64>",
+                RouteKind::List | RouteKind::Create => "",
+            }
+        ));
         out.push_str(&format!("        NestedRoute::new(path!(\"{}\"), {}),\n", e.path_lit, e.component));
     }
     out.push_str("    )\n");
     out.push_str("}\n");
+    out
+}
+
+fn render_route_alignment_test(entries: &[RouteEntry], crate_name: &str) -> String {
+    let mut out = String::new();
+    out.push_str("//! Asserts every generated `path!(...)` literal equals the canonical\n");
+    out.push_str("//! `RouteName::*` enum path for the same resource. Drift between the macro\n");
+    out.push_str("//! literal in `src/transport/leptos/routes/generated/table.rs` and the enum\n");
+    out.push_str("//! constructor would cause silent breakage at navigation time — this test\n");
+    out.push_str("//! is the compile-time backstop.\n\n");
+    out.push_str(&format!("use {crate_name}::structs::leptos::RouteName;\n\n"));
+
+    if entries.is_empty() {
+        out.push_str("#[test]\n");
+        out.push_str("fn no_generated_routes() {\n");
+        out.push_str("    // Intentionally empty — no resources at gen_level >= Pages.\n");
+        out.push_str("}\n");
+        return out;
+    }
+
+    for e in entries {
+        let test_name = format!("{}_{}", e.table, e.page_module);
+        match e.kind {
+            RouteKind::List => {
+                out.push_str(&format!("#[test]\n"));
+                out.push_str(&format!("fn {test_name}_path_matches_enum() {{\n"));
+                out.push_str(&format!("    assert_eq!(RouteName::ResourceList(\"{}\").path().as_ref(), \"/{}\");\n", e.table, e.table));
+                out.push_str("}\n\n");
+            }
+            RouteKind::Create => {
+                out.push_str(&format!("#[test]\n"));
+                out.push_str(&format!("fn {test_name}_path_matches_enum() {{\n"));
+                out.push_str(&format!("    assert_eq!(RouteName::ResourceCreate(\"{}\").path().as_ref(), \"/{}/new\");\n", e.table, e.table));
+                out.push_str("}\n\n");
+            }
+            RouteKind::Detail => {
+                out.push_str(&format!("#[test]\n"));
+                out.push_str(&format!("fn {test_name}_path_matches_enum() {{\n"));
+                out.push_str(&format!("    // `path!(\"/{}/:id\")` is a leptos_router param literal; substitute :id with 42 to compare.\n", e.table));
+                out.push_str(&format!("    assert_eq!(RouteName::ResourceDetail(\"{}\", 42).path().as_ref(), \"/{}/42\");\n", e.table, e.table));
+                out.push_str("}\n\n");
+            }
+            RouteKind::Edit => {
+                out.push_str(&format!("#[test]\n"));
+                out.push_str(&format!("fn {test_name}_path_matches_enum() {{\n"));
+                out.push_str(&format!("    // `path!(\"/{}/:id/edit\")` is a leptos_router param literal; substitute :id with 42 to compare.\n", e.table));
+                out.push_str(&format!("    assert_eq!(RouteName::ResourceEdit(\"{}\", 42).path().as_ref(), \"/{}/42/edit\");\n", e.table, e.table));
+                out.push_str("}\n\n");
+            }
+        }
+    }
     out
 }
 
@@ -294,5 +404,63 @@ mod tests {
         let report2 = run(project, &mut sink, &mut progress).expect("second run");
         assert!(report2.written.is_empty(), "expected zero writes on second run, got {:?}", report2.written);
         assert_eq!(report2.skipped.len(), report1.written.len());
+    }
+
+    #[test]
+    fn render_routes_file_includes_route_name_comment_per_entry() {
+        let r = make_resource("posts", &[(Verb::List, true), (Verb::Get, true), (Verb::Create, true), (Verb::Update, true)]);
+        let entries = collect_route_entries(&[r]);
+        let body = render_routes_file(&entries);
+        assert!(body.contains("// RouteName::ResourceList(\"posts\")"));
+        assert!(body.contains("// RouteName::ResourceCreate(\"posts\")"));
+        assert!(body.contains("// RouteName::ResourceDetail(\"posts\", <i64>)"));
+        assert!(body.contains("// RouteName::ResourceEdit(\"posts\", <i64>)"));
+    }
+
+    #[test]
+    fn render_route_alignment_test_emits_assertion_per_entry() {
+        let r = make_resource("posts", &[(Verb::List, true), (Verb::Get, true), (Verb::Create, true), (Verb::Update, true)]);
+        let entries = collect_route_entries(&[r]);
+        let body = render_route_alignment_test(&entries, "canonical");
+        assert!(body.contains("use canonical::structs::leptos::RouteName;"));
+        assert!(body.contains("RouteName::ResourceList(\"posts\").path().as_ref(), \"/posts\""));
+        assert!(body.contains("RouteName::ResourceCreate(\"posts\").path().as_ref(), \"/posts/new\""));
+        assert!(body.contains("RouteName::ResourceDetail(\"posts\", 42).path().as_ref(), \"/posts/42\""));
+        assert!(body.contains("RouteName::ResourceEdit(\"posts\", 42).path().as_ref(), \"/posts/42/edit\""));
+        assert!(body.contains("fn posts_list_path_matches_enum"));
+        assert!(body.contains("fn posts_detail_path_matches_enum"));
+        assert!(body.contains("fn posts_create_path_matches_enum"));
+        assert!(body.contains("fn posts_edit_path_matches_enum"));
+    }
+
+    #[test]
+    fn render_route_alignment_test_with_no_entries_emits_placeholder() {
+        let body = render_route_alignment_test(&[], "canonical");
+        assert!(body.contains("fn no_generated_routes()"));
+    }
+
+    #[test]
+    fn render_route_alignment_test_substitutes_crate_name() {
+        let body = render_route_alignment_test(&[], "myapp");
+        assert!(body.contains("use myapp::structs::leptos::RouteName;"));
+    }
+
+    #[test]
+    fn read_crate_name_falls_back_when_cargo_missing() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let name = read_crate_name(tmp.path()).expect("read");
+        assert_eq!(name, "canonical");
+    }
+
+    #[test]
+    fn read_crate_name_replaces_hyphens_with_underscores() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        fs::write(
+            tmp.path().join("Cargo.toml"),
+            "[package]\nname = \"my-app\"\nversion = \"0.0.1\"\n",
+        )
+        .expect("write Cargo.toml");
+        let name = read_crate_name(tmp.path()).expect("read");
+        assert_eq!(name, "my_app");
     }
 }
