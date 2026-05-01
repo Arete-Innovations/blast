@@ -21,6 +21,7 @@ pub fn ToastHost() -> impl IntoView {
                     ToastKind::Success => format!("{} {}", style::toast, style::success),
                     ToastKind::Error => format!("{} {}", style::toast, style::error),
                     ToastKind::Info => format!("{} {}", style::toast, style::info),
+                    ToastKind::Warning => format!("{} {}", style::toast, style::warning),
                 }>
                     <span>{toast.message.clone()}</span>
                     <button on:click=move |_ev| toasts.dismiss(toast.id)>"×"</button>

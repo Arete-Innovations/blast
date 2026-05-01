@@ -44,6 +44,10 @@ impl ToastStore {
         self.push(ToastKind::Info, message);
     }
 
+    pub fn warning(&self, message: impl Into<String>) {
+        self.push(ToastKind::Warning, message);
+    }
+
     pub fn dismiss(&self, id: u64) {
         self.items.update(|v| v.retain(|t| t.id != id));
     }

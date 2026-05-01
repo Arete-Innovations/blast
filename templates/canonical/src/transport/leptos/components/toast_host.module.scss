@@ -44,3 +44,8 @@
 .info {
     background: var(--app-color-info);
 }
+
+.warning {
+    background: var(--app-color-warning);
+    color: oklch(0.18 0 0);
+}
