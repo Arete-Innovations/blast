@@ -8,6 +8,7 @@ pub mod http_routes;
 pub mod ir_loader;
 pub mod leptos_data;
 pub mod leptos_forms;
+pub mod leptos_nav;
 pub mod leptos_pages;
 pub mod leptos_tables;
 pub mod models;

@@ -3,7 +3,8 @@
 //! Pipeline order (post-phase-2 leptos-shaped):
 //!     schema → enums → structs → validators → models → routines → flows
 //!            → http_routes (REST /api/*) → leptos_forms → leptos_pages
-//!            → leptos_data → leptos_tables → app_routes → env_example
+//!            → leptos_data → leptos_tables → app_routes → leptos_nav
+//!            → env_example
 //!
 //! Leptos forms run before leptos pages because pages reference form
 //! components (e.g. `<UserCreateForm/>`) emitted by the forms pass. Both
@@ -52,6 +53,7 @@ const STEP_LEPTOS_FORMS: &str = "leptos forms generation";
 const STEP_LEPTOS_DATA: &str = "leptos data generation";
 const STEP_LEPTOS_TABLES: &str = "leptos tables generation";
 const STEP_APP_ROUTES: &str = "leptos app routes generation";
+const STEP_LEPTOS_NAV: &str = "leptos nav generation";
 const STEP_ENV_EXAMPLE: &str = ".env.example generation";
 
 pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<Outcome> {
@@ -81,6 +83,7 @@ pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut 
     run_leptos_data_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_tables_step(&args.project_root, sink, progress, &mut outcome)?;
     run_app_routes_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_leptos_nav_step(&args.project_root, sink, progress, &mut outcome)?;
     run_env_example_step(&args.project_root, sink, progress, &mut outcome)?;
 
     warn_on_orphan_generated(&args.project_root, sink);
@@ -374,6 +377,21 @@ fn run_app_routes_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &m
         }
         Err(err) => {
             sink.error(format!("{}: {}", STEP_APP_ROUTES, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_leptos_nav_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::leptos_nav::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_LEPTOS_NAV, err));
             Err(err)
         }
     }
