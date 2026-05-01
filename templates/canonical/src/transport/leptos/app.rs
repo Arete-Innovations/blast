@@ -4,7 +4,7 @@ use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 
 use crate::transport::leptos::components::ToastHost;
-use crate::transport::leptos::pages::{DashboardPage, LoginPage, NotFoundPage, ProfilePage, RegisterPage, WelcomePage};
+use crate::transport::leptos::pages::{DashboardPage, LoginPage, LogoutPage, NotFoundPage, ProfilePage, RegisterPage, WelcomePage};
 use crate::transport::leptos::routes::GeneratedRoutes;
 use crate::transport::leptos::signals::session::{provide_session_store, ssr_session_payload};
 use crate::transport::leptos::signals::toast::provide_toast_store;
@@ -43,6 +43,7 @@ pub fn App() -> impl IntoView {
             <Routes fallback=NotFoundPage>
                 <Route path=path!("/") view=WelcomePage/>
                 <Route path=path!("/login") view=LoginPage/>
+                <Route path=path!("/logout") view=LogoutPage/>
                 <Route path=path!("/register") view=RegisterPage/>
                 <Route path=path!("/dashboard") view=DashboardPage/>
                 <Route path=path!("/profile") view=ProfilePage/>
