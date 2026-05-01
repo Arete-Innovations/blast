@@ -243,6 +243,11 @@ fn rule_help(rule: &str) -> &'static str {
             "    use `use_query_dialog(name)` so dialog open/close persists in the URL — refresh-survivable, back-button closes the dialog correctly.\n",
             "    heuristic; false positives possible. if this hit is wrong, rename the binding so it doesn't carry a dialog/modal token, or move the `RwSignal::new(false)` away from any identifier matching that vocabulary.",
         ),
+        "LEPTOS:10" => concat!(
+            "form-control selector (`input`/`select`/`textarea`/`button`) inside a `.module.scss` declares `font-size:` without referencing `var(--app-fs-*)` or `inherit`.\n",
+            "    UA-default form-control fonts bypass the rem-scaled root and stay tiny at 4K. base.scss already pins these to `var(--app-fs-md)` + `font: inherit` — per-component overrides MUST keep that contract.\n",
+            "    fix: use `font-size: var(--app-fs-md)` (or any other `--app-fs-*` token) or `font-size: inherit`.",
+        ),
         _ => "",
     }
 }
@@ -338,8 +343,19 @@ fn scan_dir(manifest_dir: &Path, dir: &Path, hits: &mut Vec<Hit>) {
         } else if path.extension().map_or(false, |e| e == "rs") {
             println!("cargo:rerun-if-changed={}", path.display());
             scan_file(manifest_dir, &path, hits);
+        } else if is_module_scss(&path) {
+            println!("cargo:rerun-if-changed={}", path.display());
+            scan_module_scss(manifest_dir, &path, hits);
         }
     }
+}
+
+fn is_module_scss(path: &Path) -> bool {
+    let name = match path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n,
+        None => return false,
+    };
+    name.ends_with(".module.scss")
 }
 
 fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
@@ -2076,6 +2092,195 @@ fn line_has_dialog_identifier(line: &str) -> bool {
         }
     }
     false
+}
+
+fn scan_module_scss(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let src_dir = manifest_dir.join("src");
+    let rel = path.strip_prefix(&src_dir).unwrap_or(path);
+    check_scss_form_control_font_size(rel, &content, hits);
+}
+
+// LEPTOS:10 — form-control font-size must reference `var(--app-fs-*)` or
+// `inherit` so the rem-scaled root scales it on 4K. We track brace depth to
+// know what selector currently owns the open block, and flag any
+// `font-size:` declaration whose enclosing selector targets a form control.
+fn check_scss_form_control_font_size(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    // Strip block + line comments first so we don't mis-parse a brace inside
+    // a comment. Keep line numbers intact by replacing comment bodies with
+    // spaces (and preserving newlines).
+    let cleaned = strip_scss_comments(content);
+
+    // Stack of bool flags: `true` = the enclosing block targets a form control.
+    let mut form_control_stack: Vec<bool> = Vec::new();
+    // Selector accumulator — text from the previous `{` (or file start) up to
+    // the next `{`. Reset on every `{` / `}`.
+    let mut selector_buf = String::new();
+
+    for (line_no, raw) in cleaned.lines().enumerate() {
+        let mut chars = raw.chars().peekable();
+        let mut col_buf = String::new();
+        while let Some(c) = chars.next() {
+            match c {
+                '{' => {
+                    let sel_text = format!("{}{}", selector_buf, col_buf).trim().to_string();
+                    let is_form = scss_selector_targets_form_control(&sel_text);
+                    form_control_stack.push(is_form);
+                    selector_buf.clear();
+                    col_buf.clear();
+                }
+                '}' => {
+                    form_control_stack.pop();
+                    selector_buf.clear();
+                    col_buf.clear();
+                }
+                ';' => {
+                    let decl = format!("{}{}", selector_buf, col_buf);
+                    let in_form_control_block = form_control_stack.last().copied().unwrap_or(false);
+                    if in_form_control_block && scss_decl_violates_font_size(&decl) {
+                        hit(hits, "LEPTOS:10", rel, line_no + 1);
+                    }
+                    selector_buf.clear();
+                    col_buf.clear();
+                }
+                _ => col_buf.push(c),
+            }
+        }
+        // End of line — carry remaining buffer into the running selector
+        // accumulator (selectors can wrap across lines before the `{`).
+        selector_buf.push_str(&col_buf);
+        selector_buf.push('\n');
+    }
+}
+
+fn strip_scss_comments(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0usize;
+    let mut in_block = false;
+    let mut in_line = false;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if in_block {
+            if c == '*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                out.push(' ');
+                out.push(' ');
+                i += 2;
+                in_block = false;
+                continue;
+            }
+            if c == '\n' {
+                out.push('\n');
+            } else {
+                out.push(' ');
+            }
+            i += 1;
+            continue;
+        }
+        if in_line {
+            if c == '\n' {
+                out.push('\n');
+                in_line = false;
+            } else {
+                out.push(' ');
+            }
+            i += 1;
+            continue;
+        }
+        if c == '/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            in_block = true;
+            out.push(' ');
+            out.push(' ');
+            i += 2;
+            continue;
+        }
+        if c == '/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            in_line = true;
+            out.push(' ');
+            out.push(' ');
+            i += 2;
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+fn scss_selector_targets_form_control(selector: &str) -> bool {
+    // A selector list is comma-separated. Each segment is e.g.
+    // `.foo button:hover`, `& > input`, `select.bar`. We flag the block if
+    // ANY segment's last simple-selector identifier is a form-control tag.
+    for seg in selector.split(',') {
+        let cleaned = seg.trim();
+        if cleaned.is_empty() {
+            continue;
+        }
+        let last_simple = cleaned.split_whitespace().last().unwrap_or("");
+        if simple_selector_is_form_control(last_simple) {
+            return true;
+        }
+    }
+    false
+}
+
+fn simple_selector_is_form_control(simple: &str) -> bool {
+    // Strip leading combinator chars (`&`, `>`, `+`, `~`).
+    let trimmed = simple.trim_start_matches(|c: char| matches!(c, '&' | '>' | '+' | '~'));
+    // Take the leading tag-name run (alphabetic, then alphanumeric/-).
+    let mut end = 0usize;
+    for (i, ch) in trimmed.char_indices() {
+        if i == 0 {
+            if !ch.is_ascii_alphabetic() {
+                return false;
+            }
+        } else if !(ch.is_ascii_alphanumeric() || ch == '-') {
+            end = i;
+            break;
+        }
+        end = i + ch.len_utf8();
+    }
+    let tag = &trimmed[..end];
+    matches!(tag, "input" | "select" | "textarea" | "button")
+}
+
+fn scss_decl_violates_font_size(decl: &str) -> bool {
+    let trimmed = decl.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    // Match `font-size` or shorthand `font:` (when shorthand carries a size).
+    // We only flag explicit `font-size:` here — `font: inherit` in base.scss
+    // is the canonical safe value, but inside a module.scss the explicit
+    // `font-size:` declaration is what we lint against.
+    let prop_idx = match lower.find("font-size") {
+        Some(idx) => idx,
+        None => return false,
+    };
+    // Ensure `font-size` is not part of a longer identifier (e.g. `--font-size-foo`).
+    if prop_idx > 0 {
+        let prev = lower.as_bytes()[prop_idx - 1] as char;
+        if prev.is_ascii_alphanumeric() || prev == '_' || prev == '-' {
+            return false;
+        }
+    }
+    let after = &lower[prop_idx + "font-size".len()..];
+    let after_trimmed = after.trim_start();
+    if !after_trimmed.starts_with(':') {
+        return false;
+    }
+    let value = after_trimmed[1..].trim();
+    if value.is_empty() {
+        return false;
+    }
+    if value.contains("var(--app-fs-") {
+        return false;
+    }
+    if value.starts_with("inherit") {
+        return false;
+    }
+    true
 }
 
 fn path_contains_segment(rel: &Path, segment: &str) -> bool {

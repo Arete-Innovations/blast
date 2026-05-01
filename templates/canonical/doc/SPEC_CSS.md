@@ -229,8 +229,35 @@ The `LEPTOS:*` rule family in `build.rs` enforces (live):
 - `LEPTOS:2` — no hex / rgb / hsl outside `style/` dir
 - `LEPTOS:3` — no `px` outside niches (hairline borders, `@media` breakpoints, `style/tokens.scss`, `style/base.scss`)
 - `LEPTOS:4` — every page component wraps top-level view in `<PageShell layout=...>`
+- `LEPTOS:10` — form-control selectors (`input`/`select`/`textarea`/`button`) inside `.module.scss` must set `font-size` via `var(--app-fs-*)` or `inherit`. UA-default form fonts bypass the rem-scaled root and stay tiny at 4K; base.scss already pins them, per-component overrides must keep the contract.
 
 Violations panic the build. There is no separate `blast check` pass — `cargo check` runs `build.rs`.
+
+## Form controls and 4K scaling
+
+Native HTML form controls (`<input>`, `<select>`, `<textarea>`, `<button>`) inherit user-agent default fonts (`-webkit-small-control`, `-apple-system`, hard-coded pixel `font-size`) that **bypass** the `clamp(...)` scaling on `<html>`. Without intervention they render correctly at 1080p and stay tiny at 4K.
+
+`style/base.scss` ships explicit overrides for these elements:
+
+```scss
+input,
+select,
+textarea,
+button {
+    font: inherit;
+    font-size: var(--app-fs-md);
+    line-height: var(--app-line-height-base);
+    padding: var(--app-space-sm) var(--app-space-md);
+    border-radius: var(--app-radius-sm);
+    border: 0.0625rem solid var(--app-color-border);
+    background: var(--app-color-bg);
+    color: var(--app-color-fg);
+}
+```
+
+`font: inherit` re-attaches to the `<body>` font-family; the explicit `font-size: var(--app-fs-md)` pins to a rem-scaled token so the controls grow with viewport via the root `clamp(...)`. `--app-line-height-base`, `--app-color-border-subtle`, and `--app-color-border` are tokens defined in `tokens.scss` for this purpose.
+
+Per-component `.module.scss` files may override `font-size` on form controls but only via `var(--app-fs-*)` or `inherit`. `LEPTOS:10` enforces this — a bare `font-size: 14px` or `font-size: 1rem` inside an `input`/`select`/`textarea`/`button` block panics the build.
 
 ## Related specs
 
