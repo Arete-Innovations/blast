@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
+use leptos_meta::{provide_meta_context, MetaTags, Title};
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 
@@ -11,6 +11,7 @@ use crate::transport::leptos::signals::session::provide_session_store;
 use crate::transport::leptos::signals::toast::provide_toast_store;
 
 pub fn shell(options: leptos::prelude::LeptosOptions) -> impl IntoView {
+    let css_href = format!("/pkg/{}.css", options.output_name.as_ref());
     view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -19,6 +20,7 @@ pub fn shell(options: leptos::prelude::LeptosOptions) -> impl IntoView {
                 <meta name="viewport" content="width=device-width, initial-scale=1"/>
                 <AutoReload options=options.clone() />
                 <HydrationScripts options=options.clone()/>
+                <link id="leptos" rel="stylesheet" href=css_href/>
                 <MetaTags/>
             </head>
             <body>
@@ -47,7 +49,6 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/canonical.css"/>
         <Title text="Catablast"/>
         <Router>
             <Routes fallback=NotFoundPage>
