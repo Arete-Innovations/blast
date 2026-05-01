@@ -3,7 +3,11 @@ use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::path;
 
+use crate::transport::leptos::components::ToastHost;
+use crate::transport::leptos::data::auth::load_session;
 use crate::transport::leptos::pages::{DashboardPage, LoginPage, NotFoundPage, ProfilePage, RegisterPage, WelcomePage};
+use crate::transport::leptos::signals::session::provide_session_store;
+use crate::transport::leptos::signals::toast::provide_toast_store;
 
 pub fn shell(options: leptos::prelude::LeptosOptions) -> impl IntoView {
     view! {
@@ -26,6 +30,26 @@ pub fn shell(options: leptos::prelude::LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+    let session_store = provide_session_store();
+    provide_toast_store();
+
+    Effect::new(move |_| {
+        leptos::task::spawn_local(async move {
+            match load_session().await {
+                Ok(maybe) => session_store.set(maybe),
+                Err(err) => {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    crate::cata_log!(Warning, format!("session load failed: {}", err));
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let msg: String = format!("session load failed: {}", err);
+                        web_sys::console::warn_1(&msg.into());
+                    }
+                    session_store.set(None);
+                }
+            }
+        });
+    });
 
     view! {
         <Stylesheet id="leptos" href="/pkg/canonical.css"/>
@@ -38,6 +62,7 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/dashboard") view=DashboardPage/>
                 <Route path=path!("/profile") view=ProfilePage/>
             </Routes>
+            <ToastHost/>
         </Router>
     }
 }

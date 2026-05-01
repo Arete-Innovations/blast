@@ -63,7 +63,7 @@ pub enum MeltType {
     Unexpected(String),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 #[error("{details}")]
 pub struct MeltDown {
     pub melt_type: MeltType,
@@ -73,7 +73,7 @@ pub struct MeltDown {
     pub retry_after: Option<Duration>,
     pub transient: bool,
     #[source]
-    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub source: Option<std::sync::Arc<dyn std::error::Error + Send + Sync>>,
 }
 
 impl MeltDown {
@@ -91,7 +91,7 @@ impl MeltDown {
     }
 
     pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        self.source = Some(Box::new(source));
+        self.source = Some(std::sync::Arc::new(source));
         self
     }
 

@@ -1,13 +1,13 @@
 use axum::{
     extract::{Request, State},
-    http::header::AUTHORIZATION,
+    http::header::{AUTHORIZATION, COOKIE},
     middleware::Next,
     response::Response,
 };
 
-use crate::{cata_log, flows::sessions::resolve, meltdown::*, Ctx};
+use crate::{cata_log, flows::sessions::resolve, meltdown::*, transport::http::auth::SESSION_COOKIE, Ctx};
 
-fn extract_token(request: &Request) -> Option<String> {
+fn extract_bearer(request: &Request) -> Option<String> {
     let value = request.headers().get(AUTHORIZATION)?;
     let header = match value.to_str() {
         Ok(h) => h,
@@ -21,6 +21,38 @@ fn extract_token(request: &Request) -> Option<String> {
         None
     } else {
         Some(token.to_string())
+    }
+}
+
+fn extract_cookie(request: &Request) -> Option<String> {
+    let value = request.headers().get(COOKIE)?;
+    let header = match value.to_str() {
+        Ok(h) => h,
+        Err(e) => {
+            cata_log!(Debug, format!("non-utf8 cookie header: {}", e));
+            return None;
+        }
+    };
+    for entry in header.split(';') {
+        let trimmed = entry.trim();
+        let Some((name, val)) = trimmed.split_once('=') else {
+            continue;
+        };
+        if name == SESSION_COOKIE {
+            let v = val.trim();
+            if v.is_empty() {
+                return None;
+            }
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
+fn extract_token(request: &Request) -> Option<String> {
+    match extract_cookie(request) {
+        Some(t) => Some(t),
+        None => extract_bearer(request),
     }
 }
 
