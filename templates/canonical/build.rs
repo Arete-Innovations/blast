@@ -220,6 +220,29 @@ fn rule_help(rule: &str) -> &'static str {
             "every page component (file under src/transport/leptos/pages/) must wrap its top-level `view!` in `<PageShell layout=...>`.\n",
             "    pages own no chrome — the shell does. add `<PageShell layout=PageLayout::Cards>...</PageShell>` (or wrap inside `<AuthGuard>` for protected pages).",
         ),
+        "LEPTOS:5" => concat!(
+            "hardcoded route paths in `nav(...)` first-arg, `<a href=\"/...\">`, or `<A href=\"/...\">` are banned in src/transport/leptos/.\n",
+            "    use `RouteName::*.path()` (or `.as_ref()`) instead. compile-checks the route against the typed enum so renames don't silently break links.\n",
+            "    allowed externals: `\"#\"`, `mailto:`, `tel:`, `https://`, `//`. lines that already mention `RouteName::` are skipped.",
+        ),
+        "LEPTOS:6" => concat!(
+            "looks like an optimistic update — a list/map signal mutated between `pending.set(true)` and `spawn_local(`.\n",
+            "    mutate signals only inside the `match result {}` block AFTER server response — single source of truth lives on the BE.\n",
+            "    heuristic; false positives possible. if this hit is wrong, restructure the function so `pending.set(true)` and the unrelated `.set/.update(...)` aren't on adjacent lines, or land the actual mutation behind the spawn_local boundary.",
+        ),
+        "LEPTOS:7" => concat!(
+            "`\"Loading...\"` literal outside an `Option::None =>` arm or `Suspense fallback=...` is a stale-spinner smell.\n",
+            "    after first load, refetch silently. use `RwSignal<Option<...>>` + cfg-gated Effect; SSR placeholder only on cold-load. once you have data, never blank the screen on refresh.",
+        ),
+        "LEPTOS:8" => concat!(
+            "`ListQuery::default()` outside src/transport/leptos/signals/url.rs scatters list state into local components.\n",
+            "    use `use_url_list_state()` (signals/url.rs) so pagination/sort/filter live in the URL — refresh-survivable, back-button correct, deep-linkable.",
+        ),
+        "LEPTOS:9" => concat!(
+            "`RwSignal::new(false)` adjacent (≤5 lines) to a `dialog`/`drawer`/`modal`/`popup`-named identifier looks like local dialog state.\n",
+            "    use `use_query_dialog(name)` so dialog open/close persists in the URL — refresh-survivable, back-button closes the dialog correctly.\n",
+            "    heuristic; false positives possible. if this hit is wrong, rename the binding so it doesn't carry a dialog/modal token, or move the `RwSignal::new(false)` away from any identifier matching that vocabulary.",
+        ),
         _ => "",
     }
 }
@@ -272,6 +295,8 @@ fn main() {
     let src_dir = manifest_dir.join("src");
     let mut hits: Vec<Hit> = Vec::new();
 
+    ensure_stylance_bundle_stub(&manifest_dir);
+
     if src_dir.is_dir() {
         scan_dir(&manifest_dir, &src_dir, &mut hits);
     }
@@ -279,6 +304,19 @@ fn main() {
     if !hits.is_empty() {
         panic!("\n{}", format_report(&hits));
     }
+}
+
+fn ensure_stylance_bundle_stub(manifest_dir: &Path) {
+    let bundle = manifest_dir.join("style").join("generated").join("stylance.scss");
+    if bundle.exists() {
+        return;
+    }
+    if let Some(parent) = bundle.parent() {
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    let _ = fs::write(&bundle, "");
 }
 
 fn hit(hits: &mut Vec<Hit>, rule: &'static str, file: &Path, line: usize) {
@@ -398,6 +436,11 @@ fn scan_file(manifest_dir: &Path, path: &Path, hits: &mut Vec<Hit>) {
     check_leptos_hex_colors(rel, &content, hits);
     check_leptos_px_units(rel, &content, hits);
     check_leptos_page_shell_required(rel, &content, hits);
+    check_leptos_hardcoded_route_path(rel, &content, hits);
+    check_leptos_optimistic_update_in_custom(rel, &content, hits);
+    check_leptos_loading_spinner_after_first_load(rel, &content, hits);
+    check_leptos_local_list_state(rel, &content, hits);
+    check_leptos_local_dialog_state(rel, &content, hits);
 }
 
 fn check_handler_state_ctx(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
@@ -1726,6 +1769,323 @@ fn line_declares_page_component(trimmed: &str) -> bool {
     }
     let tail = &after_paren[close + 1..];
     tail.contains("-> impl IntoView") || tail.contains("->impl IntoView")
+}
+
+fn check_leptos_hardcoded_route_path(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/") {
+        return;
+    }
+    let mut in_block_comment = false;
+    for (line_no, raw) in content.lines().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if raw.contains("RouteName::") {
+            continue;
+        }
+        if leptos_line_has_hardcoded_route(raw) {
+            hit(hits, "LEPTOS:5", rel, line_no + 1);
+        }
+    }
+}
+
+fn leptos_line_has_hardcoded_route(line: &str) -> bool {
+    if literal_starts_with_slash_in_a_href(line, "<a href=\"") {
+        return true;
+    }
+    if literal_starts_with_slash_in_a_href(line, "<A href=\"") {
+        return true;
+    }
+    if nav_first_arg_is_hardcoded_path(line) {
+        return true;
+    }
+    false
+}
+
+fn literal_starts_with_slash_in_a_href(line: &str, needle: &str) -> bool {
+    let mut start = 0usize;
+    while let Some(idx) = line[start..].find(needle) {
+        let after = &line[start + idx + needle.len()..];
+        if literal_is_disallowed_route(after) {
+            return true;
+        }
+        start += idx + needle.len();
+    }
+    false
+}
+
+fn literal_is_disallowed_route(rest_of_line: &str) -> bool {
+    let close = match rest_of_line.find('"') {
+        Some(c) => c,
+        None => return false,
+    };
+    let value = &rest_of_line[..close];
+    if value.is_empty() {
+        return false;
+    }
+    if value == "#" {
+        return false;
+    }
+    if value.starts_with("mailto:") || value.starts_with("tel:") {
+        return false;
+    }
+    if value.starts_with("https://") || value.starts_with("http://") {
+        return false;
+    }
+    if value.starts_with("//") {
+        return false;
+    }
+    value.starts_with('/')
+}
+
+fn nav_first_arg_is_hardcoded_path(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'n' {
+            i += 1;
+            continue;
+        }
+        if i + 3 > bytes.len() || &bytes[i..i + 3] != b"nav" {
+            i += 1;
+            continue;
+        }
+        if i > 0 {
+            let prev = bytes[i - 1];
+            if prev.is_ascii_alphanumeric() || prev == b'_' {
+                i += 1;
+                continue;
+            }
+        }
+        let mut j = i + 3;
+        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b'(' {
+            i += 1;
+            continue;
+        }
+        j += 1;
+        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+            j += 1;
+        }
+        if j >= bytes.len() || bytes[j] != b'"' {
+            i = j;
+            continue;
+        }
+        let after = &line[j + 1..];
+        if literal_is_disallowed_route(after) {
+            return true;
+        }
+        i = j + 1;
+    }
+    false
+}
+
+fn check_leptos_optimistic_update_in_custom(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/pages/") && !path_under(rel, "transport/leptos/components/") {
+        return;
+    }
+    if path_contains_segment(rel, "generated") {
+        return;
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let mut idx = 0usize;
+    while idx < lines.len() {
+        let line = lines[idx];
+        if !line.contains("pending.set(true)") {
+            idx += 1;
+            continue;
+        }
+        let mut spawn_idx: Option<usize> = None;
+        let mut k = idx + 1;
+        while k < lines.len() && k < idx + 80 {
+            if lines[k].contains("spawn_local(") {
+                spawn_idx = Some(k);
+                break;
+            }
+            k += 1;
+        }
+        let spawn_line = match spawn_idx {
+            Some(n) => n,
+            None => {
+                idx += 1;
+                continue;
+            }
+        };
+        for between in (idx + 1)..spawn_line {
+            let raw = lines[between];
+            let trimmed = raw.trim();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            if !(trimmed.contains(".set(") || trimmed.contains(".update(")) {
+                continue;
+            }
+            if leptos_line_smells_like_collection_mutation(raw) {
+                hit(hits, "LEPTOS:6", rel, between + 1);
+            }
+        }
+        idx = spawn_line + 1;
+    }
+}
+
+fn leptos_line_smells_like_collection_mutation(line: &str) -> bool {
+    if line.contains("vec![") || line.contains("Vec::") || line.contains("HashMap::") || line.contains("BTreeMap::") {
+        return true;
+    }
+    if line.contains(".push(") || line.contains(".extend(") || line.contains(".insert(") || line.contains(".remove(") || line.contains(".retain(") || line.contains(".clear(") {
+        return true;
+    }
+    false
+}
+
+fn check_leptos_loading_spinner_after_first_load(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/") {
+        return;
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let mut in_block_comment = false;
+    for (line_no, raw) in lines.iter().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if !leptos_line_has_loading_literal(raw) {
+            continue;
+        }
+        if leptos_loading_in_allowed_context(&lines, line_no) {
+            continue;
+        }
+        hit(hits, "LEPTOS:7", rel, line_no + 1);
+    }
+}
+
+fn leptos_line_has_loading_literal(line: &str) -> bool {
+    let needles = ["\"Loading...\"", "\"Loading…\"", "\"loading...\"", "\"loading…\""];
+    for n in needles {
+        if line.contains(n) {
+            return true;
+        }
+    }
+    false
+}
+
+fn leptos_loading_in_allowed_context(lines: &[&str], line_no: usize) -> bool {
+    let start = line_no.saturating_sub(8);
+    for k in start..=line_no {
+        let upper = lines[k];
+        if upper.contains("None =>") || upper.contains("None=>") {
+            return true;
+        }
+        if upper.contains("Suspense") && upper.contains("fallback") {
+            return true;
+        }
+        if upper.contains("<Suspense") {
+            return true;
+        }
+        if upper.contains("fallback=") {
+            return true;
+        }
+    }
+    false
+}
+
+fn check_leptos_local_list_state(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/") {
+        return;
+    }
+    let path_str = rel.to_string_lossy().replace('\\', "/");
+    if path_str.ends_with("transport/leptos/signals/url.rs") {
+        return;
+    }
+    if path_contains_segment(rel, "generated") {
+        return;
+    }
+    let mut in_block_comment = false;
+    for (line_no, raw) in content.lines().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if raw.contains("ListQuery::default()") {
+            hit(hits, "LEPTOS:8", rel, line_no + 1);
+        }
+    }
+}
+
+fn check_leptos_local_dialog_state(rel: &Path, content: &str, hits: &mut Vec<Hit>) {
+    if !path_under(rel, "transport/leptos/pages/") && !path_under(rel, "transport/leptos/components/") {
+        return;
+    }
+    if path_contains_segment(rel, "generated") {
+        return;
+    }
+    let lines: Vec<&str> = content.lines().collect();
+    let mut in_block_comment = false;
+    for (line_no, raw) in lines.iter().enumerate() {
+        let trimmed = raw.trim();
+        if skip_line_for_leptos_scan(trimmed, &mut in_block_comment) {
+            continue;
+        }
+        if !raw.contains("RwSignal::new(false)") {
+            continue;
+        }
+        if line_window_has_dialog_token(&lines, line_no, 5) {
+            hit(hits, "LEPTOS:9", rel, line_no + 1);
+        }
+    }
+}
+
+fn line_window_has_dialog_token(lines: &[&str], line_no: usize, window: usize) -> bool {
+    let start = line_no.saturating_sub(window);
+    let end = (line_no + window + 1).min(lines.len());
+    for k in start..end {
+        if line_has_dialog_identifier(lines[k]) {
+            return true;
+        }
+    }
+    false
+}
+
+fn line_has_dialog_identifier(line: &str) -> bool {
+    let tokens = ["dialog", "drawer", "modal", "popup"];
+    let lower = line.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    for tok in tokens {
+        let needle = tok.as_bytes();
+        let mut start = 0usize;
+        while start + needle.len() <= bytes.len() {
+            if &bytes[start..start + needle.len()] == needle {
+                let prev_ok = if start == 0 {
+                    true
+                } else {
+                    let p = bytes[start - 1];
+                    !(p.is_ascii_alphanumeric() || p == b'_')
+                };
+                let after = start + needle.len();
+                let next_ok = if after >= bytes.len() {
+                    true
+                } else {
+                    let n = bytes[after];
+                    !(n.is_ascii_lowercase())
+                };
+                if prev_ok && next_ok {
+                    return true;
+                }
+            }
+            start += 1;
+        }
+    }
+    false
+}
+
+fn path_contains_segment(rel: &Path, segment: &str) -> bool {
+    let s = rel.to_string_lossy().replace('\\', "/");
+    let needle_mid = format!("/{}/", segment);
+    let needle_start = format!("{}/", segment);
+    s.contains(&needle_mid) || s.starts_with(&needle_start)
 }
 
 fn check_inline_data_definitions(rel: &Path, content: &str, hits: &mut Vec<Hit>) {

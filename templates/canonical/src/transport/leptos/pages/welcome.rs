@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use crate::structs::leptos::RouteName;
 use crate::transport::leptos::components::{PageLayout, PageShell};
 
 #[component]
@@ -9,9 +10,9 @@ pub fn WelcomePage() -> impl IntoView {
             <h1>"Catablast"</h1>
             <p>"Strongly-typed Rust web-app stack."</p>
             <p>
-                <a href="/login">"Login"</a>
+                <a href=RouteName::Login.path()>"Login"</a>
                 " | "
-                <a href="/register">"Register"</a>
+                <a href=RouteName::Register.path()>"Register"</a>
             </p>
         </PageShell>
     }

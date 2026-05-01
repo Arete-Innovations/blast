@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
+use crate::structs::leptos::RouteName;
 use crate::transport::leptos::components::{AuthGuardMode, AuthGuard, ErrorBanner, PageLayout, PageShell};
 use crate::transport::leptos::data::auth::do_logout;
 use crate::transport::leptos::signals::session::use_session;
@@ -20,7 +21,7 @@ pub fn LogoutPage() -> impl IntoView {
                 Ok(()) => {
                     session_store.set(None);
                     toasts.success("Signed out.");
-                    navigate.with_value(|nav| nav("/login", Default::default()));
+                    navigate.with_value(|nav| nav(RouteName::Login.path(), Default::default()));
                 }
                 Err(err) => {
                     err.log();

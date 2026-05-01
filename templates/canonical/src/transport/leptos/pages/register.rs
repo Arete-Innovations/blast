@@ -3,7 +3,7 @@ use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
 use crate::meltdown::MeltDown;
-use crate::structs::leptos::RegisterInput;
+use crate::structs::leptos::{RegisterInput, RouteName};
 use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};
 use crate::transport::leptos::data::auth::do_register;
 use crate::transport::leptos::signals::session::use_session;
@@ -43,7 +43,7 @@ pub fn RegisterPage() -> impl IntoView {
                 Ok(session) => {
                     session_store.set(Some(session));
                     toasts.success("Welcome.");
-                    navigate.with_value(|nav| nav("/dashboard", Default::default()));
+                    navigate.with_value(|nav| nav(RouteName::Dashboard.path(), Default::default()));
                 }
                 Err(err) => {
                     err.log();
@@ -92,7 +92,7 @@ pub fn RegisterPage() -> impl IntoView {
                     </button>
                     {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
                 </form>
-                <p><a href="/login">"Already have an account? Login"</a></p>
+                <p><a href=RouteName::Login.path()>"Already have an account? Login"</a></p>
             </PageShell>
         </AuthGuard>
     }

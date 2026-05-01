@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use crate::structs::leptos::RouteName;
 use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, PageLayout, PageShell};
 
 #[component]
@@ -9,7 +10,7 @@ pub fn DashboardPage() -> impl IntoView {
             <PageShell layout=PageLayout::Cards>
                 <h1>"Dashboard"</h1>
                 <p>"Authenticated landing page."</p>
-                <p><a href="/logout">"Sign out"</a></p>
+                <p><a href=RouteName::Logout.path()>"Sign out"</a></p>
             </PageShell>
         </AuthGuard>
     }
