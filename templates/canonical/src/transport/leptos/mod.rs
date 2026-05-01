@@ -2,6 +2,7 @@ pub mod app;
 pub mod components;
 pub mod data;
 pub mod pages;
+pub mod routes;
 pub mod signals;
 
 #[cfg(target_arch = "wasm32")]

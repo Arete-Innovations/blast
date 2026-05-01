@@ -2,9 +2,9 @@
 //
 // Do not edit by hand. Run `blast gen all` after mutating state.
 
-use ::leptos_router::components::Route;
-use ::leptos_router::path;
+use ::leptos::prelude::*;
 
-pub fn generated_routes() -> impl ::leptos_router::MatchNestedRoutes + ::core::clone::Clone + ::core::marker::Send + 'static {
+#[component(transparent)]
+pub fn GeneratedRoutes() -> impl ::leptos_router::MatchNestedRoutes + ::core::clone::Clone + ::core::marker::Send + 'static {
     ()
 }

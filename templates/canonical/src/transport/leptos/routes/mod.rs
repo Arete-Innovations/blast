@@ -1,3 +1,3 @@
 pub mod generated;
 
-pub use generated::generated_routes;
+pub use generated::GeneratedRoutes;

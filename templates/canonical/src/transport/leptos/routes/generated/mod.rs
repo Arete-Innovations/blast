@@ -4,4 +4,4 @@
 
 pub mod table;
 
-pub use table::generated_routes;
+pub use table::GeneratedRoutes;
