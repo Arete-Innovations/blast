@@ -7,7 +7,7 @@
 //! the user app.
 
 use super::util;
-use crate::state::{FieldVariant, GenLevel, ResourceState};
+use crate::state::{FieldVariant, ResourceState};
 
 pub fn render(resource: &ResourceState) -> String {
     let table = resource.name.as_str();
@@ -38,16 +38,6 @@ pub fn render(resource: &ResourceState) -> String {
         diesel_traits.dedup();
         out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
         out.push_str(&format!("use diesel::{{{}}};\n", diesel_traits.join(", "),));
-    }
-
-    // leptos-struct-table TableRow derive expansion references its own
-    // crate's TableDataProvider trait at the call site; the derive macro
-    // emits `impl TableDataProvider for Vec<Self>` when `impl_vec_data_provider`
-    // is set, which needs the trait in scope. Star-glob the crate so the
-    // generated file is self-sufficient.
-    let needs_lst = resource.gen_level >= GenLevel::Components && present.contains(&FieldVariant::Public);
-    if needs_lst {
-        out.push_str("use leptos_struct_table::*;\n");
     }
 
     // Sort enum needs FromStr; only emit the use when we actually emit

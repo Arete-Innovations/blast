@@ -110,7 +110,7 @@ fn emit_resource(project_root: &Path, resource: &ResourceState, pages_dir: &Path
     let mut emitted_modules: Vec<&'static str> = Vec::new();
 
     if verb_emits_html(resource, Verb::List) {
-        let body = render_list_page(table, &stem, verb_auth(resource, Verb::List)?);
+        let body = render_list_page(resource, &stem, verb_auth(resource, Verb::List)?);
         write_file(&resource_pages_dir.join("list.rs"), &format!("{marker}{body}"), report)?;
         emitted_modules.push("list");
     }

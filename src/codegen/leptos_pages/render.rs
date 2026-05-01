@@ -1,4 +1,5 @@
-use crate::state::{AuthMode, ResourceState, Verb};
+use crate::codegen::structs::emitter::table_row::is_display_safe;
+use crate::state::{AuthMode, FieldVariant, ResourceState, Verb};
 
 pub fn auth_guard_mode_str(auth: &AuthMode) -> &'static str {
     match auth {
@@ -10,15 +11,33 @@ pub fn auth_guard_mode_str(auth: &AuthMode) -> &'static str {
     }
 }
 
-pub fn render_list_page(table: &str, stem: &str, auth: AuthMode) -> String {
+pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) -> String {
+    let table = resource.name.as_str();
     let auth_mode = auth_guard_mode_str(&auth);
     let component = format!("{stem}ListPage");
     let public_ty = format!("{stem}Public");
     let row_ty = format!("{stem}TableRow");
     let loader = format!("load_{table}_list");
+
+    let display_fields: Vec<String> = resource
+        .fields
+        .iter()
+        .filter(|(_, field)| field.variants.contains(&FieldVariant::Public) && is_display_safe(&field.sql_type))
+        .map(|(name, _)| name.as_str().to_string())
+        .collect();
+
+    let mut header_cells = String::new();
+    for f in &display_fields {
+        header_cells.push_str(&format!("                            <th>\"{f}\"</th>\n"));
+    }
+
+    let mut body_cells = String::new();
+    for f in &display_fields {
+        body_cells.push_str(&format!("                                    <td>{{format!(\"{{}}\", row.{f})}}</td>\n"));
+    }
+
     format!(
         "use leptos::prelude::*;\n\
-         use leptos_struct_table::*;\n\
          \n\
          use crate::meltdown::MeltDown;\n\
          use crate::structs::generated::{table}::{{{public_ty}, {row_ty}}};\n\
@@ -57,11 +76,19 @@ pub fn render_list_page(table: &str, stem: &str, auth: AuthMode) -> String {
          fn render_list_items(items: ListResponse<{public_ty}>) -> impl IntoView {{\n\
          \x20   let rows: Vec<{row_ty}> = items.items.into_iter().map({row_ty}::from).collect();\n\
          \x20   let has_rows = !rows.is_empty();\n\
-         \x20   let rows_signal = RwSignal::new(rows);\n\
          \x20   view! {{\n\
          \x20       <Show when=move || has_rows fallback=|| view! {{ <p>\"No items.\"</p> }}>\n\
          \x20           <table>\n\
-         \x20               <TableContent rows=rows_signal.get_untracked() scroll_container=\"html\" />\n\
+         \x20               <thead>\n\
+         \x20                   <tr>\n{header_cells}\
+         \x20                   </tr>\n\
+         \x20               </thead>\n\
+         \x20               <tbody>\n\
+         \x20                   {{rows.clone().into_iter().map(|row| view! {{\n\
+         \x20                               <tr>\n{body_cells}\
+         \x20                               </tr>\n\
+         \x20                       }}).collect_view()}}\n\
+         \x20               </tbody>\n\
          \x20           </table>\n\
          \x20       </Show>\n\
          \x20   }}\n\

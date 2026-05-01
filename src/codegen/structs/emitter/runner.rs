@@ -463,10 +463,8 @@ mod tests {
         resource.gen_level = GenLevel::Components;
         let body = render_resource_body(&resource);
         assert!(body.contains("pub struct UserTableRow {"), "TableRow must emit at gen_level=Components:\n{body}");
-        assert!(body.contains("::leptos_struct_table::TableRow"));
-        assert!(body.contains("#[table(impl_vec_data_provider)]"));
+        assert!(!body.contains("leptos_struct_table"), "no external table-crate refs should leak in:\n{body}");
         assert!(body.contains("impl From<UserPublic> for UserTableRow"));
-        assert!(body.contains("use leptos_struct_table::*;"));
     }
 
     #[test]
@@ -483,7 +481,6 @@ mod tests {
         resource.gen_level = GenLevel::Composables;
         let body = render_resource_body(&resource);
         assert!(!body.contains("UserTableRow"), "TableRow must NOT emit at gen_level<Components:\n{body}");
-        assert!(!body.contains("use leptos_struct_table::*;"));
     }
 
     #[test]

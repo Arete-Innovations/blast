@@ -14,7 +14,7 @@ Frontend stack for Catablast apps. Replaces the legacy Vue/TS/PrimeVue/Vite stac
 | Icons | `icondata` crate (Phosphor feature default) |
 | Forms | Hand-rolled native HTML inputs + `spawn_local` in `on:submit` + manual `pending`/`last_error` RwSignals (NOT `Action::new_local` — see Mutations section) |
 | Data fetching (pages) | `RwSignal<Option<Result<T, MeltDown>>>` + `#[cfg(target_arch = "wasm32")] Effect::new(spawn_local(load_*))` — NOT `Resource::new`/`LocalResource::new` (both pull js-sys statics on SSR). SSR renders `<p>"Loading..."</p>` placeholder; wasm hydrate fires Effect → fetch → render. |
-| Tables | `leptos-struct-table` 0.14.0-beta2 — wired via codegen-emitted `<R>TableRow` (sibling of `<R>Public`) carrying the `TableRow` derive + `impl_vec_data_provider`. List page renders `<TableContent rows />` |
+| Tables | Native `<table>/<thead>/<tbody>` rendered via `<For>` over a codegen-emitted `<R>TableRow` (display-safe subset of `<R>Public` — Jsonb/Bytea/Numeric stripped). No third-party table crate (leptos-struct-table requires leptos 0.8 since v0.15; the only leptos-0.7-compat version was a broken beta). |
 | Page metadata | `leptos_meta` (`Title`, `Meta`, `Link`) |
 | Wasm fetch | `gloo-net` |
 | Auth token | httpOnly SameSite=Lax cookie (no Secure flag in dev — Firefox drops Secure cookies on plain http://localhost) |
@@ -345,8 +345,7 @@ Layout owns spacing. PageShell does not accept `padding`/`margin`/`gap`/`width` 
 Codegen for resources at `gen_level >= Components` emits a sibling `<R>TableRow` next to `<R>Public` in `src/structs/generated/<r>.rs`:
 
 ```rust
-#[derive(Debug, Clone, ::leptos_struct_table::TableRow)]
-#[table(impl_vec_data_provider)]
+#[derive(Debug, Clone)]
 pub struct PostTableRow {
     pub id: i64,
     pub title: String,
@@ -357,7 +356,9 @@ pub struct PostTableRow {
 impl From<PostPublic> for PostTableRow { /* field-by-field move */ }
 ```
 
-**Why a sibling and not a derive on `<R>Public`:** the derive's macro expansion generates code that calls `leptos_struct_table::CellValue::render_value(...)` for every field. `<R>Public` may legitimately carry types that have no `CellValue` impl (`serde_json::Value` from `Jsonb`, `Vec<u8>` from `Bytea`, `rust_decimal::Decimal` from `Numeric`, custom enums). Stamping the derive on `<R>Public` would fail compilation as soon as the schema introduces any of those columns. The sibling `<R>TableRow` is built off only the display-safe subset of `<R>Public` fields, so the derive stays green regardless of the underlying schema. The skip-list for SQL types is in `blast/src/codegen/structs/emitter/table_row.rs::is_display_safe`.
+**Why a sibling and not iterating Public directly:** `<R>Public` may legitimately carry types whose Rust mapping has no `Display` impl in our enabled feature set — `serde_json::Value` from `Jsonb`, `Vec<u8>` from `Bytea`, `rust_decimal::Decimal` from `Numeric`. The sibling `<R>TableRow` strips those columns so the row struct can be rendered with `format!("{}", row.field)` cells without the page leaking type errors as soon as the schema introduces a Jsonb/Bytea column. The skip-list for SQL types is in `blast/src/codegen/structs/emitter/table_row.rs::is_display_safe`.
+
+**No third-party table crate.** `leptos-struct-table` v0.14.0-beta2 was the only leptos-0.7-compatible version and is broken upstream (lifetime-bound mismatch with current leptos macro expansion); v0.15+ require leptos 0.8 which is a framework-version bump we are not taking. The native `<For>` + `<table>` approach is straightforward and fits the "FE is a dumb relayer" rule.
 
 **Generated List page renders the table:**
 
@@ -365,18 +366,32 @@ impl From<PostPublic> for PostTableRow { /* field-by-field move */ }
 fn render_list_items(items: ListResponse<PostPublic>) -> impl IntoView {
     let rows: Vec<PostTableRow> = items.items.into_iter().map(PostTableRow::from).collect();
     let has_rows = !rows.is_empty();
-    let rows_signal = RwSignal::new(rows);
     view! {
         <Show when=move || has_rows fallback=|| view! { <p>"No items."</p> }>
             <table>
-                <TableContent rows=rows_signal.get_untracked() scroll_container="html" />
+                <thead>
+                    <tr>
+                        <th>"id"</th>
+                        <th>"title"</th>
+                        <th>"created_at"</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.clone().into_iter().map(|row| view! {
+                        <tr>
+                            <td>{format!("{}", row.id)}</td>
+                            <td>{format!("{}", row.title)}</td>
+                            <td>{format!("{}", row.created_at)}</td>
+                        </tr>
+                    }).collect_view()}
+                </tbody>
             </table>
         </Show>
     }
 }
 ```
 
-The `Vec<<R>TableRow>` is the data provider (via `#[table(impl_vec_data_provider)]`); no separate provider struct needed for the canonical pagination-via-`?page` flow. Empty state branches via `<Show when=has_rows fallback>` so the `<table>` element is only emitted when there are rows. Loading state stays the wider page-level `Option::None` arm with `<p>"Loading..."</p>`.
+Empty state branches via `<Show when=has_rows fallback>` so the `<table>` element is only emitted when there are rows. Loading state stays the wider page-level `Option::None` arm with `<p>"Loading..."</p>`.
 
 ## Wasm-only widgets
 

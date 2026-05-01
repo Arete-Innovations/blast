@@ -1,18 +1,15 @@
-//! TableRow emitter — leptos-struct-table display projection.
+//! TableRow emitter — display-safe projection of the Public variant.
 //!
-//! Emits a struct that derives leptos_struct_table TableRow so the
-//! generated leptos List page can render rows via TableContent.
-//! The base Public struct itself can carry types that leptos-struct-table
-//! does not know how to render — Jsonb, Bytea, custom enums — those are
-//! skipped here so the derive stays green regardless of the schema.
+//! Emits a plain struct holding only schema fields whose Rust type has a
+//! Display impl in our type map. Jsonb, Bytea, Numeric and Decimal are
+//! skipped so the row struct can be rendered by leptos `view!` directly.
+//! The list page iterates the row vec with native `<For>` — no third-party
+//! table crate involved.
 //!
-//! A `From<Public>` impl is also emitted so the page code can convert
-//! a list of Public projections into a list of TableRow values in one
-//! move; see the leptos List page render for the call site.
+//! A From-Public impl is emitted so the list page can convert Public
+//! projections into row values in one move.
 //!
-//! Gating: emission is gated by `gen_level >= Components` at the runner.
-//! This file emits the body unconditionally given a resource — the runner
-//! is the gatekeeper.
+//! Gating: emission is controlled by `gen_level >= Components` at the runner.
 
 use super::util;
 use crate::{
@@ -27,8 +24,7 @@ pub fn render(resource: &ResourceState) -> String {
     let display_fields: Vec<(&FieldName, &FieldState)> = util::fields_for_variant(resource, FieldVariant::Public).into_iter().filter(|(_, field)| is_display_safe(&field.sql_type)).collect();
 
     let mut out = String::new();
-    out.push_str("#[derive(Debug, Clone, ::leptos_struct_table::TableRow)]\n");
-    out.push_str("#[table(impl_vec_data_provider)]\n");
+    out.push_str("#[derive(Debug, Clone)]\n");
     out.push_str(&format!("pub struct {row_name} {{\n"));
     for (name, field) in &display_fields {
         let ty = sql_map::rust_type(&field.sql_type, field.nullable);
@@ -49,16 +45,12 @@ pub fn render(resource: &ResourceState) -> String {
     out
 }
 
-/// Whether a SQL type maps to a Rust type that the leptos-struct-table
-/// TableRow derive can render via the default CellValue impls — with the
-/// chrono and uuid features enabled in canonical's Cargo.toml.
+/// Whether a SQL type maps to a Rust type with a `core::fmt::Display` impl
+/// usable from leptos `view!` macros. Excludes Jsonb/Bytea/Numeric/Decimal —
+/// either no Display impl or the type isn't in the canonical feature set.
 ///
-/// Excludes Jsonb and Bytea — both lack a CellValue impl and would need a
-/// custom renderer. Numeric and Decimal map to rust_decimal which is not
-/// currently in the enabled feature set, so they are excluded too.
-///
-/// Unknown SQL types fall back to String in the Rust mapper, and String
-/// is display-safe; we treat them as such here too.
+/// Unknown SQL types fall back to String in the Rust mapper, which IS
+/// display-safe — treated as such here.
 pub fn is_display_safe(sql: &SqlType) -> bool {
     match sql.as_str().to_ascii_lowercase().as_str() {
         "json" | "jsonb" | "bytea" | "numeric" | "decimal" => false,
@@ -127,11 +119,11 @@ mod tests {
     }
 
     #[test]
-    fn emits_struct_with_table_row_derive() {
+    fn emits_plain_struct_no_external_derive() {
         let resource = full_resource();
         let body = render(&resource);
-        assert!(body.contains("#[derive(Debug, Clone, ::leptos_struct_table::TableRow)]"));
-        assert!(body.contains("#[table(impl_vec_data_provider)]"));
+        assert!(body.contains("#[derive(Debug, Clone)]"));
+        assert!(!body.contains("leptos_struct_table"), "no external table-crate derive should leak in:\n{body}");
         assert!(body.contains("pub struct PostTableRow {"));
     }
 
