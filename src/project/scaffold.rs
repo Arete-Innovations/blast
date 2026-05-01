@@ -22,7 +22,6 @@ use crate::{
         db_bootstrap::{self, BootstrapArgs, BootstrapOutcome, RealDbAdmin},
         post_install, preflight, templates,
     },
-    state::{save_app, AppState},
 };
 
 /// Framework source tree, baked into the blast binary at compile time.
@@ -231,11 +230,6 @@ pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> Blas
     write_env_files(&args, &mut count)?;
     progress.step_done("write env files");
 
-    progress.step_start("seed app.ron");
-    seed_default_app_state(&args.project_root)?;
-    count += 1;
-    progress.step_done("seed app.ron");
-
     progress.step_start("emit build.rs hash check");
     let build_outcome = build_rs_template::run(build_rs_template::Args { project_root: args.project_root.clone() })?;
     sink.debug(format!("build.rs -> {}", build_outcome.written.display()));
@@ -322,12 +316,6 @@ fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
         }
         Err(_not_utf8) => raw.to_vec(), // allow: binary asset, no substitution possible
     }
-}
-
-fn seed_default_app_state(project_root: &Path) -> BlastResult<()> {
-    let state = AppState::new();
-    let state_dir = project_root.join("storage").join("blast").join("state");
-    save_app(&state_dir, &state)
 }
 
 fn write_env_files(args: &Args, count: &mut usize) -> BlastResult<()> {
