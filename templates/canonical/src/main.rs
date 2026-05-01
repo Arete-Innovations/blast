@@ -1,3 +1,5 @@
+#![recursion_limit = "2048"]
+
 use std::net::SocketAddr;
 
 use axum::{extract::DefaultBodyLimit, middleware::from_fn, Router};
