@@ -1,6 +1,8 @@
 pub mod alert;
 pub mod auth_guard;
 pub mod avatar_cell;
+pub mod breadcrumb;
+pub mod card;
 pub mod cells;
 pub mod confirm_dialog;
 pub mod dark_mode_toggle;
@@ -21,11 +23,15 @@ pub mod sidebar;
 pub mod skeleton;
 pub mod sort_header;
 pub mod status_dot;
+pub mod stepper;
+pub mod tabs;
 pub mod toast_host;
 
 pub use alert::*;
 pub use auth_guard::AuthGuard;
 pub use avatar_cell::AvatarCell;
+pub use breadcrumb::Breadcrumb;
+pub use card::Card;
 pub use confirm_dialog::*;
 pub use dark_mode_toggle::DarkModeToggle;
 pub use drawer::*;
@@ -44,6 +50,8 @@ pub use sidebar::AppSidebar;
 pub use skeleton::Skeleton;
 pub use sort_header::SortHeader;
 pub use status_dot::StatusDot;
+pub use stepper::Stepper;
+pub use tabs::Tabs;
 pub use toast_host::ToastHost;
 
-pub use crate::structs::leptos::{AlertKind, AuthGuardMode, AvatarSize, DrawerSide, FilterDef, FilterKind, PageLayout, SkeletonVariant, StatusKind};
+pub use crate::structs::leptos::{AlertKind, AuthGuardMode, AvatarSize, BreadcrumbItem, DrawerSide, FilterDef, FilterKind, PageLayout, SkeletonVariant, StatusKind, StepItem, StepStatus, TabItem};
