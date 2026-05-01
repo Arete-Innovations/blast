@@ -1,4 +1,5 @@
 pub mod auth_guard;
+pub mod cells;
 pub mod dark_mode_toggle;
 pub mod error_banner;
 pub mod generated;
