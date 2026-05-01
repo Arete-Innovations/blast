@@ -1,7 +1,3 @@
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-
-use crate::meltdown::*;
-
 #[macro_export]
 macro_rules! cata_log {
     (Debug, $msg:expr) => {
@@ -21,35 +17,45 @@ macro_rules! cata_log {
     };
 }
 
-pub fn init_tracing() {
-    let is_prod = cfg!(feature = "prod");
+#[cfg(not(target_arch = "wasm32"))]
+mod ssr {
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-    let default_filter = if is_prod {
-        "info,tower_http=info,axum::rejection=trace"
-    } else {
-        "debug,tower_http=debug,axum::rejection=trace"
-    };
+    use crate::meltdown::*;
 
-    let filter = resolve_env_filter(default_filter);
-    let registry = tracing_subscriber::registry().with(filter);
+    pub fn init_tracing() {
+        let is_prod = cfg!(feature = "prod");
 
-    if is_prod {
-        registry.with(tracing_subscriber::fmt::layer().json().with_file(true).with_line_number(true)).init();
-    } else {
-        registry.with(tracing_subscriber::fmt::layer().compact().with_target(false).with_file(true).with_line_number(true)).init();
-    }
-}
+        let default_filter = if is_prod {
+            "info,tower_http=info,axum::rejection=trace"
+        } else {
+            "debug,tower_http=debug,axum::rejection=trace"
+        };
 
-fn resolve_env_filter(default: &str) -> EnvFilter {
-    match try_env_filter() {
-        Ok(f) => f,
-        Err(e) => {
-            cata_log!(Debug, format!("EnvFilter env parse failed, using default: {}", e));
-            EnvFilter::new(default)
+        let filter = resolve_env_filter(default_filter);
+        let registry = tracing_subscriber::registry().with(filter);
+
+        if is_prod {
+            registry.with(tracing_subscriber::fmt::layer().json().with_file(true).with_line_number(true)).init();
+        } else {
+            registry.with(tracing_subscriber::fmt::layer().compact().with_target(false).with_file(true).with_line_number(true)).init();
         }
     }
+
+    fn resolve_env_filter(default: &str) -> EnvFilter {
+        match try_env_filter() {
+            Ok(f) => f,
+            Err(e) => {
+                crate::cata_log!(Debug, format!("EnvFilter env parse failed, using default: {}", e));
+                EnvFilter::new(default)
+            }
+        }
+    }
+
+    fn try_env_filter() -> Result<EnvFilter, MeltDown> {
+        EnvFilter::try_from_default_env().map_err(|e| MeltDown::new(MeltType::ConfigurationError, format!("env filter: {}", e)))
+    }
 }
 
-fn try_env_filter() -> Result<EnvFilter, MeltDown> {
-    EnvFilter::try_from_default_env().map_err(|e| MeltDown::new(MeltType::ConfigurationError, format!("env filter: {}", e)))
-}
+#[cfg(not(target_arch = "wasm32"))]
+pub use ssr::init_tracing;

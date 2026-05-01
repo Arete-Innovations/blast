@@ -2,7 +2,6 @@ pub mod meltdown;
 pub mod structs;
 pub mod transport;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub mod cata_log;
 
 #[cfg(not(target_arch = "wasm32"))]
