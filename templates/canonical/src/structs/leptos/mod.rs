@@ -1,6 +1,8 @@
+pub mod alert_kind;
 pub mod auth;
 pub mod auth_guard_mode;
 pub mod cells;
+pub mod drawer_side;
 pub mod nav_store;
 pub mod page_layout;
 pub mod polled_state;
@@ -14,8 +16,10 @@ pub mod url_state;
 pub mod wasm_drop;
 pub mod wire;
 
+pub use alert_kind::AlertKind;
 pub use auth::{LoginInput, RegisterInput};
 pub use auth_guard_mode::AuthGuardMode;
+pub use drawer_side::DrawerSide;
 pub use nav_store::{NavState, NavStore};
 pub use page_layout::PageLayout;
 pub use reactive_resource::{LiveResource, PolledResource, ReactiveSignal};
