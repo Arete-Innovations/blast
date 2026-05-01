@@ -145,9 +145,9 @@ fn collect_route_entries(resources: &[ResourceState]) -> Vec<RouteEntry> {
 
 fn render_routes_file(entries: &[RouteEntry]) -> String {
     let mut out = String::new();
-    out.push_str("//! `path!(...)` is a macro requiring a literal — it cannot accept a function call.\n");
-    out.push_str("//! Each route below is paired with the canonical `RouteName` variant in a comment;\n");
-    out.push_str("//! the test in `tests/route_alignment_generated.rs` asserts they stay in lockstep.\n\n");
+    out.push_str("//! path! is a macro requiring a literal so it cannot accept a function call.\n");
+    out.push_str("//! Each route below is paired with the canonical RouteName variant in a comment\n");
+    out.push_str("//! the test in tests/route_alignment_generated checks they stay in lockstep\n\n");
     out.push_str("use ::leptos::prelude::*;\n");
 
     if entries.is_empty() {
