@@ -2,6 +2,7 @@ use std::{collections::HashMap, io::Error as IoError, time::Duration};
 
 #[cfg(not(target_arch = "wasm32"))]
 use axum::{
+    extract::rejection::JsonRejection,
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -379,6 +380,13 @@ impl MeltDown {
 impl From<std::env::VarError> for MeltDown {
     fn from(err: std::env::VarError) -> Self {
         MeltDown::new(MeltType::EnvironmentError, "Environment variable error").with_source(err)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<JsonRejection> for MeltDown {
+    fn from(rej: JsonRejection) -> Self {
+        MeltDown::bad_request(rej.body_text()).with_user_message("Invalid request body.")
     }
 }
 

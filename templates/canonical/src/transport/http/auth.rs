@@ -15,10 +15,6 @@ use crate::{
     Ctx,
 };
 
-fn map_json_rejection(rej: JsonRejection) -> MeltDown {
-    MeltDown::bad_request(rej.body_text()).with_user_message("Invalid request body.")
-}
-
 pub const SESSION_COOKIE: &str = "blast_session";
 
 fn build_session_cookie(token: String) -> Cookie<'static> {
@@ -26,7 +22,7 @@ fn build_session_cookie(token: String) -> Cookie<'static> {
 }
 
 async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, body: Result<Json<RegisterBody>, JsonRejection>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
-    let Json(body) = body.map_err(map_json_rejection)?;
+    let Json(body) = body?;
     cata_log!(Info, format!("Register attempt for email: {}", body.email));
     let output = auth::register::run(
         &ctx,
@@ -41,7 +37,7 @@ async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, bo
 }
 
 async fn login_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, body: Result<Json<LoginBody>, JsonRejection>) -> Result<(CookieJar, Json<SessionContext>), MeltDown> {
-    let Json(body) = body.map_err(map_json_rejection)?;
+    let Json(body) = body?;
     cata_log!(Info, format!("Login attempt for email: {}", body.email));
     let output = auth::login::run(
         &ctx,
