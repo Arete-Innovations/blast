@@ -19,14 +19,16 @@ use crate::{
 // below.
 const MENU_ITEMS: &[&str] = &[
     // ── app lifecycle ─────────────────────────────────────────────────────────
-    "[APP] Watch (BE+FE HMR)",
-    "[APP] Run Server (dev)",
-    "[APP] Run Server (prod)",
+    "[APP] Watch (cargo leptos watch — BE+WASM HMR)",
+    "[APP] Run Server (cargo leptos serve)",
+    "[APP] Run Server (cargo leptos serve --release)",
     "[APP] Stop Server",
     "[APP] Refresh",
     "[APP] Toggle Dev/Prod",
     // ── codegen ───────────────────────────────────────────────────────────────
     "[CODEGEN] Gen All (full pipeline)",
+    "[BUILD] Release build (cargo leptos build --release --precompress)",
+    "[E2E] Run end-to-end tests (cargo leptos end-to-end)",
     // ── database ──────────────────────────────────────────────────────────────
     "[DB] New Migration",
     "[DB] Migrate",
@@ -77,14 +79,16 @@ fn resolve_selection(label: &str) -> BlastResult<SelectionOutcome> {
     let cmd = match label {
         // ── app lifecycle ─────────────────────────────────────────────────────
         "[APP] Refresh" => Command::Refresh,
-        "[APP] Run Server (dev)" => Command::Run,
-        "[APP] Run Server (prod)" => Command::RunProd,
-        "[APP] Watch (BE+FE HMR)" => Command::Watch,
+        "[APP] Run Server (cargo leptos serve)" => Command::Run,
+        "[APP] Run Server (cargo leptos serve --release)" => Command::RunProd,
+        "[APP] Watch (cargo leptos watch — BE+WASM HMR)" => Command::Watch,
         "[APP] Stop Server" => Command::Stop,
         "[APP] Toggle Dev/Prod" => Command::ToggleEnv,
 
         // ── codegen ───────────────────────────────────────────────────────────
         "[CODEGEN] Gen All (full pipeline)" => Command::Gen { cmd: Some(GenCmd::All) },
+        "[BUILD] Release build (cargo leptos build --release --precompress)" => Command::Build,
+        "[E2E] Run end-to-end tests (cargo leptos end-to-end)" => Command::E2e,
 
         // ── database ──────────────────────────────────────────────────────────
         "[DB] New Migration" => Command::Migration,
@@ -236,12 +240,14 @@ mod tests {
     fn non_interactive_menu_items_all_resolve() {
         let non_interactive: &[&str] = &[
             "[APP] Refresh",
-            "[APP] Run Server (dev)",
-            "[APP] Run Server (prod)",
-            "[APP] Watch (BE+FE HMR)",
+            "[APP] Run Server (cargo leptos serve)",
+            "[APP] Run Server (cargo leptos serve --release)",
+            "[APP] Watch (cargo leptos watch — BE+WASM HMR)",
             "[APP] Stop Server",
             "[APP] Toggle Dev/Prod",
             "[CODEGEN] Gen All (full pipeline)",
+            "[BUILD] Release build (cargo leptos build --release --precompress)",
+            "[E2E] Run end-to-end tests (cargo leptos end-to-end)",
             "[DB] New Migration",
             "[DB] Migrate",
             "[DB] Rollback",
@@ -274,9 +280,11 @@ mod tests {
     /// expected Command variants.
     #[test]
     fn spot_check_command_routing() {
-        assert!(matches!(unwrap_resolved("[APP] Run Server (dev)"), Command::Run));
-        assert!(matches!(unwrap_resolved("[APP] Run Server (prod)"), Command::RunProd));
+        assert!(matches!(unwrap_resolved("[APP] Run Server (cargo leptos serve)"), Command::Run));
+        assert!(matches!(unwrap_resolved("[APP] Run Server (cargo leptos serve --release)"), Command::RunProd));
         assert!(matches!(unwrap_resolved("[CODEGEN] Gen All (full pipeline)"), Command::Gen { cmd: Some(GenCmd::All) }));
+        assert!(matches!(unwrap_resolved("[BUILD] Release build (cargo leptos build --release --precompress)"), Command::Build));
+        assert!(matches!(unwrap_resolved("[E2E] Run end-to-end tests (cargo leptos end-to-end)"), Command::E2e));
         assert!(matches!(unwrap_resolved("[FUSES] Manage fuses (TUI)"), Command::Fuses { cmd: Some(FusesCmd::Interactive) }));
         assert!(matches!(unwrap_resolved("[FUSES] Live fuses table"), Command::Fuses { cmd: Some(FusesCmd::LiveTable) }));
         assert!(matches!(unwrap_resolved("[LOG] Truncate Logs"), Command::Log { cmd: LogCmd::Truncate { file: None } }));

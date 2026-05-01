@@ -26,7 +26,7 @@ pub enum Command {
         /// Skip creation of the `<dbname>_test` database and `.env.test` file.
         #[arg(long = "no-test-db")]
         no_test_db: bool,
-        /// Skip cargo build, npm install, npm build, and TUI launch. For tight iteration loops.
+        /// Skip cargo build, cargo leptos build, and TUI launch. For tight iteration loops.
         #[arg(long = "no-warmup")]
         no_warmup: bool,
     },
@@ -47,7 +47,7 @@ pub enum Command {
         /// Skip creation of the `<dbname>_test` database and `.env.test` file.
         #[arg(long = "no-test-db")]
         no_test_db: bool,
-        /// Skip cargo build, npm install, npm build, and TUI launch. For tight iteration loops.
+        /// Skip cargo build, cargo leptos build, and TUI launch. For tight iteration loops.
         #[arg(long = "no-warmup")]
         no_warmup: bool,
     },
@@ -67,17 +67,20 @@ pub enum Command {
     #[command(about = "Regenerate src/database/schema.rs from DB")]
     Schema,
 
-    #[command(about = "Run dev server", alias = "serve")]
+    #[command(about = "Run dev server (cargo leptos serve — builds + serves BE + WASM bundle)", alias = "serve")]
     Run,
 
-    #[command(name = "run-prod", about = "Run production server", alias = "serve-prod")]
+    #[command(name = "run-prod", about = "Run production server (cargo leptos serve --release)", alias = "serve-prod")]
     RunProd,
 
     #[command(about = "Stop the background dev/prod server daemon")]
     Stop,
 
-    #[command(about = "Watch backend with cargo-watch")]
+    #[command(about = "Watch BE + WASM with cargo leptos watch (live-reload on src changes)")]
     Watch,
+
+    #[command(name = "e2e", about = "Run end-to-end tests (cargo leptos end-to-end — boots server, runs tests/e2e harness)")]
+    E2e,
 
     #[command(about = "Launch Zellij dashboard")]
     Dashboard,
@@ -88,10 +91,10 @@ pub enum Command {
     #[command(name = "toggle-env", about = "Flip Env::Dev <-> Env::Prod", alias = "env")]
     ToggleEnv,
 
-    #[command(about = "Production build")]
+    #[command(about = "Production build via cargo leptos build --release --precompress")]
     Build,
 
-    #[command(about = "Archive release artifact")]
+    #[command(about = "Archive release artifact (binary + target/site WASM bundle + .env.example)")]
     Package,
 
     #[command(about = "Reinstall deps + rerun init pipeline")]
@@ -166,7 +169,7 @@ pub enum GenCmd {
         resource: Option<String>,
     },
 
-    #[command(about = "Run the default codegen pipeline (backend only — leptos passes pending phase 4)")]
+    #[command(about = "Run the full codegen pipeline (BE + leptos pages/forms/tables/data/app_routes)")]
     All,
 }
 

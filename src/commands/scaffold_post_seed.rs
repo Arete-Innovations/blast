@@ -1,7 +1,7 @@
 //! Post-seed pipeline injected into `blast new` / `blast init`.
 //!
-//! Pipeline order — runs after the file-writing scaffold and before npm
-//! install / dashboard exec:
+//! Pipeline order — runs after the file-writing scaffold and before
+//! the dashboard exec:
 //!   1. diesel migration run    — applies the seed migrations against the bootstrapped DB.
 //!   2. cargo build debug       — pre-compiles the user app (skipped via `--no-warmup`).
 //!

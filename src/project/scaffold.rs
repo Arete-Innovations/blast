@@ -54,9 +54,9 @@ pub struct NewOptions {
     pub no_test_db: bool,
     pub no_warmup: bool,
     /// Optional callback invoked after `run()` lays files but before
-    /// `post_install` does npm install + dashboard exec. Used by the
-    /// binary path to plug in the codegen pipeline + `cargo build`
-    /// pre-compile. `None` from tests / lib consumers — no-op.
+    /// `post_install` exec's the dashboard. Used by the binary path to
+    /// plug in the codegen pipeline + `cargo build` pre-compile. `None`
+    /// from tests / lib consumers — no-op.
     pub post_seed: Option<std::sync::Arc<PostSeedHook>>,
 }
 
@@ -151,10 +151,10 @@ fn create_with_target(project_name: &str, project_root: PathBuf, opts: NewOption
                 None => {}
             }
 
-            // Post-scaffold pipeline: npm install, npm run build, exec
-            // into the dashboard TUI. On the happy path, exec() replaces
-            // this process and we never return from post_install::run.
-            // If `npm run build` fails the project dir is preserved
+            // Post-scaffold pipeline: warmup builds, exec into the
+            // dashboard TUI. On the happy path, exec() replaces this
+            // process and we never return from post_install::run.
+            // If a warmup build fails the project dir is preserved
             // (so the user can inspect what broke) — the error is
             // surfaced but no cleanup runs.
             match post_install::run(&out.project_root, opts.no_warmup, sink, progress) {

@@ -55,6 +55,10 @@ fn parse_table_body(path: &Path, tokens: proc_macro2::TokenStream) -> BlastResul
 }
 
 fn parse_table_tokens(input: ParseStream) -> syn::Result<ParsedTable> {
+    while input.peek(Token![use]) {
+        let _use_stmt: syn::ItemUse = input.parse()?;
+    }
+
     let name_ident: syn::Ident = input.parse()?;
     let name = name_ident.to_string();
 

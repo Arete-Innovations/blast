@@ -69,15 +69,16 @@ pub struct NavConfig {
 /// need to appear here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Page {
-    /// Route name.  Becomes part of the `RouteName` union in
-    /// `frontend/src/generated/router/route-names.ts`.
-    /// Dot-notation convention: `dashboard`, `audit.detail`.
+    /// Route name. Becomes part of the leptos route registration emitted
+    /// by `app_routes` codegen. Dot-notation convention: `dashboard`,
+    /// `audit.detail`.
     pub route: String,
-    /// URL path.  Supports vue-router param syntax (`/foo/:id`).
+    /// URL path. Supports leptos_router param syntax (`/foo/:id`).
     /// No trailing slash.
     pub path: String,
-    /// Path to the hand-written Vue component, relative to `frontend/src/`
-    /// (e.g. `custom/pages/DashboardPage.vue`).
+    /// Component identifier emitted by codegen — module path under
+    /// src/transport/leptos/pages plus the component type name, joined
+    /// by a colon (consumed verbatim by the app_routes runner).
     pub component: String,
     /// Page shell layout variant.
     pub layout: PageLayout,

@@ -1,8 +1,7 @@
 //! Per-enum file emitter for SQL to Rust ENUM codegen.
 //!
-//! Pipeline shape mirrors the frontend_types runner: discover IR via
-//! the migration scanner, then emit one file per enum under
-//! src/structs/generated/enums/ alongside a barrel mod.rs.
+//! Discovers IR via the migration scanner, then emits one file per
+//! enum under src/structs/generated/enums/ alongside a barrel mod.rs.
 //!
 //! Output layout is flat-pack — enums are not per-resource. The barrel
 //! re-exports each PascalCased enum name so callers can `use

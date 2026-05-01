@@ -36,11 +36,11 @@ impl GenLevel {
         match self {
             GenLevel::Struct => "Struct: structs/generated/<r>.rs only (data shape)",
             GenLevel::Model => "Model: + models/generated/<r>.rs (Diesel CRUD)",
-            GenLevel::Route => "Route: + flows + http_routes (full BE CRUD)",
-            GenLevel::Types => "Types: + frontend types + api client",
-            GenLevel::Composables => "Composables: + frontend composables + validators (default)",
-            GenLevel::Components => "Components: + Vue form components",
-            GenLevel::Pages => "Pages: + admin-style CRUD UI pages (full opt-in)",
+            GenLevel::Route => "Route: + flows + http_api (REST + WS)",
+            GenLevel::Types => "Types: + leptos isomorphic data helpers (load_*, do_*) skeleton",
+            GenLevel::Composables => "Composables: + validators (default)",
+            GenLevel::Components => "Components: + leptos forms (CreateForm/EditForm with thaw inputs)",
+            GenLevel::Pages => "Pages: + leptos pages (List/Detail/Create/Edit) wrapped in AuthGuard + PageShell",
         }
     }
 }
