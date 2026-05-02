@@ -17,6 +17,18 @@
 //! content the prior emitter produced — auth lines are appended after.
 //! On second invocation the substring checks short-circuit so the file
 //! ends up byte-stable.
+//!
+//! `users.ron` primer interaction. If the user ships their own primer at
+//! `storage/blast/state/resources/users.ron`, the auth emitter:
+//! - skips writing `structs/generated/users.rs` and `models/generated/users.rs`
+//!   (the resource-driven passes own them)
+//! - still emits the auth-specific flows/routines/handlers/pages, which
+//!   reference `crate::models::generated::users::{find_by_email, find_by_id, insert_new}`
+//! The standard primer-driven models emitter only generates list/get/create/
+//! update/delete, NOT the auth-needed lookup helpers — user takes ownership
+//! by adding `models/users/` (user-owned, top-level subdir) with the
+//! missing functions, or removes the primer to get the canonical baseline
+//! back. Compile errors at the unresolved imports are the safety net.
 
 use std::{
     fs,
