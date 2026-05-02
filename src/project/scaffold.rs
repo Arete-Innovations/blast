@@ -355,8 +355,10 @@ fn apply_cargo_substitutions(project_root: &Path, project_name: &str) -> BlastRe
     for line in body.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with('[') {
-            // Section header. Take everything from '[' to matching ']'.
-            let end = trimmed.find(']').map(|i| i + 1).unwrap_or(trimmed.len());
+            // Section header. Use rfind so `[[bin]]` (array-of-tables) is
+            // captured as `[[bin]]`, not truncated to `[[bin]` by the first
+            // closing bracket.
+            let end = trimmed.rfind(']').map(|i| i + 1).unwrap_or(trimmed.len());
             current_section = trimmed[..end].to_string();
             out.push_str(line);
             out.push('\n');
@@ -544,12 +546,28 @@ output-name = "catalyst"
     fn cargo_toml_substitutes_package_bin_output_name_only() {
         let (_dir, outcome) = run_in_tempdir("myapp");
         let body = fs::read_to_string(outcome.project_root.join("Cargo.toml")).expect("read Cargo.toml");
-        // [package].name and [[bin]].name -> myapp
-        assert!(body.contains(r#"name = "myapp""#), "expected name = \"myapp\", got:\n{body}");
-        // output-name -> myapp
+
+        // [package].name -> myapp (split by next section header [lib])
+        let pkg_section = body.split("[package]").nth(1).and_then(|s| s.split("\n[").next()).expect("[package] section present");
+        assert!(
+            pkg_section.contains(r#"name = "myapp""#),
+            "[package].name MUST become myapp — got [package]{pkg_section}"
+        );
+
+        // [[bin]].name -> myapp (regression: double-bracket array-of-tables
+        // was previously truncated to `[[bin]` by `find(']')` — caught by e2e
+        // smoke against catalyst, fixed by rfind).
+        let bin_section = body.split("[[bin]]").nth(1).and_then(|s| s.split("\n[").next()).expect("[[bin]] section present");
+        assert!(
+            bin_section.contains(r#"name = "myapp""#),
+            "[[bin]].name MUST become myapp — got [[bin]]{bin_section}"
+        );
+
+        // [package.metadata.leptos] output-name -> myapp
         assert!(body.contains(r#"output-name = "myapp""#), "expected output-name = \"myapp\", got:\n{body}");
+
         // [lib].name STAYS catalyst — anchors test imports
-        let lib_section = body.split("[lib]").nth(1).expect("[lib] section present");
+        let lib_section = body.split("[lib]").nth(1).and_then(|s| s.split("\n[").next()).expect("[lib] section present");
         assert!(
             lib_section.contains(r#"name = "catalyst""#),
             "[lib].name MUST stay catalyst (anchors tests/*.rs use catalyst::*) — got [lib]{lib_section}"
