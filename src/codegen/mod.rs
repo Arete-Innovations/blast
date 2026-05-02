@@ -1,4 +1,5 @@
 pub mod app_routes;
+pub mod auth_emitter;
 pub mod build_rs_template;
 pub mod enums;
 pub mod env_example;
