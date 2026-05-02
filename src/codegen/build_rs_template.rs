@@ -136,6 +136,75 @@ mod tests {
         assert!(result.is_err(), "expected fail on stale hash");
     }
 
+    #[test]
+    fn round_trip_fail_on_stale_routines_layer() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let state_dir = dir.path().join("storage").join("blast").join("state").join("resources");
+        fs::create_dir_all(&state_dir).expect("create state dir");
+        let state_file = state_dir.join("users.ron");
+        fs::write(&state_file, b"ResourceState(schema_version: 1)").expect("write state");
+
+        let stale_hash = "deadbeef00000000000000000000000000000000000000000000000000000000";
+
+        let gen_dir = dir.path().join("src").join("routines").join("generated").join("users");
+        fs::create_dir_all(&gen_dir).expect("create routines gen dir");
+        let gen_file = gen_dir.join("create.rs");
+        let mut f = fs::File::create(&gen_file).expect("create routines gen file");
+        writeln!(f, "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ {}", stale_hash).expect("write header");
+        writeln!(f, "pub async fn run() {{}}").expect("write fn");
+
+        let result = simulate_check(dir.path());
+        assert!(result.is_err(), "FIX-031: routines/generated must be in WATCHED_DIRS — stale hash must trip the check");
+    }
+
+    #[test]
+    fn round_trip_fail_on_stale_leptos_pages_layer() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let state_dir = dir.path().join("storage").join("blast").join("state").join("resources");
+        fs::create_dir_all(&state_dir).expect("create state dir");
+        let state_file = state_dir.join("users.ron");
+        fs::write(&state_file, b"ResourceState(schema_version: 1)").expect("write state");
+
+        let stale_hash = "deadbeef00000000000000000000000000000000000000000000000000000000";
+
+        let gen_dir = dir.path().join("src").join("transport").join("leptos").join("pages").join("generated");
+        fs::create_dir_all(&gen_dir).expect("create leptos pages gen dir");
+        let gen_file = gen_dir.join("users.rs");
+        let mut f = fs::File::create(&gen_file).expect("create leptos pages gen file");
+        writeln!(f, "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ {}", stale_hash).expect("write header");
+        writeln!(f, "pub fn UsersPage() {{}}").expect("write fn");
+
+        let result = simulate_check(dir.path());
+        assert!(result.is_err(), "FIX-031: leptos/pages/generated must be in WATCHED_DIRS — stale hash must trip the check");
+    }
+
+    #[test]
+    fn round_trip_fail_on_stale_leptos_components_nested_subdir() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let state_dir = dir.path().join("storage").join("blast").join("state").join("resources");
+        fs::create_dir_all(&state_dir).expect("create state dir");
+        let state_file = state_dir.join("users.ron");
+        fs::write(&state_file, b"ResourceState(schema_version: 1)").expect("write state");
+
+        let stale_hash = "deadbeef00000000000000000000000000000000000000000000000000000000";
+
+        let gen_dir = dir.path().join("src").join("transport").join("leptos").join("components").join("generated").join("forms");
+        fs::create_dir_all(&gen_dir).expect("create nested forms gen dir");
+        let gen_file = gen_dir.join("users_form.rs");
+        let mut f = fs::File::create(&gen_file).expect("create nested gen file");
+        writeln!(f, "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ {}", stale_hash).expect("write header");
+        writeln!(f, "pub fn UsersForm() {{}}").expect("write fn");
+
+        let result = simulate_check(dir.path());
+        assert!(result.is_err(), "FIX-031: recursive walk must descend into components/generated/forms/ subdir");
+    }
+
     fn simulate_check(root: &std::path::Path) -> Result<(), String> {
         let watched_dirs: &[&str] = &[
             "src/structs/generated",
@@ -155,35 +224,44 @@ mod tests {
             if !dir_path.exists() {
                 continue;
             }
-            let entries = match fs::read_dir(&dir_path) {
-                Ok(e) => e,
-                Err(err) => return Err(format!("read_dir {}: {}", dir_path.display(), err)),
+            walk_and_check(root, &dir_path)?;
+        }
+        Ok(())
+    }
+
+    fn walk_and_check(root: &std::path::Path, dir: &std::path::Path) -> Result<(), String> {
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(err) => return Err(format!("read_dir {}: {}", dir.display(), err)),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_and_check(root, &path)?;
+                continue;
+            }
+            let ext = path.extension().map(|e| e.to_string_lossy().to_string());
+            if ext.as_deref() != Some("rs") {
+                continue;
+            }
+            let content = match fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(err) => return Err(format!("read {}: {}", path.display(), err)),
             };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let ext = path.extension().map(|e| e.to_string_lossy().to_string());
-                if ext.as_deref() != Some("rs") {
-                    continue;
-                }
-                let content = match fs::read_to_string(&path) {
-                    Ok(c) => c,
-                    Err(err) => return Err(format!("read {}: {}", path.display(), err)),
-                };
-                let (state_path_str, marker_hash) = match parse_marker(&content) {
-                    Some(pair) => pair,
-                    None => continue,
-                };
-                let state_file = root.join(&state_path_str);
-                if !state_file.exists() {
-                    return Err(format!("state file '{}' missing; was it deleted? regen with 'blast gen all'", state_path_str));
-                }
-                let actual_hash = compute_hash(&state_file).map_err(|err| format!("hash {}: {}", state_file.display(), err))?;
-                if actual_hash != marker_hash {
-                    return Err(format!(
-                        "state file '{}' changed since last regen — run 'blast gen all'\n  expected hash: {}\n  actual hash:   {}",
-                        state_path_str, marker_hash, actual_hash
-                    ));
-                }
+            let (state_path_str, marker_hash) = match parse_marker(&content) {
+                Some(pair) => pair,
+                None => continue,
+            };
+            let state_file = root.join(&state_path_str);
+            if !state_file.exists() {
+                return Err(format!("state file '{}' missing; was it deleted? regen with 'blast gen all'", state_path_str));
+            }
+            let actual_hash = compute_hash(&state_file).map_err(|err| format!("hash {}: {}", state_file.display(), err))?;
+            if actual_hash != marker_hash {
+                return Err(format!(
+                    "state file '{}' changed since last regen — run 'blast gen all'\n  expected hash: {}\n  actual hash:   {}",
+                    state_path_str, marker_hash, actual_hash
+                ));
             }
         }
         Ok(())
