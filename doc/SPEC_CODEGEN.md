@@ -47,6 +47,8 @@ The marker is **Rust-only** — comments use `// AUTO-GENERATED ...`. The HTML/V
 
 The marker is parsed back at compile time by the user app's `build.rs` (template at `crate::codegen::build_rs_template`, source at `crate::codegen::build_rs_template_src.rs.tmpl`). On hash mismatch `build.rs` calls `panic!` so `cargo check` / `cargo build` / `cargo test` all hard-fail with an actionable message.
 
+The parser enforces `hash.len() == 64 && all-hex` — exactly BLAKE3 hex digest length. Truncated, oversized, or non-hex hashes don't false-positive as valid markers; they're treated as no marker found (which trips a different lint path). Same enforcement on the test-side `parse_marker` in `header.rs::tests` and the inline test helper in `build_rs_template.rs::tests` for symmetric semantics.
+
 Users cannot forget to regen. Stale codegen is a compile error.
 
 ## Generation Level (per-resource cut-off)
