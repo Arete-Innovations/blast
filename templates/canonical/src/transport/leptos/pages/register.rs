@@ -2,8 +2,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::meltdown::MeltDown;
-use crate::structs::leptos::{RegisterInput, RouteName};
-use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};
+use crate::structs::leptos::{ButtonKind, PageLayout, RegisterInput, RouteName};
+use crate::transport::leptos::components::{AuthCard, AuthCardAlt, AuthGuard, AuthGuardMode, Button, ErrorBanner, FormGroup, PageShell};
 use crate::transport::leptos::data::auth::do_register;
 use crate::transport::leptos::signals::nav::use_blocking_navigate;
 use crate::transport::leptos::signals::session::use_session;
@@ -17,17 +17,12 @@ pub fn RegisterPage() -> impl IntoView {
 
     let email = RwSignal::new(String::new());
     let password = RwSignal::new(String::new());
-    let confirm = RwSignal::new(String::new());
     let pending = RwSignal::new(false);
     let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
         if pending.get_untracked() {
-            return;
-        }
-        if password.get_untracked() != confirm.get_untracked() {
-            toasts.error("Passwords do not match.");
             return;
         }
         pending.set(true);
@@ -47,7 +42,7 @@ pub fn RegisterPage() -> impl IntoView {
                 }
                 Err(err) => {
                     err.log();
-                    let msg: String = format!("{}", err);
+                    let msg: String = err.user_message();
                     toasts.error(msg);
                     last_error.set(Some(err));
                 }
@@ -57,42 +52,42 @@ pub fn RegisterPage() -> impl IntoView {
 
     view! {
         <AuthGuard mode=AuthGuardMode::AnonOnly>
-            <PageShell layout=PageLayout::Cards>
-                <h1>"Register"</h1>
+            <PageShell layout=PageLayout::Bleed>
+            <AuthCard title="Create account".to_string() lede=Some("One minute, then you're in.".to_string())>
                 <form on:submit=on_submit>
-                    <label>
-                        "Email "
+                    <FormGroup label="Email".to_string() for_id="register_email".to_string()>
                         <input
+                            id="register_email"
                             type="email"
+                            autocomplete="email"
                             required=true
                             prop:value=move || email.get()
                             on:input=move |ev| email.set(event_target_value(&ev))
                         />
-                    </label>
-                    <label>
-                        "Password "
+                    </FormGroup>
+                    <FormGroup label="Password".to_string() for_id="register_password".to_string()>
                         <input
+                            id="register_password"
                             type="password"
+                            autocomplete="new-password"
                             required=true
                             prop:value=move || password.get()
                             on:input=move |ev| password.set(event_target_value(&ev))
                         />
-                    </label>
-                    <label>
-                        "Confirm password "
-                        <input
-                            type="password"
-                            required=true
-                            prop:value=move || confirm.get()
-                            on:input=move |ev| confirm.set(event_target_value(&ev))
-                        />
-                    </label>
-                    <button type="submit" disabled=move || pending.get()>
-                        {move || if pending.get() { "Creating…" } else { "Create account" }}
-                    </button>
+                    </FormGroup>
                     {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
+                    <Button kind=ButtonKind::Primary kind_attr="submit".to_string() full=true disabled=pending.get()>
+                        {move || match pending.get() {
+                            true => "Creating…",
+                            false => "Create account",
+                        }}
+                    </Button>
                 </form>
-                <p><a href={RouteName::Login.path().to_string()}>"Already have an account? Login"</a></p>
+                <AuthCardAlt>
+                    "Already have an account? "
+                    <a href={RouteName::Login.path().to_string()}>"Sign in"</a>
+                </AuthCardAlt>
+            </AuthCard>
             </PageShell>
         </AuthGuard>
     }

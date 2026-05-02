@@ -1,0 +1,57 @@
+.row {
+    display: grid;
+    grid-template-columns: 8rem 1fr;
+    gap: var(--app-space-md);
+    padding: var(--app-space-sm) 0;
+    border-bottom: 0.0625rem solid var(--app-color-border-subtle);
+    align-items: center;
+
+    &:last-child { border-bottom: 0; }
+}
+
+.label {
+    color: var(--app-color-fg-muted);
+    font-size: var(--app-fs-sm);
+}
+
+.value {
+    color: var(--app-color-fg);
+    font-size: var(--app-fs-md);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-sm);
+}
+
+.identity {
+    display: flex;
+    align-items: center;
+    gap: var(--app-space-md);
+}
+
+.identity_meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-2xs, 0.125rem);
+}
+
+.identity_name {
+    margin: 0;
+    font-size: var(--app-fs-lg);
+    font-weight: 600;
+    color: var(--app-color-fg);
+}
+
+.identity_email {
+    margin: 0;
+    color: var(--app-color-fg-muted);
+    font-size: var(--app-fs-sm);
+}
+
+.actions {
+    display: flex;
+    gap: var(--app-space-sm);
+    flex-wrap: wrap;
+}

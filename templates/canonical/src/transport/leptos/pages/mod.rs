@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod dashboard;
 pub mod login;
 pub mod logout;
@@ -6,6 +7,7 @@ pub mod profile;
 pub mod register;
 pub mod welcome;
 
+pub use admin::AdminPage;
 pub use dashboard::DashboardPage;
 pub use login::LoginPage;
 pub use logout::LogoutPage;

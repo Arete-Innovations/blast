@@ -2,8 +2,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::meltdown::MeltDown;
-use crate::structs::leptos::{LoginInput, RouteName};
-use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};
+use crate::structs::leptos::{ButtonKind, LoginInput, PageLayout, RouteName};
+use crate::transport::leptos::components::{AuthCard, AuthCardAlt, AuthGuard, AuthGuardMode, Button, ErrorBanner, FormGroup, PageShell};
 use crate::transport::leptos::data::auth::do_login;
 use crate::transport::leptos::signals::nav::use_blocking_navigate;
 use crate::transport::leptos::signals::session::use_session;
@@ -42,7 +42,7 @@ pub fn LoginPage() -> impl IntoView {
                 }
                 Err(err) => {
                     err.log();
-                    let msg: String = format!("{}", err);
+                    let msg: String = err.user_message();
                     toasts.error(msg);
                     last_error.set(Some(err));
                 }
@@ -52,33 +52,42 @@ pub fn LoginPage() -> impl IntoView {
 
     view! {
         <AuthGuard mode=AuthGuardMode::AnonOnly>
-            <PageShell layout=PageLayout::Cards>
-                <h1>"Login"</h1>
+            <PageShell layout=PageLayout::Bleed>
+            <AuthCard title="Sign in".to_string() lede=Some("Welcome back. Use your work email.".to_string())>
                 <form on:submit=on_submit>
-                    <label>
-                        "Email "
+                    <FormGroup label="Email".to_string() for_id="login_email".to_string()>
                         <input
+                            id="login_email"
                             type="email"
+                            autocomplete="email"
                             required=true
                             prop:value=move || email.get()
                             on:input=move |ev| email.set(event_target_value(&ev))
                         />
-                    </label>
-                    <label>
-                        "Password "
+                    </FormGroup>
+                    <FormGroup label="Password".to_string() for_id="login_password".to_string()>
                         <input
+                            id="login_password"
                             type="password"
+                            autocomplete="current-password"
                             required=true
                             prop:value=move || password.get()
                             on:input=move |ev| password.set(event_target_value(&ev))
                         />
-                    </label>
-                    <button type="submit" disabled=move || pending.get()>
-                        {move || if pending.get() { "Signing in…" } else { "Sign in" }}
-                    </button>
+                    </FormGroup>
                     {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
+                    <Button kind=ButtonKind::Primary kind_attr="submit".to_string() full=true disabled=pending.get()>
+                        {move || match pending.get() {
+                            true => "Signing in…",
+                            false => "Sign in",
+                        }}
+                    </Button>
                 </form>
-                <p><a href={RouteName::Register.path().to_string()}>"Need an account? Register"</a></p>
+                <AuthCardAlt>
+                    "New here? "
+                    <a href={RouteName::Register.path().to_string()}>"Create an account"</a>
+                </AuthCardAlt>
+            </AuthCard>
             </PageShell>
         </AuthGuard>
     }

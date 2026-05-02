@@ -1,3 +1,4 @@
+pub mod admin_user_row;
 pub mod alert_kind;
 pub mod auth;
 pub mod auth_guard_mode;
@@ -25,6 +26,7 @@ pub mod url_state;
 pub mod wasm_drop;
 pub mod wire;
 
+pub use admin_user_row::AdminUserRow;
 pub use alert_kind::AlertKind;
 pub use auth::{LoginInput, RegisterInput};
 pub use auth_guard_mode::AuthGuardMode;
