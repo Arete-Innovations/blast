@@ -122,7 +122,7 @@ One ratatui state-machine wizard (no dialoguer) that handles every step from mig
 - Name input (snake_case)
 - Type picker — cycles TEXT / VARCHAR(255) / INTEGER / BIGINT / BOOLEAN / TIMESTAMPTZ / UUID / JSONB / NUMERIC + dynamic Enum entries (from existing `CREATE TYPE`) + dynamic FK entries (`BIGINT REFERENCES <table>(id)` for every existing table). Enum entries only appear when the project actually declares enums.
 - `NOT NULL` checkbox (default on)
-- `Public-visible` checkbox (default on; auto-flips off when the name matches `password_hash`, `*_secret`, `*_token`, `*_key`)
+- `Public-visible` checkbox (default OFF — opt-in to expose; hard-forced off at add-time when the name matches `password_hash`, `*_secret`, `*_token`, `*_key` regardless of user toggle, so sensitive cols can never reach the Public variant by accident)
 - Validator picker — cycles None / Required / Email / MaxLen(255)
 - `[ + Add column ]`, `[ – Delete last column ]`, `[ ← Back ]`, `[ Done — Preview → ]`
 
