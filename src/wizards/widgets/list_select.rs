@@ -1,10 +1,6 @@
 use std::{io, time::Duration};
 
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -13,17 +9,18 @@ use ratatui::{
     Terminal,
 };
 
-use crate::error::{BlastError, BlastResult};
+use crate::{
+    error::{BlastError, BlastResult},
+    wizards::widgets::terminal_guard::TerminalGuard,
+};
 
 pub fn pick<S: AsRef<str>>(prompt: &str, items: &[S]) -> BlastResult<Option<usize>> {
     if items.is_empty() {
         return Err(BlastError::Invalid("list_select: items must not be empty".to_string()));
     }
 
-    enable_raw_mode().map_err(io_to_blast)?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).map_err(io_to_blast)?;
-    let backend = CrosstermBackend::new(stdout);
+    let _guard = TerminalGuard::install()?;
+    let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend).map_err(io_to_blast)?;
 
     let mut state = ListState::default();
@@ -98,10 +95,6 @@ pub fn pick<S: AsRef<str>>(prompt: &str, items: &[S]) -> BlastResult<Option<usiz
             }
         }
     };
-
-    disable_raw_mode().map_err(io_to_blast)?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(io_to_blast)?;
-    terminal.show_cursor().map_err(io_to_blast)?;
 
     match outcome {
         Ok(()) => Ok(chosen),

@@ -1,10 +1,6 @@
 use std::{fs, io, path::Path, time::Duration};
 
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use regex::Regex;
 
@@ -13,6 +9,7 @@ use crate::{
     database::write_migration,
     error::{BlastError, BlastResult},
     state::io::save_resource,
+    wizards::widgets::terminal_guard::TerminalGuard,
 };
 
 use super::{
@@ -28,22 +25,11 @@ pub fn run_picker(project_root: &Path) -> BlastResult<Outcome> {
     let palette = build_type_palette(project_root)?;
     let mut state = WizardState::new(project_root.to_path_buf(), palette);
 
-    enable_raw_mode().map_err(io_to_blast)?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).map_err(io_to_blast)?;
-    let backend = CrosstermBackend::new(stdout);
+    let _guard = TerminalGuard::install_with_mouse()?;
+    let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend).map_err(io_to_blast)?;
 
-    let outcome = match event_loop(&mut terminal, &mut state) {
-        Ok(o) => Ok(o),
-        Err(e) => Err(e),
-    };
-
-    disable_raw_mode().map_err(io_to_blast)?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).map_err(io_to_blast)?;
-    terminal.show_cursor().map_err(io_to_blast)?;
-
-    outcome
+    event_loop(&mut terminal, &mut state)
 }
 
 fn event_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, state: &mut WizardState) -> BlastResult<Outcome> {

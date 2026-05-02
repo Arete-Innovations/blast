@@ -1,10 +1,6 @@
 use std::{io, time::Duration};
 
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -13,13 +9,14 @@ use ratatui::{
 };
 use tui_input::{backend::crossterm::EventHandler, Input};
 
-use crate::error::{BlastError, BlastResult};
+use crate::{
+    error::{BlastError, BlastResult},
+    wizards::widgets::terminal_guard::TerminalGuard,
+};
 
 pub fn ask(prompt: &str, default: Option<&str>) -> BlastResult<Option<String>> {
-    enable_raw_mode().map_err(io_to_blast)?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).map_err(io_to_blast)?;
-    let backend = CrosstermBackend::new(stdout);
+    let _guard = TerminalGuard::install()?;
+    let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend).map_err(io_to_blast)?;
 
     let mut input: Input = Input::default();
@@ -84,10 +81,6 @@ pub fn ask(prompt: &str, default: Option<&str>) -> BlastResult<Option<String>> {
             }
         }
     };
-
-    disable_raw_mode().map_err(io_to_blast)?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).map_err(io_to_blast)?;
-    terminal.show_cursor().map_err(io_to_blast)?;
 
     match outcome {
         Ok(()) => Ok(value),
