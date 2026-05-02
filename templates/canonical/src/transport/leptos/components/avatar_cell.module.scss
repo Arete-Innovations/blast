@@ -4,9 +4,13 @@
     justify-content: center;
     border-radius: 50%;
     overflow: hidden;
-    background: var(--app-color-border-subtle);
-    color: var(--app-color-fg);
-    font-weight: 600;
+    background: linear-gradient(
+        135deg,
+        color-mix(in oklch, var(--app-color-brand) 25%, var(--app-color-surface)) 0%,
+        color-mix(in oklch, var(--app-color-brand) 12%, var(--app-color-surface)) 100%
+    );
+    color: var(--app-color-brand);
+    font-weight: 700;
     line-height: 1;
     user-select: none;
     flex: 0 0 auto;

@@ -36,7 +36,7 @@ fn group_int_str(digits: &str) -> String {
         .enumerate()
         .flat_map(|(i, c)| {
             let remaining = len - i;
-            if remaining > 1 && remaining % 3 == 1 {
+            if i > 0 && remaining % 3 == 0 {
                 Some(',').into_iter().chain(Some(*c))
             } else {
                 None.into_iter().chain(Some(*c))

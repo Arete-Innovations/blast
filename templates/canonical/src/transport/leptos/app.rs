@@ -1,11 +1,10 @@
 use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, MetaTags, Title};
 use leptos_router::components::{Route, Router, Routes};
-use leptos_router::hooks::use_location;
 use leptos_router::path;
 
-use crate::transport::leptos::components::{AppSidebar, NavProgress, ToastHost};
-use crate::transport::leptos::pages::{DashboardPage, LoginPage, LogoutPage, NotFoundPage, ProfilePage, RegisterPage, WelcomePage};
+use crate::transport::leptos::components::{NavProgress, ToastHost};
+use crate::transport::leptos::pages::{AdminPage, DashboardPage, LoginPage, LogoutPage, NotFoundPage, ProfilePage, RegisterPage, WelcomePage};
 use crate::transport::leptos::routes::GeneratedRoutes;
 use crate::transport::leptos::signals::hydration::provide_hydration_store;
 use crate::transport::leptos::signals::nav::provide_nav_store;
@@ -39,7 +38,7 @@ pub fn shell(options: leptos::prelude::LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
-    let session = provide_session_store();
+    provide_session_store();
     provide_theme_store();
     provide_toast_store();
     provide_nav_store();
@@ -49,7 +48,6 @@ pub fn App() -> impl IntoView {
         <Title text="Catablast"/>
         <Router>
             <NavProgress/>
-            <SidebarMount session=session/>
             <Routes fallback=NotFoundPage>
                 <Route path=path!("/") view=WelcomePage/>
                 <Route path=path!("/login") view=LoginPage/>
@@ -57,6 +55,7 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/register") view=RegisterPage/>
                 <Route path=path!("/dashboard") view=DashboardPage/>
                 <Route path=path!("/profile") view=ProfilePage/>
+                <Route path=path!("/admin") view=AdminPage/>
                 <GeneratedRoutes/>
             </Routes>
             <ToastHost/>
@@ -64,19 +63,3 @@ pub fn App() -> impl IntoView {
     }
 }
 
-#[component]
-fn SidebarMount(session: crate::structs::leptos::SessionStore) -> impl IntoView {
-    let location = use_location();
-    let visible = move || {
-        if !session.is_authed() {
-            return false;
-        }
-        let path = location.pathname.get();
-        !matches!(path.as_str(), "/login" | "/register")
-    };
-    view! {
-        <Show when=visible>
-            <AppSidebar/>
-        </Show>
-    }
-}

@@ -64,12 +64,6 @@ async fn me_handler(Extension(ctx): Extension<Ctx>) -> Result<Json<SessionContex
 }
 
 pub fn router() -> Router<Ctx> {
-    let throttled = with_auth_rate_limit(
-        Router::new()
-            .route("/auth/register", post(register_handler))
-            .route("/auth/login", post(login_handler)),
-    );
-    throttled
-        .route("/auth/logout", post(logout_handler))
-        .route("/auth/me", get(me_handler))
+    let throttled = with_auth_rate_limit(Router::new().route("/auth/register", post(register_handler)).route("/auth/login", post(login_handler)));
+    throttled.route("/auth/logout", post(logout_handler)).route("/auth/me", get(me_handler))
 }
