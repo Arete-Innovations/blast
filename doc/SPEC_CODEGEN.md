@@ -188,7 +188,7 @@ The Diesel `sql_types` marker struct lives in canonical's `src/database/schema.r
 
 **Skip-emission for hand-written enums:** if a Rust enum with the matching PascalCase name already exists under `src/structs/**` (excluding any `generated/` subtree), the codegen pass skips emission for that SQL `CREATE TYPE`. Detection is `existing_user_enums(project_root) -> HashSet<String>`. Canonical's hand-rolled `Role` enum at `src/structs/auth/role.rs` is treated this way for `CREATE TYPE user_role`.
 
-E2E proof: `blast/tests/enum_codegen_e2e.rs` runs the full pipeline against a fixture migration.
+Tests: 6 inline tests at `blast/src/codegen/enums/runner.rs:160-319` cover the full pipeline against fixture migrations.
 
 ### Validators (single source)
 
