@@ -1,6 +1,7 @@
 use std::{
     ffi::OsStr,
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -103,6 +104,23 @@ fn serialize_pretty<T: serde::Serialize>(value: &T) -> BlastResult<String> {
     Ok(format!("{body}\n"))
 }
 
+struct TempFileGuard {
+    path: PathBuf,
+    committed: bool,
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        match fs::remove_file(&self.path) {
+            Ok(()) => {}
+            Err(_io) => {} // allow: best-effort cleanup of temp on write-error path; can't propagate from Drop
+        }
+    }
+}
+
 fn write_atomic(target: &Path, bytes: &[u8]) -> BlastResult<()> {
     let parent = match target.parent() {
         Some(p) => p,
@@ -115,7 +133,14 @@ fn write_atomic(target: &Path, bytes: &[u8]) -> BlastResult<()> {
         None => return Err(BlastError::Invalid(format!("target path has no filename: {}", target.display()))),
     };
     let temp = parent.join(format!(".{file_name}.tmp"));
-    fs::write(&temp, bytes)?;
+    let mut guard = TempFileGuard { path: temp.clone(), committed: false };
+
+    let mut f = fs::File::create(&temp)?;
+    f.write_all(bytes)?;
+    f.sync_data()?;
+    drop(f);
+
     fs::rename(&temp, target)?;
+    guard.committed = true;
     Ok(())
 }
