@@ -220,6 +220,49 @@ mod tests {
     }
 
     #[test]
+    fn truncated_marker_hash_treated_as_no_marker_not_stale() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let state_dir = dir.path().join("storage").join("blast").join("state").join("resources");
+        fs::create_dir_all(&state_dir).expect("create state dir");
+        let state_file = state_dir.join("users.ron");
+        fs::write(&state_file, b"ResourceState(schema_version: 1)").expect("write state");
+
+        let gen_dir = dir.path().join("src").join("structs").join("generated");
+        fs::create_dir_all(&gen_dir).expect("create gen dir");
+        let gen_file = gen_dir.join("users.rs");
+        let mut f = fs::File::create(&gen_file).expect("create gen file");
+        writeln!(f, "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ deadbeef").expect("write header");
+        writeln!(f, "pub struct User;").expect("write struct");
+
+        let result = simulate_check(dir.path());
+        assert!(result.is_ok(), "FIX-038: 8-char hash must NOT parse as a valid marker → file skipped, no false stale-hash panic");
+    }
+
+    #[test]
+    fn non_hex_marker_hash_treated_as_no_marker() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let state_dir = dir.path().join("storage").join("blast").join("state").join("resources");
+        fs::create_dir_all(&state_dir).expect("create state dir");
+        let state_file = state_dir.join("users.ron");
+        fs::write(&state_file, b"ResourceState(schema_version: 1)").expect("write state");
+
+        let gen_dir = dir.path().join("src").join("structs").join("generated");
+        fs::create_dir_all(&gen_dir).expect("create gen dir");
+        let gen_file = gen_dir.join("users.rs");
+        let mut f = fs::File::create(&gen_file).expect("create gen file");
+        let bad = "g".repeat(64);
+        writeln!(f, "// AUTO-GENERATED from storage/blast/state/resources/users.ron @ {bad}").expect("write header");
+        writeln!(f, "pub struct User;").expect("write struct");
+
+        let result = simulate_check(dir.path());
+        assert!(result.is_ok(), "FIX-038: 64 'g' chars (non-hex) must NOT parse as a valid marker");
+    }
+
+    #[test]
     fn round_trip_fail_on_stale_leptos_components_nested_subdir() {
         use std::io::Write;
         let dir = tempfile::tempdir().expect("tempdir");
