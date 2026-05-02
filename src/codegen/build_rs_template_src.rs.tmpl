@@ -177,7 +177,7 @@ fn parse_marker(content: &str) -> Option<(String, String)> {
         let at_pos = rest.rfind(" @ ")?;
         let path_part = rest[..at_pos].trim().to_string();
         let hash_part = rest[at_pos + 3..].trim().to_string();
-        if hash_part.chars().all(|c| c.is_ascii_hexdigit()) && !hash_part.is_empty() {
+        if hash_part.len() == 64 && hash_part.chars().all(|c| c.is_ascii_hexdigit()) {
             return Some((path_part, hash_part));
         }
     }

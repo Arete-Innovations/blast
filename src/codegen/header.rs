@@ -110,7 +110,7 @@ mod tests {
         let sep_idx = rest.find(MARKER_SEPARATOR)?;
         let path = rest[..sep_idx].trim();
         let hash = rest[sep_idx + MARKER_SEPARATOR.len()..].trim();
-        if path.is_empty() || hash.is_empty() {
+        if path.is_empty() || hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
             return None;
         }
         Some((path.to_string(), hash.to_string()))
@@ -123,16 +123,17 @@ mod tests {
         assert_eq!(header, expected);
     }
 
+    const FAKE_BLAKE3_HEX: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     #[test]
     fn marker_round_trips_through_parse() {
         let path = "storage/blast/state/resources/orders.ron";
-        let hash = "deadbeefcafef00d";
-        let header = marker(path, hash);
+        let header = marker(path, FAKE_BLAKE3_HEX);
         let parsed = parse_marker(&header);
         match parsed {
             Some((p, h)) => {
                 assert_eq!(p, path);
-                assert_eq!(h, hash);
+                assert_eq!(h, FAKE_BLAKE3_HEX);
             }
             None => panic!("expected marker to parse"),
         }
@@ -140,14 +141,34 @@ mod tests {
 
     #[test]
     fn parse_marker_accepts_marker_followed_by_body() {
-        let body = format!("{header}export const FOO = 1\n", header = marker("storage/blast/state/app.ron", "ff00"));
+        let body = format!("{header}export const FOO = 1\n", header = marker("storage/blast/state/app.ron", FAKE_BLAKE3_HEX));
         match parse_marker(&body) {
             Some((p, h)) => {
                 assert_eq!(p, "storage/blast/state/app.ron");
-                assert_eq!(h, "ff00");
+                assert_eq!(h, FAKE_BLAKE3_HEX);
             }
             None => panic!("expected marker to parse from prefixed body"),
         }
+    }
+
+    #[test]
+    fn parse_marker_returns_none_on_short_hash() {
+        let body = "// AUTO-GENERATED from foo.ron @ deadbeef\n";
+        assert!(parse_marker(body).is_none(), "63-char-or-less hash must not parse — BLAKE3 hex is exactly 64");
+    }
+
+    #[test]
+    fn parse_marker_returns_none_on_long_hash() {
+        let oversized = format!("{FAKE_BLAKE3_HEX}ff");
+        let body = format!("// AUTO-GENERATED from foo.ron @ {oversized}\n");
+        assert!(parse_marker(&body).is_none(), "65+-char hash must not parse");
+    }
+
+    #[test]
+    fn parse_marker_returns_none_on_non_hex_hash() {
+        let bad = "g".repeat(64);
+        let body = format!("// AUTO-GENERATED from foo.ron @ {bad}\n");
+        assert!(parse_marker(&body).is_none(), "non-hex chars must reject even at 64-char length");
     }
 
     #[test]
