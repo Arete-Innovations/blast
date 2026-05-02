@@ -268,6 +268,15 @@ ResourceState(
 
 Fields not listed in `fields` are skipped in codegen (reachable via `sql_query` / hand-written models). There is no `raw_rust` field — if the TUI cannot express something, the user writes Rust at the top level of `src/<layer>/<resource>/`.
 
+### Name validation
+
+Resource name + field map keys + relation FK columns + soft_delete column + per-verb `ListOptions.{filterable,sortable,default_sort}` columns + `AuthMode::ScopedTo` field + `WsEvents.trigger_columns` + `TopicScope::ScopedTo` field — every name that flows into a generated Rust identifier — must satisfy:
+
+1. snake_case format: `^[a-z][a-z0-9_]*$`
+2. NOT a Rust strict or reserved keyword (e.g. `type`, `mod`, `fn`, `use`, `match`).
+
+`state::load_resource` runs `ResourceState::validate_names()` after RON parse + upgrader, so a hand-edited primer with `name: "type"` fails loud at load time with a typed `BlastError::Invalid` instead of producing unparseable Rust downstream. The same checks fire in the `blast migration` wizard via `ResourceName::try_new` / `FieldName::try_new`, so wizard-driven names round-trip cleanly through write → read. Single source of truth for both paths in `state/names.rs::validate_ident`.
+
 ### `gen_level` (codegen cut-off)
 
 Linear, monotonic enum controlling how far the codegen pipeline propagates per resource:
