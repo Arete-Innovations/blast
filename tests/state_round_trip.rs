@@ -413,3 +413,149 @@ fn defaults_section_round_trips() {
         other => panic!("expected Defaults variant, got {other:?}"),
     }
 }
+
+fn write_resource_ron(dir: &std::path::Path, file_stem: &str, body: &str) {
+    let resources_dir = dir.join(blast::state::io::RESOURCES_DIR);
+    std::fs::create_dir_all(&resources_dir).expect("mk resources dir");
+    let path = resources_dir.join(format!("{file_stem}.ron"));
+    std::fs::write(&path, body).expect("write resource ron");
+}
+
+#[test]
+fn load_resource_rejects_rust_keyword_resource_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = r#"(
+    schema_version: 3,
+    name: "type",
+    fields: {
+        "id": (
+            sql_type: "int8",
+            variants: [Db, Public],
+            nullable: false,
+            primary_key: true,
+            validators: [],
+        ),
+    },
+    verbs: {},
+    ws_events: None,
+)
+"#;
+    write_resource_ron(dir.path(), "type", body);
+    let err = blast::state::io::load_resource(dir.path(), &ResourceName::new("type")).expect_err("keyword resource name must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("Rust keyword"), "expected keyword diagnostic, got: {msg}");
+    assert!(msg.contains("'type'"), "expected name in diagnostic, got: {msg}");
+}
+
+#[test]
+fn load_resource_rejects_rust_keyword_field_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = r#"(
+    schema_version: 3,
+    name: "widgets",
+    fields: {
+        "mod": (
+            sql_type: "text",
+            variants: [Db, Public],
+            nullable: false,
+            primary_key: false,
+            validators: [],
+        ),
+    },
+    verbs: {},
+    ws_events: None,
+)
+"#;
+    write_resource_ron(dir.path(), "widgets", body);
+    let err = blast::state::io::load_resource(dir.path(), &ResourceName::new("widgets")).expect_err("keyword field name must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("Rust keyword"), "expected keyword diagnostic, got: {msg}");
+    assert!(msg.contains("'mod'"), "expected name in diagnostic, got: {msg}");
+}
+
+#[test]
+fn load_resource_rejects_capital_starting_resource_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = r#"(
+    schema_version: 3,
+    name: "Users",
+    fields: {
+        "id": (
+            sql_type: "int8",
+            variants: [Db, Public],
+            nullable: false,
+            primary_key: true,
+            validators: [],
+        ),
+    },
+    verbs: {},
+    ws_events: None,
+)
+"#;
+    write_resource_ron(dir.path(), "Users", body);
+    let err = blast::state::io::load_resource(dir.path(), &ResourceName::new("Users")).expect_err("non-snake_case must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("snake_case"), "expected format diagnostic, got: {msg}");
+}
+
+#[test]
+fn load_resource_rejects_keyword_in_auth_scope_field() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = r#"(
+    schema_version: 3,
+    name: "widgets",
+    fields: {
+        "id": (
+            sql_type: "int8",
+            variants: [Db, Public],
+            nullable: false,
+            primary_key: true,
+            validators: [],
+        ),
+    },
+    verbs: {
+        Get: (
+            auth: ScopedTo("type"),
+            list_options: None,
+        ),
+    },
+    ws_events: None,
+)
+"#;
+    write_resource_ron(dir.path(), "widgets", body);
+    let err = blast::state::io::load_resource(dir.path(), &ResourceName::new("widgets")).expect_err("keyword in AuthMode::ScopedTo must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("Rust keyword"), "expected keyword diagnostic, got: {msg}");
+}
+
+#[test]
+fn load_resource_accepts_clean_names() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = r#"(
+    schema_version: 3,
+    name: "users",
+    fields: {
+        "id": (
+            sql_type: "int8",
+            variants: [Db, Public],
+            nullable: false,
+            primary_key: true,
+            validators: [],
+        ),
+        "email": (
+            sql_type: "text",
+            variants: [Db, Public],
+            nullable: false,
+            primary_key: false,
+            validators: [],
+        ),
+    },
+    verbs: {},
+    ws_events: None,
+)
+"#;
+    write_resource_ron(dir.path(), "users", body);
+    let loaded = blast::state::io::load_resource(dir.path(), &ResourceName::new("users")).expect("clean names must load");
+    assert_eq!(loaded.name.as_str(), "users");
+    assert!(loaded.fields.contains_key(&FieldName::new("email")));
+}
