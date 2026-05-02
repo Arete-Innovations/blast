@@ -1,6 +1,8 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tui_input::backend::crossterm::EventHandler;
 
+use crate::state::names::FieldName;
+
 use super::{
     emit,
     state::{ColumnSpec, ColumnsFocus, FormFocus, PreviewFocus, Screen, WizardState},
@@ -219,8 +221,8 @@ fn add_draft_column(state: &mut WizardState) {
         state.error = Some("Column name is required.".to_string());
         return;
     }
-    if !is_snake_case(&name) {
-        state.error = Some(format!("Column '{}' must be snake_case.", name));
+    if let Err(e) = FieldName::try_new(name.clone()) {
+        state.error = Some(e.to_string());
         return;
     }
     let ty = match state.current_draft_type() {
@@ -231,17 +233,15 @@ fn add_draft_column(state: &mut WizardState) {
         }
     };
     let validator = state.draft.current_validator();
+    let public_visible = if super::state::looks_sensitive(&name) { false } else { state.draft.public_visible };
     state.columns.push(ColumnSpec {
         name: name.clone(),
         ty,
         not_null: state.draft.not_null,
-        public_visible: state.draft.public_visible,
+        public_visible,
         validator,
     });
     state.draft = super::state::ColumnDraft::default();
-    if super::state::looks_sensitive(&name) {
-        state.draft.public_visible = false;
-    }
     state.columns_focus = ColumnsFocus::DraftName;
 }
 
@@ -261,16 +261,4 @@ fn handle_preview(key: &KeyEvent, state: &mut WizardState) -> Step {
         },
         _other => Step::Stay,
     }
-}
-
-fn is_snake_case(s: &str) -> bool {
-    let trimmed = s.trim();
-    let first = match trimmed.chars().next() {
-        Some(c) => c,
-        None => return false,
-    };
-    if !first.is_ascii_lowercase() {
-        return false;
-    }
-    trimmed.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
