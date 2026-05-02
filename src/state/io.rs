@@ -144,3 +144,69 @@ fn write_atomic(target: &Path, bytes: &[u8]) -> BlastResult<()> {
     guard.committed = true;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temp_file_guard_drop_without_commit_removes_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("orphan.tmp");
+        fs::write(&path, b"partial bytes").expect("seed");
+        assert!(path.exists());
+
+        {
+            let _g = TempFileGuard { path: path.clone(), committed: false };
+        } // guard dropped here
+
+        assert!(!path.exists(), "uncommitted guard must remove the temp file on drop");
+    }
+
+    #[test]
+    fn temp_file_guard_drop_with_commit_preserves_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("kept.tmp");
+        fs::write(&path, b"survived").expect("seed");
+
+        {
+            let mut g = TempFileGuard { path: path.clone(), committed: false };
+            g.committed = true;
+        } // guard dropped here, but committed
+
+        assert!(path.exists(), "committed guard must NOT remove the file");
+        let body = fs::read(&path).expect("read");
+        assert_eq!(body, b"survived");
+    }
+
+    #[test]
+    fn temp_file_guard_drop_on_missing_path_is_noop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("never_existed.tmp");
+        assert!(!path.exists());
+
+        {
+            let _g = TempFileGuard { path: path.clone(), committed: false };
+        }
+
+        assert!(!path.exists(), "drop on missing path must not panic or create");
+    }
+
+    #[test]
+    fn write_atomic_round_trip_writes_then_reads_same_bytes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("nested").join("file.ron");
+        let payload = b"ResourceState(schema_version: 3)\n";
+
+        write_atomic(&target, payload).expect("write");
+        assert!(target.exists());
+
+        let read = fs::read(&target).expect("read");
+        assert_eq!(read, payload);
+
+        let parent = target.parent().expect("parent");
+        let entries: Vec<_> = fs::read_dir(parent).expect("read_dir").flatten().map(|e| e.file_name().into_string().unwrap_or_default()).collect();
+        let leftovers: Vec<&String> = entries.iter().filter(|n| n.starts_with('.')).collect();
+        assert!(leftovers.is_empty(), "no .tmp left after success: {entries:?}");
+    }
+}
