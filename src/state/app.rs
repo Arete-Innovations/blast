@@ -332,10 +332,6 @@ mod tests {
 
     fn make_v3_state() -> AppState {
         let mut state = AppState::new();
-        // We want a synthetic v3-shaped state for upgrade tests; the
-        // constructor uses the live APP_SCHEMA_VERSION which is now v4,
-        // so override to v3 explicitly.
-        state.schema_version = 3;
         let nav = NavConfig {
             sections: vec![
                 Section {
