@@ -262,3 +262,124 @@ fn handle_preview(key: &KeyEvent, state: &mut WizardState) -> Step {
         _other => Step::Stay,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use tui_input::Input;
+
+    use super::add_draft_column;
+    use super::super::state::{ColumnType, WizardState};
+
+    fn fresh_state() -> WizardState {
+        WizardState::new(PathBuf::from("/tmp/blast-test"), vec![ColumnType::Text])
+    }
+
+    fn type_draft(state: &mut WizardState, name: &str) {
+        state.draft.name = Input::default().with_value(name.to_string());
+    }
+
+    #[test]
+    fn add_draft_column_rejects_rust_keyword() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "type");
+        add_draft_column(&mut state);
+        assert!(state.columns.is_empty(), "keyword name should not be pushed");
+        let err = state.error.expect("error must be set on keyword reject");
+        assert!(err.contains("keyword") || err.contains("reserved"), "error should mention keyword: {err}");
+    }
+
+    #[test]
+    fn add_draft_column_rejects_capital_starting_name() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "FirstName");
+        add_draft_column(&mut state);
+        assert!(state.columns.is_empty(), "non-snake_case must not be pushed");
+        assert!(state.error.is_some(), "error must be set on bad ident");
+    }
+
+    #[test]
+    fn add_draft_column_rejects_empty_name() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "   ");
+        add_draft_column(&mut state);
+        assert!(state.columns.is_empty());
+        assert_eq!(state.error.as_deref(), Some("Column name is required."));
+    }
+
+    #[test]
+    fn add_draft_column_forces_password_hash_public_visible_false() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "password_hash");
+        state.draft.public_visible = true;
+        add_draft_column(&mut state);
+        assert_eq!(state.columns.len(), 1, "clean name should push");
+        assert_eq!(state.error, None);
+        assert_eq!(
+            state.columns[0].public_visible, false,
+            "looks_sensitive must override user toggle for password_hash"
+        );
+    }
+
+    #[test]
+    fn add_draft_column_forces_secret_suffix_public_visible_false() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "api_secret");
+        state.draft.public_visible = true;
+        add_draft_column(&mut state);
+        assert_eq!(state.columns.len(), 1);
+        assert_eq!(state.columns[0].public_visible, false, "_secret suffix must hard-force false");
+    }
+
+    #[test]
+    fn add_draft_column_forces_token_suffix_public_visible_false() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "session_token");
+        state.draft.public_visible = true;
+        add_draft_column(&mut state);
+        assert_eq!(state.columns.len(), 1);
+        assert_eq!(state.columns[0].public_visible, false, "_token suffix must hard-force false");
+    }
+
+    #[test]
+    fn add_draft_column_forces_key_suffix_public_visible_false() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "api_key");
+        state.draft.public_visible = true;
+        add_draft_column(&mut state);
+        assert_eq!(state.columns.len(), 1);
+        assert_eq!(state.columns[0].public_visible, false, "_key suffix must hard-force false");
+    }
+
+    #[test]
+    fn add_draft_column_clean_name_honors_user_toggle_true() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "email");
+        state.draft.public_visible = true;
+        add_draft_column(&mut state);
+        assert_eq!(state.columns.len(), 1);
+        assert_eq!(state.columns[0].public_visible, true, "non-sensitive name must pass the toggle through");
+    }
+
+    #[test]
+    fn add_draft_column_clean_name_default_visible_false() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "first_name");
+        add_draft_column(&mut state);
+        assert_eq!(state.columns.len(), 1);
+        assert_eq!(state.columns[0].public_visible, false, "ColumnDraft default is opt-in (false)");
+    }
+
+    #[test]
+    fn add_draft_column_resets_draft_after_push() {
+        let mut state = fresh_state();
+        type_draft(&mut state, "name");
+        state.draft.public_visible = true;
+        state.draft.not_null = false;
+        add_draft_column(&mut state);
+        assert_eq!(state.columns.len(), 1);
+        assert_eq!(state.draft.name.value(), "", "draft name must reset");
+        assert_eq!(state.draft.public_visible, false, "draft public_visible must reset to default");
+        assert_eq!(state.draft.not_null, true, "draft not_null must reset to default");
+    }
+}
