@@ -7,6 +7,10 @@ edition = "2021"
 name = "e2e"
 path = "src/main.rs"
 
+[[bin]]
+name = "shots"
+path = "src/bin/shots.rs"
+
 [dependencies]
 fantoccini = "0.21"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time"] }

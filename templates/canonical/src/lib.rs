@@ -1,4 +1,4 @@
-#![recursion_limit = "512"]
+#![recursion_limit = "2048"]
 
 pub mod meltdown;
 pub mod structs;

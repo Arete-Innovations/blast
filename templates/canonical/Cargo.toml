@@ -90,7 +90,7 @@ end2end-dir = "e2e"
 watch-additional-files = ["style/generated"]
 
 [package.metadata.stylance]
-output_dir = "./style/generated/"
+output_file = "./style/generated/stylance.scss"
 folders = ["./src/"]
 extensions = [".module.scss"]
 hash_len = 7

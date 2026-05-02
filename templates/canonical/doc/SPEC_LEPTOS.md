@@ -340,6 +340,20 @@ Hand-written and codegen'd pages use the **same primitive**.
 
 Layout owns spacing. PageShell does not accept `padding`/`margin`/`gap`/`width` props.
 
+For the chrome of authed app pages (sidebar + topbar) wrap children in `<AppShell title=...>` *inside* `<PageShell layout=PageLayout::Bleed>`. For unauthed auth flows (login/register) wrap in `<AuthCard title=...>` inside the same Bleed shell. PageShell stays the page-root contract that LEPTOS:4 enforces; AppShell/AuthCard layer chrome on top.
+
+```rust
+view! {
+    <AuthGuard mode=AuthGuardMode::Required>
+        <PageShell layout=PageLayout::Bleed>
+            <AppShell title="Dashboard".to_string()>
+                ...
+            </AppShell>
+        </PageShell>
+    </AuthGuard>
+}
+```
+
 ## Vendored components
 
 User-owned, hand-editable components shipped with every scaffold under `src/transport/leptos/components/`. Two-tier ownership applies — Blast never touches them after scaffold. Fork-by-default.
@@ -393,6 +407,16 @@ Enum types (`DateFormat`, `BoolVariant`, `BadgeColor`, `Currency`) live in `stru
 | `<FieldError message>` | no | Inline red error under an input. |
 | `<HelpText>{children}` | no | Muted hint text. |
 | `<InputGroup prefix suffix>{children}` | no | Wraps `<input>` with optional prefix/suffix. |
+
+### Buttons + page shells — `components/`
+
+| Component | Purpose |
+|-----------|---------|
+| `<Button kind kind_attr full compact disabled>{children}` | Native `<button>` with kind variants (`Primary`/`Secondary`/`Danger`/`Ghost` via `ButtonKind`). `kind_attr` sets `type=` (default `"button"`, use `"submit"` inside forms). |
+| `<LinkButton href kind full compact>{children}` | Same shape as `Button` but renders an `<a>`. Use for nav-style triggers (Sign out, Get started). |
+| `<AppShell title>{children}` | Sidebar (with branded header + generated `<AppNav/>`) + topbar (title + user chip + dark-mode toggle + sign out) + content slot. Wrap authed pages in this. Page must still wrap in `<PageShell layout=PageLayout::Bleed>` (LEPTOS:4). |
+| `<AuthCard title lede>{children}` | Centered card with brand kicker for login/register/forgot. Page must still wrap in `<PageShell layout=PageLayout::Bleed>`. |
+| `<AuthCardAlt>{children}` | Footer line under an `AuthCard` form ("Already have an account? Sign in"). |
 
 ### Toast helpers — `signals/toast.rs`
 

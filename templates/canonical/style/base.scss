@@ -42,49 +42,63 @@ button:disabled {
     opacity: 0.6;
 }
 
-// Global nav progress bar — driven by `<NavProgress/>` reading the NavStore
-// signal. Three visual states (Idle / Pending / Settled) drive width +
-// opacity via class swap. Lives in base.scss because LEPTOS:1 bans inline
-// `style=` and LEPTOS:3 bans raw px on transport/leptos/.
-.nav-progress {
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 0.125rem;
-    background: var(--app-color-brand);
-    z-index: 9999;
-    pointer-events: none;
-    transform-origin: left center;
+// Generated AppNav lives at transport/leptos/components/generated/nav/app_nav.rs.
+// It emits BEM-y class names (.app-nav, .app-nav__section, etc.). Style here
+// because codegen output never sees stylance modules.
+.app-nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-md);
 }
 
-.nav-progress--idle {
-    display: none;
+.app-nav__section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--app-space-xs);
 }
 
-.nav-progress--pending {
-    width: 100%;
-    opacity: 1;
-    animation: nav-progress-fill 0.5s ease-out forwards, nav-progress-overrun 1s linear 0.5s infinite;
+.app-nav__heading {
+    margin: 0;
+    font-size: var(--app-fs-2xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--app-color-fg-muted);
+    padding: 0 var(--app-space-sm);
 }
 
-.nav-progress--settled {
-    width: 100%;
-    transform: scaleX(1);
-    opacity: 0;
-    transition: opacity 0.2s ease-out;
+.app-nav__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
 }
 
-// Phase 1: fill 0 → 100% over the 500ms budget.
-@keyframes nav-progress-fill {
-    from { transform: scaleX(0); }
-    to { transform: scaleX(1); }
+.app-nav__item {
+    margin: 0;
 }
 
-// Phase 2: budget exceeded — pulse the bar to signal indeterminate progress
-// without committing to a known completion time. Loops until the route
-// settles and the class flips to `--settled`.
-@keyframes nav-progress-overrun {
-    0%   { opacity: 1; }
-    50%  { opacity: 0.4; }
-    100% { opacity: 1; }
+.app-nav__link {
+    display: block;
+    padding: var(--app-space-xs) var(--app-space-sm);
+    font-size: var(--app-fs-sm);
+    color: var(--app-color-fg-muted);
+    text-decoration: none;
+    border-radius: var(--app-radius-sm);
+    border-left: 0.125rem solid transparent;
+}
+
+.app-nav__link:hover {
+    color: var(--app-color-fg);
+    background: color-mix(in oklch, var(--app-color-brand) 6%, transparent);
+    border-left-color: var(--app-color-brand);
+}
+
+.app-nav__link[aria-current="page"] {
+    color: var(--app-color-brand);
+    background: color-mix(in oklch, var(--app-color-brand) 10%, transparent);
+    border-left-color: var(--app-color-brand);
+    font-weight: 600;
 }

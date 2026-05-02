@@ -199,7 +199,7 @@ If you find yourself adding a hardcoded user-facing string to the FE, a fallback
 | WebSocket multiplexer + pub/sub | `doc/SPEC_RELAY.md` |
 | Scheduled jobs | `doc/SPEC_FUSES.md` |
 | Auth tokens / session middleware | `doc/SPEC_SESSIONS.md` |
-| Leptos UI / SSR + hydrate / data fetch / forms / vendored cells + widgets / lint family / render service builders | `doc/SPEC_LEPTOS.md` |
+| Leptos UI / SSR + hydrate / data fetch / forms / vendored cells + widgets / `AppShell` + `AuthCard` + `Button` / lint family / render service builders | `doc/SPEC_LEPTOS.md` |
 | CSS tokens, stylance, OKLCH, 4K form-control scaling | `doc/SPEC_CSS.md` |
 | `cata_log!`, tower span, JSON logs | `doc/SPEC_LOGGING.md` |
 | Single-source validator codegen | `doc/SPEC_VALIDATORS.md` |
