@@ -3,6 +3,7 @@
 //! Pipeline order (post-phase-2 leptos-shaped):
 //!     schema → enums → structs → validators → models → routines → flows
 //!            → http_routes (REST /api/*) → leptos_forms → leptos_pages
+//!            → auth (fixed-shape login/register/logout/me)
 //!            → leptos_data → leptos_tables → app_routes → leptos_nav
 //!            → env_example
 //!
@@ -14,6 +15,10 @@
 //! overwrites those placeholders with real isomorphic helpers
 //! (cfg-branched: SSR calls flow direct, wasm calls `/api/*` via the
 //! emitted `transport/leptos/api_client.rs`).
+//!
+//! The auth pass runs after the resource-driven passes so its idempotent
+//! barrel-extension step sees the per-resource entries already written
+//! and only appends the framework-fixed auth/users entries.
 
 use std::path::{Path, PathBuf};
 
@@ -50,6 +55,7 @@ const STEP_HTTP_ROUTES: &str = "http routes generation";
 const STEP_VALIDATORS: &str = "validators generation";
 const STEP_LEPTOS_PAGES: &str = "leptos pages generation";
 const STEP_LEPTOS_FORMS: &str = "leptos forms generation";
+const STEP_AUTH: &str = "auth generation";
 const STEP_LEPTOS_DATA: &str = "leptos data generation";
 const STEP_LEPTOS_TABLES: &str = "leptos tables generation";
 const STEP_APP_ROUTES: &str = "leptos app routes generation";
@@ -80,6 +86,7 @@ pub fn run(args: Args, config: &mut Config, sink: &mut dyn Sink, progress: &mut 
     run_validators_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_forms_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_pages_step(&args.project_root, sink, progress, &mut outcome)?;
+    run_auth_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_data_step(&args.project_root, sink, progress, &mut outcome)?;
     run_leptos_tables_step(&args.project_root, sink, progress, &mut outcome)?;
     run_app_routes_step(&args.project_root, sink, progress, &mut outcome)?;
@@ -347,6 +354,21 @@ fn run_leptos_data_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &
         }
         Err(err) => {
             sink.error(format!("{}: {}", STEP_LEPTOS_DATA, err));
+            Err(err)
+        }
+    }
+}
+
+fn run_auth_step(project_root: &PathBuf, sink: &mut dyn Sink, progress: &mut dyn Progress, outcome: &mut Outcome) -> BlastResult<()> {
+    match codegen::auth_emitter::run(project_root, sink, progress) {
+        Ok(report) => {
+            outcome.files_written += report.written.len();
+            outcome.files_skipped += report.skipped.len();
+            outcome.steps_run += 1;
+            Ok(())
+        }
+        Err(err) => {
+            sink.error(format!("{}: {}", STEP_AUTH, err));
             Err(err)
         }
     }
