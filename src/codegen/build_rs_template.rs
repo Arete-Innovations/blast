@@ -69,9 +69,16 @@ mod tests {
         let src = render_template();
         assert!(src.contains("src/structs/generated"));
         assert!(src.contains("src/models/generated"));
+        assert!(src.contains("src/routines/generated"));
         assert!(src.contains("src/flows/generated"));
         assert!(src.contains("src/transport/http/generated"));
         assert!(src.contains("src/transport/ws/generated"));
+        assert!(src.contains("src/transport/leptos/components/generated"));
+        assert!(src.contains("src/transport/leptos/data/generated"));
+        assert!(src.contains("src/transport/leptos/nav/generated"));
+        assert!(src.contains("src/transport/leptos/pages/generated"));
+        assert!(src.contains("src/transport/leptos/routes/generated"));
+        assert!(src.contains("src/transport/leptos/validators/generated"));
         assert!(src.contains("storage/blast/state/"));
     }
 
@@ -132,7 +139,20 @@ mod tests {
     }
 
     fn simulate_check(root: &std::path::Path) -> Result<(), String> {
-        let watched_dirs: &[&str] = &["src/structs/generated", "src/models/generated", "src/flows/generated", "src/transport/http/generated", "src/transport/ws/generated"];
+        let watched_dirs: &[&str] = &[
+            "src/structs/generated",
+            "src/models/generated",
+            "src/routines/generated",
+            "src/flows/generated",
+            "src/transport/http/generated",
+            "src/transport/ws/generated",
+            "src/transport/leptos/components/generated",
+            "src/transport/leptos/data/generated",
+            "src/transport/leptos/nav/generated",
+            "src/transport/leptos/pages/generated",
+            "src/transport/leptos/routes/generated",
+            "src/transport/leptos/validators/generated",
+        ];
 
         for rel_dir in watched_dirs {
             let dir_path = root.join(rel_dir);
