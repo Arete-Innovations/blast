@@ -4,11 +4,11 @@ How Blast generates code post-Leptos migration. Inputs, outputs, state-hash mark
 
 ## Source-of-truth Model
 
-Apps DO NOT depend on `catalyst` as a Cargo dep. There is no `catalyst = { path = ... }` or `catalyst = { git = ... }` line anywhere. The framework source tree lives in `blast/templates/canonical/` and gets baked into the blast binary at compile time via `include_dir!()`. When `blast new` scaffolds a project it walks that baked tree, substitutes `{{project_name}}` placeholders, and writes a complete framework checkout to the project root. Every scaffolded app is its own fork-by-default copy of the framework.
+Apps DO NOT depend on `catalyst` as a Cargo dep. There is no `catalyst = { path = ... }` or `catalyst = { git = ... }` line anywhere. Instead, `blast new` `git clone`s the catalyst repo (`https://github.com/ZmoleCristian/catalyst` by default, or a local path via `--dev` + `BLAST_CATALYST_DEV_PATH`) into the project root. After clone, blast applies a 3-line Cargo.toml substitution (`[package].name`, `[[bin]].name`, `output-name`) but leaves `[lib].name = "catalyst"` intact. The cloned `origin` remote is renamed to `upstream`. Every scaffolded app is its own complete framework checkout with full git history.
 
-`templates/canonical/` is the single source of truth. The published `catalyst/` repo is an OUTPUT artifact regenerated from `blast new` at publish time; never edit it by hand.
+**Catalyst is the single source of truth.** Edit catalyst directly; commits push to its public repo. blast no longer bundles a template tree.
 
-**Update model (end-user-time):** there is no `vendor-update` command. Framework upgrades are user-driven via `git diff` against upstream `blast/templates/canonical/` — user merges what they want into their fork. Each scaffolded app is a complete framework checkout, and edits stick on the user's checkout indefinitely.
+**Update model (end-user-time):** the user runs `git pull upstream master` from their spawned project. Conflicts only on the 3 Cargo.toml lines they substituted (`[package].name`, `[[bin]].name`, `output-name`). All other files (src/, tests/, doc/, build.rs, deps) merge cleanly because tests use the stable `[lib].name = "catalyst"` anchor and src/ uses `crate::` everywhere.
 
 ## Inputs
 
@@ -212,7 +212,7 @@ Wire-in points:
 - `src/transport/http/generated/<r>.rs` — create handler calls `validate_<r>_insertable(&input)?` BEFORE `flow::create::run(...)`. Update handler calls `validate_<r>_patch(&patch)?` BEFORE `flow::update::run(...)`. Order tested in `http_routes::tests::create_handler_calls_validator_before_flow`.
 - `src/transport/leptos/components/generated/forms/<r>/create_form.rs` — `on:submit` handler parses signal values into `<R>Insertable` (synchronously, in an IIFE returning `Result<<R>Insertable, MeltDown>`), then `validate_<r>_insertable(&parsed)` (synchronously, returns `Result<(), MeltDown>`), THEN `spawn_local(async move { do_<r>_create(parsed).await; ... })`. NOT `Action::new` — that pattern deadlocked the wasm event loop. Cuts a server roundtrip on locally-detectable bad input.
 
-Full spec: `templates/canonical/doc/SPEC_VALIDATORS.md`.
+Full spec: `catalyst/doc/SPEC_VALIDATORS.md`.
 
 ### Misc output
 
@@ -237,7 +237,7 @@ The pre-leptos pipeline emitted to a `frontend/` directory that no longer exists
 - **Governor plugin shim** (`frontend/scripts/governor-plugin.js`) and `.rule_violations_whitelist`. Governor is gone — replaced by a planned `LEPTOS:N` rule family in canonical's `build.rs`.
 - **HTML-marker variant of `header.rs`**. Marker is now Rust-only (`// AUTO-GENERATED ...`).
 
-The entire `frontend/` directory is gone from `templates/canonical/`. No node, no npm, no Vite, no PrimeVue, no Tailwind.
+The entire `frontend/` directory is gone from `catalyst/`. No node, no npm, no Vite, no PrimeVue, no Tailwind.
 
 ## Two-tier Ownership
 
@@ -248,7 +248,7 @@ Backend and Leptos UI follow the same two-tier model.
 | `<layer>/generated/` | Blast | Rewritten wholesale on `blast gen`; never hand-edit |
 | `<layer>/<resource>/` (top-level subdirs) | User | Never read, touched, deleted, or renamed by Blast |
 
-There is no `custom/` subdir, no third "vendored framework" bucket, and no `vendor-update` command. The canonical template ships hand-written `<layer>/auth/`, `<layer>/sessions/`, etc. pre-populated at scaffold time; once scaffolded those files are user-owned forever. Framework upgrades come via `git diff` against upstream `blast/templates/canonical/`.
+There is no `custom/` subdir, no third "vendored framework" bucket, and no `vendor-update` command. The canonical template ships hand-written `<layer>/auth/`, `<layer>/sessions/`, etc. pre-populated at scaffold time; once scaffolded those files are user-owned forever. Framework upgrades come via `git diff` against upstream `catablast/catalyst/`.
 
 ### Backend layout
 
@@ -311,7 +311,7 @@ src/transport/leptos/
 - Any hand-edit to a file under `generated/` gets stomped next regen
 - Top-level user-owned subdirs are **never read, touched, deleted, or renamed** by Blast
 - `mod.rs` at each Rust layer re-exports both; Blast regenerates only the generated side
-- Vendored framework files are written once by `blast new`; user pulls upstream changes via git diff against upstream `blast/templates/canonical/`
+- Vendored framework files are written once by `blast new`; user pulls upstream changes via git diff against upstream `catablast/catalyst/`
 
 ## Determinism
 
@@ -355,7 +355,7 @@ Blast reads: `storage/blast/state/*.ron` + `resources/*.ron` + `schema.rs`. Noth
 - Everything under `src/transport/leptos/{components,pages,data,routes}/generated/` (pending real emitters)
 - `.env.example`
 - `src/database/schema.rs` (indirectly, by invoking Diesel CLI on `blast gen schema`)
-- All vendored framework files written by `blast new` from `templates/canonical/` (one-shot at scaffold time)
+- All vendored framework files written by `blast new` from `catalyst/` (one-shot at scaffold time)
 
 ## What Blast DOES NOT Write
 
@@ -392,8 +392,8 @@ When the user renames a resource (e.g. `User` → `Account`) via the TUI wizard,
 
 - `SPEC_STATE.md` — state file format, schema versioning, atomic write, upgrader contract
 - `SPEC_BLAST_COMMANDS.md` — CLI surface, `blast gen all` step list
-- `templates/canonical/doc/SPEC_LEPTOS.md` — Leptos UI integration, where pages and forms live
-- `templates/canonical/doc/SPEC_VALIDATORS.md` — single-source validator codegen
-- `templates/canonical/doc/SPEC_CSS.md` — scss + stylance pipeline (user-owned, not codegen)
-- `templates/canonical/doc/SPEC_PRIMER.md` — per-resource RON shape
-- `templates/canonical/doc/SPEC_ARCHITECTURE.md` — where generated files land in the layer graph
+- `catalyst/doc/SPEC_LEPTOS.md` — Leptos UI integration, where pages and forms live
+- `catalyst/doc/SPEC_VALIDATORS.md` — single-source validator codegen
+- `catalyst/doc/SPEC_CSS.md` — scss + stylance pipeline (user-owned, not codegen)
+- `catalyst/doc/SPEC_PRIMER.md` — per-resource RON shape
+- `catalyst/doc/SPEC_ARCHITECTURE.md` — where generated files land in the layer graph

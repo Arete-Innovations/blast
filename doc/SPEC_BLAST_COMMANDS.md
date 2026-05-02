@@ -5,7 +5,7 @@ Full command surface of the `blast` CLI. TUI flows, dashboard, and interactive m
 ## Top-Level Commands
 
 ```
-blast new <name>                 # scaffold a new Catablast app from vendored canonical
+blast new <name>                 # scaffold via git clone catalyst + 3-line Cargo.toml sub
 blast init [<name>]              # in-place scaffolder (cwd or <name>/)
 
 blast migration [name]           # create a new Diesel migration skeleton
@@ -212,22 +212,23 @@ Progress shown via `indicatif` progress bars. File log at `storage/blast/init.lo
 
 ## `blast new <name>`
 
-Scaffolds a fresh Catablast app from the **vendored canonical snapshot** baked into the Blast binary at compile time via `include_dir!` from `blast/templates/canonical/`. Does not clone a remote repo. Does not resolve a `catalyst` Cargo dep — there is none. Each scaffolded app is a complete, self-contained framework copy.
+Scaffolds a fresh Catablast app by `git clone`ing the catalyst framework (default: `https://github.com/ZmoleCristian/catalyst` master, override with `BLAST_CATALYST_DEV_PATH` + `--dev` for local-path clone). The cloned `origin` is renamed to `upstream` so the user can add their own `origin` remote later. blast does NOT bake any template tree.
 
 ```
-blast new <name> [--db-url <url>] [--no-test-db] [--force]
+blast new <name> [--dev] [--db-url <url>] [--no-test-db] [--force]
 ```
 
 | Flag | Meaning |
 |------|---------|
+| `--dev` | Clone from local catalyst path in `BLAST_CATALYST_DEV_PATH` env var instead of the public git URL. Errors if the env var is unset. |
 | `--db-url <url>` | Postgres URL for the new project. If omitted, prompts interactively. |
 | `--no-test-db` | Skip creation of the `<dbname>_test` database and `.env.test` file. |
 | `--force` | Drop and recreate target databases if they already contain tables. |
-| `--no-warmup` | Skip `npm install` + `npm run build` in `frontend/`. Still execs into the dashboard at the new project root afterwards (use `BLAST_NO_TUI_FOR_TESTS=1` to also suppress the dashboard exec — internal-only escape hatch for verification scripts). |
+| `--no-warmup` | Skip `cargo build` warmup. Still execs into the dashboard at the new project root afterwards (use `BLAST_NO_TUI_FOR_TESTS=1` to also suppress the dashboard exec — internal-only escape hatch for verification scripts). |
 
-Scaffold walks the vendored tree, substitutes `{{project_name}}` in both file paths and file bodies, and writes everything to `./<name>/`.
+After clone, scaffold applies a 3-line Cargo.toml substitution (`[package].name`, `[[bin]].name`, `[package.metadata.leptos] output-name`) replacing `catalyst` with `<project_name>`. **`[lib].name = "catalyst"` STAYS** — anchors `tests/*.rs use catalyst::*` so source/tests are byte-identical with upstream catalyst across all forks. `git pull upstream master` from a spawned project only conflicts on those 3 Cargo.toml lines.
 
-Total emit: ~52 files. Full implementation in `src/project/{mod, scaffold, templates}.rs`.
+Full implementation in `src/project/{mod, scaffold, templates, preflight, post_install, db_bootstrap}.rs`.
 
 NOT done by `blast new`:
 - Run initial migrations (`blast init` does that as a second step)
