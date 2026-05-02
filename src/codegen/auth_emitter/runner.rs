@@ -30,6 +30,14 @@ use crate::{
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
 };
 
+/// True when the project ships a `users.ron` primer — in that case the
+/// resource-driven structs/models emitters own `users.rs` and the auth
+/// emitter must not stomp them.
+fn has_users_primer(project_root: &Path) -> bool {
+    let primer = project_root.join("storage").join("blast").join("state").join("resources").join("users.ron");
+    primer.is_file()
+}
+
 #[derive(Debug, Default)]
 pub struct EmitReport {
     pub written: Vec<PathBuf>,
@@ -67,7 +75,9 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
 
 fn emit_structs(project_root: &Path, marker: &str, report: &mut EmitReport) -> BlastResult<()> {
     let structs_gen = project_root.join("src").join("structs").join("generated");
-    write_file(&structs_gen.join("users.rs"), &format!("{marker}{}", templates::STRUCTS_USERS), report)?;
+    if !has_users_primer(project_root) {
+        write_file(&structs_gen.join("users.rs"), &format!("{marker}{}", templates::STRUCTS_USERS), report)?;
+    }
 
     let auth_dir = structs_gen.join("auth");
     write_file(&auth_dir.join("login.rs"), &format!("{marker}{}", templates::STRUCTS_AUTH_LOGIN), report)?;
@@ -77,6 +87,9 @@ fn emit_structs(project_root: &Path, marker: &str, report: &mut EmitReport) -> B
 }
 
 fn emit_models(project_root: &Path, marker: &str, report: &mut EmitReport) -> BlastResult<()> {
+    if has_users_primer(project_root) {
+        return Ok(());
+    }
     let models_gen = project_root.join("src").join("models").join("generated");
     write_file(&models_gen.join("users.rs"), &format!("{marker}{}", templates::MODELS_USERS), report)?;
     Ok(())
@@ -122,26 +135,39 @@ fn emit_leptos_pages(project_root: &Path, marker: &str, report: &mut EmitReport)
 // ── barrel extensions ─────────────────────────────────────────────────────
 
 /// Required entries in `src/structs/generated/mod.rs` (post-merge):
-/// `pub mod auth;`, `pub mod enums;`, `pub mod users;`,
-/// `pub use enums::UserRole;`, `pub use users::{NewUser, User, UserPublic};`.
+/// `pub mod auth;`, `pub mod enums;`, plus — when no user-supplied
+/// `users.ron` primer exists — `pub mod users;`, `pub use enums::UserRole;`,
+/// and `pub use users::{NewUser, User, UserPublic};`.
 ///
 /// The `validators` line is owned by the validators pass
 /// (`ensure_parent_structs_barrel_includes_validators`). The enums pass
 /// emits its own `enums/mod.rs` but does NOT touch the parent barrel —
 /// auth depends on `crate::structs::generated::UserRole` so the parent
-/// barrel must `pub mod enums; pub use enums::UserRole;`. Conditional
-/// existence of `enums/mod.rs` is irrelevant here because catalyst's
-/// `users` table requires `UserRole` unconditionally.
+/// barrel must `pub mod enums; pub use enums::UserRole;`. When a primer
+/// drives `users.rs` the user's fields and projection types don't have a
+/// `NewUser`, so the canonical re-exports get skipped to avoid an
+/// undefined-name compile failure.
 fn extend_structs_barrel(project_root: &Path, marker: &str, report: &mut EmitReport) -> BlastResult<()> {
     let path = project_root.join("src").join("structs").join("generated").join("mod.rs");
-    let mut entries = vec!["pub mod auth;", "pub mod enums;", "pub mod users;", "pub use enums::UserRole;", "pub use users::{NewUser, User, UserPublic};"];
+    let mut entries: Vec<&str> = vec!["pub mod auth;", "pub mod enums;"];
+    if !has_users_primer(project_root) {
+        entries.push("pub mod users;");
+        entries.push("pub use enums::UserRole;");
+        entries.push("pub use users::{NewUser, User, UserPublic};");
+    }
     entries.sort();
     append_lines_idempotent(&path, marker, &entries, report)
 }
 
-/// `models/generated/mod.rs` needs `pub mod users;`. Other entries belong
-/// to the resource-driven models pass.
+/// `models/generated/mod.rs` needs `pub mod users;` only when the auth
+/// emitter is the one writing `users.rs`. If a `users.ron` primer exists
+/// the resource-driven models pass already wrote `pub mod users;` to the
+/// barrel before us — substring check would short-circuit, so this is
+/// idempotent either way; the explicit guard keeps intent clear.
 fn extend_models_barrel(project_root: &Path, marker: &str, report: &mut EmitReport) -> BlastResult<()> {
+    if has_users_primer(project_root) {
+        return Ok(());
+    }
     let path = project_root.join("src").join("models").join("generated").join("mod.rs");
     append_lines_idempotent(&path, marker, &["pub mod users;"], report)
 }
@@ -387,6 +413,30 @@ mod tests {
         assert!(body.contains("pub mod users;"), "structs barrel must declare users: {body}");
         assert!(body.contains("pub use users::{NewUser, User, UserPublic};"), "structs barrel must re-export user types: {body}");
         assert!(body.contains("pub use enums::UserRole;"), "structs barrel must re-export UserRole: {body}");
+    }
+
+    #[test]
+    fn skips_users_files_when_primer_present() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        seed_app_state(root);
+
+        let resources_dir = root.join("storage/blast/state/resources");
+        stdfs::create_dir_all(&resources_dir).expect("mkdir resources");
+        stdfs::write(resources_dir.join("users.ron"), "(stub)\n").expect("seed users primer");
+
+        let mut sink = NullSink;
+        let mut progress = NullProgress;
+        run(root, &mut sink, &mut progress).expect("ok");
+
+        let users_struct = root.join("src/structs/generated/users.rs");
+        let users_model = root.join("src/models/generated/users.rs");
+        assert!(!users_struct.exists(), "users.rs must NOT be auth-emitted when primer exists: {}", users_struct.display());
+        assert!(!users_model.exists(), "models/users.rs must NOT be auth-emitted when primer exists: {}", users_model.display());
+
+        let structs_barrel = stdfs::read_to_string(root.join("src/structs/generated/mod.rs")).expect("read structs barrel");
+        assert!(structs_barrel.contains("pub mod auth;"), "auth still required: {structs_barrel}");
+        assert!(!structs_barrel.contains("pub use users::{NewUser, User, UserPublic};"), "must not re-export NewUser when primer drives users: {structs_barrel}");
     }
 
     #[test]
