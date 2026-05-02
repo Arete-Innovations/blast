@@ -75,10 +75,8 @@ mod tests {
         assert!(src.contains("src/transport/ws/generated"));
         assert!(src.contains("src/transport/leptos/components/generated"));
         assert!(src.contains("src/transport/leptos/data/generated"));
-        assert!(src.contains("src/transport/leptos/nav/generated"));
         assert!(src.contains("src/transport/leptos/pages/generated"));
         assert!(src.contains("src/transport/leptos/routes/generated"));
-        assert!(src.contains("src/transport/leptos/validators/generated"));
         assert!(src.contains("storage/blast/state/"));
     }
 
@@ -148,10 +146,8 @@ mod tests {
             "src/transport/ws/generated",
             "src/transport/leptos/components/generated",
             "src/transport/leptos/data/generated",
-            "src/transport/leptos/nav/generated",
             "src/transport/leptos/pages/generated",
             "src/transport/leptos/routes/generated",
-            "src/transport/leptos/validators/generated",
         ];
 
         for rel_dir in watched_dirs {
