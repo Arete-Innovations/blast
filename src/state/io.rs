@@ -44,6 +44,7 @@ pub fn load_resource(state_dir: &Path, name: &ResourceName) -> BlastResult<Resou
     let mut value: ResourceState = ron::from_str(&upgraded)?;
     upgraders::upgrade_resource(&mut value)?;
     value.canonicalize();
+    value.validate_names()?;
     Ok(value)
 }
 

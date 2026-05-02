@@ -256,9 +256,7 @@ pub fn validate_form(state: &WizardState) -> BlastResult<String> {
     if table.is_empty() {
         return Err(BlastError::Invalid("Table name is required.".to_string()));
     }
-    if !is_snake_case(&table) {
-        return Err(BlastError::Invalid(format!("Table name '{}' must match snake_case (^[a-z][a-z0-9_]*$).", table)));
-    }
+    ResourceName::try_new(table.clone())?;
     let any_verb = state.verbs.list || state.verbs.get || state.verbs.create || state.verbs.update || state.verbs.delete;
     if !any_verb && state.gen_level() >= GenLevel::Route {
         return Err(BlastError::Invalid("Pick at least one verb when gen_level ≥ Route.".to_string()));
@@ -278,9 +276,7 @@ pub fn validate(state: &WizardState) -> BlastResult<String> {
         if col.name.trim().is_empty() {
             return Err(BlastError::Invalid("Column name cannot be empty.".to_string()));
         }
-        if !is_snake_case(&col.name) {
-            return Err(BlastError::Invalid(format!("Column '{}' must match snake_case.", col.name)));
-        }
+        FieldName::try_new(col.name.clone())?;
         if !seen.insert(col.name.clone()) {
             return Err(BlastError::Invalid(format!("Duplicate column name '{}'.", col.name)));
         }
@@ -297,21 +293,10 @@ pub fn validate(state: &WizardState) -> BlastResult<String> {
     Ok(table)
 }
 
-fn is_snake_case(s: &str) -> bool {
-    let trimmed = s.trim();
-    let first = match trimmed.chars().next() {
-        Some(c) => c,
-        None => return false,
-    };
-    if !first.is_ascii_lowercase() {
-        return false;
-    }
-    trimmed.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::names::is_snake_case_ident;
 
     fn empty_palette() -> Vec<ColumnType> {
         vec![ColumnType::Text]
@@ -319,12 +304,37 @@ mod tests {
 
     #[test]
     fn snake_case_validator() {
-        assert!(is_snake_case("users"));
-        assert!(is_snake_case("user_roles_v2"));
-        assert!(!is_snake_case(""));
-        assert!(!is_snake_case("Users"));
-        assert!(!is_snake_case("1table"));
-        assert!(!is_snake_case("has space"));
+        assert!(is_snake_case_ident("users"));
+        assert!(is_snake_case_ident("user_roles_v2"));
+        assert!(!is_snake_case_ident(""));
+        assert!(!is_snake_case_ident("Users"));
+        assert!(!is_snake_case_ident("1table"));
+        assert!(!is_snake_case_ident("has space"));
+    }
+
+    #[test]
+    fn rust_keyword_rejected_at_table_level() {
+        for kw in ["type", "mod", "fn", "use", "match", "struct", "enum"] {
+            let mut s = WizardState::new(std::path::PathBuf::from("."), empty_palette());
+            s.table_name = tui_input::Input::new(kw.to_string());
+            s.id_pk = true;
+            s.verbs = VerbToggles { list: true, get: false, create: false, update: false, delete: false };
+            let err = validate_form(&s).expect_err("keyword must be rejected");
+            let msg = err.to_string();
+            assert!(msg.contains("Rust keyword"), "expected keyword diagnostic, got: {msg}");
+        }
+    }
+
+    #[test]
+    fn rust_keyword_rejected_at_column_level() {
+        let mut s = WizardState::new(std::path::PathBuf::from("."), empty_palette());
+        s.table_name = tui_input::Input::new("widgets".to_string());
+        s.id_pk = true;
+        s.verbs = VerbToggles { list: true, get: false, create: false, update: false, delete: false };
+        s.columns.push(ColumnSpec { name: "type".to_string(), ty: ColumnType::Text, not_null: true, public_visible: true, validator: ValidatorChoice::None });
+        let err = validate(&s).expect_err("keyword column must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("Rust keyword"), "expected keyword diagnostic, got: {msg}");
     }
 
     #[test]

@@ -3,9 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{
-    gen_level::GenLevel,
-    names::{AuthScopeField, FieldName, ResourceName, SqlType},
+use crate::{
+    error::BlastResult,
+    state::{
+        gen_level::GenLevel,
+        names::{AuthScopeField, FieldName, ResourceName, SqlType},
+    },
 };
 
 pub const RESOURCE_SCHEMA_VERSION: u32 = 3;
@@ -220,6 +223,63 @@ impl ResourceState {
         for (k, v) in verb_pairs {
             self.verbs.insert(k, v);
         }
+    }
+
+    /// Walks every name in the resource (resource name, field names, FK refs,
+    /// soft-delete column, list-options filterable/sortable/default_sort,
+    /// AuthMode::ScopedTo, ws trigger columns, TopicScope::ScopedTo) and
+    /// validates each with the snake_case + Rust-keyword check. Run by
+    /// `state::load_resource` after RON parse + upgrader so hand-edited files
+    /// fail loud at load time instead of producing unparseable Rust later.
+    pub fn validate_names(&self) -> BlastResult<()> {
+        self.name.validate()?;
+        for fname in self.fields.keys() {
+            fname.validate()?;
+        }
+        for relation in self.relations.values() {
+            match relation {
+                Relation::BelongsTo { fk_local_field, .. } => fk_local_field.validate()?,
+                Relation::HasMany { fk_remote_field, .. } => fk_remote_field.validate()?,
+            }
+        }
+        match &self.soft_delete {
+            Some(sd) => sd.column.validate()?,
+            None => {}
+        }
+        for verb_state in self.verbs.values() {
+            match &verb_state.auth {
+                AuthMode::ScopedTo(field) => field.validate()?,
+                AuthMode::Public | AuthMode::AuthRequired | AuthMode::AdminOnly | AuthMode::Roles(_) => {}
+            }
+            match &verb_state.list_options {
+                Some(opts) => {
+                    for fname in opts.filterable_columns.keys() {
+                        fname.validate()?;
+                    }
+                    for fname in &opts.sortable_columns {
+                        fname.validate()?;
+                    }
+                    match &opts.default_sort {
+                        Some(default) => default.validate()?,
+                        None => {}
+                    }
+                }
+                None => {}
+            }
+        }
+        match &self.ws_events {
+            Some(ws) => {
+                for fname in &ws.trigger_columns {
+                    fname.validate()?;
+                }
+                match &ws.topic_scope {
+                    TopicScope::ScopedTo(field) => field.validate()?,
+                    TopicScope::Global | TopicScope::PerRow => {}
+                }
+            }
+            None => {}
+        }
+        Ok(())
     }
 }
 
