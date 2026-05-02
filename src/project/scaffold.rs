@@ -324,7 +324,8 @@ fn render_file_body(raw: &[u8], project_name: &str) -> Vec<u8> {
                 out = out.replace("name = \"canonical\"", &format!("name = \"{}\"", project_name));
             }
             if out.contains("canonical::") {
-                out = out.replace("canonical::", &format!("{}::", project_name));
+                let crate_name = project_name.replace('-', "_");
+                out = out.replace("canonical::", &format!("{crate_name}::"));
             }
             out.into_bytes()
         }
@@ -443,6 +444,33 @@ mod tests {
         assert!(body.contains(r#"name = "myapp""#), "expected name = \"myapp\" in Cargo.toml, got:\n{body}");
         assert!(!body.contains("{{project_name}}"), "Cargo.toml still has unsubstituted placeholder");
         assert!(!body.contains(r#"name = "catalyst""#), "Cargo.toml still labelled as catalyst");
+    }
+
+    #[test]
+    fn scaffold_hyphen_package_name_underscores_in_rust_paths() {
+        // FIX-034: cargo allows hyphens in package names but the crate identifier
+        // replaces them with underscores. The `canonical::` → `<project_name>::`
+        // substitution must use the underscored form to emit valid Rust.
+        let (_dir, outcome) = run_in_tempdir("my-app");
+        let cargo = fs::read_to_string(outcome.project_root.join("Cargo.toml")).expect("read Cargo.toml");
+        assert!(cargo.contains(r#"name = "my-app""#), "Cargo.toml must keep raw hyphenated name");
+
+        let route_align = fs::read_to_string(outcome.project_root.join("tests").join("route_alignment_generated.rs")).expect("read route_alignment_generated.rs");
+        assert!(
+            route_align.contains("use my_app::structs::leptos::RouteName"),
+            "expected `use my_app::...` (underscored crate path), got:\n{route_align}"
+        );
+        assert!(!route_align.contains("use my-app::"), "raw hyphen must NOT survive into Rust use statement");
+        assert!(!route_align.contains("use canonical::"), "canonical:: substitution must have fired");
+    }
+
+    #[test]
+    fn scaffold_no_hyphen_name_unchanged() {
+        // Sanity: package names without hyphens pass through untouched
+        // through the underscore conversion (idempotent on non-hyphen names).
+        let (_dir, outcome) = run_in_tempdir("plainname");
+        let route_align = fs::read_to_string(outcome.project_root.join("tests").join("route_alignment_generated.rs")).expect("read route_alignment_generated.rs");
+        assert!(route_align.contains("use plainname::structs::leptos::RouteName"), "non-hyphen path should also substitute correctly");
     }
 
     #[test]
