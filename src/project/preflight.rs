@@ -40,8 +40,8 @@ const CHECKS: &[BinCheck] = &[
     },
     BinCheck {
         name: "git",
-        install_hint: "install git — recommended for first-commit sanity, not strictly required",
-        required: false,
+        install_hint: "install git — required to clone the catalyst framework on `blast new`",
+        required: true,
     },
     BinCheck {
         name: "cargo-leptos",

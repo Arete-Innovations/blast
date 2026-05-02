@@ -40,7 +40,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
         Command::New {
             name,
-            dev: _dev,
+            dev,
             db_url,
             force,
             no_test_db,
@@ -53,6 +53,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 force,
                 no_test_db,
                 no_warmup,
+                dev,
                 post_seed: Some(std::sync::Arc::new(move |root, sink, progress| crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress))),
             };
             crate::project::scaffold::create_new_project_with_opts(&name, opts, &mut sink, &mut progress)?;
@@ -73,6 +74,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 force,
                 no_test_db,
                 no_warmup,
+                dev: false,
                 post_seed: Some(std::sync::Arc::new(move |root, sink, progress| crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress))),
             };
             match name {
