@@ -22,14 +22,13 @@ cargo test --quiet
   cd templates/canonical
   cargo run --quiet --manifest-path ../../Cargo.toml -- gen all > /dev/null
 
-  # Smoke: canonical must compile against its current generated tree on
-  # both targets — host (SSR + bin) and wasm32 (browser bundle).
-  # Catches the kind of break that only surfaces inside a scaffolded user
-  # app (stale TableRow refs, cata_log gating, hash drift in markers, etc).
-  echo "==> canonical: cargo check (host)"
-  cargo check --quiet
-  echo "==> canonical: cargo check --lib --target wasm32-unknown-unknown"
-  cargo check --quiet --lib --target wasm32-unknown-unknown
+  # Smoke: build the full bundle (host SSR bin + wasm + JS/CSS). Heavier than
+  # a bare `cargo check` but leaves `target/canonical/site/pkg/` populated so
+  # any running `cargo leptos serve` (or fresh start) can serve the pkg/ files
+  # immediately. Bare `cargo check` skips wasm-bindgen and leaves pkg/ stale
+  # → /pkg/canonical.{js,wasm,css} 404 in the browser.
+  echo "==> canonical: cargo leptos build"
+  cargo leptos build
 )
 
 cargo install --quiet --path . --root "$HOME/.local" --force
