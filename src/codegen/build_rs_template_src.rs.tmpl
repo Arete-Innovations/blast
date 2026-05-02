@@ -10,6 +10,10 @@ use std::path::PathBuf;
 
 const READ_BUF: usize = 65536;
 
+// `tests` is intentional: blast emits `tests/route_alignment_generated.rs` outside
+// any `<layer>/generated/` so cargo's integration-test discovery (which only looks
+// at `tests/<name>.rs`, not nested subdirs) keeps working. The hash-marker filter
+// in check_file() ignores user-authored test files (no marker = skipped).
 const WATCHED_DIRS: &[&str] = &[
     "src/structs/generated",
     "src/models/generated",
@@ -21,6 +25,7 @@ const WATCHED_DIRS: &[&str] = &[
     "src/transport/leptos/data/generated",
     "src/transport/leptos/pages/generated",
     "src/transport/leptos/routes/generated",
+    "tests",
 ];
 
 fn main() {

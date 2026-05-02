@@ -77,6 +77,7 @@ mod tests {
         assert!(src.contains("src/transport/leptos/data/generated"));
         assert!(src.contains("src/transport/leptos/pages/generated"));
         assert!(src.contains("src/transport/leptos/routes/generated"));
+        assert!(src.contains("\"tests\""), "tests dir watched for tests/route_alignment_generated.rs marker");
         assert!(src.contains("storage/blast/state/"));
     }
 
@@ -183,6 +184,42 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_fail_on_stale_tests_route_alignment() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let state_dir = dir.path().join("storage").join("blast").join("state");
+        fs::create_dir_all(&state_dir).expect("create state dir");
+        let state_file = state_dir.join("app.ron");
+        fs::write(&state_file, b"AppState(schema_version: 1)").expect("write state");
+
+        let stale_hash = "deadbeef00000000000000000000000000000000000000000000000000000000";
+
+        let tests_dir = dir.path().join("tests");
+        fs::create_dir_all(&tests_dir).expect("create tests dir");
+        let gen_file = tests_dir.join("route_alignment_generated.rs");
+        let mut f = fs::File::create(&gen_file).expect("create alignment file");
+        writeln!(f, "// AUTO-GENERATED from storage/blast/state/app.ron @ {}", stale_hash).expect("write header");
+        writeln!(f, "#[test] fn dummy() {{}}").expect("write dummy");
+
+        let result = simulate_check(dir.path());
+        assert!(result.is_err(), "FIX-032: tests/ must be in WATCHED_DIRS so route_alignment_generated.rs hash is checked");
+    }
+
+    #[test]
+    fn tests_dir_skips_user_authored_files_without_marker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let tests_dir = dir.path().join("tests");
+        fs::create_dir_all(&tests_dir).expect("create tests dir");
+        let user_file = tests_dir.join("auth_email_normalize.rs");
+        fs::write(&user_file, b"#[test]\nfn placeholder() {}\n").expect("write user test");
+
+        let result = simulate_check(dir.path());
+        assert!(result.is_ok(), "user-authored tests/ files without AUTO-GENERATED marker must be skipped");
+    }
+
+    #[test]
     fn round_trip_fail_on_stale_leptos_components_nested_subdir() {
         use std::io::Write;
         let dir = tempfile::tempdir().expect("tempdir");
@@ -217,6 +254,7 @@ mod tests {
             "src/transport/leptos/data/generated",
             "src/transport/leptos/pages/generated",
             "src/transport/leptos/routes/generated",
+            "tests",
         ];
 
         for rel_dir in watched_dirs {
