@@ -3,7 +3,7 @@ pub const LEPTOS_LOGIN: &str = r#"use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::meltdown::MeltDown;
-use crate::structs::leptos::{ButtonKind, LoginInput, PageLayout, RouteName};
+use crate::structs::vendored::leptos::{ButtonKind, LoginInput, PageLayout, RouteName};
 use crate::views::components::{AuthCard, AuthCardAlt, AuthGuard, AuthGuardMode, Button, ErrorBanner, FormGroup, PageShell};
 use crate::transport::leptos::data::auth::do_login;
 use crate::views::signals::nav::use_blocking_navigate;
@@ -99,7 +99,7 @@ pub const LEPTOS_REGISTER: &str = r#"use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::meltdown::MeltDown;
-use crate::structs::leptos::{ButtonKind, PageLayout, RegisterInput, RouteName};
+use crate::structs::vendored::leptos::{ButtonKind, PageLayout, RegisterInput, RouteName};
 use crate::views::components::{AuthCard, AuthCardAlt, AuthGuard, AuthGuardMode, Button, ErrorBanner, FormGroup, PageShell};
 use crate::transport::leptos::data::auth::do_register;
 use crate::views::signals::nav::use_blocking_navigate;
@@ -194,7 +194,7 @@ pub fn RegisterPage() -> impl IntoView {
 pub const LEPTOS_LOGOUT: &str = r#"use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::structs::leptos::RouteName;
+use crate::structs::vendored::leptos::RouteName;
 use crate::views::components::{AuthGuardMode, AuthGuard, ErrorBanner, PageLayout, PageShell};
 use crate::transport::leptos::data::auth::do_logout;
 use crate::views::signals::nav::use_blocking_navigate;
@@ -240,7 +240,7 @@ pub fn LogoutPage() -> impl IntoView {
 pub const LEPTOS_PROFILE: &str = r#"use leptos::prelude::*;
 use stylance::import_crate_style;
 
-use crate::structs::leptos::{AvatarSize, BadgeColor, ButtonKind, PageLayout};
+use crate::structs::vendored::leptos::{AvatarSize, BadgeColor, ButtonKind, PageLayout};
 use crate::views::components::cells::BadgeCell;
 use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, AvatarCell, Button, Card, PageShell};
 use crate::views::signals::session::use_session;

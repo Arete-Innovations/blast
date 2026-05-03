@@ -149,7 +149,8 @@ fn emit_leptos_pages(project_root: &Path, marker: &str, report: &mut EmitReport)
 /// Required entries in `src/structs/generated/mod.rs` (post-merge):
 /// `pub mod auth;`, `pub mod enums;`, plus — when no user-supplied
 /// `users.ron` primer exists — `pub mod users;`, `pub use enums::UserRole;`,
-/// and `pub use users::{NewUser, User, UserPublic};`.
+/// `pub use users::UserPublic;`, and a wasm-cfg-gated re-export of
+/// `NewUser`/`User` (diesel-derives don't compile to wasm32).
 ///
 /// The `validators` line is owned by the validators pass
 /// (`ensure_parent_structs_barrel_includes_validators`). The enums pass
@@ -165,7 +166,9 @@ fn extend_structs_barrel(project_root: &Path, marker: &str, report: &mut EmitRep
     if !has_users_primer(project_root) {
         entries.push("pub mod users;");
         entries.push("pub use enums::UserRole;");
-        entries.push("pub use users::{NewUser, User, UserPublic};");
+        entries.push("pub use users::UserPublic;");
+        entries.push("#[cfg(not(target_arch = \"wasm32\"))]");
+        entries.push("pub use users::{NewUser, User};");
     }
     entries.sort();
     append_lines_idempotent(&path, marker, &entries, report)
@@ -419,7 +422,9 @@ mod tests {
         assert!(body.contains("pub mod auth;"), "structs barrel must declare auth: {body}");
         assert!(body.contains("pub mod enums;"), "structs barrel must declare enums (for UserRole): {body}");
         assert!(body.contains("pub mod users;"), "structs barrel must declare users: {body}");
-        assert!(body.contains("pub use users::{NewUser, User, UserPublic};"), "structs barrel must re-export user types: {body}");
+        assert!(body.contains("pub use users::UserPublic;"), "structs barrel must re-export UserPublic (wasm-friendly): {body}");
+        assert!(body.contains("pub use users::{NewUser, User};"), "structs barrel must re-export native-only user types: {body}");
+        assert!(body.contains("#[cfg(not(target_arch = \"wasm32\"))]"), "structs barrel must cfg-gate native types: {body}");
         assert!(body.contains("pub use enums::UserRole;"), "structs barrel must re-export UserRole: {body}");
     }
 
@@ -444,7 +449,7 @@ mod tests {
 
         let structs_barrel = stdfs::read_to_string(root.join("src/structs/generated/mod.rs")).expect("read structs barrel");
         assert!(structs_barrel.contains("pub mod auth;"), "auth still required: {structs_barrel}");
-        assert!(!structs_barrel.contains("pub use users::{NewUser, User, UserPublic};"), "must not re-export NewUser when primer drives users: {structs_barrel}");
+        assert!(!structs_barrel.contains("pub use users::{NewUser, User};"), "must not re-export NewUser when primer drives users: {structs_barrel}");
     }
 
     #[test]

@@ -11,11 +11,15 @@
 
 // ── structs/generated ─────────────────────────────────────────────────────
 
-pub const STRUCTS_USERS: &str = r#"use diesel::{prelude::*, Queryable};
+pub const STRUCTS_USERS: &str = r#"#[cfg(not(target_arch = "wasm32"))]
+use diesel::{prelude::*, Queryable};
 use serde::{Deserialize, Serialize};
 
-use crate::{database::schema::users, structs::generated::UserRole};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::database::schema::users;
+use crate::structs::generated::UserRole;
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Queryable, QueryableByName, Selectable, Debug, Clone, Identifiable, Serialize, Deserialize)]
 #[diesel(table_name = users)]
 pub struct User {
@@ -28,6 +32,7 @@ pub struct User {
     pub deleted_at: Option<i64>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Insertable, Debug, Clone)]
 #[diesel(table_name = users)]
 pub struct NewUser {
@@ -42,6 +47,7 @@ pub struct UserPublic {
     pub role: UserRole,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<&User> for UserPublic {
     fn from(u: &User) -> Self {
         Self {
@@ -52,6 +58,7 @@ impl From<&User> for UserPublic {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<User> for UserPublic {
     fn from(u: User) -> Self {
         Self { id: u.id, email: u.email, role: u.role }
@@ -61,7 +68,7 @@ impl From<User> for UserPublic {
 
 pub const STRUCTS_AUTH_LOGIN: &str = r#"use serde::{Deserialize, Serialize};
 
-use crate::structs::{auth::SessionContext, UserPublic};
+use crate::structs::{vendored::auth::SessionContext, UserPublic};
 
 #[derive(Clone)]
 pub struct LoginInput {
@@ -90,7 +97,7 @@ pub struct AuthResponse {
 
 pub const STRUCTS_AUTH_REGISTER: &str = r#"use serde::Deserialize;
 
-use crate::structs::{auth::SessionContext, UserPublic};
+use crate::structs::{vendored::auth::SessionContext, UserPublic};
 
 #[derive(Clone)]
 pub struct RegisterInput {
@@ -181,10 +188,10 @@ pub const ROUTINES_AUTH_LOGIN: &str = r#"use crate::{
     cata_log,
     config::cfg,
     meltdown::*,
-    models::{auth::sessions, generated::users},
-    services::{crypto, time},
+    models::{vendored::auth::sessions, generated::users},
+    services::vendored::{crypto, time},
     structs::{
-        auth::SessionContext,
+        vendored::auth::SessionContext,
         generated::auth::{LoginInput, LoginOutput},
         UserPublic,
     },
@@ -219,10 +226,10 @@ pub const ROUTINES_AUTH_REGISTER: &str = r#"use crate::{
     cata_log,
     config::cfg,
     meltdown::*,
-    models::{auth::sessions, generated::users},
-    services::{crypto, time},
+    models::{vendored::auth::sessions, generated::users},
+    services::vendored::{crypto, time},
     structs::{
-        auth::SessionContext,
+        vendored::auth::SessionContext,
         generated::auth::{RegisterInput, RegisterOutput},
         UserPublic,
     },
@@ -261,7 +268,7 @@ pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, Melt
 }
 "#;
 
-pub const ROUTINES_AUTH_LOGOUT: &str = r#"use crate::{cata_log, meltdown::*, models::auth::sessions, structs::auth::SessionContext, Ctx};
+pub const ROUTINES_AUTH_LOGOUT: &str = r#"use crate::{cata_log, meltdown::*, models::vendored::auth::sessions, structs::vendored::auth::SessionContext, Ctx};
 
 pub async fn run(ctx: &Ctx, session: &SessionContext) -> Result<(), MeltDown> {
     let mut conn = ctx.conn().await?;
@@ -274,7 +281,7 @@ pub async fn run(ctx: &Ctx, session: &SessionContext) -> Result<(), MeltDown> {
 pub const ROUTINES_AUTH_ME: &str = r#"use crate::{
     meltdown::*,
     models::generated::users,
-    structs::{auth::SessionContext, UserPublic},
+    structs::{vendored::auth::SessionContext, UserPublic},
     Ctx,
 };
 
@@ -329,7 +336,7 @@ pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, Melt
 }
 "#;
 
-pub const FLOWS_AUTH_LOGOUT: &str = r#"use crate::{crank::Crank, meltdown::*, routines, structs::auth::SessionContext, Ctx};
+pub const FLOWS_AUTH_LOGOUT: &str = r#"use crate::{crank::Crank, meltdown::*, routines, structs::vendored::auth::SessionContext, Ctx};
 
 pub async fn run(ctx: &Ctx, session: &SessionContext) -> Result<(), MeltDown> {
     Crank::none().run(|| routines::generated::auth::logout::run(ctx, session)).await
@@ -342,7 +349,7 @@ use crate::{
     crank::Crank,
     meltdown::*,
     routines,
-    structs::{auth::SessionContext, UserPublic},
+    structs::{vendored::auth::SessionContext, UserPublic},
     Ctx,
 };
 
@@ -373,10 +380,10 @@ use crate::{
     flows::generated::auth,
     meltdown::*,
     structs::{
-        auth::SessionContext,
+        vendored::auth::SessionContext,
         generated::auth::{LoginBody, RegisterBody},
     },
-    transport::http::middleware::rate_limit::with_auth_rate_limit,
+    transport::http::vendored::middleware::rate_limit::with_auth_rate_limit,
     Ctx,
 };
 
