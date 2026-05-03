@@ -127,7 +127,7 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str("use crate::routines;\n");
     if matches!(auth, AuthMode::AdminOnly | AuthMode::Roles(_)) {
-        out.push_str("use crate::structs::auth::Role;\n");
+        out.push_str("use crate::structs::UserRole;\n");
     }
     if !matches!(verb, Verb::Delete) {
         out.push_str("use crate::structs::generated::");
@@ -168,7 +168,7 @@ fn auth_check_block(auth: &AuthMode) -> String {
     match auth {
         AuthMode::Public => String::new(),
         AuthMode::AuthRequired => String::from("ctx.require_session()?;"),
-        AuthMode::AdminOnly => String::from("ctx.require_any(&[Role::Admin])?;"),
+        AuthMode::AdminOnly => String::from("ctx.require_any(&[UserRole::Admin])?;"),
         AuthMode::ScopedTo(field) => {
             let mut out = String::new();
             out.push_str("ctx.require_session()?;\n");
@@ -178,7 +178,7 @@ fn auth_check_block(auth: &AuthMode) -> String {
         AuthMode::Roles(roles) => {
             let mut sorted: Vec<&str> = roles.iter().map(|s| s.as_str()).collect();
             sorted.sort();
-            let formatted = sorted.iter().map(|r| format!("Role::{}", pascal_case(r))).collect::<Vec<_>>().join(", ");
+            let formatted = sorted.iter().map(|r| format!("UserRole::{}", pascal_case(r))).collect::<Vec<_>>().join(", ");
             format!("ctx.require_any(&[{formatted}])?;")
         }
     }
@@ -377,13 +377,13 @@ mod tests {
         assert!(get_body.contains("routines::generated::users::get::run(ctx, id)"), "get must call routine: {}", get_body);
 
         let create_body = stdfs::read_to_string(users_dir.join("create.rs")).expect("read create");
-        assert!(create_body.contains("ctx.require_any(&[Role::Admin])?;"), "AdminOnly should emit require_any(&[Role::Admin])");
-        assert!(create_body.contains("use crate::structs::auth::Role;"), "AdminOnly must import Role");
+        assert!(create_body.contains("ctx.require_any(&[UserRole::Admin])?;"), "AdminOnly should emit require_any(&[UserRole::Admin])");
+        assert!(create_body.contains("use crate::structs::UserRole;"), "AdminOnly must import Role");
         assert!(create_body.contains("routines::generated::users::create::run(ctx, input.clone())"));
 
         let update_body = stdfs::read_to_string(users_dir.join("update.rs")).expect("read update");
         assert!(
-            update_body.contains("ctx.require_any(&[Role::Admin, Role::Editor])?;"),
+            update_body.contains("ctx.require_any(&[UserRole::Admin, UserRole::Editor])?;"),
             "Roles should emit sorted Role enum variants, got: {}",
             update_body
         );
@@ -419,11 +419,11 @@ mod tests {
     fn auth_check_block_handles_all_modes() {
         assert!(auth_check_block(&AuthMode::Public).is_empty());
         assert_eq!(auth_check_block(&AuthMode::AuthRequired), "ctx.require_session()?;");
-        assert_eq!(auth_check_block(&AuthMode::AdminOnly), "ctx.require_any(&[Role::Admin])?;");
+        assert_eq!(auth_check_block(&AuthMode::AdminOnly), "ctx.require_any(&[UserRole::Admin])?;");
         let mut roles = BTreeSet::new();
         roles.insert(String::from("zeta"));
         roles.insert(String::from("alpha_team"));
-        assert_eq!(auth_check_block(&AuthMode::Roles(roles)), "ctx.require_any(&[Role::AlphaTeam, Role::Zeta])?;");
+        assert_eq!(auth_check_block(&AuthMode::Roles(roles)), "ctx.require_any(&[UserRole::AlphaTeam, UserRole::Zeta])?;");
         let scoped = auth_check_block(&AuthMode::ScopedTo(crate::state::AuthScopeField::new("owner_id")));
         assert!(scoped.contains("owner_id"));
         assert!(scoped.contains("require_session()?;"));
