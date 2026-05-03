@@ -281,10 +281,30 @@ pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> Blas
     count += 1;
     progress.step_done("emit build.rs hash check");
 
+    progress.step_start("seed empty stylance index");
+    seed_stylance_placeholder(&args.project_root)?;
+    count += 1;
+    progress.step_done("seed empty stylance index");
+
     Ok(Outcome {
         project_root: args.project_root,
         files_written: count,
     })
+}
+
+/// `style/main.scss` does `@use "generated/stylance"` which Dart Sass resolves
+/// at `cargo leptos build` time — BEFORE `cargo build` runs catalyst's `build.rs`
+/// (which calls `stylance` to populate the file). Without a placeholder, the
+/// first leptos build fails on missing stylesheet. We seed an empty file so
+/// Sass succeeds; build.rs overwrites it with real hashed CSS on first compile.
+fn seed_stylance_placeholder(project_root: &Path) -> BlastResult<()> {
+    let dir = project_root.join("style").join("generated");
+    fs::create_dir_all(&dir)?;
+    let bundle = dir.join("stylance.scss");
+    if !bundle.exists() {
+        fs::write(&bundle, "// placeholder — overwritten by stylance-cli on first cargo build\n")?;
+    }
+    Ok(())
 }
 
 fn clone_framework(source: &Source, project_root: &Path, sink: &mut dyn Sink) -> BlastResult<()> {
