@@ -73,7 +73,7 @@ mod tests {
         assert!(src.contains("src/flows/generated"));
         assert!(src.contains("src/transport/http/generated"));
         assert!(src.contains("src/transport/ws/generated"));
-        assert!(src.contains("src/transport/leptos/components/generated"));
+        assert!(src.contains("src/views/components/generated"));
         assert!(src.contains("src/transport/leptos/data/generated"));
         assert!(src.contains("src/transport/leptos/pages/generated"));
         assert!(src.contains("src/transport/leptos/routes/generated"));
@@ -274,7 +274,7 @@ mod tests {
 
         let stale_hash = "deadbeef00000000000000000000000000000000000000000000000000000000";
 
-        let gen_dir = dir.path().join("src").join("transport").join("leptos").join("components").join("generated").join("forms");
+        let gen_dir = dir.path().join("src").join("views").join("components").join("generated").join("forms");
         fs::create_dir_all(&gen_dir).expect("create nested forms gen dir");
         let gen_file = gen_dir.join("users_form.rs");
         let mut f = fs::File::create(&gen_file).expect("create nested gen file");
@@ -293,7 +293,7 @@ mod tests {
             "src/flows/generated",
             "src/transport/http/generated",
             "src/transport/ws/generated",
-            "src/transport/leptos/components/generated",
+            "src/views/components/generated",
             "src/transport/leptos/data/generated",
             "src/transport/leptos/pages/generated",
             "src/transport/leptos/routes/generated",

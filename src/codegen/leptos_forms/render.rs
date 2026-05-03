@@ -120,7 +120,7 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
         out.push_str(&format!("use crate::structs::generated::enums::{ty};\n"));
     }
     out.push_str(&format!("use crate::structs::generated::validators::{table}::validate_{table}_insertable;\n"));
-    out.push_str("use crate::transport::leptos::components::ErrorBanner;\n");
+    out.push_str("use crate::views::components::ErrorBanner;\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::do_{table}_create;\n"));
     out.push('\n');
 
@@ -214,7 +214,7 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
         out.push_str(&format!("use crate::structs::generated::enums::{ty};\n"));
     }
     out.push_str(&format!("use crate::structs::generated::validators::{table}::validate_{table}_patch;\n"));
-    out.push_str("use crate::transport::leptos::components::ErrorBanner;\n");
+    out.push_str("use crate::views::components::ErrorBanner;\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::do_{table}_update;\n"));
     out.push('\n');
 

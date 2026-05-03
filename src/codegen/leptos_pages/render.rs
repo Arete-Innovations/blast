@@ -42,11 +42,11 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
          use crate::meltdown::MeltDown;\n\
          use crate::structs::generated::{table}::{{{public_ty}, {row_ty}}};\n\
          use crate::structs::list_query::{{ListQuery, ListResponse}};\n\
-         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
+         use crate::views::components::{{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell}};\n\
          #[cfg(target_arch = \"wasm32\")]\n\
          use crate::transport::leptos::data::generated::{table}::{loader};\n\
          #[cfg(target_arch = \"wasm32\")]\n\
-         use crate::transport::leptos::signals::use_url_list_state;\n\n\
+         use crate::views::signals::use_url_list_state;\n\n\
          #[component]\n\
          pub fn {component}() -> impl IntoView {{\n\
          \x20   let items_signal: RwSignal<Option<::std::result::Result<ListResponse<{public_ty}>, MeltDown>>> = RwSignal::new(None);\n\
@@ -112,7 +112,7 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
     imports.push_str("\n");
     imports.push_str("use crate::meltdown::MeltDown;\n");
     imports.push_str(&format!("use crate::structs::generated::{table}::{public_ty};\n"));
-    imports.push_str("use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};\n");
+    imports.push_str("use crate::views::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};\n");
     // Loader is called only inside a wasm-cfg-gated Effect — keep its import wasm-only.
     imports.push_str("#[cfg(target_arch = \"wasm32\")]\n");
     imports.push_str(&format!("use crate::transport::leptos::data::generated::{table}::{loader};\n"));
@@ -204,8 +204,8 @@ pub fn render_create_page(table: &str, stem: &str, auth: AuthMode) -> String {
     let form_component = format!("{stem}CreateForm");
     format!(
         "use leptos::prelude::*;\n\n\
-         use crate::transport::leptos::components::{{AuthGuard, AuthGuardMode, PageLayout, PageShell}};\n\
-         use crate::transport::leptos::components::generated::forms::{table}::{form_component};\n\n\
+         use crate::views::components::{{AuthGuard, AuthGuardMode, PageLayout, PageShell}};\n\
+         use crate::views::components::generated::forms::{table}::{form_component};\n\n\
          #[component]\n\
          pub fn {component}() -> impl IntoView {{\n\
          \x20   view! {{\n\
@@ -233,8 +233,8 @@ pub fn render_edit_page(table: &str, stem: &str, auth: AuthMode) -> String {
     out.push_str("\n");
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str(&format!("use crate::structs::generated::{table}::{public_ty};\n"));
-    out.push_str("use crate::transport::leptos::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};\n");
-    out.push_str(&format!("use crate::transport::leptos::components::generated::forms::{table}::{form_component};\n"));
+    out.push_str("use crate::views::components::{AuthGuard, AuthGuardMode, ErrorBanner, PageLayout, PageShell};\n");
+    out.push_str(&format!("use crate::views::components::generated::forms::{table}::{form_component};\n"));
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::{loader};\n"));
     out.push('\n');

@@ -3,7 +3,7 @@
 //! Reads the `NavConfig` policy out of `app.ron` and a `route_table` keyed
 //! by route name (built upstream from handwritten routes + `Page`
 //! entries + per-resource CRUD routes) and emits one Rust source file at
-//! `src/transport/leptos/components/generated/nav/app_nav.rs`.
+//! `src/views/components/generated/nav/app_nav.rs`.
 //!
 //! Output shape:
 //!
@@ -62,7 +62,7 @@ pub fn render_app_nav(nav: &NavConfig, route_table: &BTreeMap<String, ResolvedRo
     out.push_str("use ::leptos::prelude::*;\n\n");
     if needs_role_gating {
         out.push_str("use crate::structs::auth::role::Role;\n");
-        out.push_str("use crate::transport::leptos::signals::session::use_session;\n\n");
+        out.push_str("use crate::views::signals::session::use_session;\n\n");
     }
     out.push_str("#[component]\n");
     out.push_str("pub fn AppNav() -> impl IntoView {\n");

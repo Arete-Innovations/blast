@@ -154,7 +154,7 @@ fn emit_empty_skeleton(project_root: &Path, forms_dir: &Path, _data_dir: &Path, 
 }
 
 fn ensure_components_user_barrel(project_root: &Path, report: &mut EmitReport) -> BlastResult<()> {
-    let user_barrel = project_root.join("src").join("transport").join("leptos").join("components").join("mod.rs");
+    let user_barrel = project_root.join("src").join("views").join("components").join("mod.rs");
     let existing = match fs::read_to_string(&user_barrel) {
         Ok(s) => s,
         Err(_e) => return Ok(()),
@@ -211,11 +211,11 @@ fn ensure_leptos_user_barrel_includes_data(project_root: &Path, report: &mut Emi
 }
 
 fn forms_root_dir(project_root: &Path) -> PathBuf {
-    project_root.join("src").join("transport").join("leptos").join("components").join("generated").join("forms")
+    project_root.join("src").join("views").join("components").join("generated").join("forms")
 }
 
 fn components_generated_dir(project_root: &Path) -> PathBuf {
-    project_root.join("src").join("transport").join("leptos").join("components").join("generated")
+    project_root.join("src").join("views").join("components").join("generated")
 }
 
 fn data_root_dir(project_root: &Path) -> PathBuf {
@@ -395,11 +395,11 @@ mod tests {
             Err(e) => panic!("run: {e}"),
         };
 
-        let create_form = root.join("src/transport/leptos/components/generated/forms/users/create_form.rs");
-        let edit_form = root.join("src/transport/leptos/components/generated/forms/users/edit_form.rs");
-        let resource_barrel = root.join("src/transport/leptos/components/generated/forms/users/mod.rs");
-        let top_forms_barrel = root.join("src/transport/leptos/components/generated/forms/mod.rs");
-        let components_generated_barrel = root.join("src/transport/leptos/components/generated/mod.rs");
+        let create_form = root.join("src/views/components/generated/forms/users/create_form.rs");
+        let edit_form = root.join("src/views/components/generated/forms/users/edit_form.rs");
+        let resource_barrel = root.join("src/views/components/generated/forms/users/mod.rs");
+        let top_forms_barrel = root.join("src/views/components/generated/forms/mod.rs");
+        let components_generated_barrel = root.join("src/views/components/generated/mod.rs");
         let data_stub = root.join("src/transport/leptos/data/generated/users.rs");
         let data_barrel = root.join("src/transport/leptos/data/generated/mod.rs");
 
@@ -433,7 +433,7 @@ mod tests {
             Err(e) => panic!("run: {e}"),
         }
 
-        let body = match fs::read_to_string(root.join("src/transport/leptos/components/generated/forms/users/create_form.rs")) {
+        let body = match fs::read_to_string(root.join("src/views/components/generated/forms/users/create_form.rs")) {
             Ok(s) => s,
             Err(e) => panic!("read create_form: {e}"),
         };
@@ -463,7 +463,7 @@ mod tests {
             Err(e) => panic!("run: {e}"),
         }
 
-        let body = match fs::read_to_string(root.join("src/transport/leptos/components/generated/forms/users/edit_form.rs")) {
+        let body = match fs::read_to_string(root.join("src/views/components/generated/forms/users/edit_form.rs")) {
             Ok(s) => s,
             Err(e) => panic!("read edit_form: {e}"),
         };
@@ -492,7 +492,7 @@ mod tests {
             Err(e) => panic!("run: {e}"),
         }
 
-        assert!(!root.join("src/transport/leptos/components/generated/forms/users/create_form.rs").exists());
+        assert!(!root.join("src/views/components/generated/forms/users/create_form.rs").exists());
     }
 
     #[test]
@@ -536,8 +536,8 @@ mod tests {
             Err(e) => panic!("run: {e}"),
         }
 
-        assert!(root.join("src/transport/leptos/components/generated/forms/.gitkeep").exists(), ".gitkeep expected when no qualifying resources");
-        assert!(root.join("src/transport/leptos/components/generated/mod.rs").exists(), "components/generated/mod.rs expected");
+        assert!(root.join("src/views/components/generated/forms/.gitkeep").exists(), ".gitkeep expected when no qualifying resources");
+        assert!(root.join("src/views/components/generated/mod.rs").exists(), "components/generated/mod.rs expected");
         assert!(!root.join("src/transport/leptos/data/mod.rs").exists(), "user-owned data/mod.rs must NOT be written when no qualifying resources");
     }
 
@@ -623,7 +623,7 @@ mod tests {
             Err(e) => panic!("run: {e}"),
         }
 
-        for path in ["src/transport/leptos/components/generated/forms/users/create_form.rs", "src/transport/leptos/components/generated/forms/users/edit_form.rs"] {
+        for path in ["src/views/components/generated/forms/users/create_form.rs", "src/views/components/generated/forms/users/edit_form.rs"] {
             let body = match fs::read_to_string(root.join(path)) {
                 Ok(s) => s,
                 Err(e) => panic!("read {path}: {e}"),
@@ -657,7 +657,7 @@ mod tests {
             Err(e) => panic!("run: {e}"),
         }
 
-        let create_body = match fs::read_to_string(root.join("src/transport/leptos/components/generated/forms/tasks/create_form.rs")) {
+        let create_body = match fs::read_to_string(root.join("src/views/components/generated/forms/tasks/create_form.rs")) {
             Ok(s) => s,
             Err(e) => panic!("read create_form: {e}"),
         };
@@ -670,7 +670,7 @@ mod tests {
         assert!(create_body.contains("MyStatus::parse(&status_raw)"), "Action must call MyStatus::parse on the raw signal value: {create_body}");
         assert!(create_body.contains("MeltDown::validation_failed_field(\"status\", \"invalid MyStatus\")"), "parse failure must propagate as validation_failed_field with field+enum-name message: {create_body}");
 
-        let edit_body = match fs::read_to_string(root.join("src/transport/leptos/components/generated/forms/tasks/edit_form.rs")) {
+        let edit_body = match fs::read_to_string(root.join("src/views/components/generated/forms/tasks/edit_form.rs")) {
             Ok(s) => s,
             Err(e) => panic!("read edit_form: {e}"),
         };

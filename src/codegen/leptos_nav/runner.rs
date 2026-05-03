@@ -92,7 +92,7 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
 }
 
 fn nav_generated_dir(project_root: &Path) -> PathBuf {
-    project_root.join("src").join("transport").join("leptos").join("components").join("generated").join("nav")
+    project_root.join("src").join("views").join("components").join("generated").join("nav")
 }
 
 fn extract_nav(app: &AppState) -> Option<NavConfig> {
@@ -173,7 +173,7 @@ fn validate_nav(nav: &NavConfig, route_table: &BTreeMap<String, ResolvedRoute>) 
 }
 
 fn ensure_components_generated_includes_nav(project_root: &Path, report: &mut EmitReport) -> BlastResult<()> {
-    let path = project_root.join("src").join("transport").join("leptos").join("components").join("generated").join("mod.rs");
+    let path = project_root.join("src").join("views").join("components").join("generated").join("mod.rs");
     let existing = match fs::read_to_string(&path) {
         Ok(s) => s,
         Err(_io) => return Ok(()),
@@ -325,7 +325,7 @@ mod tests {
         let mut progress = NullProgress;
         let report = run(root, &mut sink, &mut progress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/transport/leptos/components/generated/nav/app_nav.rs")).expect("read nav");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
         assert!(body.contains("pub fn AppNav"), "body must contain AppNav: {body}");
         assert!(!report.written.is_empty(), "expect at least one write");
     }
@@ -338,7 +338,7 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/transport/leptos/components/generated/nav/app_nav.rs")).expect("read nav");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
         assert!(body.contains("\"/dashboard\""), "must hardcode /dashboard path: {body}");
         assert!(body.contains("\"Dashboard\""), "must include label: {body}");
     }
@@ -393,7 +393,7 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/transport/leptos/components/generated/nav/app_nav.rs")).expect("read nav");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
         assert!(body.contains("\"/posts\""), "must include /posts path literal: {body}");
         assert!(body.contains("\"Posts\""), "must include override label: {body}");
     }
@@ -420,7 +420,7 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/transport/leptos/components/generated/nav/app_nav.rs")).expect("read nav");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
         assert!(body.contains("Show"), "role-gated section must use Show: {body}");
         assert!(body.contains("Role::Admin"), "must reference canonical Role::Admin: {body}");
     }
@@ -468,7 +468,7 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/transport/leptos/components/generated/nav/app_nav.rs")).expect("read nav");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
         assert!(body.contains("\"/custom\""), "must use Page-declared path: {body}");
     }
 }
