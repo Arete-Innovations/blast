@@ -170,7 +170,6 @@ fn extend_structs_barrel(project_root: &Path, marker: &str, report: &mut EmitRep
         entries.push("#[cfg(not(target_arch = \"wasm32\"))]");
         entries.push("pub use users::{NewUser, User};");
     }
-    entries.sort();
     append_lines_idempotent(&path, marker, &entries, report)
 }
 
