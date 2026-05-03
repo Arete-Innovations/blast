@@ -245,7 +245,7 @@ mod tests {
         assert!(report.written.iter().any(|p| p == &target));
 
         let body = fs::read_to_string(&target).expect("read");
-        assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker header");
+        assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
         for needle in ["pub async fn list(", "pub async fn get(", "pub async fn create(", "pub async fn update(", "pub async fn delete(", "impl User {"] {
             assert!(body.contains(needle), "missing {needle}\n{body}");
         }
@@ -324,7 +324,7 @@ mod tests {
         let apples_idx = barrel.find("pub mod apples;").unwrap();
         let zebras_idx = barrel.find("pub mod zebras;").unwrap();
         assert!(apples_idx < zebras_idx);
-        assert!(barrel.starts_with("// AUTO-GENERATED from "));
+        assert!(!barrel.starts_with("// AUTO-GENERATED"), "no inline marker");
     }
 
     #[test]
@@ -338,6 +338,6 @@ mod tests {
         run(root, &mut sink, &mut progress).expect("ok");
 
         let body = fs::read_to_string(root.join("src/models/generated/users.rs")).unwrap();
-        assert!(body.contains("storage/blast/state/resources/users.ron"));
+        assert!(!body.contains("AUTO-GENERATED"), "no inline marker");
     }
 }

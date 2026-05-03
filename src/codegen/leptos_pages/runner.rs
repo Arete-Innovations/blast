@@ -561,7 +561,7 @@ mod tests {
         for page in pages {
             let path = root.join(format!("src/transport/leptos/pages/generated/posts/{page}"));
             let body = fs::read_to_string(&path).expect("read page");
-            assert!(body.starts_with("// AUTO-GENERATED from "), "{page} must start with marker; got: {body}");
+            assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
         }
     }
 

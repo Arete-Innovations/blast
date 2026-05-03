@@ -643,11 +643,12 @@ output-name = "catalyst"
     }
 
     #[test]
-    fn build_rs_marker_has_blake3_check() {
+    fn build_rs_has_no_stale_detection() {
         let (_dir, outcome) = run_in_tempdir("acme");
         let body = fs::read_to_string(outcome.project_root.join("build.rs")).expect("read");
-        assert!(body.contains("blake3"));
-        assert!(body.contains("storage/blast/state/"));
+        assert!(!body.contains("blake3"), "stale-detection killed");
+        assert!(!body.contains("AUTO-GENERATED"), "no marker parsing");
+        assert!(body.contains("check_transport_handler_ctx"), "TRANSPORT:23 still wired");
     }
 
     #[test]

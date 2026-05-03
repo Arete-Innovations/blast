@@ -145,9 +145,6 @@ fn collect_route_entries(resources: &[ResourceState]) -> Vec<RouteEntry> {
 
 fn render_routes_file(entries: &[RouteEntry]) -> String {
     let mut out = String::new();
-    out.push_str("//! path! is a macro requiring a literal so it cannot accept a function call.\n");
-    out.push_str("//! Each route below is paired with the canonical RouteName variant in a comment\n");
-    out.push_str("//! the test in tests/route_alignment_generated checks they stay in lockstep\n\n");
     out.push_str("use ::leptos::prelude::*;\n");
 
     if entries.is_empty() {
@@ -177,15 +174,6 @@ fn render_routes_file(entries: &[RouteEntry]) -> String {
     out.push_str("pub fn GeneratedRoutes() -> impl ::leptos_router::MatchNestedRoutes + ::core::clone::Clone + ::core::marker::Send + 'static {\n");
     out.push_str("    (\n");
     for e in entries {
-        out.push_str(&format!(
-            "        // RouteName::{}(\"{}\"{})\n",
-            e.kind.enum_variant(),
-            e.table,
-            match e.kind {
-                RouteKind::Detail | RouteKind::Edit => ", <i64>",
-                RouteKind::List | RouteKind::Create => "",
-            }
-        ));
         out.push_str(&format!("        NestedRoute::new(path!(\"{}\"), {}),\n", e.path_lit, e.component));
     }
     out.push_str("    )\n");
@@ -407,14 +395,12 @@ mod tests {
     }
 
     #[test]
-    fn render_routes_file_includes_route_name_comment_per_entry() {
+    fn render_routes_file_emits_one_route_per_entry() {
         let r = make_resource("posts", &[(Verb::List, true), (Verb::Get, true), (Verb::Create, true), (Verb::Update, true)]);
         let entries = collect_route_entries(&[r]);
         let body = render_routes_file(&entries);
-        assert!(body.contains("// RouteName::ResourceList(\"posts\")"));
-        assert!(body.contains("// RouteName::ResourceCreate(\"posts\")"));
-        assert!(body.contains("// RouteName::ResourceDetail(\"posts\", <i64>)"));
-        assert!(body.contains("// RouteName::ResourceEdit(\"posts\", <i64>)"));
+        assert!(!body.contains("//"), "no comments — DEAD:21 applies under generated/");
+        assert_eq!(body.matches("NestedRoute::new(path!(\"").count(), 4);
     }
 
     #[test]

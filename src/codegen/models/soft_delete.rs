@@ -58,9 +58,7 @@ pub fn emit_scope_methods(out: &mut String, table: &str, cfg: &SoftDeleteConfig)
 pub fn emit_default_application(out: &mut String, table: &str, cfg: &SoftDeleteConfig) {
     let col = &cfg.column;
     match cfg.default_behavior {
-        DefaultBehavior::Include => {
-            out.push_str("        // soft-delete: default = include all rows\n");
-        }
+        DefaultBehavior::Include => {}
         DefaultBehavior::Exclude => {
             let line = format!("        let inner = inner.filter(crate::database::schema::{table}::dsl::{col}.is_null());\n");
             out.push_str(&line);
@@ -135,8 +133,7 @@ mod tests {
                 default_behavior: DefaultBehavior::Include,
             },
         );
-        assert!(out.contains("// soft-delete: default = include"));
-        assert!(!out.contains("is_null"));
+        assert!(out.is_empty(), "Include = no-op, no comments under generated/ (DEAD:21)");
     }
 
     #[test]

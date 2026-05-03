@@ -332,7 +332,7 @@ mod tests {
             Err(e) => panic!("read posts.rs: {e}"),
         };
 
-        assert!(body.starts_with("// AUTO-GENERATED from "), "marker header expected: {body}");
+        assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
         assert!(body.contains("pub async fn load_posts_list"), "missing list helper: {body}");
         assert!(body.contains("pub async fn load_posts_one"), "missing get helper: {body}");
         assert!(body.contains("pub async fn do_posts_create"), "missing create helper: {body}");

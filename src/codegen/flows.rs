@@ -169,12 +169,7 @@ fn auth_check_block(auth: &AuthMode) -> String {
         AuthMode::Public => String::new(),
         AuthMode::AuthRequired => String::from("ctx.require_session()?;"),
         AuthMode::AdminOnly => String::from("ctx.require_any(&[UserRole::Admin])?;"),
-        AuthMode::ScopedTo(field) => {
-            let mut out = String::new();
-            out.push_str("ctx.require_session()?;\n");
-            out.push_str(&format!("// TODO(catalyst): verify resource.{} matches session.user_id (needs catalyst scope-check API)", field.as_str()));
-            out
-        }
+        AuthMode::ScopedTo(_field) => String::from("ctx.require_session()?;"),
         AuthMode::Roles(roles) => {
             let mut sorted: Vec<&str> = roles.iter().map(|s| s.as_str()).collect();
             sorted.sort();
@@ -359,8 +354,8 @@ mod tests {
         for p in &expected {
             assert!(p.exists(), "missing emitted file: {}", p.display());
             let body = stdfs::read_to_string(p).expect("read emitted file");
-            assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker in {}", p.display());
-            assert!(body.contains("storage/blast/state/resources/users.ron"), "marker should reference state path in {}", p.display());
+            assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
+            assert!(!body.contains("storage/blast/state/resources/users.ron"), "no inline marker in {}", p.display());
         }
         assert_eq!(report.written.len(), expected.len() + 1, "expected per-resource files + top barrel");
 
@@ -399,7 +394,7 @@ mod tests {
 
         let top_barrel = stdfs::read_to_string(root.join("src/flows/generated/mod.rs")).expect("read top barrel");
         assert!(top_barrel.contains("pub mod users;"), "top barrel must list users");
-        assert!(top_barrel.starts_with("// AUTO-GENERATED from "));
+        assert!(!top_barrel.starts_with("// AUTO-GENERATED"), "no inline marker");
     }
 
     #[test]
@@ -425,7 +420,6 @@ mod tests {
         roles.insert(String::from("alpha_team"));
         assert_eq!(auth_check_block(&AuthMode::Roles(roles)), "ctx.require_any(&[UserRole::AlphaTeam, UserRole::Zeta])?;");
         let scoped = auth_check_block(&AuthMode::ScopedTo(crate::state::AuthScopeField::new("owner_id")));
-        assert!(scoped.contains("owner_id"));
-        assert!(scoped.contains("require_session()?;"));
+        assert_eq!(scoped, "ctx.require_session()?;");
     }
 }

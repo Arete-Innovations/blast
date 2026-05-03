@@ -191,10 +191,7 @@ mod tests {
 
         let content = fs::read_to_string(&written_path).unwrap();
 
-        assert!(content.contains("# AUTO-GENERATED from"));
-        assert!(content.contains("storage/blast/state/app.ron"));
-        let first_line = content.lines().next().expect("file has at least one line");
-        assert!(first_line.starts_with('#'), "header first line must start with #, got: {first_line}");
+        assert!(!content.contains("AUTO-GENERATED"), "no inline marker — stale-detection lives elsewhere");
 
         assert!(content.contains("# Postgres connection string\nDATABASE_URL=postgres://localhost/myapp"));
         assert!(content.contains("# 32-byte hex secret for session tokens\nSESSION_SIGNING_KEY=<changeme>"));

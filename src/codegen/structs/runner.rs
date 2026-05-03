@@ -201,8 +201,7 @@ mod tests {
         assert!(report.written.contains(&barrel));
 
         let body = fs::read_to_string(&target).expect("read body");
-        assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker header in {}", target.display(),);
-        assert!(body.contains("storage/blast/state/resources/users.ron"), "marker should reference state path",);
+        assert!(!body.contains("AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
         assert!(body.contains("pub struct User {"));
         assert!(body.contains("pub struct UserInsertable {"));
         assert!(body.contains("pub struct UserPatch {"));
@@ -212,7 +211,7 @@ mod tests {
 
         let barrel_body = fs::read_to_string(&barrel).expect("read barrel");
         assert!(barrel_body.contains("pub mod users;"));
-        assert!(barrel_body.starts_with("// AUTO-GENERATED from "), "barrel missing marker header",);
+        assert!(!barrel_body.starts_with("// AUTO-GENERATED"), "no inline marker");
     }
 
     #[test]

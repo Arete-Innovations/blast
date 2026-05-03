@@ -158,7 +158,7 @@ mod tests {
             let p = users_dir.join(format!("{verb}.rs"));
             assert!(p.exists(), "missing {}", p.display());
             let body = stdfs::read_to_string(&p).expect("read");
-            assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker in {}", p.display());
+            assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
         }
 
         let resource_barrel = stdfs::read_to_string(users_dir.join("mod.rs")).expect("read resource barrel");
@@ -168,7 +168,7 @@ mod tests {
 
         let top_barrel = stdfs::read_to_string(root.join("src/routines/generated/mod.rs")).expect("read top barrel");
         assert!(top_barrel.contains("pub mod users;"));
-        assert!(top_barrel.starts_with("// AUTO-GENERATED from "));
+        assert!(!top_barrel.starts_with("// AUTO-GENERATED"), "no inline marker");
 
         assert!(report.written.iter().any(|p| p.ends_with("mod.rs")));
     }

@@ -215,7 +215,7 @@ mod tests {
         assert!(report.written.contains(&barrel));
 
         let role_body = fs::read_to_string(&role_path).expect("read role");
-        assert!(role_body.starts_with("// AUTO-GENERATED from "));
+        assert!(!role_body.starts_with("// AUTO-GENERATED"), "no inline marker");
         assert!(role_body.contains("pub enum UserRole {"));
 
         let barrel_body = fs::read_to_string(&barrel).expect("read barrel");

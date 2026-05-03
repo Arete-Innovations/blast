@@ -438,7 +438,7 @@ mod tests {
             Err(e) => panic!("read create_form: {e}"),
         };
 
-        assert!(body.starts_with("// AUTO-GENERATED from "), "marker header expected");
+        assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
         assert!(body.contains("validate_users_insertable("), "must call validator: {body}");
         assert!(body.contains("do_users_create("), "must reference data helper: {body}");
         assert!(body.contains("UserInsertable"), "must reference Insertable type: {body}");

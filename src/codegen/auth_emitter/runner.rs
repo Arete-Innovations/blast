@@ -362,7 +362,7 @@ mod tests {
         assert!(!report.written.is_empty());
 
         let body = stdfs::read_to_string(root.join("src/structs/generated/users.rs")).expect("read users.rs");
-        assert!(body.starts_with("// AUTO-GENERATED from "), "missing marker: {body}");
+        assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
         assert!(body.contains("pub struct User {"));
         assert!(body.contains("pub struct NewUser {"));
         assert!(body.contains("pub struct UserPublic {"));
@@ -392,7 +392,7 @@ mod tests {
 
         let routines_barrel = root.join("src/routines/generated/mod.rs");
         stdfs::create_dir_all(routines_barrel.parent().unwrap()).expect("mkdir");
-        stdfs::write(&routines_barrel, "// AUTO-GENERATED from storage/blast/state/app.ron @ deadbeef\n//\n// Do not edit by hand.\n\npub mod posts;\n").expect("seed barrel");
+        stdfs::write(&routines_barrel, "pub mod posts;\n").expect("seed barrel");
 
         let mut sink = NullSink;
         let mut progress = NullProgress;

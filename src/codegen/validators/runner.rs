@@ -289,7 +289,7 @@ mod tests {
 
         let rust_file = root.join("src/structs/generated/validators/users.rs");
         let rust_body = fs::read_to_string(&rust_file).expect("read rust");
-        assert!(rust_body.starts_with("// AUTO-GENERATED from "));
+        assert!(!rust_body.starts_with("// AUTO-GENERATED"), "no inline marker");
     }
 
     #[test]
