@@ -4,9 +4,9 @@
 //! rather than primer-declared, so it can't ride the per-resource emitter
 //! pipeline. This runner:
 //!
-//! 1. Writes every fixed-shape auth file (templates::*) prefixed with the
-//!    standard codegen marker keyed to the app state file (auth has no
-//!    per-resource primer of its own).
+//! 1. Writes every fixed-shape auth file from the `templates` submodule,
+//!    prefixed with the standard codegen marker keyed to the app state
+//!    file (auth has no per-resource primer of its own).
 //! 2. Idempotently extends the barrel `mod.rs` files emitted earlier in the
 //!    pipeline by the resource-driven passes so the auth submodules and
 //!    the flat `users` modules are pulled into the crate's module tree.
@@ -250,30 +250,26 @@ fn append_lines_idempotent(path: &Path, marker: &str, entries: &[&str], report: 
     let parent = path.parent().ok_or_else(|| BlastError::Invalid(format!("barrel target has no parent: {}", path.display())))?;
     fs::create_dir_all(parent)?;
 
-    let existing = match fs::read_to_string(path) {
+    let existing: Option<String> = match fs::read_to_string(path) {
         Ok(s) => Some(s),
-        Err(_io_err) => None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None, // allow: NotFound means no prior barrel — append fresh
+        Err(e) => return Err(BlastError::from(e)),
     };
 
     let mut needed: Vec<&str> = Vec::new();
     for entry in entries {
         let already = match &existing {
             Some(prev) => prev.lines().any(|l| l.trim() == entry.trim()),
-            None => false,
+            None => false, // allow: no prior file means entry is not yet present
         };
         if !already {
             needed.push(entry);
         }
     }
 
-    if needed.is_empty() {
-        match &existing {
-            Some(_) => {
-                report.skipped.push(path.to_path_buf());
-                return Ok(());
-            }
-            None => {}
-        }
+    if needed.is_empty() && existing.is_some() {
+        report.skipped.push(path.to_path_buf());
+        return Ok(());
     }
 
     let body = match existing {
