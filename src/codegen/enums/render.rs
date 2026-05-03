@@ -27,24 +27,42 @@ pub fn variant_name(variant: &str) -> String {
 
 /// Build the full Rust file body for one enum (without the codegen
 /// marker — the runner prepends it).
+///
+/// Diesel imports + `AsExpression`/`FromSqlRow` derives + `FromSql`/`ToSql`
+/// impls are gated `#[cfg(not(target_arch = "wasm32"))]` because diesel has no
+/// wasm32 target. The bare enum + `as_str` + `parse` stay ungated so wasm
+/// consumers (Leptos forms, validators) can still use the type.
+///
+/// The SQL type marker — also named `<TypeName>` in the schema's `sql_types`
+/// module — is aliased to `<TypeName>SqlType` on import to avoid a name
+/// collision with the Rust enum we're defining.
 pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     let type_name = enum_type_name(&parsed.name);
+    let sql_alias = format!("{type_name}SqlType");
     let variants: Vec<(String, String)> = parsed.variants.iter().map(|v| (variant_name(v), v.clone())).collect();
 
     let mut out = String::new();
 
-    out.push_str("use std::io::Write;\n\n");
-    out.push_str("use diesel::backend::Backend;\n");
-    out.push_str("use diesel::deserialize::{self, FromSql, FromSqlRow};\n");
-    out.push_str("use diesel::expression::AsExpression;\n");
-    out.push_str("use diesel::pg::Pg;\n");
-    out.push_str("use diesel::serialize::{self, IsNull, Output, ToSql};\n");
     out.push_str("use serde::{Deserialize, Serialize};\n\n");
-    out.push_str(&format!("use crate::database::schema::sql_types::{type_name};\n"));
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str("use std::io::Write;\n\n");
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str("use diesel::backend::Backend;\n");
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str("use diesel::deserialize::{self, FromSql, FromSqlRow};\n");
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str("use diesel::expression::AsExpression;\n");
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str("use diesel::pg::Pg;\n");
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str("use diesel::serialize::{self, IsNull, Output, ToSql};\n\n");
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str(&format!("use crate::database::schema::sql_types::{type_name} as {sql_alias};\n"));
     out.push_str("use crate::meltdown::*;\n\n");
 
-    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]\n");
-    out.push_str(&format!("#[diesel(sql_type = {type_name})]\n"));
+    out.push_str("#[cfg_attr(not(target_arch = \"wasm32\"), derive(AsExpression, FromSqlRow))]\n");
+    out.push_str(&format!("#[cfg_attr(not(target_arch = \"wasm32\"), diesel(sql_type = {sql_alias}))]\n"));
+    out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]\n");
     out.push_str(&format!("pub enum {type_name} {{\n"));
     for (rust, _sql) in &variants {
         out.push_str(&format!("    {rust},\n"));
@@ -70,7 +88,8 @@ pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
-    out.push_str(&format!("impl FromSql<{type_name}, Pg> for {type_name} {{\n"));
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str(&format!("impl FromSql<{sql_alias}, Pg> for {type_name} {{\n"));
     out.push_str("    fn from_sql(bytes: <Pg as Backend>::RawValue<'_>) -> deserialize::Result<Self> {\n");
     out.push_str("        match bytes.as_bytes() {\n");
     for (rust, sql) in &variants {
@@ -84,7 +103,8 @@ pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
-    out.push_str(&format!("impl ToSql<{type_name}, Pg> for {type_name} {{\n"));
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str(&format!("impl ToSql<{sql_alias}, Pg> for {type_name} {{\n"));
     out.push_str("    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {\n");
     out.push_str("        out.write_all(self.as_str().as_bytes())?;\n");
     out.push_str("        Ok(IsNull::No)\n");
@@ -130,12 +150,13 @@ mod tests {
     fn render_emits_expected_top_level_shape() {
         let p = fixture("user_role", &["admin", "member"]);
         let body = render_enum_file(&p);
-        assert!(body.contains("use crate::database::schema::sql_types::UserRole;"));
+        assert!(body.contains("use crate::database::schema::sql_types::UserRole as UserRoleSqlType;"));
         assert!(body.contains("use crate::meltdown::*;"));
-        assert!(body.contains("#[diesel(sql_type = UserRole)]"));
+        assert!(body.contains("diesel(sql_type = UserRoleSqlType)"));
         assert!(body.contains("pub enum UserRole {"));
         assert!(body.contains("    Admin,"));
         assert!(body.contains("    Member,"));
+        assert!(body.contains("#[cfg_attr(not(target_arch = \"wasm32\"), derive(AsExpression, FromSqlRow))]"));
     }
 
     #[test]
@@ -159,9 +180,9 @@ mod tests {
     fn render_emits_from_sql_and_to_sql() {
         let p = fixture("user_role", &["admin", "member"]);
         let body = render_enum_file(&p);
-        assert!(body.contains("impl FromSql<UserRole, Pg> for UserRole"));
+        assert!(body.contains("impl FromSql<UserRoleSqlType, Pg> for UserRole"));
         assert!(body.contains("b\"admin\" => Ok(UserRole::Admin)"));
-        assert!(body.contains("impl ToSql<UserRole, Pg> for UserRole"));
+        assert!(body.contains("impl ToSql<UserRoleSqlType, Pg> for UserRole"));
         assert!(body.contains("out.write_all(self.as_str().as_bytes())?;"));
     }
 

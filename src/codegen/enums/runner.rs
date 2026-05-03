@@ -243,18 +243,19 @@ mod tests {
         let role_path = root.join("src/structs/generated/enums/user_role.rs");
         let body = fs::read_to_string(&role_path).expect("read user_role.rs");
 
-        assert!(body.contains("use crate::database::schema::sql_types::UserRole;"));
+        assert!(body.contains("use crate::database::schema::sql_types::UserRole as UserRoleSqlType;"));
         assert!(body.contains("use crate::meltdown::*;"));
-        assert!(body.contains("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsExpression, FromSqlRow, Serialize, Deserialize)]"));
-        assert!(body.contains("#[diesel(sql_type = UserRole)]"));
+        assert!(body.contains("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]"));
+        assert!(body.contains("#[cfg_attr(not(target_arch = \"wasm32\"), derive(AsExpression, FromSqlRow))]"));
+        assert!(body.contains("diesel(sql_type = UserRoleSqlType)"));
         assert!(body.contains("pub enum UserRole {"));
         assert!(body.contains("    Admin,"));
         assert!(body.contains("    Member,"));
         assert!(body.contains("UserRole::Admin => \"admin\""));
         assert!(body.contains("\"admin\" => Ok(UserRole::Admin)"));
-        assert!(body.contains("impl FromSql<UserRole, Pg> for UserRole"));
+        assert!(body.contains("impl FromSql<UserRoleSqlType, Pg> for UserRole"));
         assert!(body.contains("b\"admin\" => Ok(UserRole::Admin)"));
-        assert!(body.contains("impl ToSql<UserRole, Pg> for UserRole"));
+        assert!(body.contains("impl ToSql<UserRoleSqlType, Pg> for UserRole"));
     }
 
     #[test]
