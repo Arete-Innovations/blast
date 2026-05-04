@@ -281,7 +281,7 @@ pub fn ProfilePage() -> impl IntoView {
                         <div class=style::row>
                             <span class=style::label>"Role"</span>
                             <span class=style::value>
-                                <BadgeCell text=role() color=BadgeColor::Info/>
+                                <BadgeCell text=Signal::derive(role) color=BadgeColor::Info/>
                             </span>
                         </div>
                         <div class=style::row>
