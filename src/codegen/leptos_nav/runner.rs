@@ -250,7 +250,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: Default::default(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let mut verb_map: IndexMap<Verb, VerbState> = IndexMap::new();
         for (verb, emit) in verbs {
@@ -280,6 +282,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: GenLevel::Pages,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 

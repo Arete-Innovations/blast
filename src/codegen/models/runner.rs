@@ -176,7 +176,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("active"),
@@ -186,7 +188,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("email"),
@@ -196,7 +200,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();
@@ -217,6 +223,17 @@ mod tests {
                 emit_html_page: true,
             },
         );
+        for v in [Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
+            verbs.insert(
+                v,
+                VerbState {
+                    auth: AuthMode::Public,
+                    list_options: None,
+                    emit_rest_api: true,
+                    emit_html_page: true,
+                },
+            );
+        }
 
         let mut resource = ResourceState::new(ResourceName::new(table));
         resource.fields = fields;

@@ -69,7 +69,7 @@ fn route_alignment_test_path(project_root: &Path) -> PathBuf {
 }
 
 /// Read the package name from the project's Cargo.toml so the generated test
-/// file can `use <crate>::structs::leptos::RouteName`. Falls back to
+/// file can `use <crate>::structs::vendored::leptos::RouteName`. Falls back to
 /// `canonical` (the in-place dev crate name) when the file cannot be parsed —
 /// the canonical dev loop runs `blast gen all` against `templates/canonical/`
 /// itself, where the crate is literally named `canonical`.
@@ -80,8 +80,13 @@ fn read_crate_name(project_root: &Path) -> BlastResult<String> {
         Err(_missing) => return Ok("canonical".to_string()),
     };
     let parsed: ::toml::Value = ::toml::from_str(&body).map_err(|e| BlastError::Invalid(format!("Cargo.toml parse error: {e}")))?;
-    let raw_name = parsed.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("canonical"); // allow: documented fallback when Cargo.toml has no [package].name; canonical dev loop relies on the literal default
-    // Cargo permits hyphens in package names; the crate identifier replaces them with underscores.
+    // Tests resolve a crate by its [lib].name (which scaffold pins to "catalyst" as a fork-anchor).
+    // Fall back to [package].name only if [lib].name is absent.
+    let lib_name = parsed.get("lib").and_then(|l| l.get("name")).and_then(|n| n.as_str());
+    let raw_name = match lib_name {
+        Some(n) => n,
+        None => parsed.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str()).unwrap_or("canonical"), // allow: documented fallback when Cargo.toml has no [package].name; canonical dev loop relies on the literal default
+    };
     Ok(raw_name.replace('-', "_"))
 }
 
@@ -188,7 +193,7 @@ fn render_route_alignment_test(entries: &[RouteEntry], crate_name: &str) -> Stri
     out.push_str("//! literal in `src/transport/leptos/routes/generated/table.rs` and the enum\n");
     out.push_str("//! constructor would cause silent breakage at navigation time — this test\n");
     out.push_str("//! is the compile-time backstop.\n\n");
-    out.push_str(&format!("use {crate_name}::structs::leptos::RouteName;\n\n"));
+    out.push_str(&format!("use {crate_name}::structs::vendored::leptos::RouteName;\n\n"));
 
     if entries.is_empty() {
         out.push_str("#[test]\n");
@@ -285,7 +290,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let mut verb_map: IndexMap<Verb, VerbState> = IndexMap::new();
         for (verb, emit_html) in verbs {
@@ -315,6 +322,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: GenLevel::Pages,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 
@@ -408,7 +419,7 @@ mod tests {
         let r = make_resource("posts", &[(Verb::List, true), (Verb::Get, true), (Verb::Create, true), (Verb::Update, true)]);
         let entries = collect_route_entries(&[r]);
         let body = render_route_alignment_test(&entries, "canonical");
-        assert!(body.contains("use canonical::structs::leptos::RouteName;"));
+        assert!(body.contains("use canonical::structs::vendored::leptos::RouteName;"));
         assert!(body.contains("RouteName::ResourceList(\"posts\").path().as_ref(), \"/posts\""));
         assert!(body.contains("RouteName::ResourceCreate(\"posts\").path().as_ref(), \"/posts/new\""));
         assert!(body.contains("RouteName::ResourceDetail(\"posts\", 42).path().as_ref(), \"/posts/42\""));
@@ -428,7 +439,7 @@ mod tests {
     #[test]
     fn render_route_alignment_test_substitutes_crate_name() {
         let body = render_route_alignment_test(&[], "myapp");
-        assert!(body.contains("use myapp::structs::leptos::RouteName;"));
+        assert!(body.contains("use myapp::structs::vendored::leptos::RouteName;"));
     }
 
     #[test]

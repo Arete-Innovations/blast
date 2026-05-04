@@ -16,6 +16,7 @@ pub enum ServerMode {
     Dev,
     Prod,
     Watch,
+    WatchProd,
 }
 
 impl ServerMode {
@@ -24,6 +25,7 @@ impl ServerMode {
             ServerMode::Dev => "dev",
             ServerMode::Prod => "prod",
             ServerMode::Watch => "watch",
+            ServerMode::WatchProd => "watch-prod",
         }
     }
 }
@@ -153,6 +155,11 @@ fn build_command(config: &Config, mode: ServerMode) -> Command {
         ServerMode::Watch => {
             let mut c = Command::new("cargo");
             c.args(["leptos", "watch"]);
+            c
+        }
+        ServerMode::WatchProd => {
+            let mut c = Command::new("cargo");
+            c.args(["leptos", "watch", "--release", "--precompress"]);
             c
         }
     };

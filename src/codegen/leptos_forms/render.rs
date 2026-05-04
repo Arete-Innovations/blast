@@ -8,11 +8,23 @@ use crate::{
         },
         structs::naming::type_stem_for_resource,
     },
-    state::{FieldName, FieldState, FieldVariant, ResourceState, SqlType, Verb},
+    state::{FieldKind, FieldName, FieldState, FieldVariant, ResourceState, SqlType, Verb},
 };
 
 /// Look up a `ParsedEnum` whose pascalized name matches the field's declared
 /// `sql_type` (case-insensitive). Returns `None` for non-enum fields.
+/// True when a field has no UI representation in the create form. Hidden
+/// + FromSession both fall in this bucket: form skips signal+input, struct
+/// literal still references the field with a placeholder default.
+pub fn is_hidden_kind(field: &FieldState) -> bool {
+    matches!(field.kind, FieldKind::Hidden | FieldKind::FromSession(_))
+}
+
+/// True when a field should render as a `<textarea>` instead of `<input>`.
+pub fn is_textarea_kind(field: &FieldState) -> bool {
+    matches!(field.kind, FieldKind::Textarea)
+}
+
 pub fn find_enum_for_field<'e>(field: &FieldState, enums: &'e [ParsedEnum]) -> Option<&'e ParsedEnum> {
     let want = field.sql_type.as_str().to_ascii_lowercase();
     enums.iter().find(|p| enum_type_name(&p.name).to_ascii_lowercase() == want)
@@ -69,6 +81,9 @@ pub enum InputKind {
 }
 
 pub fn classify_input(field: &FieldState, enums: &[ParsedEnum]) -> InputKind {
+    if matches!(field.kind, FieldKind::Textarea) {
+        return InputKind::Textarea;
+    }
     if find_enum_for_field(field, enums).is_some() {
         return InputKind::Enum;
     }
@@ -104,34 +119,51 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     let stem = type_stem_for_resource(resource);
     let component_name = format!("{stem}CreateForm");
     let insertable_type = format!("{stem}Insertable");
+    let public_type = format!("{stem}Public");
 
     let insertable_fields: Vec<(&FieldName, &FieldState)> = fields_for_variant(resource, FieldVariant::Insertable).into_iter().filter(|(_pair_name, f)| !f.primary_key).collect();
+
+    let pk_field_name: String = match primary_key_field(resource) {
+        Some((pk_name, _)) => pk_name.as_str().to_string(),
+        None => "id".to_string(), // allow: best-effort fallback for resources without a declared PK
+    };
 
     let used_enum_types: BTreeSet<String> = collect_used_enum_types(&insertable_fields, enums);
 
     let mut out = String::new();
+    out.push_str("use std::collections::HashMap;\n");
     out.push_str("use leptos::ev::SubmitEvent;\n");
     out.push_str("use leptos::prelude::*;\n");
     out.push_str("use leptos::task::spawn_local;\n");
     out.push('\n');
     out.push_str("use crate::meltdown::MeltDown;\n");
-    out.push_str(&format!("use crate::structs::generated::{table}::{insertable_type};\n"));
+    out.push_str(&format!("use crate::structs::generated::{table}::{{{insertable_type}, {public_type}}};\n"));
     for ty in &used_enum_types {
         out.push_str(&format!("use crate::structs::generated::enums::{ty};\n"));
     }
     out.push_str(&format!("use crate::structs::generated::validators::{table}::validate_{table}_insertable;\n"));
-    out.push_str("use crate::views::components::ErrorBanner;\n");
+    out.push_str("use crate::structs::vendored::leptos::{ButtonKind, RouteName};\n");
+    out.push_str("use crate::views::components::{Button, ErrorBanner, FieldError, LinkButton};\n");
+    out.push_str("use crate::views::signals::dispatch_form_error;\n");
+    out.push_str("use crate::views::signals::nav::use_blocking_navigate;\n");
+    out.push_str("use crate::views::signals::toast;\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::do_{table}_create;\n"));
     out.push('\n');
 
     out.push_str("#[component]\n");
     out.push_str(&format!("pub fn {component_name}() -> impl IntoView {{\n"));
+    out.push_str(&format!("    let cancel_href = RouteName::ResourceList(\"{table}\").path().to_string();\n"));
+    out.push_str("    let navigate = StoredValue::new_local(use_blocking_navigate());\n\n");
 
     for (name, field) in &insertable_fields {
+        if is_hidden_kind(field) {
+            continue;
+        }
         out.push_str(&render_signal_decl(name.as_str(), field, enums));
     }
     out.push_str("    let pending: RwSignal<bool> = RwSignal::new(false);\n");
     out.push_str("    let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);\n");
+    out.push_str("    let field_errors: RwSignal<HashMap<String, String>> = RwSignal::new(HashMap::new());\n");
     out.push('\n');
 
     out.push_str("    let on_submit = move |ev: SubmitEvent| {\n");
@@ -139,6 +171,8 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     out.push_str("        if pending.get_untracked() {\n");
     out.push_str("            return;\n");
     out.push_str("        }\n");
+    out.push_str("        field_errors.update(|m| m.clear());\n");
+    out.push_str("        last_error.set(None);\n");
     out.push_str(&format!("        let parsed_result: ::std::result::Result<{insertable_type}, MeltDown> = "));
     out.push_str(&render_build_insertable(resource, &insertable_fields, enums));
     out.push_str(";\n");
@@ -146,7 +180,8 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     out.push_str("            Ok(p) => p,\n");
     out.push_str("            Err(err) => {\n");
     out.push_str("                err.log();\n");
-    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                toast::error(err.user_message());\n");
+    out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
     out.push_str("            }\n");
     out.push_str("        };\n");
@@ -154,37 +189,46 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     out.push_str("            Ok(()) => {}\n");
     out.push_str("            Err(err) => {\n");
     out.push_str("                err.log();\n");
-    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                toast::error(err.user_message());\n");
+    out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("        pending.set(true);\n");
-    out.push_str("        last_error.set(None);\n");
     out.push_str("        spawn_local(async move {\n");
     out.push_str(&format!("            let outcome = do_{table}_create(parsed).await;\n"));
     out.push_str("            pending.set(false);\n");
     out.push_str("            match outcome {\n");
-    out.push_str("                Ok(_created) => {}\n");
+    out.push_str(&format!(
+        "                Ok(record) => {{\n                    toast::success(\"{stem} created.\");\n                    let path = RouteName::ResourceDetail(\"{table}\", record.{pk_field_name}).path().to_string();\n                    navigate.with_value(|nav| nav(&path));\n                }}\n"
+    ));
     out.push_str("                Err(err) => {\n");
     out.push_str("                    err.log();\n");
-    out.push_str("                    last_error.set(Some(err));\n");
+    out.push_str("                    toast::error(err.user_message());\n");
+    out.push_str("                    dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        });\n");
     out.push_str("    };\n");
     out.push('\n');
 
-    out.push_str(&format!("    view! {{\n        <form class=\"{table}-create-form\" on:submit=on_submit>\n"));
+    out.push_str(&format!("    view! {{\n        <form class=\"crud-form {table}-create-form\" on:submit=on_submit>\n"));
     for (name, field) in &insertable_fields {
+        if is_hidden_kind(field) {
+            continue;
+        }
         out.push_str(&render_field_view(name.as_str(), field, enums));
     }
     out.push_str("            {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}\n");
-    out.push_str("            <button type=\"submit\" prop:disabled=move || pending.get()>\n");
-    out.push_str("                {move || match pending.get() {\n");
-    out.push_str("                    true => \"Saving...\",\n");
-    out.push_str("                    false => \"Create\",\n");
-    out.push_str("                }}\n");
-    out.push_str("            </button>\n");
+    out.push_str("            <div class=\"crud-form__actions\">\n");
+    out.push_str("                <LinkButton href=cancel_href.clone() kind=ButtonKind::Ghost>\"Cancel\"</LinkButton>\n");
+    out.push_str("                <Button kind=ButtonKind::Primary kind_attr=\"submit\".to_string() disabled=Signal::derive(move || pending.get())>\n");
+    out.push_str("                    {move || match pending.get() {\n");
+    out.push_str("                        true => \"Saving...\",\n");
+    out.push_str("                        false => \"Create\",\n");
+    out.push_str("                    }}\n");
+    out.push_str("                </Button>\n");
+    out.push_str("            </div>\n");
     out.push_str("        </form>\n");
     out.push_str("    }\n");
     out.push_str("}\n");
@@ -204,6 +248,7 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     let used_enum_types: BTreeSet<String> = collect_used_enum_types(&patch_fields, enums);
 
     let mut out = String::new();
+    out.push_str("use std::collections::HashMap;\n");
     out.push_str("use leptos::ev::SubmitEvent;\n");
     out.push_str("use leptos::prelude::*;\n");
     out.push_str("use leptos::task::spawn_local;\n");
@@ -214,7 +259,11 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
         out.push_str(&format!("use crate::structs::generated::enums::{ty};\n"));
     }
     out.push_str(&format!("use crate::structs::generated::validators::{table}::validate_{table}_patch;\n"));
-    out.push_str("use crate::views::components::ErrorBanner;\n");
+    out.push_str("use crate::structs::vendored::leptos::{ButtonKind, RouteName};\n");
+    out.push_str("use crate::views::components::{Button, ErrorBanner, FieldError, LinkButton};\n");
+    out.push_str("use crate::views::signals::dispatch_form_error;\n");
+    out.push_str("use crate::views::signals::nav::use_blocking_navigate;\n");
+    out.push_str("use crate::views::signals::toast;\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::do_{table}_update;\n"));
     out.push('\n');
 
@@ -225,13 +274,18 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
 
     out.push_str("#[component]\n");
     out.push_str(&format!("pub fn {component_name}(initial: {public_type}) -> impl IntoView {{\n"));
-
     out.push_str(&format!("    let row_id: {pk_ty} = initial.{pk_field_name}.clone();\n"));
+    out.push_str(&format!(
+        "    let cancel_href = RouteName::ResourceDetail(\"{table}\", row_id.clone()).path().to_string();\n"
+    ));
+    out.push_str("    let navigate = StoredValue::new_local(use_blocking_navigate());\n\n");
+
     for (name, field) in &patch_fields {
-        out.push_str(&render_signal_decl(name.as_str(), field, enums));
+        out.push_str(&render_signal_decl_initialized(name.as_str(), field, enums));
     }
     out.push_str("    let pending: RwSignal<bool> = RwSignal::new(false);\n");
     out.push_str("    let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);\n");
+    out.push_str("    let field_errors: RwSignal<HashMap<String, String>> = RwSignal::new(HashMap::new());\n");
     out.push('\n');
 
     out.push_str("    let on_submit = move |ev: SubmitEvent| {\n");
@@ -239,6 +293,8 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     out.push_str("        if pending.get_untracked() {\n");
     out.push_str("            return;\n");
     out.push_str("        }\n");
+    out.push_str("        field_errors.update(|m| m.clear());\n");
+    out.push_str("        last_error.set(None);\n");
     out.push_str(&format!("        let patch_result: ::std::result::Result<{patch_type}, MeltDown> = "));
     out.push_str(&render_build_patch(resource, &patch_fields, enums));
     out.push_str(";\n");
@@ -246,7 +302,8 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     out.push_str("            Ok(p) => p,\n");
     out.push_str("            Err(err) => {\n");
     out.push_str("                err.log();\n");
-    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                toast::error(err.user_message());\n");
+    out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
     out.push_str("            }\n");
     out.push_str("        };\n");
@@ -254,42 +311,70 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     out.push_str("            Ok(()) => {}\n");
     out.push_str("            Err(err) => {\n");
     out.push_str("                err.log();\n");
-    out.push_str("                last_error.set(Some(err));\n");
+    out.push_str("                toast::error(err.user_message());\n");
+    out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("        pending.set(true);\n");
-    out.push_str("        last_error.set(None);\n");
     out.push_str("        let captured_id = row_id.clone();\n");
     out.push_str("        spawn_local(async move {\n");
     out.push_str(&format!("            let outcome = do_{table}_update(captured_id, patch).await;\n"));
     out.push_str("            pending.set(false);\n");
     out.push_str("            match outcome {\n");
-    out.push_str("                Ok(_updated) => {}\n");
+    out.push_str(&format!(
+        "                Ok(record) => {{\n                    toast::success(\"{stem} saved.\");\n                    let path = RouteName::ResourceDetail(\"{table}\", record.{pk_field_name}).path().to_string();\n                    navigate.with_value(|nav| nav(&path));\n                }}\n"
+    ));
     out.push_str("                Err(err) => {\n");
     out.push_str("                    err.log();\n");
-    out.push_str("                    last_error.set(Some(err));\n");
+    out.push_str("                    toast::error(err.user_message());\n");
+    out.push_str("                    dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        });\n");
     out.push_str("    };\n");
     out.push('\n');
 
-    out.push_str(&format!("    view! {{\n        <form class=\"{table}-edit-form\" on:submit=on_submit>\n"));
+    out.push_str(&format!("    view! {{\n        <form class=\"crud-form {table}-edit-form\" on:submit=on_submit>\n"));
     for (name, field) in &patch_fields {
         out.push_str(&render_field_view(name.as_str(), field, enums));
     }
     out.push_str("            {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}\n");
-    out.push_str("            <button type=\"submit\" prop:disabled=move || pending.get()>\n");
-    out.push_str("                {move || match pending.get() {\n");
-    out.push_str("                    true => \"Saving...\",\n");
-    out.push_str("                    false => \"Save\",\n");
-    out.push_str("                }}\n");
-    out.push_str("            </button>\n");
+    out.push_str("            <div class=\"crud-form__actions\">\n");
+    out.push_str("                <LinkButton href=cancel_href.clone() kind=ButtonKind::Ghost>\"Cancel\"</LinkButton>\n");
+    out.push_str("                <Button kind=ButtonKind::Primary kind_attr=\"submit\".to_string() disabled=Signal::derive(move || pending.get())>\n");
+    out.push_str("                    {move || match pending.get() {\n");
+    out.push_str("                        true => \"Saving...\",\n");
+    out.push_str("                        false => \"Save\",\n");
+    out.push_str("                    }}\n");
+    out.push_str("                </Button>\n");
+    out.push_str("            </div>\n");
     out.push_str("        </form>\n");
     out.push_str("    }\n");
     out.push_str("}\n");
     out
+}
+
+fn render_signal_decl_initialized(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> String {
+    let kind = classify_input(field, enums);
+    let lowered = field.sql_type.as_str().to_ascii_lowercase();
+    match kind {
+        InputKind::Bool => format!("    let {name} = RwSignal::new(initial.{name});\n"),
+        InputKind::Number => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_string());\n"),
+        InputKind::Datetime => match lowered.as_str() {
+            "timestamptz" => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_rfc3339());\n"),
+            _other => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.format(\"%Y-%m-%dT%H:%M:%S\").to_string());\n"),
+        },
+        InputKind::Date => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.format(\"%Y-%m-%d\").to_string());\n"),
+        InputKind::Enum => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.as_str().to_string());\n"),
+        _stringy => match lowered.as_str() {
+            "uuid" => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_string());\n"),
+            "json" | "jsonb" => format!(
+                "    let {name}: RwSignal<String> = RwSignal::new(match ::serde_json::to_string(&initial.{name}) {{ Ok(s) => s, Err(parse_err) => {{ crate::cata_log!(Debug, format!(\"json initial serialize failed: {{}}\", parse_err)); String::new() }} }});\n"
+            ),
+            _stringy_text => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.clone());\n"),
+        },
+    }
 }
 
 fn render_signal_decl(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> String {
@@ -335,6 +420,51 @@ fn render_build_patch(resource: &ResourceState, fields: &[(&FieldName, &FieldSta
 }
 
 fn render_field_parse_let(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> String {
+    if is_hidden_kind(field) {
+        // No UI for this field. Emit a placeholder so the Insertable struct
+        // literal still type-checks. Server (HTTP create handler) overwrites
+        // the value before validation when kind = FromSession.
+        let kind = classify_input(field, enums);
+        return match kind {
+            InputKind::Bool => format!("            let {name}_val: bool = false;\n"),
+            InputKind::Number => {
+                let target = number_target(field);
+                format!("            let {name}_val: {target} = 0;\n")
+            }
+            InputKind::Datetime => {
+                let lowered = field.sql_type.as_str().to_ascii_lowercase();
+                match lowered.as_str() {
+                    "timestamptz" => format!(
+                        "            let {name}_val: chrono::DateTime<chrono::Utc> = chrono::Utc::now();\n"
+                    ),
+                    _other => format!(
+                        "            let {name}_val: chrono::NaiveDateTime = chrono::Utc::now().naive_utc();\n"
+                    ),
+                }
+            }
+            InputKind::Date => format!(
+                "            let {name}_val: chrono::NaiveDate = chrono::Utc::now().date_naive();\n"
+            ),
+            InputKind::Enum => {
+                let parsed = match find_enum_for_field(field, enums) {
+                    Some(p) => p,
+                    None => return format!("            let {name}_val: String = String::new();\n", name = name),
+                };
+                let ty = enum_type_name(&parsed.name);
+                format!("            let {name}_val: {ty} = ::std::default::Default::default();\n")
+            }
+            _stringy => {
+                let lowered = field.sql_type.as_str().to_ascii_lowercase();
+                match lowered.as_str() {
+                    "uuid" => format!("            let {name}_val: uuid::Uuid = uuid::Uuid::nil();\n"),
+                    "json" | "jsonb" => format!(
+                        "            let {name}_val: serde_json::Value = serde_json::Value::Null;\n"
+                    ),
+                    _stringy_text => format!("            let {name}_val: String = String::new();\n"),
+                }
+            }
+        };
+    }
     let kind = classify_input(field, enums);
     let raw_var = format!("{name}_raw");
     match kind {
@@ -377,7 +507,7 @@ fn render_field_parse_let(name: &str, field: &FieldState, enums: &[ParsedEnum]) 
             };
             let ty = enum_type_name(&parsed.name);
             format!(
-                "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: {ty} = match {ty}::parse(&{raw_var}) {{\n                Ok(v) => v,\n                Err(_parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", \"invalid {ty}\")),\n            }};\n",
+                "            let {raw_var}: String = {name}.get_untracked();\n            let {name}_val: {ty} = match {ty}::parse(&{raw_var}) {{\n                Ok(v) => v,\n                Err(parse_err) => return Err(MeltDown::validation_failed_field(\"{name}\", format!(\"invalid {ty}: {{}}\", parse_err))),\n            }};\n",
                 raw_var = raw_var,
                 name = name,
                 ty = ty,
@@ -428,8 +558,8 @@ fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> St
     let kind = classify_input(field, enums);
     let label_text = pretty_label(name);
     let mut out = String::new();
-    out.push_str("            <label>\n");
-    out.push_str(&format!("                <span>\"{label_text}\"</span>\n"));
+    out.push_str("            <label class=\"crud-form__field\">\n");
+    out.push_str(&format!("                <span class=\"crud-form__label\">\"{label_text}\"</span>\n"));
 
     match kind {
         InputKind::Bool => {
@@ -491,6 +621,9 @@ fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> St
     }
 
     out.push_str("            </label>\n");
+    out.push_str(&format!(
+        "            <FieldError message=Signal::derive(move || field_errors.with(|m| m.get(\"{name}\").cloned()))/>\n"
+    ));
     out
 }
 

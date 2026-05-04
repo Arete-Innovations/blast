@@ -78,12 +78,19 @@ fn build_resource_state(table: &str, state: &WizardState) -> ResourceState {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
+                kind: Default::default(),
             },
         );
     }
 
     for col in &state.columns {
-        let mut variants = BTreeSet::from([FieldVariant::Db, FieldVariant::Insertable, FieldVariant::Patch, FieldVariant::Admin]);
+        let mut variants = BTreeSet::from([FieldVariant::Db, FieldVariant::Admin]);
+        if state.verbs.create {
+            variants.insert(FieldVariant::Insertable);
+        }
+        if state.verbs.update {
+            variants.insert(FieldVariant::Patch);
+        }
         if col.public_visible {
             variants.insert(FieldVariant::Public);
         }
@@ -98,6 +105,7 @@ fn build_resource_state(table: &str, state: &WizardState) -> ResourceState {
                 nullable,
                 primary_key: false,
                 validators,
+                kind: Default::default(),
             },
         );
     }
@@ -111,6 +119,7 @@ fn build_resource_state(table: &str, state: &WizardState) -> ResourceState {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
+                kind: Default::default(),
             },
         );
     }
@@ -123,6 +132,7 @@ fn build_resource_state(table: &str, state: &WizardState) -> ResourceState {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
+                kind: Default::default(),
             },
         );
     }
@@ -135,6 +145,7 @@ fn build_resource_state(table: &str, state: &WizardState) -> ResourceState {
                 nullable: true,
                 primary_key: false,
                 validators: BTreeSet::new(),
+                kind: Default::default(),
             },
         );
     }
@@ -160,6 +171,10 @@ fn build_resource_state(table: &str, state: &WizardState) -> ResourceState {
         soft_delete: soft_delete_config,
         relations: BTreeMap::new(),
         gen_level: state.gen_level(),
+        list_layout: None,
+        detail_layout: None,
+        toggle_endpoint: None,
+        live_topics: Vec::new(),
     }
 }
 

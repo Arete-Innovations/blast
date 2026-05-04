@@ -45,6 +45,56 @@ pub struct ResourceState {
     /// CRUD UI or down to `Struct` for data-only.
     #[serde(default)]
     pub gen_level: GenLevel,
+    /// When set, the generated list page replaces the default
+    /// `<TableBuilder>` with a vertical column of cells. The codegen emits
+    /// `<{cell} item=row/>` per `Public` row inside the standard
+    /// `AppShell`/`PageShell` chrome. The cell module path is
+    /// `crate::views::components::vendored::{module}::{component}`.
+    #[serde(default)]
+    pub list_layout: Option<CustomLayout>,
+    /// When set, the generated detail page replaces the default
+    /// `<DetailBuilder>` with a single rendering of the cell.
+    /// The codegen emits `<{cell} item=public/>`.
+    #[serde(default)]
+    pub detail_layout: Option<CustomLayout>,
+    /// Atomic delete-or-create endpoint. When set, codegen emits a full
+    /// toggle stack: `POST /api/<resource>/toggle/{<scope_field>}` →
+    /// matches on `<scope_field>` plus all `FromSession` fields, deletes
+    /// the row if present (returns `active: false`), inserts otherwise
+    /// (returns `active: true`). Response carries the post-toggle row count
+    /// scoped by `<scope_field>`.
+    #[serde(default)]
+    pub toggle_endpoint: Option<ToggleEndpoint>,
+
+    /// Extra WS topics the detail page subscribes to in addition to the
+    /// implicit `<table>:row:<id>`. Each entry may use the literal `{id}`
+    /// placeholder, replaced at codegen time with the detail page's
+    /// `id_signal.get()`. Useful for cross-resource live aggregates
+    /// (e.g. tweets.live_topics = ["likes:tweet_id:{id}"] so a like-toggle
+    /// refreshes the tweet detail page).
+    #[serde(default)]
+    pub live_topics: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToggleEndpoint {
+    /// URL path-param column. The toggled row's match-tuple is
+    /// `(scope_field=<path>, <FromSession field>=<session value>)`.
+    pub scope_field: FieldName,
+}
+
+/// Replaces the default builder in a generated list/detail page with a
+/// custom Leptos component. The component must accept a single prop named
+/// `item` (or `items` for list) of the resource's `Public` type
+/// (`Vec<Public>` for list).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomLayout {
+    /// Module path under `crate::views::components::vendored::`.
+    /// Example: `"tweet_card"`.
+    pub module: String,
+    /// Component name within that module.
+    /// Example: `"TweetCard"`.
+    pub component: String,
 }
 
 /// A typed relation between this resource and another table.
@@ -92,6 +142,34 @@ pub struct FieldState {
     pub primary_key: bool,
     #[serde(default)]
     pub validators: BTreeSet<ValidatorRule>,
+    /// UI/wire-shape hint. Drives form input control + create-handler injection.
+    /// Default = `Default` (renders as appropriate `<input>`).
+    /// `Textarea` renders multi-line input.
+    /// `Hidden` omits the field from the form entirely (client must not send it).
+    /// `FromSession(...)` omits from the form AND injects the session value
+    /// into the insertable server-side before validation.
+    #[serde(default)]
+    pub kind: FieldKind,
+}
+
+/// Per-field UI / wire-shape directive consumed by form codegen and by the
+/// generated HTTP create handler.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum FieldKind {
+    #[default]
+    Default,
+    Textarea,
+    Hidden,
+    FromSession(SessionFieldRef),
+}
+
+/// Which value off the request session should be injected when a field is
+/// marked `FromSession`. Codegen rewrites this to a `ctx.session()` accessor
+/// in the create handler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SessionFieldRef {
+    UserId,
+    SessionId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -208,6 +286,10 @@ impl ResourceState {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: GenLevel::default(),
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 

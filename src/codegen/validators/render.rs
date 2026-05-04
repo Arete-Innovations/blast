@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::{
     codegen::{structs::naming::type_stem_for_resource, validators::render_rust::render_validators_rust_body},
     state::{FieldName, FieldState, FieldVariant, ResourceState, ValidatorRule},
@@ -12,10 +14,20 @@ pub fn build_resource_validators_rust(resource: &ResourceState) -> String {
     let insertable_type = format!("{stem}Insertable");
     let patch_type = format!("{stem}Patch");
 
-    let insertable_fields = collect_validated_fields(resource, FieldVariant::Insertable);
-    let patch_fields = collect_validated_fields(resource, FieldVariant::Patch);
+    let present: BTreeSet<FieldVariant> = resource.fields.values().flat_map(|f| f.variants.iter().copied()).collect();
+    let has_insertable = present.contains(&FieldVariant::Insertable);
+    let has_patch = present.contains(&FieldVariant::Patch);
 
-    render_validators_rust_body(table, &insertable_type, &patch_type, &insertable_fields, &patch_fields)
+    let insertable_fields = match has_insertable {
+        true => collect_validated_fields(resource, FieldVariant::Insertable),
+        false => Vec::new(),
+    };
+    let patch_fields = match has_patch {
+        true => collect_validated_fields(resource, FieldVariant::Patch),
+        false => Vec::new(),
+    };
+
+    render_validators_rust_body(table, &insertable_type, &patch_type, &insertable_fields, &patch_fields, has_insertable, has_patch)
 }
 
 pub(super) fn collect_validated_fields<'a>(resource: &'a ResourceState, variant: FieldVariant) -> Vec<(&'a FieldName, &'a FieldState)> {
@@ -92,7 +104,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         for (col, sql, rules, nullable) in validators {
             let mut rule_set = BTreeSet::new();
@@ -107,7 +121,9 @@ mod tests {
                     nullable,
                     primary_key: false,
                     validators: rule_set,
-                },
+                
+            kind: Default::default(),
+        },
             );
         }
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -139,6 +155,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: crate::state::GenLevel::default(),
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 
@@ -218,7 +238,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let rust = build_resource_validators_rust(&r);
         assert!(!rust.contains("\"description\""));
@@ -278,11 +300,26 @@ mod tests {
     }
 
     #[test]
-    fn empty_validators_function_emits_compiles() {
+    fn no_insertable_no_patch_variants_emits_no_validator_fns() {
         let r = make_resource_with_validators(vec![]);
         let rust = build_resource_validators_rust(&r);
-        assert!(rust.contains("validate_users_insertable"));
-        assert!(rust.contains("Ok(())"));
+        assert!(!rust.contains("validate_users_insertable"), "with no Insertable fields, no insertable validator fn:\n{rust}");
+        assert!(!rust.contains("validate_users_patch"), "with no Patch fields, no patch validator fn:\n{rust}");
+        assert!(!rust.contains("UserInsertable"), "no Insertable type ref when no Insertable variants present:\n{rust}");
+        assert!(!rust.contains("UserPatch"), "no Patch type ref when no Patch variants present:\n{rust}");
+    }
+
+    #[test]
+    fn insertable_only_emits_insertable_validator_only() {
+        let mut r = make_resource_with_validators(vec![("email", "Varchar", vec![ValidatorRule::Email], false)]);
+        for f in r.fields.values_mut() {
+            f.variants.remove(&FieldVariant::Patch);
+        }
+        let rust = build_resource_validators_rust(&r);
+        assert!(rust.contains("validate_users_insertable"), "insertable validator must emit:\n{rust}");
+        assert!(!rust.contains("validate_users_patch"), "patch validator must NOT emit when Patch variant absent:\n{rust}");
+        assert!(rust.contains("UserInsertable"));
+        assert!(!rust.contains("UserPatch"));
     }
 
     #[test]

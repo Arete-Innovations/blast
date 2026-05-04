@@ -5,21 +5,59 @@
 //! inside transactions. The auto-conn wrappers in `auto_conn.rs` cover
 //! the 95% callsite that just wants a one-shot acquire from the pool.
 
-use crate::codegen::models::{
-    naming,
-    soft_delete::{self, SoftDeleteConfig},
+use crate::{
+    codegen::models::{
+        naming,
+        soft_delete::{self, SoftDeleteConfig},
+    },
+    state::Verb,
 };
 
-pub fn emit_all(out: &mut String, table: &str, stem: &str, soft_delete_cfg: Option<&SoftDeleteConfig>) {
-    emit_list(out, table, stem);
-    out.push('\n');
-    emit_get(out, table, stem);
-    out.push('\n');
-    emit_create(out, table, stem);
-    out.push('\n');
-    emit_update(out, table, stem);
-    out.push('\n');
-    emit_delete(out, table, soft_delete_cfg);
+pub fn emit_all(out: &mut String, table: &str, stem: &str, soft_delete_cfg: Option<&SoftDeleteConfig>, verbs: &VerbSelection) {
+    if verbs.list {
+        emit_list(out, table, stem);
+        out.push('\n');
+    }
+    if verbs.get {
+        emit_get(out, table, stem);
+        out.push('\n');
+    }
+    if verbs.create {
+        emit_create(out, table, stem);
+        out.push('\n');
+    }
+    if verbs.update {
+        emit_update(out, table, stem);
+        out.push('\n');
+    }
+    if verbs.delete {
+        emit_delete(out, table, soft_delete_cfg);
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VerbSelection {
+    pub list: bool,
+    pub get: bool,
+    pub create: bool,
+    pub update: bool,
+    pub delete: bool,
+}
+
+impl VerbSelection {
+    pub fn from_resource(verbs: &::indexmap::IndexMap<Verb, crate::state::VerbState>) -> Self {
+        Self {
+            list: verbs.contains_key(&Verb::List),
+            get: verbs.contains_key(&Verb::Get),
+            create: verbs.contains_key(&Verb::Create),
+            update: verbs.contains_key(&Verb::Update),
+            delete: verbs.contains_key(&Verb::Delete),
+        }
+    }
+
+    pub fn all() -> Self {
+        Self { list: true, get: true, create: true, update: true, delete: true }
+    }
 }
 
 fn emit_list(out: &mut String, table: &str, stem: &str) {
@@ -235,9 +273,21 @@ mod tests {
     #[test]
     fn emit_all_emits_all_five_fns() {
         let mut out = String::new();
-        emit_all(&mut out, "users", "User", None);
+        emit_all(&mut out, "users", "User", None, &VerbSelection::all());
         for sig in ["pub async fn list(", "pub async fn get(", "pub async fn create(", "pub async fn update(", "pub async fn delete("] {
             assert!(out.contains(sig), "module_fns missing: {sig}\n{out}");
         }
+    }
+
+    #[test]
+    fn emit_all_skips_unselected_verbs() {
+        let mut out = String::new();
+        let verbs = VerbSelection { list: true, get: true, create: false, update: false, delete: true };
+        emit_all(&mut out, "users", "User", None, &verbs);
+        assert!(out.contains("pub async fn list("));
+        assert!(out.contains("pub async fn get("));
+        assert!(out.contains("pub async fn delete("));
+        assert!(!out.contains("pub async fn create("), "create must not emit when verb off:\n{out}");
+        assert!(!out.contains("pub async fn update("), "update must not emit when verb off:\n{out}");
     }
 }

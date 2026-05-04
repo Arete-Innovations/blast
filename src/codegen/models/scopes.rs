@@ -29,6 +29,10 @@ pub fn emit_for_field(out: &mut String, table: &str, field_name: &FieldName, fie
         FilterKind::Int | FilterKind::Float | FilterKind::Decimal => {
             let rust_ty = scalar_rust_type(kind, field);
             emit_scalar_compare(out, table, col, &rust_ty);
+        }
+        FilterKind::OpaqueId => {
+            let rust_ty = scalar_rust_type(kind, field);
+            emit_id_eq_in(out, table, col, &rust_ty);
             match fk_target(col, kind) {
                 Some(target) => emit_fk_shortcut(out, table, col, target, &rust_ty),
                 None => {}
@@ -191,6 +195,27 @@ fn emit_scalar_compare(out: &mut String, table: &str, col: &str, rust_ty: &str) 
     out.push_str(&body);
 }
 
+fn emit_id_eq_in(out: &mut String, table: &str, col: &str, rust_ty: &str) {
+    let body = format!(
+        r#"    /// `WHERE {col} = ?`
+    pub fn where_{col}_eq(mut self, v: {rust_ty}) -> Self {{
+        use crate::database::schema::{table}::dsl as schema;
+        self.inner = self.inner.filter(schema::{col}.eq(v));
+        self
+    }}
+
+    /// `WHERE {col} IN (...)`. Pass an empty slice to match nothing.
+    pub fn where_{col}_in(mut self, vs: &[{rust_ty}]) -> Self {{
+        use crate::database::schema::{table}::dsl as schema;
+        let owned: Vec<{rust_ty}> = vs.to_vec();
+        self.inner = self.inner.filter(schema::{col}.eq_any(owned));
+        self
+    }}
+"#,
+    );
+    out.push_str(&body);
+}
+
 fn emit_fk_shortcut(out: &mut String, table: &str, col: &str, target: &str, rust_ty: &str) {
     let body = format!(
         r#"    /// Filter to rows whose foreign key `{col}` references the given `{target}` id.
@@ -321,6 +346,9 @@ fn scalar_rust_type(kind: FilterKind, field: &FieldState) -> String {
         (FilterKind::Int, "int4") | (FilterKind::Int, "integer") | (FilterKind::Int, "serial") => "i32".to_string(),
         (FilterKind::Int, "int8") | (FilterKind::Int, "bigint") | (FilterKind::Int, "bigserial") => "i64".to_string(),
         (FilterKind::Int, _other) => "i32".to_string(),
+        (FilterKind::OpaqueId, "int2") | (FilterKind::OpaqueId, "smallint") | (FilterKind::OpaqueId, "smallserial") => "i16".to_string(),
+        (FilterKind::OpaqueId, "int4") | (FilterKind::OpaqueId, "integer") | (FilterKind::OpaqueId, "serial") => "i32".to_string(),
+        (FilterKind::OpaqueId, _other) => "i64".to_string(),
         (FilterKind::Float, "float4") | (FilterKind::Float, "real") => "f32".to_string(),
         (FilterKind::Float, _other) => "f64".to_string(),
         (FilterKind::Decimal, _) => "::rust_decimal::Decimal".to_string(),
@@ -344,6 +372,7 @@ mod tests {
             nullable,
             primary_key: false,
             validators: BTreeSet::new(),
+            kind: Default::default(),
         }
     }
 
@@ -378,15 +407,37 @@ mod tests {
     }
 
     #[test]
-    fn int_emits_compare_in_and_optional_fk() {
+    fn fk_id_emits_only_eq_in_and_shortcut_no_ordering() {
         let mut out = String::new();
         emit_for_field(&mut out, "posts", &FieldName::new("author_id"), &field("Int8", false));
         assert!(out.contains("pub fn where_author_id_eq"));
-        assert!(out.contains("pub fn where_author_id_gt"));
-        assert!(out.contains("pub fn where_author_id_lt"));
-        assert!(out.contains("pub fn where_author_id_between"));
         assert!(out.contains("pub fn where_author_id_in"));
         assert!(out.contains("pub fn by_author"), "FK shortcut should be emitted for *_id columns");
+        assert!(!out.contains("pub fn where_author_id_gt"), "ordering on FK is meaningless:\n{out}");
+        assert!(!out.contains("pub fn where_author_id_lt"), "ordering on FK is meaningless:\n{out}");
+        assert!(!out.contains("pub fn where_author_id_between"), "ordering on FK is meaningless:\n{out}");
+    }
+
+    #[test]
+    fn pk_id_emits_only_eq_in_no_ordering() {
+        let mut out = String::new();
+        emit_for_field(&mut out, "users", &FieldName::new("id"), &field("Int8", false));
+        assert!(out.contains("pub fn where_id_eq"));
+        assert!(out.contains("pub fn where_id_in"));
+        assert!(!out.contains("pub fn where_id_gt"), "ordering on PK is meaningless:\n{out}");
+        assert!(!out.contains("pub fn where_id_lt"));
+        assert!(!out.contains("pub fn where_id_between"));
+    }
+
+    #[test]
+    fn plain_int_keeps_full_compare_arsenal() {
+        let mut out = String::new();
+        emit_for_field(&mut out, "products", &FieldName::new("price_cents"), &field("Int4", false));
+        assert!(out.contains("pub fn where_price_cents_eq"));
+        assert!(out.contains("pub fn where_price_cents_gt"));
+        assert!(out.contains("pub fn where_price_cents_lt"));
+        assert!(out.contains("pub fn where_price_cents_between"));
+        assert!(out.contains("pub fn where_price_cents_in"));
     }
 
     #[test]

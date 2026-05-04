@@ -192,7 +192,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let mut email_rules: BTreeSet<ValidatorRule> = BTreeSet::new();
         email_rules.insert(ValidatorRule::Email);
@@ -205,7 +207,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: email_rules,
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -231,6 +235,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: crate::state::GenLevel::default(),
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 

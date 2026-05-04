@@ -215,7 +215,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("title"),
@@ -225,7 +227,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -285,6 +289,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: level,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 

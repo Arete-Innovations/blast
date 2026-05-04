@@ -1,4 +1,12 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum MenuKind {
+    /// App menu: watch dev/prod + codegen + db + logs + arsenal + exit.
+    App,
+    /// Fuses menu: list/toggle/run/logs/live-table — drives the Fuses tab.
+    Fuses,
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "blast", about = "Catablast generator and workflow CLI", disable_help_subcommand = true)]
@@ -60,6 +68,13 @@ pub enum Command {
         name: Option<String>,
     },
 
+    #[command(about = "Sync vendored framework code from upstream catalyst into this project")]
+    Sync {
+        /// Use BLAST_CATALYST_DEV_PATH (local catalyst checkout) instead of git URL.
+        #[arg(long)]
+        dev: bool,
+    },
+
     #[command(about = "Run pending migrations")]
     Migrate,
 
@@ -84,14 +99,20 @@ pub enum Command {
     #[command(about = "Watch BE + WASM with cargo leptos watch (live-reload on src changes)")]
     Watch,
 
+    #[command(name = "watch-prod", about = "Watch BE + WASM with cargo leptos watch --release (max-opt wasm + LTO + strip)")]
+    WatchProd,
+
     #[command(name = "e2e", about = "Run end-to-end tests (cargo leptos end-to-end — boots server, runs tests/e2e harness)")]
     E2e,
 
     #[command(about = "Launch Zellij dashboard")]
     Dashboard,
 
-    #[command(about = "Launch interactive menu")]
-    Cli,
+    #[command(about = "Launch interactive menu (default: app, or `blast cli fuses` for the fuses menu)")]
+    Cli {
+        #[arg(value_enum, default_value_t = MenuKind::App)]
+        menu: MenuKind,
+    },
 
     #[command(name = "toggle-env", about = "Flip Env::Dev <-> Env::Prod", alias = "env")]
     ToggleEnv,

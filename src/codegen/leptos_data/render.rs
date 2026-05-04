@@ -19,7 +19,14 @@ pub fn render_resource_helpers(resource: &ResourceState) -> String {
 
     let mut out = String::new();
     out.push_str("use crate::meltdown::MeltDown;\n");
-    out.push_str(&format!("use crate::structs::generated::{table}::{{{insertable_ty}, {patch_ty}, {public_ty}}};\n"));
+    let mut ty_imports: Vec<&str> = vec![public_ty.as_str()];
+    if has_create {
+        ty_imports.push(insertable_ty.as_str());
+    }
+    if has_update {
+        ty_imports.push(patch_ty.as_str());
+    }
+    out.push_str(&format!("use crate::structs::generated::{table}::{{{}}};\n", ty_imports.join(", ")));
     if has_list {
         out.push_str("use crate::structs::list_query::{ListQuery, ListResponse};\n");
     }

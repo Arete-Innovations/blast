@@ -24,7 +24,7 @@ pub fn render(resource: &ResourceState) -> String {
     let display_fields: Vec<(&FieldName, &FieldState)> = util::fields_for_variant(resource, FieldVariant::Public).into_iter().filter(|(_, field)| is_display_safe(&field.sql_type)).collect();
 
     let mut out = String::new();
-    out.push_str("#[derive(Debug, Clone)]\n");
+    out.push_str("#[derive(Debug, Clone, ::serde::Serialize)]\n");
     out.push_str(&format!("pub struct {row_name} {{\n"));
     for (name, field) in &display_fields {
         let ty = sql_map::rust_type(&field.sql_type, field.nullable);
@@ -78,6 +78,7 @@ mod tests {
             nullable,
             primary_key: pk,
             validators: BTreeSet::new(),
+            kind: Default::default(),
         }
     }
 
@@ -122,7 +123,7 @@ mod tests {
     fn emits_plain_struct_no_external_derive() {
         let resource = full_resource();
         let body = render(&resource);
-        assert!(body.contains("#[derive(Debug, Clone)]"));
+        assert!(body.contains("#[derive(Debug, Clone, ::serde::Serialize)]"), "must derive Serialize for TableBuilder consumption:\n{body}");
         assert!(!body.contains("leptos_struct_table"), "no external table-crate derive should leak in:\n{body}");
         assert!(body.contains("pub struct PostTableRow {"));
     }

@@ -195,6 +195,10 @@ fn write_minimal_users_resource(state_dir: &Path) {
         soft_delete: None,
         relations: BTreeMap::new(),
         gen_level: blast::state::GenLevel::default(),
+        list_layout: None,
+        detail_layout: None,
+        toggle_endpoint: None,
+            live_topics: Vec::new(),
     };
 
     let mut id_variants = BTreeSet::new();
@@ -208,6 +212,7 @@ fn write_minimal_users_resource(state_dir: &Path) {
             nullable: false,
             primary_key: true,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 
@@ -223,6 +228,7 @@ fn write_minimal_users_resource(state_dir: &Path) {
             nullable: false,
             primary_key: false,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 

@@ -10,25 +10,37 @@
 //! agent. Until that lands, generated user-app code will fail to compile
 //! against the missing item — by design.
 
-use crate::codegen::models::naming;
+use crate::codegen::models::{module_fns::VerbSelection, naming};
 
-pub fn emit_impl_block(out: &mut String, table: &str, stem: &str) {
+pub fn emit_impl_block(out: &mut String, table: &str, stem: &str, verbs: &VerbSelection) {
     let insertable = naming::insertable_type(stem);
     let patch = naming::patch_type(stem);
 
     let header = format!("impl {stem} {{\n");
     out.push_str(&header);
-    emit_list_wrapper(out, stem);
-    out.push('\n');
-    emit_get_wrapper(out, stem);
-    out.push('\n');
-    emit_create_wrapper(out, stem, &insertable);
-    out.push('\n');
-    emit_update_wrapper(out, stem, &patch);
-    out.push('\n');
-    emit_delete_wrapper(out);
-    out.push('\n');
-    emit_list_from_query_wrapper(out, table, stem);
+    if verbs.list {
+        emit_list_wrapper(out, stem);
+        out.push('\n');
+    }
+    if verbs.get {
+        emit_get_wrapper(out, stem);
+        out.push('\n');
+    }
+    if verbs.create {
+        emit_create_wrapper(out, stem, &insertable);
+        out.push('\n');
+    }
+    if verbs.update {
+        emit_update_wrapper(out, stem, &patch);
+        out.push('\n');
+    }
+    if verbs.delete {
+        emit_delete_wrapper(out);
+        out.push('\n');
+    }
+    if verbs.list {
+        emit_list_from_query_wrapper(out, table, stem);
+    }
     out.push_str("}\n");
 }
 
@@ -125,7 +137,7 @@ mod tests {
     #[test]
     fn impl_block_contains_all_wrappers() {
         let mut out = String::new();
-        emit_impl_block(&mut out, "users", "User");
+        emit_impl_block(&mut out, "users", "User", &VerbSelection::all());
         for needle in [
             "impl User {",
             "pub async fn list(",
@@ -142,7 +154,7 @@ mod tests {
     #[test]
     fn wrappers_call_pool_and_super() {
         let mut out = String::new();
-        emit_impl_block(&mut out, "users", "User");
+        emit_impl_block(&mut out, "users", "User", &VerbSelection::all());
         assert!(out.contains("crate::database::acquire_conn().await"));
         assert!(out.contains("self::list(&mut conn, query).await"));
         assert!(out.contains("self::get(&mut conn, id).await"));
@@ -154,8 +166,17 @@ mod tests {
     #[test]
     fn list_from_query_returns_query_builder() {
         let mut out = String::new();
-        emit_impl_block(&mut out, "users", "User");
+        emit_impl_block(&mut out, "users", "User", &VerbSelection::all());
         assert!(out.contains("-> UserQuery {"));
         assert!(out.contains("UserQuery::new()"));
+    }
+
+    #[test]
+    fn skips_create_update_wrappers_when_verbs_off() {
+        let mut out = String::new();
+        let verbs = VerbSelection { list: true, get: true, create: false, update: false, delete: true };
+        emit_impl_block(&mut out, "users", "User", &verbs);
+        assert!(!out.contains("pub async fn create("), "create wrapper must not emit:\n{out}");
+        assert!(!out.contains("pub async fn update("), "update wrapper must not emit:\n{out}");
     }
 }

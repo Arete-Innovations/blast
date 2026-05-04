@@ -103,6 +103,7 @@ mod tests {
             nullable,
             primary_key: pk,
             validators: BTreeSet::new(),
+            kind: Default::default(),
         }
     }
 

@@ -10,15 +10,22 @@ fn is_numeric_sql_type(sql: &SqlType) -> bool {
     )
 }
 
-pub fn render_validators_rust_body(table: &str, insertable_type: &str, patch_type: &str, insertable_fields: &[(&FieldName, &FieldState)], patch_fields: &[(&FieldName, &FieldState)]) -> String {
+pub fn render_validators_rust_body(table: &str, insertable_type: &str, patch_type: &str, insertable_fields: &[(&FieldName, &FieldState)], patch_fields: &[(&FieldName, &FieldState)], has_insertable: bool, has_patch: bool) -> String {
     let needs_regex = any_field_uses_regex(insertable_fields) || any_field_uses_regex(patch_fields);
     let regex_imports = if needs_regex { "use ::once_cell::sync::Lazy;\nuse ::regex::Regex;\n" } else { "" };
     let regex_constants = render_regex_constants_rust(insertable_fields, patch_fields);
 
-    let types_use = format!("use crate::structs::generated::{table}::{{{insertable_type}, {patch_type}}};\n");
-
-    let insertable_fn = render_insertable_validator(table, insertable_type, insertable_fields);
-    let patch_fn = render_patch_validator(table, patch_type, patch_fields);
+    let mut imported: Vec<&str> = Vec::new();
+    if has_insertable {
+        imported.push(insertable_type);
+    }
+    if has_patch {
+        imported.push(patch_type);
+    }
+    let types_use = match imported.is_empty() {
+        true => String::new(),
+        false => format!("use crate::structs::generated::{table}::{{{}}};\n", imported.join(", ")),
+    };
 
     let mut out = String::new();
     out.push_str(regex_imports);
@@ -26,9 +33,13 @@ pub fn render_validators_rust_body(table: &str, insertable_type: &str, patch_typ
     out.push_str(&types_use);
     out.push('\n');
     out.push_str(&regex_constants);
-    out.push_str(&insertable_fn);
-    out.push('\n');
-    out.push_str(&patch_fn);
+    if has_insertable {
+        out.push_str(&render_insertable_validator(table, insertable_type, insertable_fields));
+        out.push('\n');
+    }
+    if has_patch {
+        out.push_str(&render_patch_validator(table, patch_type, patch_fields));
+    }
 
     out
 }
@@ -90,20 +101,21 @@ fn crash_macro_call(message: &str) -> String {
     format!("{macro_ident}!(\"{message}: {{}}\", e)", macro_ident = macro_ident, message = message)
 }
 
-fn if_let_some_prefix(binding: &str) -> String {
-    let parts = ["if", "let", "Some"];
-    format!("{} {} {}({})", parts[0], parts[1], parts[2], binding)
-}
 
 fn render_insertable_validator(table: &str, type_name: &str, fields: &[(&FieldName, &FieldState)]) -> String {
     let mut body = String::new();
+    let arg_name = match fields.is_empty() {
+        true => "_input",
+        false => "input",
+    };
     body.push_str(&format!(
-        "pub fn validate_{table}_insertable(input: &{type_name}) -> ::std::result::Result<(), MeltDown> {{\n",
+        "pub fn validate_{table}_insertable({arg}: &{type_name}) -> ::std::result::Result<(), MeltDown> {{\n",
         table = table,
+        arg = arg_name,
         type_name = type_name,
     ));
     if fields.is_empty() {
-        body.push_str("    let _ignored = input;\n    Ok(())\n}\n");
+        body.push_str("    Ok(())\n}\n");
         return body;
     }
     for (name, field) in fields {
@@ -116,13 +128,18 @@ fn render_insertable_validator(table: &str, type_name: &str, fields: &[(&FieldNa
 
 fn render_patch_validator(table: &str, type_name: &str, fields: &[(&FieldName, &FieldState)]) -> String {
     let mut body = String::new();
+    let arg_name = match fields.is_empty() {
+        true => "_input",
+        false => "input",
+    };
     body.push_str(&format!(
-        "pub fn validate_{table}_patch(input: &{type_name}) -> ::std::result::Result<(), MeltDown> {{\n",
+        "pub fn validate_{table}_patch({arg}: &{type_name}) -> ::std::result::Result<(), MeltDown> {{\n",
         table = table,
+        arg = arg_name,
         type_name = type_name,
     ));
     if fields.is_empty() {
-        body.push_str("    let _ignored = input;\n    Ok(())\n}\n");
+        body.push_str("    Ok(())\n}\n");
         return body;
     }
     for (name, field) in fields {
@@ -140,8 +157,8 @@ fn render_field_checks(field: &str, state: &FieldState, is_patch: bool) -> Strin
     let unwrap_inner_some = is_patch && state.nullable;
 
     let inner_indent: &str = match (is_optional_in_dto, unwrap_inner_some) {
-        (true, true) => "            ",
-        (true, false) => "        ",
+        (true, true) => "                ",
+        (true, false) => "            ",
         (false, _) => "    ",
     };
     let value_expr: String = match is_optional_in_dto {
@@ -164,18 +181,25 @@ fn render_field_checks(field: &str, state: &FieldState, is_patch: bool) -> Strin
     let mut out = String::new();
     if is_optional_in_dto {
         if unwrap_inner_some {
-            out.push_str(&format!("    {open} = input.{field}.as_ref() {{\n", open = if_let_some_prefix("outer"), field = field));
-            out.push_str(&format!("        {open} = outer.as_ref() {{\n", open = if_let_some_prefix("v")));
+            out.push_str(&format!("    match input.{field}.as_ref() {{\n", field = field));
+            out.push_str("        Some(outer) => match outer.as_ref() {\n");
+            out.push_str("            Some(v) => {\n");
         } else {
-            out.push_str(&format!("    {open} = input.{field}.as_ref() {{\n", open = if_let_some_prefix("v"), field = field));
+            out.push_str(&format!("    match input.{field}.as_ref() {{\n", field = field));
+            out.push_str("        Some(v) => {\n");
         }
     }
     out.push_str(&rule_body);
     if is_optional_in_dto {
         if unwrap_inner_some {
-            out.push_str("        }\n");
+            out.push_str("            }\n");
+            out.push_str("            None => {}\n");
+            out.push_str("        },\n");
+            out.push_str("        None => {}\n");
             out.push_str("    }\n");
         } else {
+            out.push_str("        }\n");
+            out.push_str("        None => {}\n");
             out.push_str("    }\n");
         }
     }

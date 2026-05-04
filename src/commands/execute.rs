@@ -105,7 +105,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::Cli => crate::interactive::run_interactive_loop(config, dep_manager),
+        Command::Cli { menu } => crate::interactive::run_interactive_loop(config, dep_manager, menu),
 
         Command::Migration { name } => {
             match name {
@@ -142,6 +142,13 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             run_gen_all(config)?;
 
             logger::success(&format!("Table '{}' is wired end-to-end.", outcome.table_name))?;
+            Ok(())
+        }
+
+        Command::Sync { dev } => {
+            let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
+            let mut progress = crate::io::cli_progress(None);
+            crate::project::sync::run_sync(dev, &mut sink, &mut progress)?;
             Ok(())
         }
 
@@ -195,6 +202,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Help => print_help(),
 
         Command::Watch => run_watch(config, dep_manager),
+        Command::WatchProd => run_watch_prod(config, dep_manager),
 
         Command::E2e => run_e2e(config, dep_manager),
     }
@@ -428,6 +436,13 @@ fn run_watch(config: &Config, dep_manager: &mut DependencyManager) -> BlastResul
     dep_manager.ensure_installed(&["cargo-leptos"])?;
     let be_pid = crate::daemon::start_server(config, crate::daemon::ServerMode::Watch)?;
     logger::success(&format!("cargo leptos watch started — PID {} → storage/logs/server.log", be_pid))?;
+    Ok(())
+}
+
+fn run_watch_prod(config: &Config, dep_manager: &mut DependencyManager) -> BlastResult<()> {
+    dep_manager.ensure_installed(&["cargo-leptos"])?;
+    let be_pid = crate::daemon::start_server(config, crate::daemon::ServerMode::WatchProd)?;
+    logger::success(&format!("cargo leptos watch --release started — PID {} → storage/logs/server.log", be_pid))?;
     Ok(())
 }
 

@@ -237,7 +237,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut filterable_set: BTreeMap<FieldName, FilterKind> = BTreeMap::new();

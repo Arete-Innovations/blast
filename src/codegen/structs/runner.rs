@@ -139,7 +139,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("email"),
@@ -149,7 +151,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut filterable: BTreeMap<FieldName, FilterKind> = BTreeMap::new();

@@ -247,7 +247,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("active"),
@@ -257,7 +259,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("created_at"),
@@ -267,7 +271,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();

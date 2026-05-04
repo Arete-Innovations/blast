@@ -144,10 +144,37 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
             out.push('\n');
         }
     }
-    out.push_str(&format!("    Crank::none().run(|| routines::generated::{table}::{routine_call}).await\n"));
+    let publish_kind = match verb {
+        Verb::Create | Verb::Update => PublishKind::Row,
+        Verb::Delete => PublishKind::Id,
+        Verb::List | Verb::Get => PublishKind::None,
+    };
+    match publish_kind {
+        PublishKind::Row => {
+            out.push_str(&format!("    let out = Crank::none().run(|| routines::generated::{table}::{routine_call}).await?;\n"));
+            out.push_str(&format!("    ctx.publish(\"{table}:list\", &out);\n"));
+            out.push_str(&format!("    ctx.publish(&format!(\"{table}:row:{{}}\", out.id), &out);\n"));
+            out.push_str("    Ok(out)\n");
+        }
+        PublishKind::Id => {
+            out.push_str(&format!("    Crank::none().run(|| routines::generated::{table}::{routine_call}).await?;\n"));
+            out.push_str(&format!("    ctx.publish(\"{table}:list\", &id);\n"));
+            out.push_str(&format!("    ctx.publish(&format!(\"{table}:row:{{}}\", id), &id);\n"));
+            out.push_str("    Ok(())\n");
+        }
+        PublishKind::None => {
+            out.push_str(&format!("    Crank::none().run(|| routines::generated::{table}::{routine_call}).await\n"));
+        }
+    }
     out.push_str("}\n");
 
     out
+}
+
+enum PublishKind {
+    Row,
+    Id,
+    None,
 }
 
 fn verb_signature(verb: Verb, type_stem: &str) -> (String, String, String) {
@@ -263,7 +290,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
         verbs.insert(
@@ -326,6 +355,10 @@ mod tests {
             soft_delete: None,
             relations: std::collections::BTreeMap::new(),
             gen_level: crate::state::GenLevel::default(),
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         };
         let path = resources_dir.join(format!("{}.ron", name));
         let body = ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default()).expect("serialize resource");

@@ -7,7 +7,7 @@ use crate::{
     codegen::{header, ir_loader},
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
-    state::{GenLevel, ResourceState, Verb},
+    state::{FieldKind, GenLevel, ResourceState, SessionFieldRef, Verb},
 };
 
 #[derive(Debug, Default)]
@@ -99,7 +99,14 @@ fn build_resource_file(r: &ResourceState) -> String {
     out.push_str("use crate::structs::list_query::{ListQuery, ListResponse};\n");
     out.push('\n');
     out.push_str(&format!("use crate::flows::generated::{table} as flow;\n", table = table,));
-    out.push_str(&format!("use crate::structs::generated::{table}::{{{ty}Insertable, {ty}Patch, {ty}Public}};\n", table = table, ty = type_name,));
+    let mut ty_imports: Vec<String> = vec![format!("{ty}Public", ty = type_name)];
+    if create_emits {
+        ty_imports.push(format!("{ty}Insertable", ty = type_name));
+    }
+    if update_emits {
+        ty_imports.push(format!("{ty}Patch", ty = type_name));
+    }
+    out.push_str(&format!("use crate::structs::generated::{table}::{{{names}}};\n", table = table, names = ty_imports.join(", "),));
     if needs_validator_import {
         let mut imports: Vec<String> = Vec::new();
         if create_emits {
@@ -116,7 +123,7 @@ fn build_resource_file(r: &ResourceState) -> String {
         if !verb_emits_rest(r, *verb) {
             continue;
         }
-        out.push_str(&handler_for_verb(*verb, &type_name, table, needs_validator_import));
+        out.push_str(&handler_for_verb(*verb, r, &type_name, table, needs_validator_import));
         out.push('\n');
     }
 
@@ -131,14 +138,34 @@ fn verb_emits_rest(r: &ResourceState, verb: Verb) -> bool {
     }
 }
 
-fn handler_for_verb(verb: Verb, type_name: &str, table: &str, validators_enabled: bool) -> String {
+fn handler_for_verb(verb: Verb, r: &ResourceState, type_name: &str, table: &str, validators_enabled: bool) -> String {
     match verb {
         Verb::List => list_handler(type_name),
         Verb::Get => get_handler(type_name),
-        Verb::Create => create_handler(type_name, table, validators_enabled),
+        Verb::Create => create_handler(r, type_name, table, validators_enabled),
         Verb::Update => update_handler(type_name, table, validators_enabled),
         Verb::Delete => delete_handler(),
     }
+}
+
+fn session_injections(r: &ResourceState) -> String {
+    let mut out = String::new();
+    for (name, field) in &r.fields {
+        let scope = match &field.kind {
+            FieldKind::FromSession(scope) => scope,
+            _other => continue,
+        };
+        let accessor = match scope {
+            SessionFieldRef::UserId => "user_id",
+            SessionFieldRef::SessionId => "session_id",
+        };
+        out.push_str(&format!(
+            "\x20   input.{name} = ctx.require_session()?.{accessor};\n",
+            name = name.as_str(),
+            accessor = accessor,
+        ));
+    }
+    out
 }
 
 fn list_handler(type_name: &str) -> String {
@@ -157,17 +184,25 @@ fn get_handler(type_name: &str) -> String {
     )
 }
 
-fn create_handler(type_name: &str, table: &str, validators_enabled: bool) -> String {
+fn create_handler(r: &ResourceState, type_name: &str, table: &str, validators_enabled: bool) -> String {
     let validator_call = if validators_enabled {
         format!("\x20   validate_{table}_insertable(&input)?;\n", table = table)
     } else {
         String::new()
     };
+    let injections = session_injections(r);
+    let input_pat = if injections.is_empty() {
+        "input"
+    } else {
+        "mut input"
+    };
     format!(
-        "pub async fn create(\n\x20   Extension(ctx): Extension<Ctx>,\n\x20   Json(input): Json<{ty}Insertable>,\n) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n{validator}\x20   let result = flow::create::run(&ctx, \
+        "pub async fn create(\n\x20   Extension(ctx): Extension<Ctx>,\n\x20   Json({input_pat}): Json<{ty}Insertable>,\n) -> Result<(StatusCode, Json<{ty}Public>), MeltDown> {{\n{injections}{validator}\x20   let result = flow::create::run(&ctx, \
          input).await?;\n\x20   Ok((StatusCode::CREATED, Json(result)))\n}}\n",
+        input_pat = input_pat,
         ty = type_name,
         validator = validator_call,
+        injections = injections,
     )
 }
 
@@ -351,6 +386,8 @@ mod tests {
             nullable: false,
             primary_key: true,
             validators: BTreeSet::new(),
+        
+            kind: Default::default(),
         };
 
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
@@ -507,7 +544,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();

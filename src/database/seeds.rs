@@ -155,39 +155,21 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
         }
     };
 
-    let mut success = true;
-    let statements = split_sql_into_statements(&sql);
-
-    for (i, statement) in statements.iter().enumerate() {
-        let trimmed = statement.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        match diesel::sql_query(trimmed).execute(connection) {
-            Ok(_rows) => {
-                if is_interactive {
-                    if let Err(log_e) = crate::logger::info(&format!("Statement {} executed successfully", i + 1)) {
-                        drop(log_e);
-                    }
-                }
-            }
-            Err(e) => {
-                success = false;
-                let error_msg = format!("Error: Failed to execute statement {} in seed file {}: {}", i + 1, file_name, e);
-                if is_interactive {
-                    if let Err(log_e) = crate::logger::info(&error_msg) {
-                        drop(log_e);
-                    }
-                } else if let Err(log_e) = crate::logger::error(&error_msg) {
+    use diesel::connection::SimpleConnection;
+    match connection.batch_execute(&sql) {
+        Ok(()) => true,
+        Err(e) => {
+            let error_msg = format!("Error: Failed to execute seed file {}: {}", file_name, e);
+            if is_interactive {
+                if let Err(log_e) = crate::logger::info(&error_msg) {
                     drop(log_e);
                 }
-                break;
+            } else if let Err(log_e) = crate::logger::error(&error_msg) {
+                drop(log_e);
             }
+            false
         }
     }
-
-    success
 }
 
 fn split_sql_into_statements(sql: &str) -> Vec<String> {

@@ -17,6 +17,10 @@ pub enum FilterKind {
     /// `chrono::DateTime<Utc>` / `chrono::NaiveDateTime`.
     TimestampChrono,
     Int,
+    /// Opaque integer identifier — primary key or `*_id` foreign key.
+    /// Only `eq`/`in` and the `by_<target>` shortcut make sense; ordering
+    /// (`gt`/`lt`/`between`) is meaningless on a surrogate key.
+    OpaqueId,
     Float,
     Decimal,
     Text,
@@ -32,7 +36,7 @@ impl FilterKind {
     pub fn has_scopes(self) -> bool {
         match self {
             FilterKind::Skipped => false,
-            FilterKind::Bool | FilterKind::TimestampInt64 | FilterKind::TimestampChrono | FilterKind::Int | FilterKind::Float | FilterKind::Decimal | FilterKind::Text | FilterKind::Uuid | FilterKind::Enum => true,
+            FilterKind::Bool | FilterKind::TimestampInt64 | FilterKind::TimestampChrono | FilterKind::Int | FilterKind::OpaqueId | FilterKind::Float | FilterKind::Decimal | FilterKind::Text | FilterKind::Uuid | FilterKind::Enum => true,
         }
     }
 }
@@ -80,15 +84,24 @@ fn map_unrecognized_sql(_sql: &str) -> Option<FilterKind> {
 /// Column-name heuristic: when the column is named `created_at`,
 /// `updated_at`, or `*_timestamp` AND the underlying SQL type is an
 /// integer, upgrade the bucket to `TimestampInt64` so the timestamp scope
-/// helpers fire.
+/// helpers fire. When the column is an opaque identifier (the PK column
+/// `id` or any `*_id` foreign key) downgrade to `OpaqueId` — ordering
+/// helpers (`gt`/`lt`/`between`) are meaningless on surrogate keys.
 pub fn refine_for_column(name: &str, kind: FilterKind) -> FilterKind {
     match kind {
         FilterKind::Int => match looks_like_timestamp_column(name) {
             true => FilterKind::TimestampInt64,
-            false => FilterKind::Int,
+            false => match looks_like_opaque_id(name) {
+                true => FilterKind::OpaqueId,
+                false => FilterKind::Int,
+            },
         },
-        FilterKind::Bool | FilterKind::TimestampInt64 | FilterKind::TimestampChrono | FilterKind::Float | FilterKind::Decimal | FilterKind::Text | FilterKind::Uuid | FilterKind::Enum | FilterKind::Skipped => kind,
+        FilterKind::Bool | FilterKind::TimestampInt64 | FilterKind::TimestampChrono | FilterKind::OpaqueId | FilterKind::Float | FilterKind::Decimal | FilterKind::Text | FilterKind::Uuid | FilterKind::Enum | FilterKind::Skipped => kind,
     }
+}
+
+fn looks_like_opaque_id(name: &str) -> bool {
+    name == "id" || name.ends_with("_id")
 }
 
 fn looks_like_timestamp_column(name: &str) -> bool {
@@ -96,9 +109,9 @@ fn looks_like_timestamp_column(name: &str) -> bool {
 }
 
 /// Returns the FK shortcut name when the column is `<related>_id` AND we
-/// classified it as an Int. Returns `None` for non-FK columns.
+/// classified it as `OpaqueId`. Returns `None` for non-FK columns.
 pub fn fk_target(name: &str, kind: FilterKind) -> Option<&str> {
-    match matches!(kind, FilterKind::Int) {
+    match matches!(kind, FilterKind::OpaqueId) {
         false => None,
         true => match name.strip_suffix("_id") {
             Some(stem) => fk_stem_filter(stem),
@@ -131,6 +144,7 @@ mod tests {
             nullable: false,
             primary_key: false,
             validators: BTreeSet::new(),
+            kind: Default::default(),
         }
     }
 
@@ -163,16 +177,25 @@ mod tests {
     }
 
     #[test]
+    fn refine_downgrades_id_columns_to_opaque_id() {
+        assert_eq!(refine_for_column("id", FilterKind::Int), FilterKind::OpaqueId);
+        assert_eq!(refine_for_column("user_id", FilterKind::Int), FilterKind::OpaqueId);
+        assert_eq!(refine_for_column("author_id", FilterKind::Int), FilterKind::OpaqueId);
+    }
+
+    #[test]
     fn refine_does_not_change_non_int_kinds() {
         assert_eq!(refine_for_column("created_at", FilterKind::Text), FilterKind::Text);
+        assert_eq!(refine_for_column("user_id", FilterKind::Text), FilterKind::Text);
     }
 
     #[test]
     fn fk_target_strips_id_suffix() {
-        assert_eq!(fk_target("author_id", FilterKind::Int), Some("author"));
-        assert_eq!(fk_target("user_id", FilterKind::Int), Some("user"));
-        assert_eq!(fk_target("id", FilterKind::Int), None);
-        assert_eq!(fk_target("name", FilterKind::Int), None);
+        assert_eq!(fk_target("author_id", FilterKind::OpaqueId), Some("author"));
+        assert_eq!(fk_target("user_id", FilterKind::OpaqueId), Some("user"));
+        assert_eq!(fk_target("id", FilterKind::OpaqueId), None);
+        assert_eq!(fk_target("name", FilterKind::OpaqueId), None);
+        assert_eq!(fk_target("author_id", FilterKind::Int), None);
         assert_eq!(fk_target("author_id", FilterKind::Text), None);
     }
 

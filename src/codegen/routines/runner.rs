@@ -113,7 +113,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
         for v in [Verb::List, Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
@@ -137,6 +139,10 @@ mod tests {
             soft_delete: None,
             relations: std::collections::BTreeMap::new(),
             gen_level: crate::state::GenLevel::Route,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         };
         let path = resources_dir.join(format!("{}.ron", name));
         let body = ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default()).expect("serialize resource");
@@ -204,7 +210,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let resource = ResourceState {
             schema_version: RESOURCE_SCHEMA_VERSION,
@@ -216,6 +224,10 @@ mod tests {
             soft_delete: None,
             relations: std::collections::BTreeMap::new(),
             gen_level: crate::state::GenLevel::Model,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         };
         stdfs::write(resources_dir.join("draft.ron"), ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default()).expect("ser")).expect("write");
 

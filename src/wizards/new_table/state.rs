@@ -317,7 +317,7 @@ impl WizardState {
             created_at: true,
             updated_at: true,
             soft_delete: false,
-            gen_level_idx: GenLevel::ALL.iter().position(|l| *l == GenLevel::Composables).unwrap_or(4_usize), // allow: Composables is the locked default; index 4 is the constant fallback if ALL is reordered
+            gen_level_idx: GenLevel::ALL.iter().position(|l| *l == GenLevel::Pages).unwrap_or(GenLevel::ALL.len() - 1), // allow: Pages is the locked default — every new resource gets full CRUD pages out of the box
             verbs: VerbToggles::default(),
             columns: Vec::new(),
             draft: ColumnDraft::default(),

@@ -186,7 +186,7 @@ pub async fn set_role(conn: &mut AsyncPgConnection, id: i64, role: UserRole) -> 
 
 pub const ROUTINES_AUTH_LOGIN: &str = r#"use crate::{
     cata_log,
-    config::cfg,
+    bootstrap::cfg,
     meltdown::*,
     models::{vendored::auth::sessions, generated::users},
     services::vendored::{crypto, time},
@@ -224,7 +224,7 @@ pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> 
 
 pub const ROUTINES_AUTH_REGISTER: &str = r#"use crate::{
     cata_log,
-    config::cfg,
+    bootstrap::cfg,
     meltdown::*,
     models::{vendored::auth::sessions, generated::users},
     services::vendored::{crypto, time},
@@ -376,7 +376,7 @@ use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 
 use crate::{
     cata_log,
-    config::cfg,
+    bootstrap::cfg,
     flows::generated::auth,
     meltdown::*,
     structs::{

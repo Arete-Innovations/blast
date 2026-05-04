@@ -47,7 +47,7 @@ fn main() {
 
     match configs::get_project_info() {
         Ok(mut config) => {
-            let interactive = matches!(cmd, commands::Command::Dashboard | commands::Command::Cli);
+            let interactive = matches!(cmd, commands::Command::Dashboard | commands::Command::Cli { .. });
             if let Err(e) = logger::setup_for_mode(&config, interactive) {
                 eprintln!("Warning: Failed to set up logging: {}", e);
             }

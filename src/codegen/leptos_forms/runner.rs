@@ -310,7 +310,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         let mut email_rules: BTreeSet<ValidatorRule> = BTreeSet::new();
         email_rules.insert(ValidatorRule::Email);
@@ -323,7 +325,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: email_rules,
-            },
+            
+            kind: Default::default(),
+        },
         );
         let mut pw_rules: BTreeSet<ValidatorRule> = BTreeSet::new();
         pw_rules.insert(ValidatorRule::MinLen(8));
@@ -335,7 +339,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: pw_rules,
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -361,6 +367,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: level,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 
@@ -554,7 +564,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("status"),
@@ -564,7 +576,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -590,6 +604,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: level,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 
@@ -668,7 +686,7 @@ mod tests {
         assert!(create_body.contains("<option value=\"active\">"), "must list 'active' variant: {create_body}");
         assert!(create_body.contains("<option value=\"done\">"), "must list 'done' variant: {create_body}");
         assert!(create_body.contains("MyStatus::parse(&status_raw)"), "Action must call MyStatus::parse on the raw signal value: {create_body}");
-        assert!(create_body.contains("MeltDown::validation_failed_field(\"status\", \"invalid MyStatus\")"), "parse failure must propagate as validation_failed_field with field+enum-name message: {create_body}");
+        assert!(create_body.contains("MeltDown::validation_failed_field(\"status\", format!(\"invalid MyStatus: {}\", parse_err))"), "parse failure must propagate as validation_failed_field including parse_err: {create_body}");
 
         let edit_body = match fs::read_to_string(root.join("src/views/components/generated/forms/tasks/edit_form.rs")) {
             Ok(s) => s,

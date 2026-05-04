@@ -21,6 +21,7 @@ fn sample_resource() -> ResourceState {
             nullable: false,
             primary_key: true,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 
@@ -36,6 +37,7 @@ fn sample_resource() -> ResourceState {
             nullable: false,
             primary_key: false,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 
@@ -148,6 +150,7 @@ fn list_resources_returns_sorted() {
             nullable: false,
             primary_key: true,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 
@@ -160,6 +163,7 @@ fn list_resources_returns_sorted() {
             nullable: false,
             primary_key: true,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 
@@ -172,6 +176,7 @@ fn list_resources_returns_sorted() {
             nullable: false,
             primary_key: true,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 
@@ -240,6 +245,7 @@ fn fully_loaded_v2_resource() -> ResourceState {
             nullable: false,
             primary_key: true,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
     let mut title_variants: BTreeSet<FieldVariant> = BTreeSet::new();
@@ -254,6 +260,7 @@ fn fully_loaded_v2_resource() -> ResourceState {
             nullable: false,
             primary_key: false,
             validators: BTreeSet::new(),
+                    kind: Default::default(),
         },
     );
 

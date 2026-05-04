@@ -6,7 +6,7 @@
 //! and writes it to `src/models/generated/<table>.rs`.
 
 use crate::{
-    codegen::models::{aggregations, auto_conn, builder, eager::Relation, module_fns, naming, soft_delete::SoftDeleteConfig},
+    codegen::models::{aggregations, auto_conn, builder, eager::Relation, module_fns, module_fns::VerbSelection, naming, soft_delete::SoftDeleteConfig},
     state::ResourceState,
 };
 
@@ -14,16 +14,17 @@ use crate::{
 pub fn render_resource_body(resource: &ResourceState, relations: &[Relation], soft_delete: Option<&SoftDeleteConfig>) -> String {
     let table = resource.name.as_str();
     let stem = naming::type_stem_for(resource);
+    let verbs = VerbSelection::from_resource(&resource.verbs);
 
     let mut out = String::new();
 
-    out.push_str(&imports_block(table, &stem));
+    out.push_str(&imports_block(table, &stem, &verbs));
     out.push('\n');
 
-    module_fns::emit_all(&mut out, table, &stem, soft_delete);
+    module_fns::emit_all(&mut out, table, &stem, soft_delete, &verbs);
     out.push('\n');
 
-    auto_conn::emit_impl_block(&mut out, table, &stem);
+    auto_conn::emit_impl_block(&mut out, table, &stem, &verbs);
     out.push('\n');
 
     out.push_str(&format!("impl {stem} {{\n"));
@@ -35,13 +36,18 @@ pub fn render_resource_body(resource: &ResourceState, relations: &[Relation], so
     out
 }
 
-fn imports_block(table: &str, stem: &str) -> String {
-    let insertable = naming::insertable_type(stem);
-    let patch = naming::patch_type(stem);
+fn imports_block(table: &str, stem: &str, verbs: &VerbSelection) -> String {
+    let mut items: Vec<String> = vec![stem.to_string()];
+    if verbs.create {
+        items.push(naming::insertable_type(stem));
+    }
+    if verbs.update {
+        items.push(naming::patch_type(stem));
+    }
     let mut out = String::new();
     out.push_str("#![allow(unused_imports, dead_code, clippy::needless_borrow)]\n\n");
     out.push_str("use ::diesel::{BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods, PgTextExpressionMethods, QueryDsl};\n");
-    out.push_str(&format!("use crate::structs::generated::{table}::{{{stem}, {insertable}, {patch}}};\n",));
+    out.push_str(&format!("use crate::structs::generated::{table}::{{{}}};\n", items.join(", ")));
     out
 }
 
@@ -74,7 +80,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("active"),
@@ -84,7 +92,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("created_at"),
@@ -94,7 +104,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("email"),
@@ -104,7 +116,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("author_id"),
@@ -114,7 +128,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -135,6 +151,33 @@ mod tests {
         );
         verbs.insert(
             Verb::Get,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
+            },
+        );
+        verbs.insert(
+            Verb::Create,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
+            },
+        );
+        verbs.insert(
+            Verb::Update,
+            VerbState {
+                auth: AuthMode::Public,
+                list_options: None,
+                emit_rest_api: true,
+                emit_html_page: true,
+            },
+        );
+        verbs.insert(
+            Verb::Delete,
             VerbState {
                 auth: AuthMode::Public,
                 list_options: None,

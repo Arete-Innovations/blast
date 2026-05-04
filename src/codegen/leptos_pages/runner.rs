@@ -394,7 +394,9 @@ mod tests {
                 nullable: false,
                 primary_key: true,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
         fields.insert(
             FieldName::new("title"),
@@ -404,7 +406,9 @@ mod tests {
                 nullable: false,
                 primary_key: false,
                 validators: BTreeSet::new(),
-            },
+            
+            kind: Default::default(),
+        },
         );
 
         let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
@@ -464,6 +468,10 @@ mod tests {
             soft_delete: None,
             relations: BTreeMap::new(),
             gen_level: GenLevel::Pages,
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
         }
     }
 
@@ -507,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn list_page_uses_table_layout_others_use_cards() {
+    fn pages_wrap_in_app_shell_under_bleed_layout() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         let resource = make_posts_with_all_verbs();
@@ -520,10 +528,20 @@ mod tests {
         let list_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/list.rs")).expect("read list");
         let detail_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/detail.rs")).expect("read detail");
         let create_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/create.rs")).expect("read create");
+        let edit_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/edit.rs")).expect("read edit");
 
-        assert!(list_body.contains("PageLayout::Table"), "list page must use Table layout");
-        assert!(detail_body.contains("PageLayout::Cards"), "detail page must use Cards layout");
-        assert!(create_body.contains("PageLayout::Cards"), "create page must use Cards layout");
+        for (label, body) in [("list", &list_body), ("detail", &detail_body), ("create", &create_body), ("edit", &edit_body)] {
+            assert!(body.contains("PageLayout::Bleed"), "{label} page must use Bleed layout under AppShell");
+            assert!(body.contains("<AppShell"), "{label} page must wrap in AppShell");
+            assert!(body.contains("<Breadcrumb"), "{label} page must render Breadcrumb");
+            assert!(body.contains("crud-toolbar"), "{label} page must include crud-toolbar chrome");
+        }
+
+        assert!(list_body.contains("TableBuilder::new"), "list page uses TableBuilder");
+        assert!(list_body.contains("<Pagination"), "list page renders Pagination");
+        assert!(list_body.contains("<EmptyState"), "list page wires EmptyState fallback");
+        assert!(detail_body.contains("DetailBuilder::new"), "detail page uses DetailBuilder");
+        assert!(detail_body.contains("ConfirmDialog"), "detail page wires ConfirmDialog when delete present");
     }
 
     #[test]
