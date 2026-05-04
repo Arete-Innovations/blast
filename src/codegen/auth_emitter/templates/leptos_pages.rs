@@ -249,12 +249,12 @@ import_crate_style!(style, "src/transport/leptos/pages/generated/profile.module.
 
 #[component]
 pub fn ProfilePage() -> impl IntoView {
-    let session = use_session();
-    let user_id = move || match session.read() {
+    let session_signal = use_session().signal();
+    let user_id = move || match session_signal.get() {
         Some(s) => s.user_id.to_string(),
         None => "—".to_string(),
     };
-    let role = move || match session.read() {
+    let role = move || match session_signal.get() {
         Some(s) => format!("{:?}", s.role),
         None => "—".to_string(),
     };

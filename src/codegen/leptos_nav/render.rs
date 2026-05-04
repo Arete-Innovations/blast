@@ -67,7 +67,7 @@ pub fn render_app_nav(nav: &NavConfig, route_table: &BTreeMap<String, ResolvedRo
     out.push_str("#[component]\n");
     out.push_str("pub fn AppNav() -> impl IntoView {\n");
     if needs_role_gating {
-        out.push_str("    let session = use_session();\n");
+        out.push_str("    let session_signal = use_session().signal();\n");
     }
     out.push_str("    view! {\n");
     out.push_str("        <nav class=\"app-nav\">\n");
@@ -164,7 +164,7 @@ fn role_check_expr(roles: &[Role]) -> String {
         .iter()
         .map(|r| {
             let variant = canonical_role_variant(r);
-            format!("matches!(session.read(), Some(s) if s.role == Role::{variant})")
+            format!("matches!(session_signal.get(), Some(s) if s.role == Role::{variant})")
         })
         .collect();
     if parts.is_empty() {
@@ -261,7 +261,7 @@ mod tests {
         let body = render_app_nav(&cfg, &route_table());
         assert!(body.contains("<Show"), "section role gating must emit <Show: {body}");
         assert!(body.contains("Role::Admin"), "must reference Role::Admin: {body}");
-        assert!(body.contains("session.read()"), "must call session.read(): {body}");
+        assert!(body.contains("session_signal.get()"), "must read via session_signal.get(): {body}");
     }
 
     #[test]
