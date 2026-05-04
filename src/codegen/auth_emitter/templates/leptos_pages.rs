@@ -77,7 +77,7 @@ pub fn LoginPage() -> impl IntoView {
                         />
                     </FormGroup>
                     {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
-                    <Button kind=ButtonKind::Primary kind_attr="submit".to_string() full=true disabled=pending.get()>
+                    <Button kind=ButtonKind::Primary kind_attr="submit".to_string() full=true disabled=Signal::derive(move || pending.get())>
                         {move || match pending.get() {
                             true => "Signing in…",
                             false => "Sign in",
@@ -173,7 +173,7 @@ pub fn RegisterPage() -> impl IntoView {
                         />
                     </FormGroup>
                     {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
-                    <Button kind=ButtonKind::Primary kind_attr="submit".to_string() full=true disabled=pending.get()>
+                    <Button kind=ButtonKind::Primary kind_attr="submit".to_string() full=true disabled=Signal::derive(move || pending.get())>
                         {move || match pending.get() {
                             true => "Creating…",
                             false => "Create account",
@@ -250,11 +250,11 @@ import_crate_style!(style, "src/transport/leptos/pages/generated/profile.module.
 #[component]
 pub fn ProfilePage() -> impl IntoView {
     let session = use_session();
-    let user_id = move || match session.get() {
+    let user_id = move || match session.read() {
         Some(s) => s.user_id.to_string(),
         None => "—".to_string(),
     };
-    let role = move || match session.get() {
+    let role = move || match session.read() {
         Some(s) => format!("{:?}", s.role),
         None => "—".to_string(),
     };

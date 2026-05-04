@@ -164,7 +164,7 @@ fn role_check_expr(roles: &[Role]) -> String {
         .iter()
         .map(|r| {
             let variant = canonical_role_variant(r);
-            format!("session.has_role(Role::{variant})")
+            format!("matches!(session.read(), Some(s) if s.role == Role::{variant})")
         })
         .collect();
     if parts.is_empty() {
@@ -261,7 +261,7 @@ mod tests {
         let body = render_app_nav(&cfg, &route_table());
         assert!(body.contains("<Show"), "section role gating must emit <Show: {body}");
         assert!(body.contains("Role::Admin"), "must reference Role::Admin: {body}");
-        assert!(body.contains("session.has_role"), "must call has_role: {body}");
+        assert!(body.contains("session.read()"), "must call session.read(): {body}");
     }
 
     #[test]
