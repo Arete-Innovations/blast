@@ -9,7 +9,7 @@ pub enum MenuKind {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "blast", about = "Catablast generator and workflow CLI", disable_help_subcommand = true)]
+#[command(name = "blast", about = "Catalyst generator and workflow CLI", disable_help_subcommand = true)]
 pub struct Cli {
     #[arg(short, long, global = true)]
     pub verbose: bool,
@@ -20,7 +20,7 @@ pub struct Cli {
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]
 pub enum Command {
-    #[command(about = "Scaffold a new Catablast app")]
+    #[command(about = "Scaffold a new Catalyst app")]
     New {
         name: String,
         #[arg(long)]
@@ -39,7 +39,7 @@ pub enum Command {
         no_warmup: bool,
     },
 
-    #[command(about = "Scaffold a Catablast app in-place (or in <name>); like `new` but defaults to cwd")]
+    #[command(about = "Scaffold a Catalyst app in-place (or in <name>); like `new` but defaults to cwd")]
     Init {
         /// Optional project name. If given, scaffold to `./<name>/`. If
         /// omitted, scaffold directly into the current directory (which

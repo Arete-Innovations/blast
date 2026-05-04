@@ -265,8 +265,19 @@ mod tests {
 
     #[test]
     fn parses_real_catalyst_schema() {
-        let path = std::path::Path::new("/home/tragdate/codumeu/catablast/catalyst/src/database/schema.rs");
-        let tables = parse_schema(path).expect("parse catalyst schema");
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut probe = manifest_dir.clone();
+        let schema = loop {
+            let candidate = probe.join("catalyst/src/database/schema.rs");
+            if candidate.is_file() {
+                break candidate;
+            }
+            match probe.parent() {
+                Some(parent) => probe = parent.to_path_buf(),
+                None => panic!("could not find sibling catalyst checkout from {}", manifest_dir.display()),
+            }
+        };
+        let tables = parse_schema(&schema).expect("parse catalyst schema");
         assert!(!tables.is_empty(), "expected at least one table");
         for t in &tables {
             assert!(!t.name.is_empty());

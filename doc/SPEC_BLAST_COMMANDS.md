@@ -212,7 +212,7 @@ Progress shown via `indicatif` progress bars. File log at `storage/blast/init.lo
 
 ## `blast new <name>`
 
-Scaffolds a fresh Catablast app by `git clone`ing the catalyst framework (default: `https://github.com/ZmoleCristian/catalyst` master, override with `BLAST_CATALYST_DEV_PATH` + `--dev` for local-path clone). The cloned `origin` is renamed to `upstream` so the user can add their own `origin` remote later. blast does NOT bake any template tree.
+Scaffolds a fresh Catalyst app by `git clone`ing the catalyst framework (default: `https://github.com/ZmoleCristian/catalyst` master, override with `BLAST_CATALYST_DEV_PATH` + `--dev` for local-path clone). The cloned `origin` is renamed to `upstream` so the user can add their own `origin` remote later. blast does NOT bake any template tree.
 
 ```
 blast new <name> [--dev] [--db-url <url>] [--no-test-db] [--force]

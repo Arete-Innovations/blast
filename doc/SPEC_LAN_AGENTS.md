@@ -151,7 +151,7 @@ When orchestrator launches N agents in parallel via the Agent tool with `isolati
 
 2. **Embed in every agent prompt:**
    - "Use `rcargo` (NOT `cargo`) for ALL build/check/test."
-   - "Don't pipe cargo output through grep/head/tail/awk/sed/wc — read full output. (See CARGO LAW in catablast/CLAUDE.md.)"
+   - "Don't pipe cargo output through grep/head/tail/awk/sed/wc — read full output. (see root CLAUDE.md CARGO LAW section.)"
    - "Atomic commits, ≤72 char subjects, no Co-Authored-By, don't push."
    - "Layer rules in `catalyst/build.rs` (LEPTOS:1-10, ERROR, DEAD families) panic the build on violation."
    - "Don't enter any `/command` or skill — you are NOT in any skill mode." (Defensive against agents falling into `/fewer-permission-prompts` loops.)
@@ -197,4 +197,4 @@ For single-orchestrator + N parallel agents, the Agent tool with `isolation: "wo
 
 - `blast/CLAUDE.md` — local dev loop, install.sh, blast tool architecture.
 - `catalyst/CLAUDE.md` — canonical app layer rules + lint family.
-- `catablast/CLAUDE.md` (root) — wave-spawn protocol summary, no-grep-cargo law.
+- `root CLAUDE.md` (root) — wave-spawn protocol summary, no-grep-cargo law.

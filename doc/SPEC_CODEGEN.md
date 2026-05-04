@@ -248,7 +248,7 @@ Backend and Leptos UI follow the same two-tier model.
 | `<layer>/generated/` | Blast | Rewritten wholesale on `blast gen`; never hand-edit |
 | `<layer>/<resource>/` (top-level subdirs) | User | Never read, touched, deleted, or renamed by Blast |
 
-There is no `custom/` subdir, no third "vendored framework" bucket, and no `vendor-update` command. The canonical template ships hand-written `<layer>/auth/`, `<layer>/sessions/`, etc. pre-populated at scaffold time; once scaffolded those files are user-owned forever. Framework upgrades come via `git diff` against upstream `catablast/catalyst/`.
+There is no `custom/` subdir, no third "vendored framework" bucket, and no `vendor-update` command. The canonical template ships hand-written `<layer>/auth/`, `<layer>/sessions/`, etc. pre-populated at scaffold time; once scaffolded those files are user-owned forever. Framework upgrades come via `git diff` against upstream `catalyst/`.
 
 ### Backend layout
 
@@ -314,7 +314,7 @@ src/views/
 - Any hand-edit to a file under `generated/` gets stomped next regen
 - Top-level user-owned subdirs are **never read, touched, deleted, or renamed** by Blast
 - `mod.rs` at each Rust layer re-exports both; Blast regenerates only the generated side
-- Vendored framework files are written once by `blast new`; user pulls upstream changes via git diff against upstream `catablast/catalyst/`
+- Vendored framework files are written once by `blast new`; user pulls upstream changes via git diff against upstream `catalyst/`
 
 ## Determinism
 

@@ -5,7 +5,7 @@
 //! Rust code holds together as a system. Concretely it:
 //!
 //! 1. Creates a fresh temp directory.
-//! 2. Runs `blast new test_app --dev` to scaffold a Catablast app.
+//! 2. Runs `blast new test_app --dev` to scaffold a Catalyst app.
 //! 3. Patches the scaffolded `Cargo.toml` to depend on the local catalyst checkout (instead of crates.io / git) so we test against the same catalyst we develop against.
 //! 4. Manually writes a minimal `users` resource to `storage/blast/state/resources/users.ron` using the typed `blast::state::save_resource` API. (Doing this via the TUI wizard would require driving stdin keystrokes —
 //!    too brittle for a smoke test.)
@@ -63,13 +63,13 @@ fn swap_dbname(template: &str, new_dbname: &str) -> String {
 
 /// Path to the catalyst checkout we want the scaffolded app to depend on.
 /// Resolved at compile time from `CARGO_MANIFEST_DIR` (the blast crate
-/// root) by walking up to `catablast/` and into `catalyst/`.
+/// root) by climbing the directory tree to find a sibling `catalyst/` checkout.
 fn local_catalyst_path() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // CARGO_MANIFEST_DIR is the blast crate root, which may live at:
-    //   - <catablast>/blast               (master)
-    //   - <catablast>/blast/worktrees/<name>  (worktree)
-    // Both cases need to climb back to <catablast> and into catalyst.
+    //   - <workspace>/blast               (master)
+    //   - <workspace>/blast/worktrees/<name>  (worktree)
+    // Both cases need to climb back to <workspace> and into catalyst.
     let mut probe = manifest_dir.clone();
     loop {
         let candidate = probe.join("catalyst");
