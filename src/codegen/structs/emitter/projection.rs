@@ -7,7 +7,7 @@
 use super::util;
 use crate::{
     codegen::structs::naming,
-    state::{FieldVariant, ResourceState},
+    state::{FieldKind, FieldVariant, ResourceState},
 };
 
 pub fn render(resource: &ResourceState, variant: FieldVariant) -> String {
@@ -30,6 +30,11 @@ pub fn render(resource: &ResourceState, variant: FieldVariant) -> String {
     out.push_str(&format!("pub struct {struct_name} {{\n"));
     for (name, field) in util::fields_for_variant(resource, variant) {
         let ty = util::field_type_for_variant(field, variant);
+        let session_injected = matches!(variant, FieldVariant::Insertable) && matches!(field.kind, FieldKind::FromSession(_));
+        match session_injected {
+            true => out.push_str("    #[serde(default, skip_deserializing)]\n"),
+            false => {}
+        }
         out.push_str(&format!("    pub {name}: {ty},\n", name = name.as_str(), ty = ty));
     }
     out.push_str("}\n");
