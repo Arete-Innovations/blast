@@ -36,21 +36,25 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
         false => Source::git_default(),
     };
 
+    if let Source::LocalCopy { path, .. } = &source {
+        if path == &project_root {
+            return Err(BlastError::Project(format!(
+                "blast sync --dev: BLAST_CATALYST_DEV_PATH ({}) is the project root — refusing (would truncate files via self-overwrite)",
+                path.display()
+            )));
+        }
+    }
+
     let temp = tempfile::tempdir()?;
-    let staging = match &source {
-        Source::LocalCopy { path, .. } => {
-            sink.info(format!("blast sync: using local catalyst at {}", path.display()));
-            path.clone()
-        }
-        Source::Git { .. } => {
-            sink.info("blast sync: cloning catalyst into tempdir".to_string());
-            progress.step_start("clone catalyst");
-            let staging = temp.path().join("catalyst");
-            clone_catalyst(&source, &staging, sink)?;
-            progress.step_done("clone catalyst");
-            staging
-        }
+    let staging = temp.path().join("catalyst");
+    let label = match &source {
+        Source::LocalCopy { path, .. } => format!("local catalyst at {}", path.display()),
+        Source::Git { url, .. } => format!("catalyst from {}", url),
     };
+    sink.info(format!("blast sync: cloning {} into tempdir", label));
+    progress.step_start("clone catalyst");
+    clone_catalyst(&source, &staging, sink)?;
+    progress.step_done("clone catalyst");
 
     progress.step_start("rsync vendored paths");
     let mut copied = 0usize;
