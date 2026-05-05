@@ -531,10 +531,14 @@ mod tests {
         let edit_body = fs::read_to_string(root.join("src/transport/leptos/pages/generated/posts/edit.rs")).expect("read edit");
 
         for (label, body) in [("list", &list_body), ("detail", &detail_body), ("create", &create_body), ("edit", &edit_body)] {
-            assert!(body.contains("PageLayout::Bleed"), "{label} page must use Bleed layout under AppShell");
+            assert!(body.contains("PageLayout::Bleed"), "{label} page must use Bleed layout");
+            assert!(body.contains("crud-toolbar"), "{label} page must include crud-toolbar chrome");
+        }
+        assert!(list_body.contains("<PublicShell"), "Public-list page must wrap in PublicShell");
+        assert!(!list_body.contains("<Breadcrumb"), "Public-list page must drop admin breadcrumb");
+        for (label, body) in [("detail", &detail_body), ("create", &create_body), ("edit", &edit_body)] {
             assert!(body.contains("<AppShell"), "{label} page must wrap in AppShell");
             assert!(body.contains("<Breadcrumb"), "{label} page must render Breadcrumb");
-            assert!(body.contains("crud-toolbar"), "{label} page must include crud-toolbar chrome");
         }
 
         assert!(list_body.contains("TableBuilder::new"), "list page uses TableBuilder");

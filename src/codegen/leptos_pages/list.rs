@@ -31,6 +31,8 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
         true => String::new(),
         false => "use serde_json::Value;\n".to_string(),
     };
+    let is_public = matches!(auth, AuthMode::Public);
+    let public_has_create = has_create && !is_public;
 
     let mut out = String::new();
     out.push_str("use leptos::prelude::*;\n\n");
@@ -38,12 +40,18 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str(&format!("use crate::structs::generated::{table}::{{{public_ty}, {row_ty}}};\n"));
     out.push_str("use crate::structs::list_query::ListResponse;\n");
-    out.push_str("use crate::structs::vendored::leptos::{BreadcrumbItem, ButtonKind, PageLayout, RouteName, SkeletonVariant};\n");
+    let leptos_struct_imports = match (is_public, public_has_create) {
+        (true, _) => "use crate::structs::vendored::leptos::{PageLayout, SkeletonVariant};\n",
+        (false, _) => "use crate::structs::vendored::leptos::{BreadcrumbItem, ButtonKind, PageLayout, RouteName, SkeletonVariant};\n",
+    };
+    out.push_str(leptos_struct_imports);
     out.push_str("use crate::views::builders::TableBuilder;\n");
     out.push_str(&helpers_use);
-    out.push_str(
-        "use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, EmptyState, ErrorBanner, LinkButton, PageShell, Pagination, Skeleton};\n",
-    );
+    let component_imports = match is_public {
+        true => "use crate::views::components::{AuthGuard, AuthGuardMode, Card, EmptyState, ErrorBanner, PageShell, Pagination, PublicShell, Skeleton};\n",
+        false => "use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, EmptyState, ErrorBanner, LinkButton, PageShell, Pagination, Skeleton};\n",
+    };
+    out.push_str(component_imports);
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::{loader};\n"));
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
@@ -72,43 +80,64 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string()>\n"));
-    out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
-    out.push_str(&format!(
-        "                        <Breadcrumb items={crumbs}/>\n",
-        crumbs = breadcrumb_inline_expr(stem, &label_pretty, None),
-    ));
-    out.push_str("                    </div>\n");
-    out.push_str("                    <div class=\"crud-toolbar\">\n");
-    out.push_str("                        <div>\n");
-    out.push_str(&format!("                            <h2 class=\"crud-toolbar__title\">\"{label_pretty}\"</h2>\n"));
-    out.push_str(&format!(
-        "                            <p class=\"crud-toolbar__subtitle\">\"All {label_lower} records\"</p>\n",
-        label_lower = label_pretty.to_ascii_lowercase(),
-    ));
-    out.push_str("                        </div>\n");
-    out.push_str("                        <div class=\"crud-toolbar__actions\">\n");
-    if has_create {
+    if is_public {
+        out.push_str(&format!("                <PublicShell brand=\"{label_pretty}\".to_string()>\n"));
+        out.push_str("                    <div class=\"crud-toolbar\">\n");
+        out.push_str("                        <div>\n");
+        out.push_str(&format!("                            <h2 class=\"crud-toolbar__title\">\"{label_pretty}\"</h2>\n"));
         out.push_str(&format!(
-            "                            <LinkButton href={{RouteName::ResourceCreate(\"{table}\").path().to_string()}} kind=ButtonKind::Primary>\"+ New {label_pretty}\"</LinkButton>\n"
+            "                            <p class=\"crud-toolbar__subtitle\">\"All {label_lower} records\"</p>\n",
+            label_lower = label_pretty.to_ascii_lowercase(),
         ));
+        out.push_str("                        </div>\n");
+        out.push_str("                    </div>\n");
+        out.push_str("                    <Card title=None>\n");
+        out.push_str("                        {move || match items_signal.get() {\n");
+        out.push_str("                            None => view! { <Skeleton variant=SkeletonVariant::Card/> }.into_any(),\n");
+        out.push_str("                            Some(Ok(items)) => render_list_items(items).into_any(),\n");
+        out.push_str("                            Some(Err(err)) => view! { <ErrorBanner error=err/> }.into_any(),\n");
+        out.push_str("                        }}\n");
+        out.push_str("                    </Card>\n");
+        out.push_str("                </PublicShell>\n");
+    } else {
+        out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string()>\n"));
+        out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
+        out.push_str(&format!(
+            "                        <Breadcrumb items={crumbs}/>\n",
+            crumbs = breadcrumb_inline_expr(stem, &label_pretty, None),
+        ));
+        out.push_str("                    </div>\n");
+        out.push_str("                    <div class=\"crud-toolbar\">\n");
+        out.push_str("                        <div>\n");
+        out.push_str(&format!("                            <h2 class=\"crud-toolbar__title\">\"{label_pretty}\"</h2>\n"));
+        out.push_str(&format!(
+            "                            <p class=\"crud-toolbar__subtitle\">\"All {label_lower} records\"</p>\n",
+            label_lower = label_pretty.to_ascii_lowercase(),
+        ));
+        out.push_str("                        </div>\n");
+        out.push_str("                        <div class=\"crud-toolbar__actions\">\n");
+        if has_create {
+            out.push_str(&format!(
+                "                            <LinkButton href={{RouteName::ResourceCreate(\"{table}\").path().to_string()}} kind=ButtonKind::Primary>\"+ New {label_pretty}\"</LinkButton>\n"
+            ));
+        }
+        out.push_str("                        </div>\n");
+        out.push_str("                    </div>\n");
+        out.push_str("                    <Card title=None>\n");
+        out.push_str("                        {move || match items_signal.get() {\n");
+        out.push_str("                            None => view! { <Skeleton variant=SkeletonVariant::Card/> }.into_any(),\n");
+        out.push_str("                            Some(Ok(items)) => render_list_items(items).into_any(),\n");
+        out.push_str("                            Some(Err(err)) => view! { <ErrorBanner error=err/> }.into_any(),\n");
+        out.push_str("                        }}\n");
+        out.push_str("                    </Card>\n");
+        out.push_str("                </AppShell>\n");
     }
-    out.push_str("                        </div>\n");
-    out.push_str("                    </div>\n");
-    out.push_str("                    <Card title=None>\n");
-    out.push_str("                        {move || match items_signal.get() {\n");
-    out.push_str("                            None => view! { <Skeleton variant=SkeletonVariant::Card/> }.into_any(),\n");
-    out.push_str("                            Some(Ok(items)) => render_list_items(items).into_any(),\n");
-    out.push_str("                            Some(Err(err)) => view! { <ErrorBanner error=err/> }.into_any(),\n");
-    out.push_str("                        }}\n");
-    out.push_str("                    </Card>\n");
-    out.push_str("                </AppShell>\n");
     out.push_str("            </PageShell>\n");
     out.push_str("        </AuthGuard>\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
-    out.push_str(&render_list_helpers(table, stem, &public_ty, &row_ty, &display, has_create));
+    out.push_str(&render_list_helpers(table, stem, &public_ty, &row_ty, &display, public_has_create));
     out
 }
 
