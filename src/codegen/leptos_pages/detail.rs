@@ -293,7 +293,11 @@ fn render_detail_helpers(table: &str, public_ty: &str, display: &[(&FieldName, &
     out.push_str("    DetailBuilder::new(item)\n");
     for (name, _f) in display {
         let col = name.as_str();
-        let label = pretty_label(col);
+        let label_src = match col.strip_suffix("_cents") {
+            Some(stripped) => stripped,
+            None => col,
+        };
+        let label = pretty_label(label_src);
         out.push_str(&format!("        .label(\"{col}\", \"{label}\")\n"));
     }
     out.push_str(&detail_formatter_calls(table, display, "        "));

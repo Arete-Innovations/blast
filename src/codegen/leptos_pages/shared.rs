@@ -17,6 +17,7 @@ pub(super) enum CellKind {
     EpochSecondsAt,
     Timestamp,
     Bool,
+    Cents,
     Plain,
 }
 
@@ -27,12 +28,14 @@ pub(super) fn classify_cell(name: &str, field: &FieldState) -> CellKind {
     let sql = field.sql_type.as_str().to_ascii_lowercase();
     let lname = name.to_ascii_lowercase();
     let when_column = lname.ends_with("_at") || lname.ends_with("_on") || lname == "created" || lname == "updated";
+    let cents_column = lname.ends_with("_cents");
     match sql.as_str() {
         "bool" | "boolean" => CellKind::Bool,
         "timestamp" | "timestamptz" => CellKind::Timestamp,
-        "int8" | "bigint" | "bigserial" | "int4" | "integer" | "serial" | "int2" | "smallint" | "smallserial" => match when_column {
-            true => CellKind::EpochSecondsAt,
-            false => CellKind::Plain,
+        "int8" | "bigint" | "bigserial" | "int4" | "integer" | "serial" | "int2" | "smallint" | "smallserial" => match (cents_column, when_column) {
+            (true, _) => CellKind::Cents,
+            (false, true) => CellKind::EpochSecondsAt,
+            (false, false) => CellKind::Plain,
         },
         _other => CellKind::Plain,
     }
@@ -107,6 +110,7 @@ pub(super) fn formatter_calls(table: &str, display: &[(&FieldName, &FieldState)]
             CellKind::EpochSecondsAt => "|v: &Value| epoch_seconds_cell(v)".to_string(),
             CellKind::Timestamp => "|v: &Value| timestamp_cell(v)".to_string(),
             CellKind::Bool => "|v: &Value| bool_value_cell(v)".to_string(),
+            CellKind::Cents => "|v: &Value| cents_cell(v)".to_string(),
             CellKind::Plain => continue,
         };
         out.push_str(&format!("{indent}.formatter(\"{col}\", {body})\n"));
@@ -124,6 +128,7 @@ pub(super) fn detail_formatter_calls(table: &str, display: &[(&FieldName, &Field
             CellKind::EpochSecondsAt => "|v: &Value| epoch_seconds_long_cell(v)".to_string(),
             CellKind::Timestamp => "|v: &Value| timestamp_long_cell(v)".to_string(),
             CellKind::Bool => "|v: &Value| bool_value_cell(v)".to_string(),
+            CellKind::Cents => "|v: &Value| cents_cell(v)".to_string(),
             CellKind::Plain => continue,
         };
         out.push_str(&format!("{indent}.formatter(\"{col}\", {body})\n"));
@@ -137,12 +142,14 @@ pub(super) fn cell_helpers_used(display: &[(&FieldName, &FieldState)], for_detai
     let mut has_when = false;
     let mut has_ts = false;
     let mut has_bool = false;
+    let mut has_cents = false;
     for (name, field) in display {
         match classify_cell(name.as_str(), field) {
             CellKind::PkLink => has_pk = true,
             CellKind::EpochSecondsAt => has_when = true,
             CellKind::Timestamp => has_ts = true,
             CellKind::Bool => has_bool = true,
+            CellKind::Cents => has_cents = true,
             CellKind::Plain => {}
         }
     }
@@ -163,6 +170,9 @@ pub(super) fn cell_helpers_used(display: &[(&FieldName, &FieldState)], for_detai
     }
     if has_bool {
         helpers.push("bool_value_cell");
+    }
+    if has_cents {
+        helpers.push("cents_cell");
     }
     helpers
 }
