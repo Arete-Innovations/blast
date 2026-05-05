@@ -68,8 +68,33 @@ fn rule_const_name(table: &str, scope: &str, field: &str) -> String {
 
 fn rule_applies_to_field(rule: &ValidatorRule, is_string: bool, is_numeric: bool) -> bool {
     match rule {
-        ValidatorRule::Required | ValidatorRule::MinLen(_) | ValidatorRule::MaxLen(_) | ValidatorRule::Pattern(_) | ValidatorRule::OneOf(_) | ValidatorRule::Email | ValidatorRule::Url => is_string,
-        ValidatorRule::MinValue(_) | ValidatorRule::MaxValue(_) => is_numeric,
+        ValidatorRule::Required
+        | ValidatorRule::MinLen(_)
+        | ValidatorRule::MaxLen(_)
+        | ValidatorRule::ExactLen(_)
+        | ValidatorRule::Pattern(_)
+        | ValidatorRule::OneOf(_)
+        | ValidatorRule::Email
+        | ValidatorRule::Url
+        | ValidatorRule::Uuid
+        | ValidatorRule::Slug
+        | ValidatorRule::Alpha
+        | ValidatorRule::AlphaNumeric
+        | ValidatorRule::Numeric
+        | ValidatorRule::Integer
+        | ValidatorRule::Decimal
+        | ValidatorRule::Ipv4
+        | ValidatorRule::Ipv6
+        | ValidatorRule::IpAddr
+        | ValidatorRule::Hostname
+        | ValidatorRule::HexColor
+        | ValidatorRule::PhoneE164
+        | ValidatorRule::Trimmed
+        | ValidatorRule::NoWhitespace
+        | ValidatorRule::Lowercase
+        | ValidatorRule::Uppercase
+        | ValidatorRule::Ascii => is_string,
+        ValidatorRule::MinValue(_) | ValidatorRule::MaxValue(_) | ValidatorRule::Positive | ValidatorRule::NonNegative | ValidatorRule::Negative | ValidatorRule::MultipleOf(_) => is_numeric,
     }
 }
 
@@ -99,8 +124,13 @@ fn render_rule_literal(rule: &ValidatorRule) -> String {
         ValidatorRule::Required => "Rule::Required".to_string(),
         ValidatorRule::MinLen(n) => format!("Rule::MinLen({n})"),
         ValidatorRule::MaxLen(n) => format!("Rule::MaxLen({n})"),
+        ValidatorRule::ExactLen(n) => format!("Rule::ExactLen({n})"),
         ValidatorRule::MinValue(n) => format!("Rule::MinValue({n}.0)"),
         ValidatorRule::MaxValue(n) => format!("Rule::MaxValue({n}.0)"),
+        ValidatorRule::Positive => "Rule::Positive".to_string(),
+        ValidatorRule::NonNegative => "Rule::NonNegative".to_string(),
+        ValidatorRule::Negative => "Rule::Negative".to_string(),
+        ValidatorRule::MultipleOf(n) => format!("Rule::MultipleOf({n}.0)"),
         ValidatorRule::Pattern(re) => format!("Rule::Pattern(\"{}\")", escape_rust_string(re)),
         ValidatorRule::OneOf(values) => {
             let lits: Vec<String> = values.iter().map(|v| format!("\"{}\"", escape_rust_string(v))).collect();
@@ -108,6 +138,24 @@ fn render_rule_literal(rule: &ValidatorRule) -> String {
         }
         ValidatorRule::Email => "Rule::Email".to_string(),
         ValidatorRule::Url => "Rule::Url".to_string(),
+        ValidatorRule::Uuid => "Rule::Uuid".to_string(),
+        ValidatorRule::Slug => "Rule::Slug".to_string(),
+        ValidatorRule::Alpha => "Rule::Alpha".to_string(),
+        ValidatorRule::AlphaNumeric => "Rule::AlphaNumeric".to_string(),
+        ValidatorRule::Numeric => "Rule::Numeric".to_string(),
+        ValidatorRule::Integer => "Rule::Integer".to_string(),
+        ValidatorRule::Decimal => "Rule::Decimal".to_string(),
+        ValidatorRule::Ipv4 => "Rule::Ipv4".to_string(),
+        ValidatorRule::Ipv6 => "Rule::Ipv6".to_string(),
+        ValidatorRule::IpAddr => "Rule::IpAddr".to_string(),
+        ValidatorRule::Hostname => "Rule::Hostname".to_string(),
+        ValidatorRule::HexColor => "Rule::HexColor".to_string(),
+        ValidatorRule::PhoneE164 => "Rule::PhoneE164".to_string(),
+        ValidatorRule::Trimmed => "Rule::Trimmed".to_string(),
+        ValidatorRule::NoWhitespace => "Rule::NoWhitespace".to_string(),
+        ValidatorRule::Lowercase => "Rule::Lowercase".to_string(),
+        ValidatorRule::Uppercase => "Rule::Uppercase".to_string(),
+        ValidatorRule::Ascii => "Rule::Ascii".to_string(),
     }
 }
 
@@ -161,50 +209,29 @@ fn render_field_check_block(field: &str, state: &FieldState, const_name: &str, i
     let is_numeric = is_numeric_sql_type(&state.sql_type);
     let needs_to_string = is_numeric && !is_string;
     let is_optional_in_dto = is_patch || state.nullable;
-    let unwrap_inner_some = is_patch && state.nullable;
 
     if is_optional_in_dto {
         let mut out = String::new();
-        if unwrap_inner_some {
-            out.push_str(&format!("        match self.{field}.as_ref() {{\n"));
-            out.push_str("            Some(outer) => match outer.as_ref() {\n");
-            out.push_str("                Some(v) => {\n");
-            if needs_to_string {
-                out.push_str(&format!("                    let __s = v.to_string();\n"));
-                out.push_str(&format!("                    for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
-            } else if is_string {
-                out.push_str(&format!("                    for rule in {const_name} {{ rule.check(\"{field}\", v)?; }}\n"));
-            } else {
-                out.push_str(&format!("                    let __s = v.to_string();\n"));
-                out.push_str(&format!("                    for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
-            }
-            out.push_str("                }\n");
-            out.push_str("                None => {}\n");
-            out.push_str("            }\n");
-            out.push_str("            None => {}\n");
-            out.push_str("        }\n");
+        out.push_str(&format!("        match self.{field}.as_ref() {{\n"));
+        out.push_str("            Some(v) => {\n");
+        if needs_to_string {
+            out.push_str(&format!("                let numeric_repr = v.to_string();\n"));
+            out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", &numeric_repr)?; }}\n"));
+        } else if is_string {
+            out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", v)?; }}\n"));
         } else {
-            out.push_str(&format!("        match self.{field}.as_ref() {{\n"));
-            out.push_str("            Some(v) => {\n");
-            if needs_to_string {
-                out.push_str(&format!("                let __s = v.to_string();\n"));
-                out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
-            } else if is_string {
-                out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", v)?; }}\n"));
-            } else {
-                out.push_str(&format!("                let __s = v.to_string();\n"));
-                out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
-            }
-            out.push_str("            }\n");
-            out.push_str("            None => {}\n");
-            out.push_str("        }\n");
+            out.push_str(&format!("                let numeric_repr = v.to_string();\n"));
+            out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", &numeric_repr)?; }}\n"));
         }
+        out.push_str("            }\n");
+        out.push_str("            None => {}\n");
+        out.push_str("        }\n");
         out
     } else {
         if is_string {
             format!("        for rule in {const_name} {{ rule.check(\"{field}\", &self.{field})?; }}\n")
         } else {
-            format!("        let __s_{field} = self.{field}.to_string();\n        for rule in {const_name} {{ rule.check(\"{field}\", &__s_{field})?; }}\n")
+            format!("        let numeric_repr_{field} = self.{field}.to_string();\n        for rule in {const_name} {{ rule.check(\"{field}\", &numeric_repr_{field})?; }}\n")
         }
     }
 }
