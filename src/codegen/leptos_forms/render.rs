@@ -114,6 +114,25 @@ pub fn looks_like_url(name: &str) -> bool {
     lowered == "url" || lowered.ends_with("_url") || lowered.contains("homepage") || lowered.contains("website")
 }
 
+fn field_has_rules(field: &FieldState) -> bool {
+    !field.validators.is_empty()
+}
+
+fn any_textline_with_rules(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> bool {
+    for (_name, field) in fields {
+        if is_hidden_kind(field) {
+            continue;
+        }
+        if !field_has_rules(field) {
+            continue;
+        }
+        if matches!(classify_input(field, enums), InputKind::TextLine) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> String {
     let table = resource.name.as_str();
     let stem = type_stem_for_resource(resource);
@@ -143,7 +162,12 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     }
     out.push_str("use crate::structs::vendored::validators::Validate;\n");
     out.push_str("use crate::structs::vendored::leptos::{ButtonKind, RouteName};\n");
-    out.push_str("use crate::views::components::{Button, ErrorBanner, FieldError, LinkButton};\n");
+    let mut components_imports: Vec<&str> = vec!["Button", "ErrorBanner", "FieldError", "LinkButton"];
+    if any_textline_with_rules(&insertable_fields, enums) {
+        components_imports.push("ValidatedInput");
+    }
+    components_imports.sort();
+    out.push_str(&format!("use crate::views::components::{{{}}};\n", components_imports.join(", ")));
     out.push_str("use crate::views::signals::dispatch_form_error;\n");
     out.push_str("use crate::views::signals::nav::use_blocking_navigate;\n");
     out.push_str("use crate::views::signals::toast;\n");
@@ -217,7 +241,7 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
         if is_hidden_kind(field) {
             continue;
         }
-        out.push_str(&render_field_view(name.as_str(), field, enums));
+        out.push_str(&render_field_view(name.as_str(), field, enums, &insertable_type));
     }
     out.push_str("            {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}\n");
     out.push_str("            <div class=\"crud-form__actions\">\n");
@@ -260,7 +284,12 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     }
     out.push_str("use crate::structs::vendored::validators::Validate;\n");
     out.push_str("use crate::structs::vendored::leptos::{ButtonKind, RouteName};\n");
-    out.push_str("use crate::views::components::{Button, ErrorBanner, FieldError, LinkButton};\n");
+    let mut components_imports: Vec<&str> = vec!["Button", "ErrorBanner", "FieldError", "LinkButton"];
+    if any_textline_with_rules(&patch_fields, enums) {
+        components_imports.push("ValidatedInput");
+    }
+    components_imports.sort();
+    out.push_str(&format!("use crate::views::components::{{{}}};\n", components_imports.join(", ")));
     out.push_str("use crate::views::signals::dispatch_form_error;\n");
     out.push_str("use crate::views::signals::nav::use_blocking_navigate;\n");
     out.push_str("use crate::views::signals::toast;\n");
@@ -337,7 +366,7 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
 
     out.push_str(&format!("    view! {{\n        <form class=\"crud-form {table}-edit-form\" on:submit=on_submit>\n"));
     for (name, field) in &patch_fields {
-        out.push_str(&render_field_view(name.as_str(), field, enums));
+        out.push_str(&render_field_view(name.as_str(), field, enums, &patch_type));
     }
     out.push_str("            {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}\n");
     out.push_str("            <div class=\"crud-form__actions\">\n");
@@ -372,7 +401,10 @@ fn render_signal_decl_initialized(name: &str, field: &FieldState, enums: &[Parse
             "json" | "jsonb" => format!(
                 "    let {name}: RwSignal<String> = RwSignal::new(match ::serde_json::to_string(&initial.{name}) {{ Ok(s) => s, Err(parse_err) => {{ crate::cata_log!(Debug, format!(\"json initial serialize failed: {{}}\", parse_err)); String::new() }} }});\n"
             ),
-            _stringy_text => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.clone());\n"),
+            _stringy_text => match field.nullable {
+                true => format!("    let {name}: RwSignal<String> = RwSignal::new(match &initial.{name} {{ Some(s) => s.clone(), None => String::new() }});\n"),
+                false => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.clone());\n"),
+            },
         },
     }
 }
@@ -554,7 +586,7 @@ fn number_target(field: &FieldState) -> &'static str {
     }
 }
 
-fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> String {
+fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum], dto_type: &str) -> String {
     let kind = classify_input(field, enums);
     let label_text = pretty_label(name);
     let mut out = String::new();
@@ -614,9 +646,15 @@ fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> St
             } else {
                 "text"
             };
-            out.push_str(&format!(
-                "                <input\n                    type=\"{html_type}\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
-            ));
+            if field_has_rules(field) {
+                out.push_str(&format!(
+                    "                <ValidatedInput\n                    field=\"{name}\".to_string()\n                    rules={{<{dto_type} as Validate>::rules_for(\"{name}\")}}\n                    value={name}\n                    input_type=\"{html_type}\".to_string()\n                />\n",
+                ));
+            } else {
+                out.push_str(&format!(
+                    "                <input\n                    type=\"{html_type}\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+                ));
+            }
         }
     }
 
