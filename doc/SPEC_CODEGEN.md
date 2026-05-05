@@ -124,7 +124,7 @@ src/structs/generated/users.rs           User, UserInsertable, UserPatch, UserPu
 src/structs/generated/mod.rs             barrel — alphabetical re-exports + `pub mod validators;` if any emitted
 src/structs/generated/enums/<x>.rs       per Postgres CREATE TYPE; Rust enum + Diesel FromSql/ToSql
 src/structs/generated/enums/mod.rs       enum barrel
-src/structs/generated/validators/<r>.rs  validate_<r>_insertable, validate_<r>_patch (single Rust source, runs in server + WASM)
+src/structs/generated/validators/<r>.rs  impl Validate for <R>Insertable + impl Validate for <R>Patch (single Rust source, runs in server + WASM)
 src/structs/generated/validators/mod.rs  validators barrel
 
 src/models/generated/<r>.rs              Diesel CRUD: list/get/create/update/delete + auto-conn impl + fluent UserQuery
@@ -139,7 +139,7 @@ src/flows/generated/<r>/mod.rs
 src/flows/generated/mod.rs
 
 src/transport/http/generated/<r>.rs      REST handlers for /api/<r>: list, get_one, create, update, delete_one
-                                         each calls validate_<r>_insertable(&input)? before flow::create::run(...) (and matching for update)
+                                         each calls input.check()? (Validate trait) before flow::create::run(...) (and matching patch.check()? for update)
 src/transport/http/generated/router.rs   nests every resource: Router::new().nest("/<r>", super::<r>::router())
 src/transport/http/generated/mod.rs
 ```
@@ -194,23 +194,25 @@ Tests: 6 inline tests at `blast/src/codegen/enums/runner.rs:160-319` cover the f
 
 ### Validators (single source)
 
-Driven by `FieldState.validators: BTreeSet<ValidatorRule>` in each Primer file. Codegen pass at `src/codegen/validators/` emits a single Rust validator per resource:
+Driven by `FieldState.validators: BTreeSet<ValidatorRule>` in each Primer file. Codegen pass at `src/codegen/validators/` emits a `Validate` trait impl per DTO type:
 
 ```
 src/structs/generated/validators/<r>.rs
-  - pub fn validate_<r>_insertable(input: &<R>Insertable) -> Result<(), MeltDown>
-  - pub fn validate_<r>_patch(input: &<R>Patch) -> Result<(), MeltDown>
-  - once_cell::sync::Lazy<Regex> constants for any Pattern/Email/Url rules
+  - const POSTS_INSERTABLE_<FIELD>_RULES: &[Rule] = &[Rule::..., ...];   // one per field with rules
+  - impl Validate for <R>Insertable { fn check() -> Result<(), MeltDown>; fn rules_for(field) -> &'static [Rule]; }
+  - impl Validate for <R>Patch     { fn check() -> Result<(), MeltDown>; fn rules_for(field) -> &'static [Rule]; }
 ```
 
-The whole crate compiles to WASM (`cargo build --target wasm32-unknown-unknown --lib`), so the same function runs on the server (called from REST handlers) and in the browser (called from leptos forms before `Action::dispatch`). One source. No drift. **No TS validator file is emitted.**
+The `Validate` trait + `Rule` enum live in `crate::structs::vendored::validators`. The whole crate compiles to wasm (`cargo build --target wasm32-unknown-unknown --lib`), so the same trait method runs on the server (called from REST handlers as `input.check()?`) and in the browser (called from leptos forms before `spawn_local`). One source. No drift. **No TS validator file is emitted.**
 
-`gen_level` filter: `r.gen_level >= GenLevel::Types`. Validators are useful as soon as types exist.
+Type filtering happens at emit time: string-only rules (`Required`, `MinLen`, `MaxLen`, `Pattern`, `Email`, `Url`, `OneOf`) are dropped from numeric fields and vice versa. Mismatched rules silently disappear from the const slice.
+
+`gen_level` filter: `r.gen_level >= GenLevel::Types`. Validators land as soon as types exist.
 
 Wire-in points:
 
-- `src/transport/http/generated/<r>.rs` — create handler calls `validate_<r>_insertable(&input)?` BEFORE `flow::create::run(...)`. Update handler calls `validate_<r>_patch(&patch)?` BEFORE `flow::update::run(...)`. Order tested in `http_routes::tests::create_handler_calls_validator_before_flow`.
-- `src/views/components/generated/forms/<r>/create_form.rs` — `on:submit` handler parses signal values into `<R>Insertable` (synchronously, in an IIFE returning `Result<<R>Insertable, MeltDown>`), then `validate_<r>_insertable(&parsed)` (synchronously, returns `Result<(), MeltDown>`), THEN `spawn_local(async move { do_<r>_create(parsed).await; ... })`. NOT `Action::new` — that pattern deadlocked the wasm event loop. Cuts a server roundtrip on locally-detectable bad input.
+- `src/transport/http/generated/<r>.rs` — create handler calls `input.check()?` BEFORE `flow::create::run(...)`. Update handler calls `patch.check()?` BEFORE `flow::update::run(...)`. Order tested in `http_routes::tests::create_handler_calls_validator_before_flow`.
+- `src/views/components/generated/forms/<r>/create_form.rs` — `on:submit` handler parses signal values into `<R>Insertable` (synchronously, in an IIFE returning `Result<<R>Insertable, MeltDown>`), then `parsed.check()` (synchronously, returns `Result<(), MeltDown>`), THEN `spawn_local(async move { do_<r>_create(parsed).await; ... })`. NOT `Action::new` — that pattern deadlocked the wasm event loop. Cuts a server roundtrip on locally-detectable bad input.
 
 Full spec: `catalyst/doc/SPEC_VALIDATORS.md`.
 
