@@ -1,5 +1,5 @@
 use crate::{
-    codegen::validators::render::{any_field_uses_regex, escape_rust_string, is_stringy, pattern_const_name, EMAIL_REGEX, URL_REGEX},
+    codegen::validators::render::{escape_rust_string, is_stringy},
     state::{FieldName, FieldState, SqlType, ValidatorRule},
 };
 
@@ -11,10 +11,6 @@ fn is_numeric_sql_type(sql: &SqlType) -> bool {
 }
 
 pub fn render_validators_rust_body(table: &str, insertable_type: &str, patch_type: &str, insertable_fields: &[(&FieldName, &FieldState)], patch_fields: &[(&FieldName, &FieldState)], has_insertable: bool, has_patch: bool) -> String {
-    let needs_regex = any_field_uses_regex(insertable_fields) || any_field_uses_regex(patch_fields);
-    let regex_imports = if needs_regex { "use ::once_cell::sync::Lazy;\nuse ::regex::Regex;\n" } else { "" };
-    let regex_constants = render_regex_constants_rust(insertable_fields, patch_fields);
-
     let mut imported: Vec<&str> = Vec::new();
     if has_insertable {
         imported.push(insertable_type);
@@ -28,293 +24,187 @@ pub fn render_validators_rust_body(table: &str, insertable_type: &str, patch_typ
     };
 
     let mut out = String::new();
-    out.push_str(regex_imports);
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str(&types_use);
+    out.push_str("use crate::structs::vendored::validators::{Rule, Validate};\n");
     out.push('\n');
-    out.push_str(&regex_constants);
+
+    let const_names_insertable = render_rule_consts(table, "insertable", insertable_fields, &mut out);
+    let const_names_patch = render_rule_consts(table, "patch", patch_fields, &mut out);
+
     if has_insertable {
-        out.push_str(&render_insertable_validator(table, insertable_type, insertable_fields));
+        out.push_str(&render_validate_impl(insertable_type, insertable_fields, &const_names_insertable, false));
         out.push('\n');
     }
     if has_patch {
-        out.push_str(&render_patch_validator(table, patch_type, patch_fields));
+        out.push_str(&render_validate_impl(patch_type, patch_fields, &const_names_patch, true));
     }
 
     out
 }
 
-fn render_regex_constants_rust(insertable_fields: &[(&FieldName, &FieldState)], patch_fields: &[(&FieldName, &FieldState)]) -> String {
-    let mut needs_email = false;
-    let mut needs_url = false;
-    let mut patterns: Vec<(String, String)> = Vec::new();
-
-    for fields in [insertable_fields, patch_fields] {
-        for (name, field) in fields {
-            for rule in &field.validators {
-                match rule {
-                    ValidatorRule::Email => needs_email = true,
-                    ValidatorRule::Url => needs_url = true,
-                    ValidatorRule::Pattern(re) => {
-                        let const_name = pattern_const_name(name.as_str());
-                        if !patterns.iter().any(|(n, _)| n == &const_name) {
-                            patterns.push((const_name, re.clone()));
-                        }
-                    }
-                    _other => continue,
-                }
-            }
+fn rule_const_name(table: &str, scope: &str, field: &str) -> String {
+    let mut out = String::new();
+    for ch in table.chars() {
+        for u in ch.to_uppercase() {
+            out.push(u);
         }
     }
-
-    let mut out = String::new();
-    if needs_email {
-        let crash = crash_macro_call("hardcoded email regex failed to compile");
-        out.push_str(&format!(
-            "static EMAIL_RE: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n",
-            re = EMAIL_REGEX,
-            crash = crash
-        ));
+    out.push('_');
+    for ch in scope.chars() {
+        for u in ch.to_uppercase() {
+            out.push(u);
+        }
     }
-    if needs_url {
-        let crash = crash_macro_call("hardcoded url regex failed to compile");
-        out.push_str(&format!(
-            "static URL_RE: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n",
-            re = URL_REGEX,
-            crash = crash
-        ));
+    out.push('_');
+    for ch in field.chars() {
+        for u in ch.to_uppercase() {
+            out.push(u);
+        }
     }
-    for (const_name, re) in &patterns {
-        let crash = crash_macro_call("pattern regex failed to compile");
-        out.push_str(&format!(
-            "static {const_name}: Lazy<Regex> = Lazy::new(|| match Regex::new(r\"{re}\") {{\n    Ok(r) => r,\n    Err(e) => {crash},\n}});\n"
-        ));
-    }
-    if !out.is_empty() {
-        out.push('\n');
-    }
+    out.push_str("_RULES");
     out
 }
 
-fn crash_macro_call(message: &str) -> String {
-    let macro_ident = ['p', 'a', 'n', 'i', 'c'].iter().collect::<String>();
-    format!("{macro_ident}!(\"{message}: {{}}\", e)", macro_ident = macro_ident, message = message)
+fn rule_applies_to_field(rule: &ValidatorRule, is_string: bool, is_numeric: bool) -> bool {
+    match rule {
+        ValidatorRule::Required | ValidatorRule::MinLen(_) | ValidatorRule::MaxLen(_) | ValidatorRule::Pattern(_) | ValidatorRule::OneOf(_) | ValidatorRule::Email | ValidatorRule::Url => is_string,
+        ValidatorRule::MinValue(_) | ValidatorRule::MaxValue(_) => is_numeric,
+    }
 }
 
-
-fn render_insertable_validator(table: &str, type_name: &str, fields: &[(&FieldName, &FieldState)]) -> String {
-    let mut body = String::new();
-    let arg_name = match fields.is_empty() {
-        true => "_input",
-        false => "input",
-    };
-    body.push_str(&format!(
-        "pub fn validate_{table}_insertable({arg}: &{type_name}) -> ::std::result::Result<(), MeltDown> {{\n",
-        table = table,
-        arg = arg_name,
-        type_name = type_name,
-    ));
-    if fields.is_empty() {
-        body.push_str("    Ok(())\n}\n");
-        return body;
-    }
+fn render_rule_consts(table: &str, scope: &str, fields: &[(&FieldName, &FieldState)], out: &mut String) -> Vec<(String, String)> {
+    let mut const_names: Vec<(String, String)> = Vec::new();
     for (name, field) in fields {
-        body.push_str(&render_field_checks(name.as_str(), field, false));
+        let is_string = is_stringy(&field.sql_type);
+        let is_numeric = is_numeric_sql_type(&field.sql_type);
+        let mut sorted_rules: Vec<&ValidatorRule> = field.validators.iter().filter(|r| rule_applies_to_field(r, is_string, is_numeric)).collect();
+        sorted_rules.sort();
+        if sorted_rules.is_empty() {
+            continue;
+        }
+        let const_name = rule_const_name(table, scope, name.as_str());
+        let rule_lits: Vec<String> = sorted_rules.iter().map(|r| render_rule_literal(r)).collect();
+        out.push_str(&format!("const {const_name}: &[Rule] = &[{}];\n", rule_lits.join(", ")));
+        const_names.push((name.as_str().to_string(), const_name));
     }
-    body.push_str("    Ok(())\n");
-    body.push_str("}\n");
-    body
+    if !const_names.is_empty() {
+        out.push('\n');
+    }
+    const_names
 }
 
-fn render_patch_validator(table: &str, type_name: &str, fields: &[(&FieldName, &FieldState)]) -> String {
-    let mut body = String::new();
-    let arg_name = match fields.is_empty() {
-        true => "_input",
-        false => "input",
-    };
-    body.push_str(&format!(
-        "pub fn validate_{table}_patch({arg}: &{type_name}) -> ::std::result::Result<(), MeltDown> {{\n",
-        table = table,
-        arg = arg_name,
-        type_name = type_name,
-    ));
-    if fields.is_empty() {
-        body.push_str("    Ok(())\n}\n");
-        return body;
+fn render_rule_literal(rule: &ValidatorRule) -> String {
+    match rule {
+        ValidatorRule::Required => "Rule::Required".to_string(),
+        ValidatorRule::MinLen(n) => format!("Rule::MinLen({n})"),
+        ValidatorRule::MaxLen(n) => format!("Rule::MaxLen({n})"),
+        ValidatorRule::MinValue(n) => format!("Rule::MinValue({n}.0)"),
+        ValidatorRule::MaxValue(n) => format!("Rule::MaxValue({n}.0)"),
+        ValidatorRule::Pattern(re) => format!("Rule::Pattern(\"{}\")", escape_rust_string(re)),
+        ValidatorRule::OneOf(values) => {
+            let lits: Vec<String> = values.iter().map(|v| format!("\"{}\"", escape_rust_string(v))).collect();
+            format!("Rule::OneOf(&[{}])", lits.join(", "))
+        }
+        ValidatorRule::Email => "Rule::Email".to_string(),
+        ValidatorRule::Url => "Rule::Url".to_string(),
     }
-    for (name, field) in fields {
-        body.push_str(&render_field_checks(name.as_str(), field, true));
-    }
-    body.push_str("    Ok(())\n");
-    body.push_str("}\n");
-    body
 }
 
-fn render_field_checks(field: &str, state: &FieldState, is_patch: bool) -> String {
+fn render_validate_impl(type_name: &str, fields: &[(&FieldName, &FieldState)], const_names: &[(String, String)], is_patch: bool) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("impl Validate for {type_name} {{\n"));
+    out.push_str("    fn check(&self) -> ::std::result::Result<(), MeltDown> {\n");
+    if const_names.is_empty() {
+        out.push_str("        Ok(())\n    }\n\n");
+    } else {
+        for (name, state) in fields {
+            let const_name = lookup_const(name.as_str(), const_names);
+            if const_name.is_empty() {
+                continue;
+            }
+            out.push_str(&render_field_check_block(name.as_str(), state, &const_name, is_patch));
+        }
+        out.push_str("        Ok(())\n    }\n\n");
+    }
+
+    out.push_str("    fn rules_for(field: &str) -> &'static [Rule] {\n");
+    if const_names.is_empty() {
+        out.push_str("        &[]\n    }\n");
+    } else {
+        let mut first = true;
+        for (field, const_name) in const_names {
+            let kw = match first {
+                true => "if",
+                false => "else if",
+            };
+            out.push_str(&format!("        {kw} field == \"{field}\" {{ {const_name} }}\n"));
+            first = false;
+        }
+        out.push_str("        else { &[] }\n    }\n");
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn lookup_const(field: &str, const_names: &[(String, String)]) -> String {
+    for (name, c) in const_names {
+        if name == field {
+            return c.clone();
+        }
+    }
+    String::new()
+}
+
+fn render_field_check_block(field: &str, state: &FieldState, const_name: &str, is_patch: bool) -> String {
     let is_string = is_stringy(&state.sql_type);
     let is_numeric = is_numeric_sql_type(&state.sql_type);
+    let needs_to_string = is_numeric && !is_string;
     let is_optional_in_dto = is_patch || state.nullable;
     let unwrap_inner_some = is_patch && state.nullable;
 
-    let inner_indent: &str = match (is_optional_in_dto, unwrap_inner_some) {
-        (true, true) => "                ",
-        (true, false) => "            ",
-        (false, _) => "    ",
-    };
-    let value_expr: String = match is_optional_in_dto {
-        true => String::from("v"),
-        false => format!("input.{field}"),
-    };
-
-    let mut sorted_rules: Vec<&ValidatorRule> = state.validators.iter().collect();
-    sorted_rules.sort();
-
-    let mut rule_body = String::new();
-    for rule in sorted_rules {
-        rule_body.push_str(&render_rule_check(field, rule, &value_expr, inner_indent, is_string, is_numeric));
-    }
-
-    if rule_body.is_empty() {
-        return String::new();
-    }
-
-    let mut out = String::new();
     if is_optional_in_dto {
+        let mut out = String::new();
         if unwrap_inner_some {
-            out.push_str(&format!("    match input.{field}.as_ref() {{\n", field = field));
-            out.push_str("        Some(outer) => match outer.as_ref() {\n");
-            out.push_str("            Some(v) => {\n");
-        } else {
-            out.push_str(&format!("    match input.{field}.as_ref() {{\n", field = field));
-            out.push_str("        Some(v) => {\n");
-        }
-    }
-    out.push_str(&rule_body);
-    if is_optional_in_dto {
-        if unwrap_inner_some {
+            out.push_str(&format!("        match self.{field}.as_ref() {{\n"));
+            out.push_str("            Some(outer) => match outer.as_ref() {\n");
+            out.push_str("                Some(v) => {\n");
+            if needs_to_string {
+                out.push_str(&format!("                    let __s = v.to_string();\n"));
+                out.push_str(&format!("                    for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
+            } else if is_string {
+                out.push_str(&format!("                    for rule in {const_name} {{ rule.check(\"{field}\", v)?; }}\n"));
+            } else {
+                out.push_str(&format!("                    let __s = v.to_string();\n"));
+                out.push_str(&format!("                    for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
+            }
+            out.push_str("                }\n");
+            out.push_str("                None => {}\n");
             out.push_str("            }\n");
             out.push_str("            None => {}\n");
-            out.push_str("        },\n");
-            out.push_str("        None => {}\n");
-            out.push_str("    }\n");
-        } else {
             out.push_str("        }\n");
-            out.push_str("        None => {}\n");
-            out.push_str("    }\n");
-        }
-    }
-    out
-}
-
-fn render_rule_check(field: &str, rule: &ValidatorRule, value: &str, indent: &str, is_string: bool, is_numeric: bool) -> String {
-    match rule {
-        ValidatorRule::Required => {
-            if !is_string {
-                return String::new();
+        } else {
+            out.push_str(&format!("        match self.{field}.as_ref() {{\n"));
+            out.push_str("            Some(v) => {\n");
+            if needs_to_string {
+                out.push_str(&format!("                let __s = v.to_string();\n"));
+                out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
+            } else if is_string {
+                out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", v)?; }}\n"));
+            } else {
+                out.push_str(&format!("                let __s = v.to_string();\n"));
+                out.push_str(&format!("                for rule in {const_name} {{ rule.check(\"{field}\", &__s)?; }}\n"));
             }
-            format!(
-                "{indent}if {value}.is_empty() {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"required\"));\n{indent}}}\n",
-                indent = indent,
-                value = value,
-                field = field,
-            )
+            out.push_str("            }\n");
+            out.push_str("            None => {}\n");
+            out.push_str("        }\n");
         }
-        ValidatorRule::MinLen(n) => {
-            if !is_string {
-                return String::new();
-            }
-            format!(
-                "{indent}if {value}.chars().count() < {n} {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"must be at least {n} characters\"));\n{indent}}}\n",
-                indent = indent,
-                value = value,
-                field = field,
-                n = n,
-            )
-        }
-        ValidatorRule::MaxLen(n) => {
-            if !is_string {
-                return String::new();
-            }
-            format!(
-                "{indent}if {value}.chars().count() > {n} {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"must be at most {n} characters\"));\n{indent}}}\n",
-                indent = indent,
-                value = value,
-                field = field,
-                n = n,
-            )
-        }
-        ValidatorRule::MinValue(n) => {
-            if !is_numeric {
-                return String::new();
-            }
-            format!(
-                "{indent}if ({value} as i64) < {n} {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"must be at least {n}\"));\n{indent}}}\n",
-                indent = indent,
-                value = value,
-                field = field,
-                n = n,
-            )
-        }
-        ValidatorRule::MaxValue(n) => {
-            if !is_numeric {
-                return String::new();
-            }
-            format!(
-                "{indent}if ({value} as i64) > {n} {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"must be at most {n}\"));\n{indent}}}\n",
-                indent = indent,
-                value = value,
-                field = field,
-                n = n,
-            )
-        }
-        ValidatorRule::Pattern(_re) => {
-            if !is_string {
-                return String::new();
-            }
-            let const_name = pattern_const_name(field);
-            format!(
-                "{indent}if !{const_name}.is_match({value}) {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"does not match required pattern\"));\n{indent}}}\n",
-                indent = indent,
-                const_name = const_name,
-                value = value,
-                field = field,
-            )
-        }
-        ValidatorRule::OneOf(values) => {
-            if !is_string {
-                return String::new();
-            }
-            let array = values.iter().map(|v| format!("\"{}\"", escape_rust_string(v))).collect::<Vec<_>>().join(", ");
-            format!(
-                "{indent}if !&[{array}].contains(&{value}.as_str()) {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"must be one of: {labels}\"));\n{indent}}}\n",
-                indent = indent,
-                array = array,
-                value = value,
-                field = field,
-                labels = values.join(", "),
-            )
-        }
-        ValidatorRule::Email => {
-            if !is_string {
-                return String::new();
-            }
-            format!(
-                "{indent}if !EMAIL_RE.is_match({value}) {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"must be a valid email\"));\n{indent}}}\n",
-                indent = indent,
-                value = value,
-                field = field,
-            )
-        }
-        ValidatorRule::Url => {
-            if !is_string {
-                return String::new();
-            }
-            format!(
-                "{indent}if !URL_RE.is_match({value}) {{\n{indent}    return Err(MeltDown::validation_failed_field(\"{field}\", \"must be a valid URL\"));\n{indent}}}\n",
-                indent = indent,
-                value = value,
-                field = field,
-            )
+        out
+    } else {
+        if is_string {
+            format!("        for rule in {const_name} {{ rule.check(\"{field}\", &self.{field})?; }}\n")
+        } else {
+            format!("        let __s_{field} = self.{field}.to_string();\n        for rule in {const_name} {{ rule.check(\"{field}\", &__s_{field})?; }}\n")
         }
     }
 }

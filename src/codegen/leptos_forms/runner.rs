@@ -449,7 +449,7 @@ mod tests {
         };
 
         assert!(!body.starts_with("// AUTO-GENERATED"), "no inline marker — use codegen.lock.ron sidecar");
-        assert!(body.contains("validate_users_insertable("), "must call validator: {body}");
+        assert!(body.contains("parsed.check()"), "must call validator via Validate trait: {body}");
         assert!(body.contains("do_users_create("), "must reference data helper: {body}");
         assert!(body.contains("UserInsertable"), "must reference Insertable type: {body}");
         assert!(body.contains("UserCreateForm"), "component name expected: {body}");
@@ -478,7 +478,7 @@ mod tests {
             Err(e) => panic!("read edit_form: {e}"),
         };
 
-        assert!(body.contains("validate_users_patch("), "must call patch validator: {body}");
+        assert!(body.contains("patch.check()"), "must call patch validator via Validate trait: {body}");
         assert!(body.contains("do_users_update("), "must reference update helper: {body}");
         assert!(body.contains("UserPatch"), "must reference Patch type: {body}");
         assert!(body.contains("UserPublic"), "must reference Public type as initial prop: {body}");

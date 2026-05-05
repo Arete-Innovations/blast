@@ -141,7 +141,7 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     for ty in &used_enum_types {
         out.push_str(&format!("use crate::structs::generated::enums::{ty};\n"));
     }
-    out.push_str(&format!("use crate::structs::generated::validators::{table}::validate_{table}_insertable;\n"));
+    out.push_str("use crate::structs::vendored::validators::Validate;\n");
     out.push_str("use crate::structs::vendored::leptos::{ButtonKind, RouteName};\n");
     out.push_str("use crate::views::components::{Button, ErrorBanner, FieldError, LinkButton};\n");
     out.push_str("use crate::views::signals::dispatch_form_error;\n");
@@ -185,7 +185,7 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     out.push_str("                return;\n");
     out.push_str("            }\n");
     out.push_str("        };\n");
-    out.push_str(&format!("        match validate_{table}_insertable(&parsed) {{\n"));
+    out.push_str("        match parsed.check() {\n");
     out.push_str("            Ok(()) => {}\n");
     out.push_str("            Err(err) => {\n");
     out.push_str("                err.log();\n");
@@ -258,7 +258,7 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     for ty in &used_enum_types {
         out.push_str(&format!("use crate::structs::generated::enums::{ty};\n"));
     }
-    out.push_str(&format!("use crate::structs::generated::validators::{table}::validate_{table}_patch;\n"));
+    out.push_str("use crate::structs::vendored::validators::Validate;\n");
     out.push_str("use crate::structs::vendored::leptos::{ButtonKind, RouteName};\n");
     out.push_str("use crate::views::components::{Button, ErrorBanner, FieldError, LinkButton};\n");
     out.push_str("use crate::views::signals::dispatch_form_error;\n");
@@ -307,7 +307,7 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     out.push_str("                return;\n");
     out.push_str("            }\n");
     out.push_str("        };\n");
-    out.push_str(&format!("        match validate_{table}_patch(&patch) {{\n"));
+    out.push_str("        match patch.check() {\n");
     out.push_str("            Ok(()) => {}\n");
     out.push_str("            Err(err) => {\n");
     out.push_str("                err.log();\n");

@@ -108,14 +108,7 @@ fn build_resource_file(r: &ResourceState) -> String {
     }
     out.push_str(&format!("use crate::structs::generated::{table}::{{{names}}};\n", table = table, names = ty_imports.join(", "),));
     if needs_validator_import {
-        let mut imports: Vec<String> = Vec::new();
-        if create_emits {
-            imports.push(format!("validate_{table}_insertable", table = table));
-        }
-        if update_emits {
-            imports.push(format!("validate_{table}_patch", table = table));
-        }
-        out.push_str(&format!("use crate::structs::generated::validators::{table}::{{{names}}};\n", table = table, names = imports.join(", "),));
+        out.push_str("use crate::structs::vendored::validators::Validate;\n");
     }
     out.push('\n');
 
@@ -184,9 +177,9 @@ fn get_handler(type_name: &str) -> String {
     )
 }
 
-fn create_handler(r: &ResourceState, type_name: &str, table: &str, validators_enabled: bool) -> String {
+fn create_handler(r: &ResourceState, type_name: &str, _table: &str, validators_enabled: bool) -> String {
     let validator_call = if validators_enabled {
-        format!("\x20   validate_{table}_insertable(&input)?;\n", table = table)
+        "    input.check()?;\n".to_string()
     } else {
         String::new()
     };
@@ -206,9 +199,9 @@ fn create_handler(r: &ResourceState, type_name: &str, table: &str, validators_en
     )
 }
 
-fn update_handler(type_name: &str, table: &str, validators_enabled: bool) -> String {
+fn update_handler(type_name: &str, _table: &str, validators_enabled: bool) -> String {
     let validator_call = if validators_enabled {
-        format!("\x20   validate_{table}_patch(&patch)?;\n", table = table)
+        "    patch.check()?;\n".to_string()
     } else {
         String::new()
     };
@@ -481,7 +474,7 @@ mod tests {
 
         let resource_file = root.join("src/transport/http/generated/users.rs");
         let body = fs::read_to_string(&resource_file).expect("read");
-        let validator_call = "validate_users_insertable(&input)?;";
+        let validator_call = "input.check()?;";
         let flow_call = "flow::create::run(&ctx, input)";
         let validator_pos = body.find(validator_call).expect("validator call must be emitted");
         let flow_pos = body.find(flow_call).expect("flow call must be emitted");
@@ -501,7 +494,7 @@ mod tests {
 
         let resource_file = root.join("src/transport/http/generated/users.rs");
         let body = fs::read_to_string(&resource_file).expect("read");
-        let validator_call = "validate_users_patch(&patch)?;";
+        let validator_call = "patch.check()?;";
         let flow_call = "flow::update::run(&ctx, id, patch)";
         let validator_pos = body.find(validator_call).expect("validator call must be emitted");
         let flow_pos = body.find(flow_call).expect("flow call must be emitted");
@@ -509,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn validators_module_imported_when_create_or_update_present() {
+    fn validate_trait_imported_when_create_or_update_present() {
         let tmp = TempDir::new().expect("tempdir");
         let root = tmp.path();
         write_state(root, "users").expect("write resource state");
@@ -521,7 +514,7 @@ mod tests {
 
         let resource_file = root.join("src/transport/http/generated/users.rs");
         let body = fs::read_to_string(&resource_file).expect("read");
-        assert!(body.contains("use crate::structs::generated::validators::users::"), "must import validators module; got: {body}");
+        assert!(body.contains("use crate::structs::vendored::validators::Validate;"), "must import Validate trait; got: {body}");
     }
 
     #[test]
