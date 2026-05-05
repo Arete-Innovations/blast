@@ -21,7 +21,7 @@ pub fn render_resource_body(resource: &ResourceState, relations: &[Relation], so
     out.push_str(&imports_block(table, &stem, &verbs));
     out.push('\n');
 
-    module_fns::emit_all(&mut out, table, &stem, soft_delete, &verbs);
+    module_fns::emit_all(&mut out, resource, soft_delete, &verbs);
     out.push('\n');
 
     auto_conn::emit_impl_block(&mut out, table, &stem, &verbs);
