@@ -387,14 +387,18 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
 fn render_signal_decl_initialized(name: &str, field: &FieldState, enums: &[ParsedEnum]) -> String {
     let kind = classify_input(field, enums);
     let lowered = field.sql_type.as_str().to_ascii_lowercase();
+    let nul_init = |expr_on_v: &str| match field.nullable {
+        true => format!("    let {name}: RwSignal<String> = RwSignal::new(match &initial.{name} {{ Some(v) => {expr_on_v}, None => String::new() }});\n"),
+        false => format!("    let {name}: RwSignal<String> = RwSignal::new({{ let v = &initial.{name}; {expr_on_v} }});\n"),
+    };
     match kind {
         InputKind::Bool => format!("    let {name} = RwSignal::new(initial.{name});\n"),
-        InputKind::Number => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_string());\n"),
+        InputKind::Number => nul_init("v.to_string()"),
         InputKind::Datetime => match lowered.as_str() {
-            "timestamptz" => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_rfc3339());\n"),
-            _other => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.format(\"%Y-%m-%dT%H:%M:%S\").to_string());\n"),
+            "timestamptz" => nul_init("v.to_rfc3339()"),
+            _other => nul_init("v.format(\"%Y-%m-%dT%H:%M:%S\").to_string()"),
         },
-        InputKind::Date => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.format(\"%Y-%m-%d\").to_string());\n"),
+        InputKind::Date => nul_init("v.format(\"%Y-%m-%d\").to_string()"),
         InputKind::Enum => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.as_str().to_string());\n"),
         _stringy => match lowered.as_str() {
             "uuid" => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_string());\n"),
