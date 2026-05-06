@@ -73,15 +73,15 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     fs::create_dir_all(&nav_dir)?;
 
     let app_marker = header::marker_for_app(project_root)?;
-    let body = render::render_app_nav(&nav, &route_table);
+    let body = render::render_inventory(&nav, &route_table);
     let mod_body = format!("{app_marker}{body}");
 
     let mut report = EmitReport::default();
-    let target = nav_dir.join("app_nav.rs");
+    let target = nav_dir.join("inventory.rs");
     write_file(&target, &mod_body, &mut report)?;
 
     let barrel_target = nav_dir.join("mod.rs");
-    let barrel_body = format!("{app_marker}pub mod app_nav;\n\npub use app_nav::AppNav;\n");
+    let barrel_body = format!("{app_marker}pub mod inventory;\n\npub use inventory::NAV_INVENTORY;\n");
     write_file(&barrel_target, &barrel_body, &mut report)?;
 
     ensure_components_generated_includes_nav(project_root, &mut report)?;
@@ -332,8 +332,8 @@ mod tests {
         let mut progress = NullProgress;
         let report = run(root, &mut sink, &mut progress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
-        assert!(body.contains("pub fn AppNav"), "body must contain AppNav: {body}");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/inventory.rs")).expect("read nav");
+        assert!(body.contains("pub static NAV_INVENTORY"), "body must declare NAV_INVENTORY: {body}");
         assert!(!report.written.is_empty(), "expect at least one write");
     }
 
@@ -345,9 +345,9 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
-        assert!(body.contains("\"/dashboard\""), "must hardcode /dashboard path: {body}");
-        assert!(body.contains("\"Dashboard\""), "must include label: {body}");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/inventory.rs")).expect("read nav");
+        assert!(body.contains("path: \"/dashboard\""), "must hardcode /dashboard path: {body}");
+        assert!(body.contains("label: \"Dashboard\""), "must include label: {body}");
     }
 
     #[test]
@@ -400,9 +400,9 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
-        assert!(body.contains("\"/posts\""), "must include /posts path literal: {body}");
-        assert!(body.contains("\"Posts\""), "must include override label: {body}");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/inventory.rs")).expect("read nav");
+        assert!(body.contains("path: \"/posts\""), "must include /posts path literal: {body}");
+        assert!(body.contains("label: \"Posts\""), "must include override label: {body}");
     }
 
     #[test]
@@ -427,9 +427,9 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
-        assert!(body.contains("Show"), "role-gated section must use Show: {body}");
-        assert!(body.contains("Role::Admin"), "must reference canonical Role::Admin: {body}");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/inventory.rs")).expect("read nav");
+        assert!(body.contains("UserRole::Admin"), "must reference canonical UserRole::Admin in role slice: {body}");
+        assert!(body.contains("roles: &[UserRole::Admin]"), "must emit role slice on entry/section: {body}");
     }
 
     #[test]
@@ -475,7 +475,7 @@ mod tests {
 
         run(root, &mut NullSink, &mut NullProgress).expect("run leptos_nav");
 
-        let body = fs::read_to_string(root.join("src/views/components/generated/nav/app_nav.rs")).expect("read nav");
-        assert!(body.contains("\"/custom\""), "must use Page-declared path: {body}");
+        let body = fs::read_to_string(root.join("src/views/components/generated/nav/inventory.rs")).expect("read nav");
+        assert!(body.contains("path: \"/custom\""), "must use Page-declared path: {body}");
     }
 }
