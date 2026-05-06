@@ -57,7 +57,7 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
     out.push_str("use crate::structs::vendored::leptos::{BreadcrumbItem, ButtonKind, PageLayout, RouteName, SkeletonVariant};\n");
     out.push_str("use crate::views::builders::DetailBuilder;\n");
     out.push_str(&helpers_use);
-    out.push_str("use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, ");
+    out.push_str("use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, ");
     if has_delete {
         out.push_str("ConfirmDialog, ");
     }
@@ -144,7 +144,7 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string()>\n"));
+    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
     out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
     out.push_str(&format!(
         "                        <Breadcrumb items={crumbs}/>\n",
@@ -216,7 +216,7 @@ fn render_detail_page_custom(
         "use crate::views::components::vendored::{cell_module}::{cell_component};\n"
     ));
     out.push_str(
-        "use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, Breadcrumb, ErrorBanner, PageShell, Skeleton};\n",
+        "use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, ErrorBanner, PageShell, Skeleton};\n",
     );
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::{loader};\n"));
@@ -265,7 +265,7 @@ fn render_detail_page_custom(
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string()>\n"));
+    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
     out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
     out.push_str(&format!(
         "                        <Breadcrumb items={crumbs}/>\n",

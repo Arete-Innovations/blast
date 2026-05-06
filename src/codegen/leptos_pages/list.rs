@@ -48,8 +48,8 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
     out.push_str("use crate::views::builders::TableBuilder;\n");
     out.push_str(&helpers_use);
     let component_imports = match is_public {
-        true => "use crate::views::components::{AuthGuard, AuthGuardMode, Card, EmptyState, ErrorBanner, PageShell, Pagination, PublicShell, Skeleton};\n",
-        false => "use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, EmptyState, ErrorBanner, LinkButton, PageShell, Pagination, Skeleton};\n",
+        true => "use crate::views::components::{topbar_auth_actions, AuthGuard, AuthGuardMode, Card, EmptyState, ErrorBanner, PageShell, Pagination, PublicShell, Skeleton};\n",
+        false => "use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, EmptyState, ErrorBanner, LinkButton, PageShell, Pagination, Skeleton};\n",
     };
     out.push_str(component_imports);
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
@@ -81,7 +81,7 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
     if is_public {
-        out.push_str("                <PublicShell brand=crate::cfg().app.name.clone()>\n");
+        out.push_str("                <PublicShell brand=crate::cfg().app.name.clone() topbar_actions=topbar_auth_actions()>\n");
         out.push_str("                    <div class=\"crud-toolbar\">\n");
         out.push_str("                        <div>\n");
         out.push_str(&format!("                            <h2 class=\"crud-toolbar__title\">\"{label_pretty}\"</h2>\n"));
@@ -100,7 +100,7 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
         out.push_str("                    </Card>\n");
         out.push_str("                </PublicShell>\n");
     } else {
-        out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string()>\n"));
+        out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
         out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
         out.push_str(&format!(
             "                        <Breadcrumb items={crumbs}/>\n",
@@ -207,7 +207,7 @@ fn render_list_page_custom(
         "use crate::views::components::vendored::{cell_module}::{cell_component};\n"
     ));
     out.push_str(
-        "use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, EmptyState, ErrorBanner, PageShell, Skeleton};\n",
+        "use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, EmptyState, ErrorBanner, PageShell, Skeleton};\n",
     );
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::{loader};\n"));
@@ -237,7 +237,7 @@ fn render_list_page_custom(
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string()>\n"));
+    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
     out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
     out.push_str(&format!(
         "                        <Breadcrumb items={crumbs}/>\n",

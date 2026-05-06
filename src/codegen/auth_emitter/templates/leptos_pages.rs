@@ -214,7 +214,7 @@ pub fn LogoutPage() -> impl IntoView {
                 Ok(()) => {
                     session_store.clear();
                     toasts.success("Signed out.");
-                    navigate.with_value(|nav| nav(RouteName::Login.path().as_ref()));
+                    navigate.with_value(|nav| nav(RouteName::Welcome.path().as_ref()));
                 }
                 Err(err) => {
                     err.log();
@@ -227,7 +227,7 @@ pub fn LogoutPage() -> impl IntoView {
     });
 
     view! {
-        <AuthGuard mode=AuthGuardMode::Required>
+        <AuthGuard mode=AuthGuardMode::Public>
             <PageShell layout=PageLayout::Cards>
                 <h1>"Signing out…"</h1>
                 {move || last_error.get().map(|err| view! { <ErrorBanner error=err/> }.into_any())}
@@ -242,7 +242,7 @@ use stylance::import_crate_style;
 
 use crate::structs::vendored::leptos::{AvatarSize, BadgeColor, ButtonKind, PageLayout};
 use crate::views::components::cells::BadgeCell;
-use crate::views::components::{AppShell, AuthGuard, AuthGuardMode, AvatarCell, Button, Card, PageShell};
+use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, AvatarCell, Button, Card, PageShell};
 use crate::views::signals::session::use_session;
 
 import_crate_style!(style, "src/transport/leptos/pages/generated/profile.module.scss");
@@ -261,7 +261,7 @@ pub fn ProfilePage() -> impl IntoView {
     view! {
         <AuthGuard mode=AuthGuardMode::Required>
             <PageShell layout=PageLayout::Bleed>
-            <AppShell title="Profile".to_string()>
+            <AppShell title="Profile".to_string() topbar_actions=topbar_auth_actions()>
                 <Card>
                     <div class=style::identity>
                         <AvatarCell name="You".to_string() size=AvatarSize::Lg/>
