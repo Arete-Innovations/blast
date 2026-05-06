@@ -73,6 +73,8 @@ pub enum Command {
         /// Use BLAST_CATALYST_DEV_PATH (local catalyst checkout) instead of git URL.
         #[arg(long)]
         dev: bool,
+        #[command(subcommand)]
+        action: Option<SyncAction>,
     },
 
     #[command(about = "Run pending migrations")]
@@ -212,6 +214,17 @@ pub enum LogCmd {
 pub enum ArsenalCmd {
     #[command(about = "Serve capability inventory over MCP stdio")]
     Serve,
+}
+
+#[derive(Debug, Clone, PartialEq, Subcommand)]
+pub enum SyncAction {
+    #[command(about = "Show diff between frozen local files and what catalyst currently ships")]
+    Diff {
+        /// Path to a single frozen entry. If omitted, walks every entry in the freeze list.
+        path: Option<String>,
+    },
+    #[command(about = "Remove a path from the sync freeze list (next sync will overwrite it)")]
+    Unfreeze { path: String },
 }
 
 #[cfg(test)]

@@ -124,7 +124,7 @@ pub struct EnvSpecState {
     pub vars: IndexMap<String, EnvVarSpec>,
 }
 
-pub const APP_SCHEMA_VERSION: u32 = 3;
+pub const APP_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppState {
@@ -141,6 +141,21 @@ pub enum AppPolicySection {
     Defaults(DefaultsState),
     Nav(NavConfig),
     Pages(Vec<Page>),
+    Sync(SyncConfig),
+}
+
+/// `blast sync` policy. Lets the user pin specific paths against vendored
+/// overwrite — sync skips frozen entries, `blast sync diff` surfaces
+/// drift between the local file and what catalyst currently ships so the
+/// user can reconcile by hand.
+///
+/// Freeze entries are project-root-relative paths. A directory entry
+/// freezes everything beneath it (prefix match with `/` boundary). A
+/// file entry freezes that one file (exact match).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncConfig {
+    #[serde(default)]
+    pub freeze: Vec<String>,
 }
 
 /// App-wide defaults consumed by Blast's TUI as prefill values when
@@ -211,6 +226,17 @@ impl AppState {
             self.sections.insert(k, v);
         }
     }
+
+    /// Pull the freeze list from the `Sync` section, if present. Returns
+    /// an empty vec when no Sync section is declared. "no Sync section"
+    /// is a valid state (project hasn't opted into freeze), not a failure.
+    pub fn freeze_list(&self) -> Vec<String> {
+        match self.sections.get("sync") {
+            Some(AppPolicySection::Sync(s)) => s.freeze.clone(),
+            Some(_) => Vec::new(), // allow: malformed key: section under "sync" isn't a Sync variant — treat as no freeze
+            None => Vec::new(),    // allow: absence of section means no freeze policy declared, not an error
+        }
+    }
 }
 
 impl Default for AppState {
@@ -247,6 +273,10 @@ impl AppPolicySection {
             Self::Defaults(_) => {}
             Self::Nav(_) => {}
             Self::Pages(_) => {}
+            Self::Sync(state) => {
+                state.freeze.sort();
+                state.freeze.dedup();
+            }
         }
     }
 }
@@ -471,5 +501,59 @@ mod tests {
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
         upgrade_app(&mut state).expect("upgrade_app should succeed");
         assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn v3_upgrades_to_current() {
+        let mut state = AppState {
+            schema_version: 3,
+            sections: IndexMap::new(),
+        };
+        upgrade_app(&mut state).expect("upgrade_app should succeed");
+        assert_eq!(state.schema_version, APP_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn sync_section_round_trips() {
+        let mut state = AppState::new();
+        let cfg = SyncConfig {
+            freeze: vec!["src/views/components/vendored/public_shell.rs".to_string(), "src/style/tokens.scss".to_string()],
+        };
+        state.sections.insert("sync".to_string(), AppPolicySection::Sync(cfg.clone()));
+        let after = ron_roundtrip(&state);
+        match after.sections.get("sync") {
+            Some(AppPolicySection::Sync(c)) => assert_eq!(c, &cfg),
+            other => panic!("expected Sync section, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn freeze_list_accessor_returns_entries() {
+        let mut state = AppState::new();
+        let cfg = SyncConfig {
+            freeze: vec!["a".to_string(), "b".to_string()],
+        };
+        state.sections.insert("sync".to_string(), AppPolicySection::Sync(cfg));
+        assert_eq!(state.freeze_list(), vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn freeze_list_accessor_empty_when_no_section() {
+        let state = AppState::new();
+        assert!(state.freeze_list().is_empty());
+    }
+
+    #[test]
+    fn sync_canonicalize_dedups_and_sorts() {
+        let mut state = AppState::new();
+        let cfg = SyncConfig {
+            freeze: vec!["b".to_string(), "a".to_string(), "b".to_string()],
+        };
+        state.sections.insert("sync".to_string(), AppPolicySection::Sync(cfg));
+        state.canonicalize();
+        match state.sections.get("sync") {
+            Some(AppPolicySection::Sync(c)) => assert_eq!(c.freeze, vec!["a".to_string(), "b".to_string()]),
+            other => panic!("expected Sync section, got {other:?}"),
+        }
     }
 }

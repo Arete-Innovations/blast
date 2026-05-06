@@ -1,10 +1,14 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{BlastError, BlastResult};
 use crate::io::traits::{Progress, ProgressExt, Sink, SinkExt};
 use crate::project::scaffold::Source;
+use crate::state::{self, app::AppPolicySection};
+
+/// Project-relative path of the app state file consulted for the freeze list.
+const APP_STATE_REL: &str = "storage/blast/state";
 
 const VENDORED_PATHS: &[&str] = &[
     "src/views/components/vendored",
@@ -61,8 +65,14 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
         }
     };
 
+    let freeze = load_freeze_list(&project_root, sink);
+    if !freeze.is_empty() {
+        sink.info(format!("freeze list active: {} entr(ies) — frozen paths will be skipped", freeze.len()));
+    }
+
     progress.step_start("rsync vendored paths");
     let mut copied = 0usize;
+    let mut frozen_skips = 0usize;
     for rel in VENDORED_PATHS {
         let src = staging.join(rel);
         if !src.exists() {
@@ -70,11 +80,15 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
             continue;
         }
         let dst = project_root.join(rel);
-        copy_recursive(&src, &dst, sink)?;
+        let skipped = copy_recursive(&src, &dst, &project_root, &freeze, sink)?;
+        frozen_skips += skipped;
         copied += 1;
         sink.info(format!("synced {}", rel));
     }
     progress.step_done("rsync vendored paths");
+    if frozen_skips > 0 {
+        sink.info(format!("frozen: {} file(s) skipped", frozen_skips));
+    }
 
     progress.step_start("merge Cargo.toml deps");
     let cargo_upstream = staging.join("Cargo.toml");
@@ -129,22 +143,26 @@ fn clone_catalyst(source: &Source, target: &Path, sink: &mut dyn Sink) -> BlastR
     }
 }
 
-fn copy_recursive(src: &Path, dst: &Path, sink: &mut dyn Sink) -> BlastResult<()> {
+fn copy_recursive(src: &Path, dst: &Path, project_root: &Path, freeze: &[String], sink: &mut dyn Sink) -> BlastResult<usize> {
     if src.is_file() {
+        let relpath = relpath_for(dst, project_root);
+        if is_frozen(&relpath, freeze) {
+            sink.info(format!("frozen: skipped {}", relpath));
+            return Ok(1);
+        }
         match dst.parent() {
             Some(parent) => std::fs::create_dir_all(parent)?,
             None => {} // allow: dst is filesystem root, no parent to create
         }
         std::fs::copy(src, dst)?;
-        return Ok(());
+        return Ok(0);
     }
     if src.is_dir() {
         std::fs::create_dir_all(dst)?;
-        copy_dir_contents(src, dst)?;
-        return Ok(());
+        return copy_dir_contents(src, dst, project_root, freeze, sink);
     }
     sink.warn(format!("source path is neither file nor dir: {}", src.display()));
-    Ok(())
+    Ok(0)
 }
 
 fn merge_cargo_toml(upstream: &str, project: &str) -> BlastResult<String> {
@@ -418,7 +436,8 @@ my-app-only-dep = "0.1"
     }
 }
 
-fn copy_dir_contents(src: &Path, dst: &Path) -> BlastResult<()> {
+fn copy_dir_contents(src: &Path, dst: &Path, project_root: &Path, freeze: &[String], sink: &mut dyn Sink) -> BlastResult<usize> {
+    let mut frozen_skips = 0usize;
     for entry_res in std::fs::read_dir(src)? {
         let entry = entry_res?;
         let from = entry.path();
@@ -426,10 +445,22 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> BlastResult<()> {
         let kind = entry.file_type()?;
         match kind.is_dir() {
             true => {
+                let rel = relpath_for(&to, project_root);
+                if is_frozen(&rel, freeze) {
+                    sink.info(format!("frozen: skipped {}/", rel));
+                    frozen_skips += 1;
+                    continue;
+                }
                 std::fs::create_dir_all(&to)?;
-                copy_dir_contents(&from, &to)?;
+                frozen_skips += copy_dir_contents(&from, &to, project_root, freeze, sink)?;
             }
             false => {
+                let rel = relpath_for(&to, project_root);
+                if is_frozen(&rel, freeze) {
+                    sink.info(format!("frozen: skipped {}", rel));
+                    frozen_skips += 1;
+                    continue;
+                }
                 let name = entry.file_name();
                 let is_barrel = name.to_string_lossy() == "mod.rs";
                 if is_barrel && to.exists() {
@@ -444,6 +475,166 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> BlastResult<()> {
                 }
             }
         }
+    }
+    Ok(frozen_skips)
+}
+
+/// Project-root-relative path of `abs`, normalised to forward slashes.
+/// Falls back to the absolute path on strip-prefix failure (defensive —
+/// the caller always passes paths inside `project_root`).
+fn relpath_for(abs: &Path, project_root: &Path) -> String {
+    let stripped = match abs.strip_prefix(project_root) {
+        Ok(p) => p.to_path_buf(),
+        Err(_) => abs.to_path_buf(),
+    };
+    stripped.to_string_lossy().replace('\\', "/")
+}
+
+/// True iff `relpath` is covered by some freeze entry. Exact match wins;
+/// directory entries (non-trailing-slash) match `relpath == entry` and
+/// `relpath` starting with `entry/`. Empty entries are ignored.
+fn is_frozen(relpath: &str, freeze: &[String]) -> bool {
+    freeze
+        .iter()
+        .filter(|e| !e.is_empty())
+        .any(|entry| relpath == entry.as_str() || relpath.starts_with(&format!("{entry}/")))
+}
+
+/// Read the project's `app.ron` freeze list. Soft-fails (returns empty
+/// list + warns) if the state file is missing or unreadable — sync still
+/// runs at full vendored overwrite, matching pre-freeze behavior.
+fn load_freeze_list(project_root: &Path, sink: &mut dyn Sink) -> Vec<String> {
+    let state_dir = project_root.join(APP_STATE_REL);
+    if !state_dir.is_dir() {
+        return Vec::new();
+    }
+    match state::load_app(&state_dir) {
+        Ok(app) => app.freeze_list(),
+        Err(e) => {
+            sink.warn(format!("freeze list ignored: failed to load app.ron ({e})"));
+            Vec::new()
+        }
+    }
+}
+
+pub fn run_diff(dev: bool, only: Option<&str>, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<()> {
+    let project_root = std::env::current_dir()?;
+    if !project_root.join("Cargo.toml").is_file() {
+        return Err(BlastError::Project(format!("no Cargo.toml in {} — run from project root", project_root.display())));
+    }
+
+    let freeze = load_freeze_list(&project_root, sink);
+    let targets: Vec<String> = match only {
+        Some(p) => match freeze.iter().any(|f| f == p) {
+            true => vec![p.to_string()],
+            false => return Err(BlastError::Project(format!("'{p}' is not in the freeze list"))),
+        },
+        None => freeze.clone(),
+    };
+    if targets.is_empty() {
+        sink.info("freeze list is empty — nothing to diff".to_string());
+        return Ok(());
+    }
+
+    let staging = stage_catalyst(dev, &project_root, sink, progress)?;
+
+    for entry in &targets {
+        let local = project_root.join(entry);
+        let upstream = staging.join(entry);
+        if !upstream.exists() {
+            sink.warn(format!("'{entry}' not present in catalyst — nothing to diff against"));
+            continue;
+        }
+        if !local.exists() {
+            sink.warn(format!("'{entry}' not present locally — would be a fresh add on unfreeze"));
+            continue;
+        }
+        sink.info(format!("=== diff: {entry} (left=local, right=catalyst) ==="));
+        run_diff_pair(&local, &upstream)?;
+    }
+
+    Ok(())
+}
+
+fn stage_catalyst(dev: bool, project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<PathBuf> {
+    let source = match dev {
+        true => Source::dev_from_env()?,
+        false => Source::git_default(),
+    };
+    if let Source::LocalCopy { path, .. } = &source {
+        if path == project_root {
+            return Err(BlastError::Project(format!(
+                "blast sync diff --dev: BLAST_CATALYST_DEV_PATH ({}) is the project root — refusing self-diff",
+                path.display()
+            )));
+        }
+    }
+    let target: PathBuf = match &source {
+        Source::LocalCopy { path, .. } => {
+            sink.info(format!("blast sync diff: reading working tree at {} (dev mode)", path.display()));
+            path.clone()
+        }
+        Source::Git { url, .. } => {
+            // Persist clone for the duration of the call — diff invokes external `diff`
+            // process which reads paths after this fn returns.
+            let temp = tempfile::tempdir()?.keep();
+            let tgt = temp.join("catalyst");
+            sink.info(format!("blast sync diff: cloning catalyst from {} into tempdir", url));
+            progress.step_start("clone catalyst");
+            clone_catalyst(&source, &tgt, sink)?;
+            progress.step_done("clone catalyst");
+            tgt
+        }
+    };
+    Ok(target)
+}
+
+fn run_diff_pair(local: &Path, upstream: &Path) -> BlastResult<()> {
+    if local.is_dir() && upstream.is_dir() {
+        let status = Command::new("diff")
+            .args(["-ruN", "--", &local.to_string_lossy(), &upstream.to_string_lossy()])
+            .status()
+            .map_err(|e| BlastError::Project(format!("failed to spawn `diff`: {e}")))?;
+        // diff exit code: 0=same, 1=different, ≥2=trouble. 0 and 1 are both "ran fine".
+        match status.code() {
+            Some(0) | Some(1) => Ok(()),
+            other => Err(BlastError::Project(format!("`diff` failed (exit {:?})", other))),
+        }
+    } else {
+        let status = Command::new("diff")
+            .args(["-u", "--", &local.to_string_lossy(), &upstream.to_string_lossy()])
+            .status()
+            .map_err(|e| BlastError::Project(format!("failed to spawn `diff`: {e}")))?;
+        match status.code() {
+            Some(0) | Some(1) => Ok(()),
+            other => Err(BlastError::Project(format!("`diff` failed (exit {:?})", other))),
+        }
+    }
+}
+
+pub fn run_unfreeze(path: &str, sink: &mut dyn Sink) -> BlastResult<()> {
+    let project_root = std::env::current_dir()?;
+    if !project_root.join("Cargo.toml").is_file() {
+        return Err(BlastError::Project(format!("no Cargo.toml in {} — run from project root", project_root.display())));
+    }
+    let state_dir = project_root.join(APP_STATE_REL);
+    let mut app = state::load_app(&state_dir)?;
+
+    let removed = match app.sections.get_mut("sync") {
+        Some(AppPolicySection::Sync(cfg)) => {
+            let before = cfg.freeze.len();
+            cfg.freeze.retain(|e| e != path);
+            before != cfg.freeze.len()
+        }
+        _ => false,
+    };
+
+    match removed {
+        true => {
+            state::save_app(&state_dir, &app)?;
+            sink.success(format!("unfroze '{path}' — next sync will overwrite it"));
+        }
+        false => sink.warn(format!("'{path}' was not in the freeze list — nothing changed")),
     }
     Ok(())
 }

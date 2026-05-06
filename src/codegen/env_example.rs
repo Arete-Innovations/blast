@@ -75,6 +75,7 @@ fn extract_env_spec(section: Option<&AppPolicySection>) -> BlastResult<Option<En
         AppPolicySection::Defaults(_) => Ok(None),
         AppPolicySection::Nav(_) => Ok(None),
         AppPolicySection::Pages(_) => Ok(None),
+        AppPolicySection::Sync(_) => Ok(None),
     }
 }
 

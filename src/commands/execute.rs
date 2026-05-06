@@ -145,10 +145,16 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::Sync { dev } => {
+        Command::Sync { dev, action } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
-            crate::project::sync::run_sync(dev, &mut sink, &mut progress)?;
+            match action {
+                None => crate::project::sync::run_sync(dev, &mut sink, &mut progress)?,
+                Some(crate::commands::cli::SyncAction::Diff { path }) => {
+                    crate::project::sync::run_diff(dev, path.as_deref(), &mut sink, &mut progress)?
+                }
+                Some(crate::commands::cli::SyncAction::Unfreeze { path }) => crate::project::sync::run_unfreeze(&path, &mut sink)?,
+            }
             Ok(())
         }
 

@@ -27,7 +27,7 @@ use crate::{
 type AppUpgrader = fn(&mut AppState) -> BlastResult<()>;
 type ResourceRawUpgrader = fn(&str) -> BlastResult<String>;
 
-const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[(1, upgrade_app_v1_to_v2), (2, upgrade_app_v2_to_v3)];
+const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[(1, upgrade_app_v1_to_v2), (2, upgrade_app_v2_to_v3), (3, upgrade_app_v3_to_v4)];
 
 /// Raw-text upgraders, indexed by `from_version`. Each entry takes the
 /// RON text at `from_version` and returns the text at `from_version+1`,
@@ -46,6 +46,15 @@ fn upgrade_app_v1_to_v2(state: &mut AppState) -> BlastResult<()> {
 /// v2 files load cleanly with no nav or pages sections.
 fn upgrade_app_v2_to_v3(state: &mut AppState) -> BlastResult<()> {
     state.schema_version = 3;
+    Ok(())
+}
+
+/// v3 → v4: purely additive. Adds optional `sync` (SyncConfig) section
+/// to `AppState` for declaring `blast sync` freeze entries. Defaults to
+/// absent — existing v3 files load with no freeze list (full vendored
+/// overwrite, current behavior).
+fn upgrade_app_v3_to_v4(state: &mut AppState) -> BlastResult<()> {
+    state.schema_version = 4;
     Ok(())
 }
 
