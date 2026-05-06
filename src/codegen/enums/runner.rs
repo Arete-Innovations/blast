@@ -89,7 +89,7 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
 
     let total = emit_targets.len() as u64;
     for (idx, parsed) in emit_targets.iter().enumerate() {
-        emit_enum(project_root, parsed, &out_dir, &mut report)?;
+        emit_enum(project_root, parsed, &out_dir, &mut report, sink)?;
         sink.info(format!("enums: emitted {}", enum_target(&out_dir, parsed).display()));
         progress.tick(idx as u64 + 1, total);
     }
@@ -104,10 +104,18 @@ pub fn run(project_root: &Path, sink: &mut dyn Sink, progress: &mut dyn Progress
     Ok(report)
 }
 
-fn emit_enum(project_root: &Path, parsed: &ParsedEnum, out_dir: &Path, report: &mut EmitReport) -> BlastResult<()> {
+fn emit_enum(project_root: &Path, parsed: &ParsedEnum, out_dir: &Path, report: &mut EmitReport, sink: &mut dyn Sink) -> BlastResult<()> {
     let target = enum_target(out_dir, parsed);
     let marker = marker_for_enum(project_root, parsed)?;
-    let body = format!("{}{}", marker, render::render_enum_file(parsed));
+    let state_dir = project_root.join("storage").join("blast").join("state");
+    let meta = match crate::state::load_enum_meta(&state_dir, &parsed.name) {
+        Ok(m) => m,
+        Err(e) => {
+            sink.warn(format!("enums: failed to load metadata for '{}' ({}); falling back to PascalCase labels", parsed.name, e));
+            crate::state::enum_meta::EnumMeta::empty(&parsed.name)
+        }
+    };
+    let body = format!("{}{}", marker, render::render_enum_file(parsed, &meta));
     write_file(&target, &body, report)
 }
 

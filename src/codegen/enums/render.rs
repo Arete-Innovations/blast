@@ -6,6 +6,7 @@
 //! `sql_types::<TypeName>` marker emitted by `diesel print-schema`.
 
 use crate::codegen::enums::scan::{pascalize, ParsedEnum};
+use crate::state::enum_meta::EnumMeta;
 
 /// PascalCase the snake_case Postgres enum type name.
 /// `user_role` -> `UserRole`, `post_status` -> `PostStatus`.
@@ -36,7 +37,7 @@ pub fn variant_name(variant: &str) -> String {
 /// The SQL type marker — also named `<TypeName>` in the schema's `sql_types`
 /// module — is aliased to `<TypeName>SqlType` on import to avoid a name
 /// collision with the Rust enum we're defining.
-pub fn render_enum_file(parsed: &ParsedEnum) -> String {
+pub fn render_enum_file(parsed: &ParsedEnum, meta: &EnumMeta) -> String {
     let type_name = enum_type_name(&parsed.name);
     let sql_alias = format!("{type_name}SqlType");
     let variants: Vec<(String, String)> = parsed.variants.iter().map(|v| (variant_name(v), v.clone())).collect();
@@ -109,9 +110,57 @@ pub fn render_enum_file(parsed: &ParsedEnum) -> String {
     out.push_str("        out.write_all(self.as_str().as_bytes())?;\n");
     out.push_str("        Ok(IsNull::No)\n");
     out.push_str("    }\n");
+    out.push_str("}\n\n");
+
+    out.push_str(&format!("impl {type_name} {{\n"));
+    out.push_str(&format!(
+        "    pub const OPTIONS: &'static [({type_name}, &'static str, Option<&'static str>)] = &[\n"
+    ));
+    for (rust, sql) in &variants {
+        let (label, category) = label_and_category(meta, sql, rust);
+        let category_lit = match category {
+            Some(c) => format!("Some(\"{}\")", escape_str(&c)),
+            None => "None".to_string(),
+        };
+        out.push_str(&format!("        ({type_name}::{rust}, \"{label}\", {category_lit}),\n", label = escape_str(&label)));
+    }
+    out.push_str("    ];\n");
+    out.push_str("}\n\n");
+
+    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
+    out.push_str(&format!("impl crate::structs::vendored::enum_options::EnumOptions for {type_name} {{\n"));
+    out.push_str("    fn options() -> &'static [(Self, &'static str, Option<&'static str>)] {\n");
+    out.push_str(&format!("        {type_name}::OPTIONS\n"));
+    out.push_str("    }\n");
+    out.push_str("    fn as_str(&self) -> &'static str {\n");
+    out.push_str(&format!("        {type_name}::as_str(self)\n"));
+    out.push_str("    }\n");
+    out.push_str("    fn parse(s: &str) -> Option<Self> {\n");
+    out.push_str(&format!("        {type_name}::parse(s).ok()\n")); // allow: literal '.ok()' inside emitted Rust string — not a real .ok() call site
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
+
+    out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
+    out.push_str(&format!("impl crate::structs::vendored::enum_options::EnumOptions for {type_name} {{\n"));
+    out.push_str("    fn options() -> &'static [(Self, &'static str, Option<&'static str>)] {\n");
+    out.push_str(&format!("        {type_name}::OPTIONS\n"));
+    out.push_str("    }\n");
+    out.push_str("    fn as_str(&self) -> &'static str {\n");
+    out.push_str(&format!("        {type_name}::as_str(self)\n"));
+    out.push_str("    }\n");
+    out.push_str("    fn parse(s: &str) -> Option<Self> {\n");
+    out.push_str(&format!("        {type_name}::parse(s).ok()\n")); // allow: literal '.ok()' inside emitted Rust string — not a real .ok() call site
+    out.push_str("    }\n");
     out.push_str("}\n");
 
     out
+}
+
+fn label_and_category(meta: &EnumMeta, sql_variant: &str, pascal: &str) -> (String, Option<String>) {
+    match meta.lookup(sql_variant) {
+        Some(v) => (v.label.clone(), v.category.clone()),
+        None => (pascal.to_string(), None),
+    }
 }
 
 fn escape_str(s: &str) -> String {
@@ -149,7 +198,7 @@ mod tests {
     #[test]
     fn render_emits_expected_top_level_shape() {
         let p = fixture("user_role", &["admin", "member"]);
-        let body = render_enum_file(&p);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
         assert!(body.contains("use crate::database::schema::sql_types::UserRole as UserRoleSqlType;"));
         assert!(body.contains("use crate::meltdown::*;"));
         assert!(body.contains("diesel(sql_type = UserRoleSqlType)"));
@@ -162,7 +211,7 @@ mod tests {
     #[test]
     fn render_emits_as_str_match() {
         let p = fixture("user_role", &["admin", "member"]);
-        let body = render_enum_file(&p);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
         assert!(body.contains("UserRole::Admin => \"admin\""));
         assert!(body.contains("UserRole::Member => \"member\""));
     }
@@ -170,7 +219,7 @@ mod tests {
     #[test]
     fn render_emits_parse_match() {
         let p = fixture("user_role", &["admin", "member"]);
-        let body = render_enum_file(&p);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
         assert!(body.contains("\"admin\" => Ok(UserRole::Admin)"));
         assert!(body.contains("\"member\" => Ok(UserRole::Member)"));
         assert!(body.contains("MeltDown::validation_failed(format!(\"unknown user_role: {}\", other))"));
@@ -179,7 +228,7 @@ mod tests {
     #[test]
     fn render_emits_from_sql_and_to_sql() {
         let p = fixture("user_role", &["admin", "member"]);
-        let body = render_enum_file(&p);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
         assert!(body.contains("impl FromSql<UserRoleSqlType, Pg> for UserRole"));
         assert!(body.contains("b\"admin\" => Ok(UserRole::Admin)"));
         assert!(body.contains("impl ToSql<UserRoleSqlType, Pg> for UserRole"));
@@ -189,7 +238,7 @@ mod tests {
     #[test]
     fn render_handles_multi_word_variants() {
         let p = fixture("status", &["in_progress", "done"]);
-        let body = render_enum_file(&p);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
         assert!(body.contains("Status::InProgress => \"in_progress\""));
         assert!(body.contains("\"in_progress\" => Ok(Status::InProgress)"));
         assert!(body.contains("b\"in_progress\" => Ok(Status::InProgress)"));
@@ -198,15 +247,55 @@ mod tests {
     #[test]
     fn render_escapes_quotes_in_variant_strings() {
         let p = fixture("kind", &["a\"b", "c"]);
-        let body = render_enum_file(&p);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
         assert!(body.contains("\"a\\\"b\""));
     }
 
     #[test]
     fn render_round_trip_byte_stable() {
         let p = fixture("user_role", &["admin", "member"]);
-        let a = render_enum_file(&p);
-        let b = render_enum_file(&p);
+        let a = render_enum_file(&p, &EnumMeta::empty(&p.name));
+        let b = render_enum_file(&p, &EnumMeta::empty(&p.name));
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn render_emits_options_const_with_pascal_fallback_when_no_meta() {
+        let p = fixture("user_role", &["admin", "member"]);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
+        assert!(body.contains("pub const OPTIONS: &'static [(UserRole, &'static str, Option<&'static str>)]"));
+        assert!(body.contains("(UserRole::Admin, \"Admin\", None)"));
+        assert!(body.contains("(UserRole::Member, \"Member\", None)"));
+    }
+
+    #[test]
+    fn render_emits_options_with_metadata_label_and_category() {
+        let p = fixture("feature_kind", &["abs", "esp"]);
+        let mut meta = EnumMeta::empty(&p.name);
+        meta.variants.insert(
+            "abs".to_string(),
+            crate::state::enum_meta::VariantMeta {
+                label: "ABS".to_string(),
+                category: Some("Siguranță".to_string()),
+            },
+        );
+        meta.variants.insert(
+            "esp".to_string(),
+            crate::state::enum_meta::VariantMeta {
+                label: "ESP".to_string(),
+                category: Some("Siguranță".to_string()),
+            },
+        );
+        let body = render_enum_file(&p, &meta);
+        assert!(body.contains("(FeatureKind::Abs, \"ABS\", Some(\"Siguranță\"))"));
+        assert!(body.contains("(FeatureKind::Esp, \"ESP\", Some(\"Siguranță\"))"));
+    }
+
+    #[test]
+    fn render_emits_enum_options_trait_impl() {
+        let p = fixture("user_role", &["admin", "member"]);
+        let body = render_enum_file(&p, &EnumMeta::empty(&p.name));
+        assert!(body.contains("impl crate::structs::vendored::enum_options::EnumOptions for UserRole"));
+        assert!(body.contains("UserRole::OPTIONS"));
     }
 }

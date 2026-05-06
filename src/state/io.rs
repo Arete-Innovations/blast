@@ -9,12 +9,14 @@ use ron::ser::PrettyConfig;
 
 use crate::{
     error::{BlastError, BlastResult},
-    state::{app::AppState, names::ResourceName, resource::ResourceState, upgraders},
+    state::{app::AppState, enum_meta::EnumMeta, names::ResourceName, resource::ResourceState, upgraders},
 };
 
 pub const APP_FILE: &str = "app.ron";
 pub const RESOURCES_DIR: &str = "resources";
 pub const RESOURCE_EXT: &str = "ron";
+pub const ENUMS_DIR: &str = "enums";
+pub const ENUM_EXT: &str = "ron";
 
 pub fn app_path(state_dir: &Path) -> PathBuf {
     state_dir.join(APP_FILE)
@@ -45,6 +47,28 @@ pub fn load_resource(state_dir: &Path, name: &ResourceName) -> BlastResult<Resou
     upgraders::upgrade_resource(&mut value)?;
     value.canonicalize();
     value.validate_names()?;
+    Ok(value)
+}
+
+pub fn enum_meta_path(state_dir: &Path, name: &str) -> PathBuf {
+    state_dir.join(ENUMS_DIR).join(format!("{name}.{ENUM_EXT}"))
+}
+
+pub fn load_enum_meta(state_dir: &Path, name: &str) -> BlastResult<EnumMeta> {
+    let path = enum_meta_path(state_dir, name);
+    if !path.is_file() {
+        return Ok(EnumMeta::empty(name));
+    }
+    let raw = fs::read_to_string(&path)?;
+    let value: EnumMeta = ron::from_str(&raw)?;
+    if value.name != name {
+        return Err(BlastError::Invalid(format!(
+            "enum metadata at {} declares name='{}' but is loaded as '{}' — file mismatch",
+            path.display(),
+            value.name,
+            name
+        )));
+    }
     Ok(value)
 }
 
