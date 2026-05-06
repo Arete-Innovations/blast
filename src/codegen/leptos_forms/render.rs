@@ -118,6 +118,8 @@ fn field_has_rules(field: &FieldState) -> bool {
     !field.validators.is_empty()
 }
 
+use super::selects::{find_one_of_options, emit_select};
+
 fn any_textline_with_rules(fields: &[(&FieldName, &FieldState)], enums: &[ParsedEnum]) -> bool {
     for (_name, field) in fields {
         if is_hidden_kind(field) {
@@ -126,9 +128,13 @@ fn any_textline_with_rules(fields: &[(&FieldName, &FieldState)], enums: &[Parsed
         if !field_has_rules(field) {
             continue;
         }
-        if matches!(classify_input(field, enums), InputKind::TextLine) {
-            return true;
+        if !matches!(classify_input(field, enums), InputKind::TextLine) {
+            continue;
         }
+        if find_one_of_options(field).is_some() {
+            continue; // allow: OneOf textline emits <select>, not ValidatedInput
+        }
+        return true;
     }
     false
 }
@@ -624,42 +630,34 @@ fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum], dto_t
             ));
         }
         InputKind::Enum => match find_enum_for_field(field, enums) {
-            Some(parsed) => {
-                out.push_str(&format!(
-                    "                <select\n                    prop:value=move || {name}.get()\n                    on:change=move |ev| {name}.set(event_target_value(&ev))\n                >\n",
-                ));
-                for variant in &parsed.variants {
-                    let escaped = variant.replace('\\', "\\\\").replace('"', "\\\"");
-                    out.push_str(&format!("                    <option value=\"{escaped}\">\"{escaped}\"</option>\n"));
-                }
-                out.push_str("                </select>\n");
+            Some(parsed) => emit_select(&mut out, name, parsed.variants.iter().map(|v| (v.as_str(), v.as_str()))),
+            None => out.push_str(&format!(
+                "                <input\n                    type=\"text\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+            )),
+        },
+        InputKind::TextLine => match find_one_of_options(field) {
+            Some(opts) => {
+                let labels: Vec<String> = opts.iter().map(|o| pretty_label(o)).collect();
+                let pairs = opts.iter().zip(labels.iter()).map(|(v, l)| (v.as_str(), l.as_str()));
+                emit_select(&mut out, name, pairs);
             }
             None => {
-                out.push_str(&format!(
-                    "                <input\n                    type=\"text\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
-                ));
+                let html_type = match (looks_like_password(name), looks_like_email(name), looks_like_url(name)) {
+                    (true, _, _) => "password",
+                    (false, true, _) => "email",
+                    (false, false, true) => "url",
+                    (false, false, false) => "text",
+                };
+                match field_has_rules(field) {
+                    true => out.push_str(&format!(
+                        "                <ValidatedInput\n                    field=\"{name}\".to_string()\n                    rules={{<{dto_type} as Validate>::rules_for(\"{name}\")}}\n                    value={name}\n                    input_type=\"{html_type}\".to_string()\n                />\n",
+                    )),
+                    false => out.push_str(&format!(
+                        "                <input\n                    type=\"{html_type}\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
+                    )),
+                }
             }
         },
-        InputKind::TextLine => {
-            let html_type = if looks_like_password(name) {
-                "password"
-            } else if looks_like_email(name) {
-                "email"
-            } else if looks_like_url(name) {
-                "url"
-            } else {
-                "text"
-            };
-            if field_has_rules(field) {
-                out.push_str(&format!(
-                    "                <ValidatedInput\n                    field=\"{name}\".to_string()\n                    rules={{<{dto_type} as Validate>::rules_for(\"{name}\")}}\n                    value={name}\n                    input_type=\"{html_type}\".to_string()\n                />\n",
-                ));
-            } else {
-                out.push_str(&format!(
-                    "                <input\n                    type=\"{html_type}\"\n                    prop:value=move || {name}.get()\n                    on:input=move |ev| {name}.set(event_target_value(&ev))\n                />\n",
-                ));
-            }
-        }
     }
 
     out.push_str("            </label>\n");
