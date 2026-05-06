@@ -235,7 +235,7 @@ mod tests {
         state::{
             app::{Entry as NavEntry, NavConfig, Page, PageLayout, Role as StateRole, Section as NavSection},
             names::{FieldName, ResourceName},
-            resource::{AuthMode, FieldState, FieldVariant, ListOptions, RESOURCE_SCHEMA_VERSION, VerbState},
+            resource::{AuthMode, CrankPolicy, FieldState, FieldVariant, ListOptions, RESOURCE_SCHEMA_VERSION, VerbState},
             save_app, save_resource, AppPolicySection, AppState, GenLevel, ResourceState, SqlType, Verb,
         },
     };
@@ -269,6 +269,7 @@ mod tests {
                     }),
                     emit_rest_api: true,
                     emit_html_page: *emit,
+                                    crank_policy: CrankPolicy::None,
                 },
             );
         }

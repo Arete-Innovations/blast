@@ -11,10 +11,14 @@ use crate::{
     },
 };
 
-pub const RESOURCE_SCHEMA_VERSION: u32 = 3;
+pub const RESOURCE_SCHEMA_VERSION: u32 = 4;
 
 fn default_true() -> bool {
     true
+}
+
+fn default_crank_policy() -> CrankPolicy {
+    CrankPolicy::None
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -235,6 +239,48 @@ pub struct VerbState {
     pub emit_rest_api: bool,
     #[serde(default = "default_true")]
     pub emit_html_page: bool,
+    /// Retry policy applied to this verb's flow. Codegen emits the
+    /// matching `Crank::*` chain in `flows/generated/<r>/<v>.rs`.
+    /// Defaults to `None` for backward compat with v3 RON files.
+    #[serde(default = "default_crank_policy")]
+    pub crank_policy: CrankPolicy,
+}
+
+/// Per-verb retry policy. Mirrors the surface of catalyst's Crank
+/// builder constructors. Codegen translates each variant to the
+/// matching Crank chain in the verb's generated flow.
+///
+/// only_transient: when true, retries skip permanent errors and only
+/// retry transient ones (matches the default classifier on backoff and
+/// fixed delay). When false, every error is retryable.
+///
+/// deadline_ms: when Some, sets an overall time budget in milliseconds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CrankPolicy {
+    None,
+    Backoff {
+        max_attempts: u32,
+        base_ms: u32,
+        only_transient: bool,
+        deadline_ms: Option<u32>,
+    },
+    FixedDelay {
+        max_attempts: u32,
+        delay_ms: u32,
+        only_transient: bool,
+        deadline_ms: Option<u32>,
+    },
+    Immediate {
+        max_attempts: u32,
+        only_transient: bool,
+        deadline_ms: Option<u32>,
+    },
+}
+
+impl Default for CrankPolicy {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -413,6 +459,7 @@ mod tests {
             list_options: None,
             emit_rest_api: false,
             emit_html_page: false,
+            crank_policy: CrankPolicy::None,
         };
         let body = match ron::to_string(&original) {
             Ok(s) => s,
@@ -425,5 +472,43 @@ mod tests {
         assert_eq!(parsed, original, "round-trip preserves both flags");
         assert!(!parsed.emit_rest_api);
         assert!(!parsed.emit_html_page);
+    }
+
+    #[test]
+    fn verb_state_crank_policy_defaults_to_none_via_serde() {
+        let raw = r#"(
+            auth: Public,
+            list_options: None,
+        )"#;
+        let parsed: VerbState = match ron::from_str(raw) {
+            Ok(v) => v,
+            Err(e) => panic!("parse: {e}"),
+        };
+        assert_eq!(parsed.crank_policy, CrankPolicy::None);
+    }
+
+    #[test]
+    fn verb_state_crank_policy_round_trip_backoff() {
+        let original = VerbState {
+            auth: AuthMode::Public,
+            list_options: None,
+            emit_rest_api: true,
+            emit_html_page: true,
+            crank_policy: CrankPolicy::Backoff {
+                max_attempts: 3,
+                base_ms: 100,
+                only_transient: true,
+                deadline_ms: Some(5000),
+            },
+        };
+        let body = match ron::to_string(&original) {
+            Ok(s) => s,
+            Err(e) => panic!("serialize: {e}"),
+        };
+        let parsed: VerbState = match ron::from_str(&body) {
+            Ok(v) => v,
+            Err(e) => panic!("parse: {e} body={body}"),
+        };
+        assert_eq!(parsed, original, "round-trip preserves crank policy");
     }
 }

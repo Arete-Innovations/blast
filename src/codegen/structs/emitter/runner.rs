@@ -16,7 +16,7 @@
 //! 7. `<Type>Sort` (when `sortable_columns` non-empty)
 
 use super::{db, filter, from_impl, imports, projection, sort, table_row, util};
-use crate::state::{FieldVariant, GenLevel, ResourceState};
+use crate::state::{CrankPolicy, FieldVariant, GenLevel, ResourceState};
 
 pub fn render_resource_body(resource: &ResourceState) -> String {
     let mut out = String::new();
@@ -137,6 +137,7 @@ mod tests {
                 }),
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
 

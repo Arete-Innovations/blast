@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use blast::state::{
     app::{AppState, DefaultsState, ServiceBackend, ServicesState},
     names::{AuthScopeField, FieldName, ResourceName, SqlType},
-    resource::{AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, PayloadShape, Relation, ResourceState, SoftDeleteConfig, SoftDeleteDefault, TopicScope, Verb, VerbState, WsEventsState},
+    resource::{AuthMode, CrankPolicy, FieldState, FieldVariant, FilterKind, ListOptions, PayloadShape, Relation, ResourceState, SoftDeleteConfig, SoftDeleteDefault, TopicScope, Verb, VerbState, WsEventsState},
     AppPolicySection,
 };
 
@@ -56,6 +56,7 @@ fn sample_resource() -> ResourceState {
             }),
             emit_rest_api: true,
             emit_html_page: true,
+                    crank_policy: CrankPolicy::None,
         },
     );
     res.verbs.insert(
@@ -65,6 +66,7 @@ fn sample_resource() -> ResourceState {
             list_options: None,
             emit_rest_api: true,
             emit_html_page: true,
+                    crank_policy: CrankPolicy::None,
         },
     );
 
@@ -281,6 +283,7 @@ fn fully_loaded_v2_resource() -> ResourceState {
             }),
             emit_rest_api: true,
             emit_html_page: true,
+                    crank_policy: CrankPolicy::None,
         },
     );
 
@@ -384,7 +387,7 @@ fn v1_ron_file_loads_via_upgrader_to_current() {
 
     let loaded = blast::state::io::load_resource(dir.path(), &ResourceName::new("users")).expect("upgrade-then-load v1 file");
 
-    assert_eq!(loaded.schema_version, 3, "schema_version should be bumped to current after upgrade");
+    assert_eq!(loaded.schema_version, 4, "schema_version should be bumped to current after upgrade");
     assert_eq!(loaded.singular_override, None, "default singular_override absent");
     assert_eq!(loaded.soft_delete, None, "default soft_delete absent");
     assert!(loaded.relations.is_empty(), "default relations empty");

@@ -32,7 +32,7 @@ const APP_UPGRADERS: &[(u32, AppUpgrader)] = &[(1, upgrade_app_v1_to_v2), (2, up
 /// Raw-text upgraders, indexed by `from_version`. Each entry takes the
 /// RON text at `from_version` and returns the text at `from_version+1`,
 /// including a bumped `schema_version` field.
-const RESOURCE_RAW_UPGRADERS: &[(u32, ResourceRawUpgrader)] = &[(1, upgrade_resource_v1_to_v2), (2, upgrade_resource_v2_to_v3)];
+const RESOURCE_RAW_UPGRADERS: &[(u32, ResourceRawUpgrader)] = &[(1, upgrade_resource_v1_to_v2), (2, upgrade_resource_v2_to_v3), (3, upgrade_resource_v3_to_v4)];
 
 /// v1 → v2: purely additive. No fields were added to `AppState` between v1
 /// and v2 that require migration — the bump just advances the version token.
@@ -161,6 +161,13 @@ fn upgrade_resource_v2_to_v3(raw: &str) -> BlastResult<String> {
     bump_schema_version(raw, 2, 3)
 }
 
+/// v3 to v4: purely additive. Adds per-verb crank_policy field to
+/// VerbState. Defaults to None via serde — existing v3 files load with
+/// the no-retry default that matches the prior hardcoded behaviour.
+fn upgrade_resource_v3_to_v4(raw: &str) -> BlastResult<String> {
+    bump_schema_version(raw, 3, 4)
+}
+
 /// Replace exactly one `schema_version: <from>` token with
 /// `schema_version: <to>`. Errors if the token is missing or the value
 /// does not match `from`.
@@ -266,9 +273,9 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_resource_raw_is_idempotent_on_v3() {
+    fn upgrade_resource_raw_is_idempotent_on_v4() {
         let raw = r#"ResourceState(
-  schema_version: 3,
+  schema_version: 4,
   filterable_columns: {"email": Eq},
 )"#;
         let upgraded = upgrade_resource_raw(raw).expect("no-op");
@@ -287,13 +294,24 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_resource_raw_chains_v1_to_v3() {
+    fn upgrade_v3_to_v4_bumps_version() {
+        let raw = r#"ResourceState(
+  schema_version: 3,
+  filterable_columns: {"email": Eq},
+)"#;
+        let upgraded = upgrade_resource_v3_to_v4(raw).expect("v3 -> v4");
+        assert!(upgraded.contains("schema_version: 4"), "version must bump: {upgraded}");
+        assert!(!upgraded.contains("schema_version: 3"), "old version gone: {upgraded}");
+    }
+
+    #[test]
+    fn upgrade_resource_raw_chains_v1_to_v4() {
         let raw = r#"ResourceState(
   schema_version: 1,
   filterable_columns: ["email"],
 )"#;
-        let upgraded = upgrade_resource_raw(raw).expect("v1 -> v3 chain");
-        assert!(upgraded.contains("schema_version: 3"), "should land on v3: {upgraded}");
+        let upgraded = upgrade_resource_raw(raw).expect("v1 -> v4 chain");
+        assert!(upgraded.contains("schema_version: 4"), "should land on v4: {upgraded}");
         assert!(upgraded.contains("filterable_columns: {\"email\": Eq}"), "v1->v2 reshape preserved: {upgraded}");
     }
 

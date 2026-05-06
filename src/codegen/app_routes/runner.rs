@@ -278,7 +278,7 @@ mod tests {
     use crate::io::null::{NullProgress, NullSink};
     use crate::state::names::{FieldName, ResourceName};
     use crate::state::resource::{AuthMode, FieldState, FieldVariant, ListOptions, RESOURCE_SCHEMA_VERSION, VerbState};
-    use crate::state::{ResourceState, SqlType};
+    use crate::state::{CrankPolicy, ResourceState, SqlType};
 
     fn make_resource(name: &str, verbs: &[(Verb, bool)]) -> ResourceState {
         let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
@@ -309,6 +309,7 @@ mod tests {
                     }),
                     emit_rest_api: true,
                     emit_html_page: *emit_html,
+                                    crank_policy: CrankPolicy::None,
                 },
             );
         }

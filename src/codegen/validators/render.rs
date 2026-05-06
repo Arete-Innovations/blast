@@ -55,7 +55,10 @@ mod tests {
 
     use super::*;
     use crate::state::{
-        names::{FieldName, ResourceName},
+        CrankPolicy,
+        ResourceName,
+        names::{FieldName,
+    },
         resource::{AuthMode, FieldState, FieldVariant, ResourceState, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
         SqlType,
     };
@@ -108,6 +111,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         verbs.insert(
@@ -117,6 +121,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         ResourceState {

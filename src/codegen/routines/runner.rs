@@ -8,7 +8,7 @@ use crate::{
     codegen::{header, ir_loader, routines::emitter},
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
-    state::{GenLevel, ResourceState, Verb},
+    state::{CrankPolicy, GenLevel, ResourceState, Verb},
 };
 
 #[derive(Debug, Default)]
@@ -126,6 +126,7 @@ mod tests {
                     list_options: None,
                     emit_rest_api: true,
                     emit_html_page: true,
+                                    crank_policy: CrankPolicy::None,
                 },
             );
         }

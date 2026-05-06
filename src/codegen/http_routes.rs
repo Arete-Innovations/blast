@@ -7,7 +7,7 @@ use crate::{
     codegen::{header, ir_loader},
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
-    state::{FieldKind, GenLevel, ResourceState, SessionFieldRef, Verb},
+    state::{CrankPolicy, FieldKind, GenLevel, ResourceState, SessionFieldRef, Verb},
 };
 
 #[derive(Debug, Default)]
@@ -395,6 +395,7 @@ mod tests {
                     list_options: None,
                     emit_rest_api: true,
                     emit_html_page: true,
+                                    crank_policy: CrankPolicy::None,
                 },
             );
         }
@@ -550,6 +551,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         verbs.insert(
@@ -559,6 +561,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: false,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
 
@@ -596,6 +599,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         let mut resource = ResourceState::new(ResourceName::new("logs"));

@@ -110,7 +110,11 @@ mod tests {
 
     use super::*;
     use crate::state::{
-        names::{FieldName, ResourceName, SqlType},
+        CrankPolicy,
+        ResourceName,
+        SqlType,
+        names::{FieldName,
+    },
         resource::{AuthMode, FieldState, FieldVariant, ListOptions, RESOURCE_SCHEMA_VERSION, VerbState},
         AppState, GenLevel, ResourceState,
     };
@@ -144,6 +148,7 @@ mod tests {
                     }),
                     emit_rest_api: true,
                     emit_html_page: true,
+                                    crank_policy: CrankPolicy::None,
                 },
             );
         }

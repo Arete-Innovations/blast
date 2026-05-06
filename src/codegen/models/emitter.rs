@@ -62,7 +62,7 @@ mod tests {
         codegen::models::soft_delete::DefaultBehavior,
         state::{
             names::{ResourceName, SqlType},
-            AuthMode, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
+            AuthMode, CrankPolicy, FieldName, FieldState, FieldVariant, ListOptions, Verb, VerbState,
         },
     };
 
@@ -147,6 +147,7 @@ mod tests {
                 }),
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         verbs.insert(
@@ -156,6 +157,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         verbs.insert(
@@ -165,6 +167,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         verbs.insert(
@@ -174,6 +177,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         verbs.insert(
@@ -183,6 +187,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
 

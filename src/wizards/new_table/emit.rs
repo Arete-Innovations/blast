@@ -7,7 +7,7 @@ use crate::{
     state::{
         gen_level::GenLevel,
         names::{FieldName, ResourceName, SqlType},
-        resource::{AuthMode, FieldState, FieldVariant, ListOptions, ResourceState, SoftDeleteConfig, SoftDeleteDefault, ValidatorRule, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
+        resource::{AuthMode, CrankPolicy, FieldState, FieldVariant, ListOptions, ResourceState, SoftDeleteConfig, SoftDeleteDefault, ValidatorRule, Verb, VerbState, RESOURCE_SCHEMA_VERSION},
     },
 };
 
@@ -203,6 +203,7 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
                 }),
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
     }
@@ -214,6 +215,7 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
     }
@@ -225,6 +227,7 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
     }
@@ -236,6 +239,7 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
     }
@@ -247,6 +251,7 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
     }

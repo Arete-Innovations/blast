@@ -62,7 +62,7 @@ fn emit_filter_match_arms(resource: &ResourceState) -> String {
         return String::new();
     }
     format!(
-        "    for (k, v) in &query.filter {{\n        match k.as_str() {{\n{arms}            other => {{ let _ = other; }} // allow: unknown filter column — skip\n        }}\n    }}\n"
+        "    for (k, v) in &query.filter {{\n        match k.as_str() {{\n{arms}            other => return Err(crate::meltdown::MeltDown::bad_request(format!(\"unknown filter column: {{}}\", other))),\n        }}\n    }}\n"
     )
 }
 
@@ -76,7 +76,7 @@ fn render_filter_clause(col: &str, sql: &str, kind: FilterKind) -> Option<String
     };
     match (kind, is_text, int_ty) {
         (FilterKind::Eq, true, _) => Some(format!("q = q.filter(schema::{col}.eq(v.clone()));")),
-        (FilterKind::Eq, false, Some(ty)) => Some(format!("match v.parse::<{ty}>() {{ Ok(n) => q = q.filter(schema::{col}.eq(n)), Err(_e) => continue }}")),
+        (FilterKind::Eq, false, Some(ty)) => Some(format!("match v.parse::<{ty}>() {{ Ok(n) => q = q.filter(schema::{col}.eq(n)), Err(e) => return Err(crate::meltdown::MeltDown::bad_request(format!(\"filter {col}: {{}}\", e))) }}")),
         (FilterKind::Eq, false, None) => None,
         (FilterKind::IlikeContains, true, _) => Some(format!("q = q.filter(schema::{col}.ilike(format!(\"%{{}}%\", v)));")),
         (FilterKind::IlikeContains, false, _) => None,
@@ -263,7 +263,11 @@ fn emit_delete(out: &mut String, table: &str, soft_delete_cfg: Option<&SoftDelet
 mod tests {
     use super::*;
     use crate::state::{
-        names::ResourceName, AuthMode, ListOptions, VerbState,
+        AuthMode,
+        CrankPolicy,
+        ListOptions,
+        VerbState,
+        names::ResourceName,
     };
     use indexmap::IndexMap;
     use std::collections::{BTreeMap, BTreeSet};
@@ -281,6 +285,7 @@ mod tests {
             }),
             emit_rest_api: true,
             emit_html_page: true,
+                    crank_policy: CrankPolicy::None,
         });
         for v in [Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
             verbs.insert(v, VerbState {
@@ -288,6 +293,7 @@ mod tests {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             });
         }
         let mut r = ResourceState::new(ResourceName::new("users"));

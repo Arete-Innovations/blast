@@ -65,7 +65,7 @@ mod tests {
     use indexmap::IndexMap;
 
     use super::*;
-    use crate::state::{names::ResourceName, AuthMode, FilterKind, ListOptions, Verb, VerbState};
+    use crate::state::{AuthMode, CrankPolicy, FilterKind, ListOptions, Verb, VerbState, names::ResourceName};
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
         items.iter().copied().collect()
@@ -109,6 +109,7 @@ mod tests {
                 }),
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
 

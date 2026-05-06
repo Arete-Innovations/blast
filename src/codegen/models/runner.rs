@@ -27,7 +27,7 @@ use crate::{
     },
     error::{BlastError, BlastResult},
     io::traits::{Progress, ProgressExt, Sink, SinkExt},
-    state::{GenLevel, ResourceState},
+    state::{CrankPolicy, GenLevel, ResourceState},
 };
 
 #[derive(Debug, Default)]
@@ -221,6 +221,7 @@ mod tests {
                 }),
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
         for v in [Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
@@ -231,6 +232,7 @@ mod tests {
                     list_options: None,
                     emit_rest_api: true,
                     emit_html_page: true,
+                                    crank_policy: CrankPolicy::None,
                 },
             );
         }

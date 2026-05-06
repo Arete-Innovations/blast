@@ -122,7 +122,7 @@ mod tests {
     use super::*;
     use crate::{
         io::null::{NullProgress, NullSink},
-        state::{names::ResourceName, AuthMode, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType, Verb, VerbState},
+        state::{AuthMode, CrankPolicy, FieldName, FieldState, FieldVariant, FilterKind, ListOptions, SqlType, Verb, VerbState, names::ResourceName},
     };
 
     fn variants(items: &[FieldVariant]) -> BTreeSet<FieldVariant> {
@@ -172,6 +172,7 @@ mod tests {
                 }),
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
 

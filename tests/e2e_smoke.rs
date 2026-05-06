@@ -49,7 +49,7 @@ use std::{
 use blast::state::{
     self,
     names::{FieldName, ResourceName, SqlType},
-    resource::{AuthMode, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb, VerbState},
+    resource::{AuthMode, CrankPolicy, FieldState, FieldVariant, FilterKind, ListOptions, ResourceState, Verb, VerbState},
 };
 use indexmap::IndexMap;
 
@@ -247,6 +247,7 @@ fn write_minimal_users_resource(state_dir: &Path) {
             }),
             emit_rest_api: true,
             emit_html_page: true,
+                    crank_policy: CrankPolicy::None,
         },
     );
     for verb in [Verb::Get, Verb::Create, Verb::Update, Verb::Delete] {
@@ -257,6 +258,7 @@ fn write_minimal_users_resource(state_dir: &Path) {
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
+                            crank_policy: CrankPolicy::None,
             },
         );
     }
