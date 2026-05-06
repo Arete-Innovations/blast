@@ -226,7 +226,12 @@ blast new <name> [--dev] [--db-url <url>] [--no-test-db] [--force]
 | `--force` | Drop and recreate target databases if they already contain tables. |
 | `--no-warmup` | Skip `cargo build` warmup. Still execs into the dashboard at the new project root afterwards (use `BLAST_NO_TUI_FOR_TESTS=1` to also suppress the dashboard exec — internal-only escape hatch for verification scripts). |
 
-After clone, scaffold applies a 3-line Cargo.toml substitution (`[package].name`, `[[bin]].name`, `[package.metadata.leptos] output-name`) replacing `catalyst` with `<project_name>`. **`[lib].name = "catalyst"` STAYS** — anchors `tests/*.rs use catalyst::*` so source/tests are byte-identical with upstream catalyst across all forks. `git pull upstream master` from a spawned project only conflicts on those 3 Cargo.toml lines.
+After clone, scaffold applies two substitutions:
+
+1. **3-line Cargo.toml** swap (`[package].name`, `[[bin]].name`, `[package.metadata.leptos] output-name`) replacing `catalyst` with `<project_name>`. **`[lib].name = "catalyst"` STAYS** — anchors `tests/*.rs use catalyst::*` so source/tests are byte-identical with upstream catalyst across all forks. `git pull upstream master` from a spawned project only conflicts on those 3 Cargo.toml lines.
+2. **1-line catalyst.toml** swap (`[app].name = "Catalyst"` → `[app].name = "<project_name>"`). The FE renders `crate::cfg().app.name` everywhere it brands the app (`<Title>`, AppShell/AuthCard kickers, DocsShell brand_name). User edits this string post-scaffold to whatever display name they want.
+
+**`blast sync` dev-mode optimization:** when invoked with `--dev` (i.e. `BLAST_CATALYST_DEV_PATH` is set to a local catalyst checkout), sync rsyncs from the working tree directly — no `git clone` to a tempdir first. Cuts ~2s + tempdir disk churn off every `blast sync --dev` iteration. Default (network) mode still goes through clone-to-tempdir.
 
 Full implementation in `src/project/{mod, scaffold, templates, preflight, post_install, db_bootstrap}.rs`.
 

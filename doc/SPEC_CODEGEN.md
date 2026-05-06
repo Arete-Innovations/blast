@@ -168,8 +168,15 @@ src/views/components/generated/forms/<r>/mod.rs
 src/views/components/generated/tables/<r>.rs              leptos-struct-table derive on UserPublic
 src/views/components/generated/tables/mod.rs
 
+src/views/components/generated/nav/inventory.rs           pub static NAV_INVENTORY: &[NavSection] — DATA SLICE, no markup
+src/views/components/generated/nav/mod.rs                 pub mod inventory; pub use inventory::NAV_INVENTORY;
+
 src/transport/leptos/routes/generated.rs     barrel of leptos_router <Route path=path!("/<r>") view=<R>ListPage/> entries; one entry per gen_level≥Pages resource
 ```
+
+**Nav split (DATA + USER-OWNED RENDERER):** the nav codegen does not emit a Leptos component anymore. It emits a `pub static NAV_INVENTORY: &[NavSection]` slice built from `app.ron` `[nav]` sections + the resolved route table. State-side `Role` variants map to canonical `UserRole::{Admin, Member}` at codegen time. The hand-written `<AppNav/>` component lives at `src/views/components/custom/app_nav.rs` (catalyst ships a starter; user owns it forever, blast never touches `custom/`). User trims sections, adds icons, swaps markup, role-gates how they like — without `git pull upstream master` conflicts.
+
+**Models barrel allow attr:** `src/models/generated/mod.rs` is emitted with a leading `#![allow(dead_code)]`. The models codegen emits CRUD verbs (list/get/create/update/delete) the consumer may not have wired yet. Catalyst's `build.rs` `DEAD:8` lint exempts `src/models/generated/` so the allow attr stays legal there only.
 
 Pages and forms gate on per-verb Primer flags `emit_html_page` / `emit_rest_api`. A resource with `emit_rest_api: false` for `Create` skips the `POST /api/<r>` REST handler but still emits the page form (and vice versa).
 
@@ -296,12 +303,15 @@ src/transport/leptos/
 
 src/views/
 ├── components/
-│   ├── vendored/                 user-owned UI components
+│   ├── vendored/                 framework-shipped UI primitives (synced via `blast sync`)
 │   │   ├── auth_guard.rs / error_banner.rs / page_shell.rs / app_shell.rs / button.rs / ...
 │   │   └── cells/                value renderers (BadgeCell, DateCell, MoneyCell, ...)
-│   └── generated/                Blast-owned
+│   ├── custom/                   user-owned forever; ships with starter content
+│   │   ├── icons/                framework ships a starter icon set; user trims/expands
+│   │   └── app_nav.rs            framework ships a starter <AppNav/> that iterates NAV_INVENTORY
+│   └── generated/                Blast-owned (wiped each `blast gen`)
 │       ├── forms/<r>/            create_form.rs, edit_form.rs (native HTML + spawn_local)
-│       └── nav/                  app_nav.rs (role-gated link entries)
+│       └── nav/inventory.rs      `pub static NAV_INVENTORY: &[NavSection]` — DATA ONLY, no markup
 ├── builders/                     TableBuilder / FormBuilder / ListBuilder / SelectBuilder / DetailBuilder / StatBuilder
 │   └── vendored/                 user-owned
 └── signals/                      reactivity primitives + signal stores
