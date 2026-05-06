@@ -46,15 +46,20 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
     }
 
     let temp = tempfile::tempdir()?;
-    let staging = temp.path().join("catalyst");
-    let label = match &source {
-        Source::LocalCopy { path, .. } => format!("local catalyst at {}", path.display()),
-        Source::Git { url, .. } => format!("catalyst from {}", url),
+    let staging: std::path::PathBuf = match &source {
+        Source::LocalCopy { path, .. } => {
+            sink.info(format!("blast sync: reading working tree at {} (dev mode — no git clone)", path.display()));
+            path.clone()
+        }
+        Source::Git { url, .. } => {
+            let target = temp.path().join("catalyst");
+            sink.info(format!("blast sync: cloning catalyst from {} into tempdir", url));
+            progress.step_start("clone catalyst");
+            clone_catalyst(&source, &target, sink)?;
+            progress.step_done("clone catalyst");
+            target
+        }
     };
-    sink.info(format!("blast sync: cloning {} into tempdir", label));
-    progress.step_start("clone catalyst");
-    clone_catalyst(&source, &staging, sink)?;
-    progress.step_done("clone catalyst");
 
     progress.step_start("rsync vendored paths");
     let mut copied = 0usize;
