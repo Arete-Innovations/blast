@@ -270,6 +270,10 @@ pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> Blas
     apply_cargo_substitutions(&args.project_root, &args.project_name)?;
     progress.step_done("substitute project name in Cargo.toml");
 
+    progress.step_start("substitute app name in catalyst.toml");
+    apply_catalyst_toml_substitutions(&args.project_root, &args.project_name)?;
+    progress.step_done("substitute app name in catalyst.toml");
+
     progress.step_start("write env files");
     write_env_files(&args, &mut count)?;
     progress.step_done("write env files");
@@ -421,6 +425,59 @@ fn replace_output_name_line(line: &str, project_name: &str) -> Option<String> {
     }
 }
 
+/// Section-aware catalyst.toml rewrite. Sets `[app].name` to the scaffolded
+/// project name; the default ships as `"Catalyst"`. Users can edit this
+/// freely after scaffold — it's a string the FE renders in titles/brand.
+fn apply_catalyst_toml_substitutions(project_root: &Path, project_name: &str) -> BlastResult<()> {
+    let toml_path = project_root.join("catalyst.toml");
+    let body = fs::read_to_string(&toml_path)?;
+
+    let mut out = String::with_capacity(body.len());
+    let mut current_section = String::new();
+
+    for line in body.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[') {
+            let end = trimmed.rfind(']').map(|i| i + 1).unwrap_or(trimmed.len());
+            current_section = trimmed[..end].to_string();
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+
+        let new_line = match current_section.as_str() {
+            "[app]" => replace_app_name_line(line, project_name),
+            _ => None,
+        };
+
+        match new_line {
+            Some(replaced) => out.push_str(&replaced),
+            None => out.push_str(line),
+        }
+        out.push('\n');
+    }
+
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+
+    fs::write(&toml_path, out)?;
+    Ok(())
+}
+
+fn replace_app_name_line(line: &str, project_name: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let prefix = trimmed.split('=').next()?.trim();
+    if prefix != "name" {
+        return None;
+    }
+    let comment_suffix = match line.find('#') {
+        Some(idx) => format!("   {}", line[idx..].trim_end()),
+        None => String::new(),
+    };
+    Some(format!(r#"name = "{}"{}"#, project_name, comment_suffix))
+}
+
 fn write_env_files(args: &Args, count: &mut usize) -> BlastResult<()> {
     let env_body = match &args.env_body {
         Some(body) => body.clone(),
@@ -509,6 +566,16 @@ output-name = "catalyst"
 "#,
         )
         .expect("Cargo.toml");
+        fs::write(
+            repo.join("catalyst.toml"),
+            r#"[app]
+name = "Catalyst"
+
+[features]
+email = false
+"#,
+        )
+        .expect("catalyst.toml");
         fs::create_dir_all(repo.join("src")).expect("src");
         fs::write(repo.join("src/main.rs"), "fn main() {}\n").expect("main.rs");
         fs::write(repo.join("src/lib.rs"), "// catalyst lib\n").expect("lib.rs");
@@ -599,6 +666,17 @@ output-name = "catalyst"
         let (_dir, outcome) = run_in_tempdir("anything");
         let test_body = fs::read_to_string(outcome.project_root.join("tests").join("smoke.rs")).expect("read test");
         assert_eq!(test_body, "use catalyst::*;\n", "test files must be byte-identical with catalyst");
+    }
+
+    #[test]
+    fn catalyst_toml_app_name_substituted() {
+        let (_dir, outcome) = run_in_tempdir("widgets");
+        let body = fs::read_to_string(outcome.project_root.join("catalyst.toml")).expect("read catalyst.toml");
+        let app_section = body.split("[app]").nth(1).and_then(|s| s.split("\n[").next()).expect("[app] section present");
+        assert!(
+            app_section.contains(r#"name = "widgets""#),
+            "[app].name MUST become widgets — got [app]{app_section}"
+        );
     }
 
     #[test]
