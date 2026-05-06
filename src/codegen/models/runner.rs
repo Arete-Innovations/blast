@@ -127,7 +127,7 @@ fn write_file(target: &Path, body: &str, report: &mut EmitReport) -> BlastResult
 fn render_barrel(resources: &[ResourceState]) -> String {
     let mut names: Vec<&str> = resources.iter().map(|r| r.name.as_str()).collect();
     names.sort();
-    let mut out = String::new();
+    let mut out = String::from("#![allow(dead_code)]\n\n");
     for name in &names {
         out.push_str(&format!("pub mod {name};\n"));
     }
@@ -344,6 +344,7 @@ mod tests {
         let zebras_idx = barrel.find("pub mod zebras;").unwrap();
         assert!(apples_idx < zebras_idx);
         assert!(!barrel.starts_with("// AUTO-GENERATED"), "no inline marker");
+        assert!(barrel.starts_with("#![allow(dead_code)]"), "barrel must lead with allow(dead_code) so unused CRUD fns don't warn — got: {}", &barrel[..80.min(barrel.len())]);
     }
 
     #[test]
