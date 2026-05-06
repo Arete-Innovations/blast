@@ -655,7 +655,7 @@ mod tests {
             assert!(!body.contains("Action::new"), "{path} must NOT use Action::new (deadlocks wasm event loop): {body}");
             assert!(!body.contains(".dispatch("), "{path} must NOT dispatch — Action+dispatch deadlocks wasm: {body}");
             assert!(!body.contains("Effect::new"), "{path} must NOT subscribe via Effect::new on action.value(): {body}");
-            assert!(body.contains("err.log();"), "{path} must call err.log() in Err arms (canonical ERROR:18 lint): {body}");
+            assert!(!body.contains("err.log();"), "{path} must NOT call err.log() in views (LOG:27 — toasts surface, callers log): {body}");
         }
     }
 

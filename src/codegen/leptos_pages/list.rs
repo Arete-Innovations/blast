@@ -166,11 +166,11 @@ fn render_list_helpers(table: &str, stem: &str, public_ty: &str, row_ty: &str, d
     out.push_str("            when=move || has_rows\n");
     if has_create {
         out.push_str(&format!(
-            "            fallback=move || view! {{ <EmptyState title=\"No {label_lower} yet\".to_string() message=\"Click + New to add the first one.\".to_string() action=Some(view! {{ <LinkButton href=new_href_stored.get_value() kind=ButtonKind::Primary>\"+ New {label_pretty}\"</LinkButton> }}.into_any())/> }}.into_any()\n"
+            "            fallback=move || view! {{ <div class=\"crud-empty\"><EmptyState title=\"No {label_lower} yet\".to_string() message=\"Click + New to add the first one.\".to_string()/><LinkButton href=new_href_stored.get_value() kind=ButtonKind::Primary>\"+ New {label_pretty}\"</LinkButton></div> }}.into_any()\n"
         ));
     } else {
         out.push_str(&format!(
-            "            fallback=move || view! {{ <EmptyState title=\"No {label_lower} yet\".to_string() message=\"This list is empty.\".to_string() action=None/> }}.into_any()\n"
+            "            fallback=move || view! {{ <EmptyState title=\"No {label_lower} yet\".to_string() message=\"This list is empty.\".to_string()/> }}.into_any()\n"
         ));
     }
     out.push_str("        >\n");

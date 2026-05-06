@@ -209,7 +209,6 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     out.push_str(&format!("        let parsed: {insertable_type} = match parsed_result {{\n"));
     out.push_str("            Ok(p) => p,\n");
     out.push_str("            Err(err) => {\n");
-    out.push_str("                err.log();\n");
     out.push_str("                toast::error(err.user_message());\n");
     out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
@@ -218,7 +217,6 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
     out.push_str("        match parsed.check() {\n");
     out.push_str("            Ok(()) => {}\n");
     out.push_str("            Err(err) => {\n");
-    out.push_str("                err.log();\n");
     out.push_str("                toast::error(err.user_message());\n");
     out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
@@ -233,7 +231,6 @@ pub fn render_create_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Str
         "                Ok(record) => {{\n                    toast::success(\"{stem} created.\");\n                    let path = RouteName::ResourceDetail(\"{table}\", record.{pk_field_name}).path().to_string();\n                    navigate.with_value(|nav| nav(&path));\n                }}\n"
     ));
     out.push_str("                Err(err) => {\n");
-    out.push_str("                    err.log();\n");
     out.push_str("                    toast::error(err.user_message());\n");
     out.push_str("                    dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                }\n");
@@ -336,7 +333,6 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     out.push_str(&format!("        let patch: {patch_type} = match patch_result {{\n"));
     out.push_str("            Ok(p) => p,\n");
     out.push_str("            Err(err) => {\n");
-    out.push_str("                err.log();\n");
     out.push_str("                toast::error(err.user_message());\n");
     out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
@@ -345,7 +341,6 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
     out.push_str("        match patch.check() {\n");
     out.push_str("            Ok(()) => {}\n");
     out.push_str("            Err(err) => {\n");
-    out.push_str("                err.log();\n");
     out.push_str("                toast::error(err.user_message());\n");
     out.push_str("                dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                return;\n");
@@ -361,7 +356,6 @@ pub fn render_edit_form(resource: &ResourceState, enums: &[ParsedEnum]) -> Strin
         "                Ok(record) => {{\n                    toast::success(\"{stem} saved.\");\n                    let path = RouteName::ResourceDetail(\"{table}\", record.{pk_field_name}).path().to_string();\n                    navigate.with_value(|nav| nav(&path));\n                }}\n"
     ));
     out.push_str("                Err(err) => {\n");
-    out.push_str("                    err.log();\n");
     out.push_str("                    toast::error(err.user_message());\n");
     out.push_str("                    dispatch_form_error(err, field_errors, last_error);\n");
     out.push_str("                }\n");
@@ -408,9 +402,7 @@ fn render_signal_decl_initialized(name: &str, field: &FieldState, enums: &[Parse
         InputKind::Enum => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.as_str().to_string());\n"),
         _stringy => match lowered.as_str() {
             "uuid" => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_string());\n"),
-            "json" | "jsonb" => format!(
-                "    let {name}: RwSignal<String> = RwSignal::new({{ let Ok(s) = ::serde_json::to_string(&initial.{name}) else {{ return ::leptos::view! {{ <p>\"failed to serialize initial json field\"</p> }}.into_any(); }}; s }});\n"
-            ),
+            "json" | "jsonb" => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_string());\n"),
             _stringy_text => match field.nullable {
                 true => format!("    let {name}: RwSignal<String> = RwSignal::new(match &initial.{name} {{ Some(s) => s.clone(), None => String::new() }});\n"),
                 false => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.clone());\n"),
@@ -662,7 +654,7 @@ fn render_field_view(name: &str, field: &FieldState, enums: &[ParsedEnum], dto_t
 
     out.push_str("            </label>\n");
     out.push_str(&format!(
-        "            <FieldError message=Signal::derive(move || field_errors.with(|m| m.get(\"{name}\").cloned()))/>\n"
+        "            <FieldError message=Signal::derive(move || field_errors.with(|m| match m.get(\"{name}\") {{ Some(s) => s.clone(), None => String::new() }}))/>\n"
     ));
     out
 }
