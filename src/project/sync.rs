@@ -79,6 +79,11 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
             sink.debug(format!("skip {} (not in catalyst)", rel));
             continue;
         }
+        if is_frozen(rel, &freeze) {
+            sink.info(format!("frozen: skipped {}", rel));
+            frozen_skips += 1;
+            continue;
+        }
         let dst = project_root.join(rel);
         let skipped = copy_recursive(&src, &dst, &project_root, &freeze, sink)?;
         frozen_skips += skipped;
@@ -87,7 +92,7 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
     }
     progress.step_done("rsync vendored paths");
     if frozen_skips > 0 {
-        sink.info(format!("frozen: {} file(s) skipped", frozen_skips));
+        sink.info(format!("frozen: {} path(s) skipped", frozen_skips));
     }
 
     progress.step_start("merge Cargo.toml deps");
