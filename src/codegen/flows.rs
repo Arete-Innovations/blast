@@ -515,6 +515,132 @@ mod tests {
         assert!(!top_barrel.starts_with("// AUTO-GENERATED"), "no inline marker");
     }
 
+    fn write_resource_ron_with_policies(project_root: &Path, name: &str, policies: [(Verb, CrankPolicy); 5]) {
+        let resources_dir = project_root.join("storage/blast/state/resources");
+        stdfs::create_dir_all(&resources_dir).expect("mkdir resources");
+        let state_dir = project_root.join("storage/blast/state");
+        let app = crate::state::AppState::default();
+        crate::state::io::save_app(&state_dir, &app).expect("save app");
+        let mut variants = BTreeSet::new();
+        variants.insert(FieldVariant::Public);
+        let mut fields: IndexMap<FieldName, FieldState> = IndexMap::new();
+        fields.insert(
+            FieldName::new("id"),
+            FieldState {
+                sql_type: SqlType::new("BIGINT"),
+                variants: variants.clone(),
+                nullable: false,
+                primary_key: true,
+                validators: BTreeSet::new(),
+                kind: Default::default(),
+            },
+        );
+        let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
+        for (verb, policy) in policies {
+            verbs.insert(
+                verb,
+                VerbState {
+                    auth: AuthMode::Public,
+                    list_options: None,
+                    emit_rest_api: true,
+                    emit_html_page: true,
+                    crank_policy: policy,
+                },
+            );
+        }
+        let resource = ResourceState {
+            schema_version: RESOURCE_SCHEMA_VERSION,
+            name: ResourceName::new(name),
+            fields,
+            verbs,
+            ws_events: None,
+            singular_override: None,
+            soft_delete: None,
+            relations: std::collections::BTreeMap::new(),
+            gen_level: crate::state::GenLevel::default(),
+            list_layout: None,
+            detail_layout: None,
+            toggle_endpoint: None,
+            live_topics: Vec::new(),
+        };
+        let path = resources_dir.join(format!("{}.ron", name));
+        let body = ron::ser::to_string_pretty(&resource, ron::ser::PrettyConfig::default()).expect("serialize resource");
+        stdfs::write(&path, body).expect("write resource ron");
+    }
+
+    #[test]
+    fn emits_per_verb_crank_chains_from_primer_state() {
+        let tmp = TempDir::new().expect("tempdir");
+        let root = tmp.path();
+        write_resource_ron_with_policies(
+            root,
+            "widgets",
+            [
+                (
+                    Verb::List,
+                    CrankPolicy::Backoff {
+                        max_attempts: 3,
+                        base_ms: 100,
+                        only_transient: true,
+                        deadline_ms: Some(5_000),
+                    },
+                ),
+                (
+                    Verb::Get,
+                    CrankPolicy::FixedDelay {
+                        max_attempts: 2,
+                        delay_ms: 250,
+                        only_transient: true,
+                        deadline_ms: None,
+                    },
+                ),
+                (Verb::Create, CrankPolicy::None),
+                (
+                    Verb::Update,
+                    CrankPolicy::Immediate {
+                        max_attempts: 4,
+                        only_transient: false,
+                        deadline_ms: Some(1_000),
+                    },
+                ),
+                (Verb::Delete, CrankPolicy::None),
+            ],
+        );
+
+        let mut sink = CapturingSink { events: Vec::new() };
+        let mut progress = CapturingProgress { events: Vec::new() };
+        run(root, &mut sink, &mut progress).expect("flows codegen ok");
+
+        let dir = root.join("src/flows/generated/widgets");
+
+        let list_body = stdfs::read_to_string(dir.join("list.rs")).expect("read list");
+        assert!(
+            list_body.contains("Crank::backoff(3, Duration::from_millis(100)).deadline(Duration::from_millis(5000)).run("),
+            "list emits backoff chain with deadline: {list_body}"
+        );
+        assert!(list_body.contains("use std::time::Duration;"), "Backoff requires Duration import");
+
+        let get_body = stdfs::read_to_string(dir.join("get.rs")).expect("read get");
+        assert!(
+            get_body.contains("Crank::fixed(2, Duration::from_millis(250)).run("),
+            "get emits fixed delay chain: {get_body}"
+        );
+
+        let create_body = stdfs::read_to_string(dir.join("create.rs")).expect("read create");
+        assert!(create_body.contains("Crank::none().run("), "create policy=None emits Crank::none(): {create_body}");
+        assert!(!create_body.contains("Duration::from_millis"), "None should not pull Duration: {create_body}");
+
+        let update_body = stdfs::read_to_string(dir.join("update.rs")).expect("read update");
+        assert!(
+            update_body.contains("Crank::new(Immediate::new(4)).classify(|_e| true).deadline(Duration::from_millis(1000)).run("),
+            "update emits Immediate(4) with yolo classifier and deadline: {update_body}"
+        );
+        assert!(update_body.contains("use crate::crank::Immediate;"), "multi-attempt Immediate requires Immediate import");
+
+        let delete_body = stdfs::read_to_string(dir.join("delete.rs")).expect("read delete");
+        assert!(delete_body.contains("Crank::none().run("), "delete policy=None emits Crank::none(): {delete_body}");
+    }
+
     #[test]
     fn empty_state_emits_no_files() {
         let tmp = TempDir::new().expect("tempdir");
