@@ -69,7 +69,7 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
     out.push_str("    let list_state = use_url_list_state();\n");
     out.push_str("    #[cfg(target_arch = \"wasm32\")]\n");
     out.push_str("    Effect::new(move |_| {\n");
-    out.push_str("        let _tick = refetch.get(); // allow: track WS topic frames\n");
+    out.push_str("        refetch.track();\n");
     out.push_str("        let query = list_state.to_list_query();\n");
     out.push_str("        leptos::task::spawn_local(async move {\n");
     out.push_str(&format!("            let result = {loader}(query).await;\n"));
@@ -226,7 +226,7 @@ fn render_list_page_custom(
     out.push_str("    let list_state = use_url_list_state();\n");
     out.push_str("    #[cfg(target_arch = \"wasm32\")]\n");
     out.push_str("    Effect::new(move |_| {\n");
-    out.push_str("        let _tick = refetch.get(); // allow: track WS topic frames\n");
+    out.push_str("        refetch.track();\n");
     out.push_str("        let query = list_state.to_list_query();\n");
     out.push_str("        leptos::task::spawn_local(async move {\n");
     out.push_str(&format!("            let result = {loader}(query).await;\n"));

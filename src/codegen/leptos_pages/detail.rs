@@ -86,7 +86,7 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
     out.push_str("    });\n");
     out.push_str("    #[cfg(target_arch = \"wasm32\")]\n");
     out.push_str("    Effect::new(move |_| {\n");
-    out.push_str("        let _tick = refetch.get(); // allow: track WS topic frames\n");
+    out.push_str("        refetch.track();\n");
     out.push_str("        let id = id_signal.get();\n");
     out.push_str("        if id < 0 { return; }\n");
     out.push_str("        item_signal.set(None);\n");
@@ -234,11 +234,11 @@ fn render_detail_page_custom(
     out.push_str("    let id_signal: Memo<i64> = Memo::new(move |_| {\n");
     out.push_str("        let id_str = params.with(|p| match p.get(\"id\") {\n");
     out.push_str("            Some(s) => s.to_string(),\n");
-    out.push_str("            None => String::new(), // allow: missing path param yields -1\n");
+    out.push_str("            None => String::new(),\n");
     out.push_str("        });\n");
     out.push_str("        match id_str.parse::<i64>() {\n");
     out.push_str("            Ok(n) => n,\n");
-    out.push_str("            Err(_e) => -1, // allow: invalid path param yields -1, surfaced as NotFound below\n");
+    out.push_str("            Err(e) => { crate::cata_log!(Debug, format!(\"detail id parse failed: {{}}\", e)); -1 }\n");
     out.push_str("        }\n");
     out.push_str("    });\n");
     out.push_str("    #[cfg(target_arch = \"wasm32\")]\n");
@@ -249,7 +249,7 @@ fn render_detail_page_custom(
     out.push_str("    });\n");
     out.push_str("    #[cfg(target_arch = \"wasm32\")]\n");
     out.push_str("    Effect::new(move |_| {\n");
-    out.push_str("        let _tick = refetch.get(); // allow: track WS topic frames\n");
+    out.push_str("        refetch.track();\n");
     out.push_str("        let id = id_signal.get();\n");
     out.push_str("        if id < 0 {\n");
     out.push_str("            item_signal.set(Some(Err(MeltDown::record_not_found(\"invalid id\"))));\n");

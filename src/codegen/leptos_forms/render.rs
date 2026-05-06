@@ -409,7 +409,7 @@ fn render_signal_decl_initialized(name: &str, field: &FieldState, enums: &[Parse
         _stringy => match lowered.as_str() {
             "uuid" => format!("    let {name}: RwSignal<String> = RwSignal::new(initial.{name}.to_string());\n"),
             "json" | "jsonb" => format!(
-                "    let {name}: RwSignal<String> = RwSignal::new(match ::serde_json::to_string(&initial.{name}) {{ Ok(s) => s, Err(parse_err) => {{ crate::cata_log!(Debug, format!(\"json initial serialize failed: {{}}\", parse_err)); String::new() }} }});\n"
+                "    let {name}: RwSignal<String> = RwSignal::new({{ let Ok(s) = ::serde_json::to_string(&initial.{name}) else {{ return ::leptos::view! {{ <p>\"failed to serialize initial json field\"</p> }}.into_any(); }}; s }});\n"
             ),
             _stringy_text => match field.nullable {
                 true => format!("    let {name}: RwSignal<String> = RwSignal::new(match &initial.{name} {{ Some(s) => s.clone(), None => String::new() }});\n"),
