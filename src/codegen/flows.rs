@@ -62,13 +62,13 @@ fn emit_resource(project_root: &Path, resource: &ResourceState, report: &mut Emi
     write_file(&resource_dir.join("mod.rs"), &format!("{}{}", marker, barrel_body(&verbs)), report)?;
 
     for verb in &verbs {
-        let auth = match resource.verbs.get(verb) {
-            Some(verb_state) => &verb_state.auth,
+        let verb_state = match resource.verbs.get(verb) {
+            Some(s) => s,
             None => {
                 return Err(BlastError::Invalid(format!("verb {:?} vanished from resource {} between iter and lookup", verb, table)));
             }
         };
-        let body = verb_stub_body(table, *verb, auth);
+        let body = verb_stub_body(table, *verb, &verb_state.auth, &verb_state.crank_policy);
         write_file(&resource_dir.join(format!("{}.rs", verb_module(*verb))), &format!("{}{}", marker, body), report)?;
     }
 
@@ -116,18 +116,31 @@ fn verb_module(verb: Verb) -> &'static str {
     }
 }
 
-fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
+fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode, policy: &CrankPolicy) -> String {
     let auth_block = auth_check_block(auth);
     let singular = singularize(table);
     let type_stem = pascal_case(&singular);
     let (args_sig, ret_ty, routine_call) = verb_signature(verb, &type_stem);
+    let crank_chain = render_crank_chain(policy);
+    let needs_immediate_import = matches!(policy, CrankPolicy::Immediate { max_attempts, .. } if *max_attempts > 1);
+    let needs_duration_import = match policy {
+        CrankPolicy::None => false,
+        CrankPolicy::Immediate { deadline_ms, .. } => deadline_ms.is_some(),
+        CrankPolicy::Backoff { .. } | CrankPolicy::FixedDelay { .. } => true,
+    };
 
     let mut out = String::new();
     out.push_str("use crate::crank::Crank;\n");
+    if needs_immediate_import {
+        out.push_str("use crate::crank::Immediate;\n");
+    }
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str("use crate::routines;\n");
     if matches!(auth, AuthMode::AdminOnly | AuthMode::Roles(_)) {
         out.push_str("use crate::structs::UserRole;\n");
+    }
+    if needs_duration_import {
+        out.push_str("use std::time::Duration;\n");
     }
     if !matches!(verb, Verb::Delete) {
         out.push_str("use crate::structs::generated::");
@@ -151,24 +164,91 @@ fn verb_stub_body(table: &str, verb: Verb, auth: &AuthMode) -> String {
     };
     match publish_kind {
         PublishKind::Row => {
-            out.push_str(&format!("    let out = Crank::none().run(|| routines::generated::{table}::{routine_call}).await?;\n"));
+            out.push_str(&format!("    let out = {crank_chain}.run(|| routines::generated::{table}::{routine_call}).await?;\n"));
             out.push_str(&format!("    ctx.publish(\"{table}:list\", &out);\n"));
             out.push_str(&format!("    ctx.publish(&format!(\"{table}:row:{{}}\", out.id), &out);\n"));
             out.push_str("    Ok(out)\n");
         }
         PublishKind::Id => {
-            out.push_str(&format!("    Crank::none().run(|| routines::generated::{table}::{routine_call}).await?;\n"));
+            out.push_str(&format!("    {crank_chain}.run(|| routines::generated::{table}::{routine_call}).await?;\n"));
             out.push_str(&format!("    ctx.publish(\"{table}:list\", &id);\n"));
             out.push_str(&format!("    ctx.publish(&format!(\"{table}:row:{{}}\", id), &id);\n"));
             out.push_str("    Ok(())\n");
         }
         PublishKind::None => {
-            out.push_str(&format!("    Crank::none().run(|| routines::generated::{table}::{routine_call}).await\n"));
+            out.push_str(&format!("    {crank_chain}.run(|| routines::generated::{table}::{routine_call}).await\n"));
         }
     }
     out.push_str("}\n");
 
     out
+}
+
+/// Render the Crank constructor chain that wraps the routine call for a
+/// given policy. Behaviour table by variant:
+///
+/// - None                  emits the single-attempt no-retry constructor
+/// - Backoff transient     emits the exp-backoff constructor with default classifier
+/// - Backoff non-transient adds an explicit classifier that retries every error
+/// - Backoff with deadline appends a deadline call after the classifier
+/// - FixedDelay            same shape as Backoff but with the fixed-delay constructor
+/// - Immediate single      collapses to the no-retry constructor
+/// - Immediate multi       constructs via the policy type plus an explicit classifier
+fn render_crank_chain(policy: &CrankPolicy) -> String {
+    match policy {
+        CrankPolicy::None => String::from("Crank::none()"),
+        CrankPolicy::Backoff {
+            max_attempts,
+            base_ms,
+            only_transient,
+            deadline_ms,
+        } => {
+            let mut chain = format!("Crank::backoff({max_attempts}, Duration::from_millis({base_ms}))");
+            if !*only_transient {
+                chain.push_str(".classify(|_e| true)");
+            }
+            match deadline_ms {
+                Some(d) => chain.push_str(&format!(".deadline(Duration::from_millis({d}))")),
+                None => {}
+            }
+            chain
+        }
+        CrankPolicy::FixedDelay {
+            max_attempts,
+            delay_ms,
+            only_transient,
+            deadline_ms,
+        } => {
+            let mut chain = format!("Crank::fixed({max_attempts}, Duration::from_millis({delay_ms}))");
+            if !*only_transient {
+                chain.push_str(".classify(|_e| true)");
+            }
+            match deadline_ms {
+                Some(d) => chain.push_str(&format!(".deadline(Duration::from_millis({d}))")),
+                None => {}
+            }
+            chain
+        }
+        CrankPolicy::Immediate {
+            max_attempts,
+            only_transient,
+            deadline_ms,
+        } => {
+            // Single-attempt Immediate is identical to the no-retry policy. Multi-attempt
+            // requires the explicit policy + classifier route.
+            if *max_attempts <= 1 {
+                String::from("Crank::none()")
+            } else {
+                let classifier = if *only_transient { ".classify(|e| !e.is_permanent())" } else { ".classify(|_e| true)" };
+                let mut chain = format!("Crank::new(Immediate::new({max_attempts})){classifier}");
+                match deadline_ms {
+                    Some(d) => chain.push_str(&format!(".deadline(Duration::from_millis({d}))")),
+                    None => {}
+                }
+                chain
+            }
+        }
+    }
 }
 
 enum PublishKind {
@@ -459,5 +539,130 @@ mod tests {
         assert_eq!(auth_check_block(&AuthMode::Roles(roles)), "ctx.require_any(&[UserRole::AlphaTeam, UserRole::Zeta])?;");
         let scoped = auth_check_block(&AuthMode::ScopedTo(crate::state::AuthScopeField::new("owner_id")));
         assert_eq!(scoped, "ctx.require_session()?;");
+    }
+
+    #[test]
+    fn crank_chain_none_emits_crank_none() {
+        assert_eq!(render_crank_chain(&CrankPolicy::None), "Crank::none()");
+    }
+
+    #[test]
+    fn crank_chain_backoff_default_only_transient() {
+        let policy = CrankPolicy::Backoff {
+            max_attempts: 3,
+            base_ms: 200,
+            only_transient: true,
+            deadline_ms: None,
+        };
+        assert_eq!(render_crank_chain(&policy), "Crank::backoff(3, Duration::from_millis(200))");
+    }
+
+    #[test]
+    fn crank_chain_backoff_yolo_classifier_when_not_only_transient() {
+        let policy = CrankPolicy::Backoff {
+            max_attempts: 5,
+            base_ms: 100,
+            only_transient: false,
+            deadline_ms: None,
+        };
+        assert_eq!(render_crank_chain(&policy), "Crank::backoff(5, Duration::from_millis(100)).classify(|_e| true)");
+    }
+
+    #[test]
+    fn crank_chain_backoff_with_deadline() {
+        let policy = CrankPolicy::Backoff {
+            max_attempts: 2,
+            base_ms: 50,
+            only_transient: true,
+            deadline_ms: Some(5_000),
+        };
+        assert_eq!(render_crank_chain(&policy), "Crank::backoff(2, Duration::from_millis(50)).deadline(Duration::from_millis(5000))");
+    }
+
+    #[test]
+    fn crank_chain_fixed_default_only_transient() {
+        let policy = CrankPolicy::FixedDelay {
+            max_attempts: 4,
+            delay_ms: 250,
+            only_transient: true,
+            deadline_ms: None,
+        };
+        assert_eq!(render_crank_chain(&policy), "Crank::fixed(4, Duration::from_millis(250))");
+    }
+
+    #[test]
+    fn crank_chain_fixed_with_deadline_and_yolo_classifier() {
+        let policy = CrankPolicy::FixedDelay {
+            max_attempts: 3,
+            delay_ms: 500,
+            only_transient: false,
+            deadline_ms: Some(10_000),
+        };
+        assert_eq!(render_crank_chain(&policy), "Crank::fixed(3, Duration::from_millis(500)).classify(|_e| true).deadline(Duration::from_millis(10000))");
+    }
+
+    #[test]
+    fn crank_chain_immediate_single_attempt_collapses_to_none() {
+        let policy = CrankPolicy::Immediate {
+            max_attempts: 1,
+            only_transient: true,
+            deadline_ms: None,
+        };
+        assert_eq!(render_crank_chain(&policy), "Crank::none()");
+    }
+
+    #[test]
+    fn crank_chain_immediate_multi_attempt_only_transient() {
+        let policy = CrankPolicy::Immediate {
+            max_attempts: 3,
+            only_transient: true,
+            deadline_ms: None,
+        };
+        assert_eq!(render_crank_chain(&policy), "Crank::new(Immediate::new(3)).classify(|e| !e.is_permanent())");
+    }
+
+    #[test]
+    fn crank_chain_immediate_multi_attempt_yolo_with_deadline() {
+        let policy = CrankPolicy::Immediate {
+            max_attempts: 2,
+            only_transient: false,
+            deadline_ms: Some(2_000),
+        };
+        assert_eq!(
+            render_crank_chain(&policy),
+            "Crank::new(Immediate::new(2)).classify(|_e| true).deadline(Duration::from_millis(2000))"
+        );
+    }
+
+    #[test]
+    fn verb_stub_body_emits_backoff_chain_and_imports() {
+        let policy = CrankPolicy::Backoff {
+            max_attempts: 3,
+            base_ms: 200,
+            only_transient: true,
+            deadline_ms: Some(5_000),
+        };
+        let body = verb_stub_body("widgets", Verb::List, &AuthMode::Public, &policy);
+        assert!(body.contains("use std::time::Duration;"), "Backoff requires Duration import: {body}");
+        assert!(body.contains("Crank::backoff(3, Duration::from_millis(200)).deadline(Duration::from_millis(5000)).run("), "list flow body must use the policy chain: {body}");
+    }
+
+    #[test]
+    fn verb_stub_body_emits_immediate_multi_imports_immediate_type() {
+        let policy = CrankPolicy::Immediate {
+            max_attempts: 2,
+            only_transient: true,
+            deadline_ms: None,
+        };
+        let body = verb_stub_body("widgets", Verb::Get, &AuthMode::Public, &policy);
+        assert!(body.contains("use crate::crank::Immediate;"), "multi-attempt Immediate requires import: {body}");
+        assert!(body.contains("Crank::new(Immediate::new(2)).classify(|e| !e.is_permanent()).run("), "get flow body must use Immediate chain: {body}");
+    }
+
+    #[test]
+    fn verb_stub_body_none_policy_emits_no_duration_import() {
+        let body = verb_stub_body("widgets", Verb::List, &AuthMode::Public, &CrankPolicy::None);
+        assert!(!body.contains("use std::time::Duration;"), "None should not pull Duration: {body}");
+        assert!(body.contains("Crank::none().run("), "None still emits Crank::none(): {body}");
     }
 }
