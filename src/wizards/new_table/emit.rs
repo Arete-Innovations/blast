@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-use super::state::{ColumnSpec, ColumnType, ValidatorChoice, VerbToggles, WizardState};
+use super::state::{ColumnSpec, ValidatorChoice, WizardState};
 
 pub struct Artifacts {
     pub up_sql: String,
@@ -27,6 +27,19 @@ pub fn build(state: &WizardState) -> Artifacts {
     let resource = build_resource_state(&table, state);
     let resource_ron = preview_ron(&resource);
     Artifacts { up_sql, down_sql, resource, resource_ron }
+}
+
+/// Same as `build`, but propagates per-verb crank validation errors
+/// (numeric inputs that fail to parse). Used by the renderer's preview
+/// step so a malformed deadline_ms never crashes the TUI.
+pub fn build_safely(state: &WizardState) -> BlastResult<Artifacts> {
+    for (verb, draft) in state.per_verb_crank.iter() {
+        match draft.to_policy() {
+            Ok(_p) => {}
+            Err(err) => return Err(BlastError::Invalid(format!("verb {:?}: {}", verb, err))),
+        }
+    }
+    Ok(build(state))
 }
 
 fn render_up_sql(table: &str, state: &WizardState) -> String {
@@ -150,7 +163,7 @@ fn build_resource_state(table: &str, state: &WizardState) -> ResourceState {
         );
     }
 
-    let verbs = build_verbs(state.verbs);
+    let verbs = build_verbs(state);
 
     let soft_delete_config = if state.soft_delete {
         Some(SoftDeleteConfig {
@@ -187,13 +200,29 @@ fn validators_for_choice(choice: ValidatorChoice) -> BTreeSet<ValidatorRule> {
     }
 }
 
-fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
+fn build_verbs(state: &WizardState) -> IndexMap<Verb, VerbState> {
     let mut verbs: IndexMap<Verb, VerbState> = IndexMap::new();
+    let toggles = state.verbs;
+    let resolve_auth = |v: Verb| -> AuthMode {
+        match state.per_verb_auth.get(&v) {
+            Some(c) => c.to_auth_mode(),
+            None => AuthMode::AuthRequired,
+        }
+    };
+    let resolve_crank = |v: Verb| -> CrankPolicy {
+        match state.per_verb_crank.get(&v) {
+            Some(d) => match d.to_policy() {
+                Ok(p) => p,
+                Err(_msg) => CrankPolicy::None,
+            },
+            None => CrankPolicy::None,
+        }
+    };
     if toggles.list {
         verbs.insert(
             Verb::List,
             VerbState {
-                auth: AuthMode::AuthRequired,
+                auth: resolve_auth(Verb::List),
                 list_options: Some(ListOptions {
                     paginated: true,
                     filterable_columns: BTreeMap::new(),
@@ -203,7 +232,7 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
                 }),
                 emit_rest_api: true,
                 emit_html_page: true,
-                            crank_policy: CrankPolicy::None,
+                crank_policy: resolve_crank(Verb::List),
             },
         );
     }
@@ -211,11 +240,11 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
         verbs.insert(
             Verb::Get,
             VerbState {
-                auth: AuthMode::AuthRequired,
+                auth: resolve_auth(Verb::Get),
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
-                            crank_policy: CrankPolicy::None,
+                crank_policy: resolve_crank(Verb::Get),
             },
         );
     }
@@ -223,11 +252,11 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
         verbs.insert(
             Verb::Create,
             VerbState {
-                auth: AuthMode::AuthRequired,
+                auth: resolve_auth(Verb::Create),
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
-                            crank_policy: CrankPolicy::None,
+                crank_policy: resolve_crank(Verb::Create),
             },
         );
     }
@@ -235,11 +264,11 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
         verbs.insert(
             Verb::Update,
             VerbState {
-                auth: AuthMode::AuthRequired,
+                auth: resolve_auth(Verb::Update),
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
-                            crank_policy: CrankPolicy::None,
+                crank_policy: resolve_crank(Verb::Update),
             },
         );
     }
@@ -247,11 +276,11 @@ fn build_verbs(toggles: VerbToggles) -> IndexMap<Verb, VerbState> {
         verbs.insert(
             Verb::Delete,
             VerbState {
-                auth: AuthMode::AuthRequired,
+                auth: resolve_auth(Verb::Delete),
                 list_options: None,
                 emit_rest_api: true,
                 emit_html_page: true,
-                            crank_policy: CrankPolicy::None,
+                crank_policy: resolve_crank(Verb::Delete),
             },
         );
     }
@@ -268,18 +297,17 @@ fn preview_ron(resource: &ResourceState) -> String {
     }
 }
 
-/// Form-screen → Columns-screen transition. Only checks fields the
-/// user has entered on Form. Column-presence rules are deferred to
-/// `validate_full` since the user is about to enter columns next.
+/// Light-touch validation used by the per-step "next" transitions.
+/// Only checks fields the user has entered up to this point; column
+/// presence and verb-compat checks are deferred to `validate`.
 pub fn validate_form(state: &WizardState) -> BlastResult<String> {
     let table = state.table_name.value().trim().to_string();
     if table.is_empty() {
         return Err(BlastError::Invalid("Table name is required.".to_string()));
     }
     ResourceName::try_new(table.clone())?;
-    let any_verb = state.verbs.list || state.verbs.get || state.verbs.create || state.verbs.update || state.verbs.delete;
-    if !any_verb && state.gen_level() >= GenLevel::Route {
-        return Err(BlastError::Invalid("Pick at least one verb when gen_level ≥ Route.".to_string()));
+    if !state.verbs.any() && state.gen_level() >= GenLevel::Route {
+        return Err(BlastError::Invalid("Pick at least one verb when gen_level >= Route.".to_string()));
     }
     Ok(table)
 }
@@ -316,6 +344,7 @@ pub fn validate(state: &WizardState) -> BlastResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::state::{ColumnType, VerbToggles};
     use crate::state::names::is_snake_case_ident;
 
     fn empty_palette() -> Vec<ColumnType> {

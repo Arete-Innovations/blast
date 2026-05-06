@@ -1,11 +1,14 @@
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tui_input::backend::crossterm::EventHandler;
 
-use crate::state::names::FieldName;
+use crate::{
+    error::{BlastError, BlastResult},
+    state::{names::FieldName, resource::Verb},
+};
 
 use super::{
     emit,
-    state::{ColumnSpec, ColumnsFocus, FormFocus, PreviewFocus, Screen, WizardState},
+    state::{AuthChoice, ColumnSpec, ColumnsFocus, CrankChoice, CrankDraft, CrankFocus, FormFocus, StepId, StepOutcome, WizardState},
 };
 
 pub enum Step {
@@ -31,125 +34,380 @@ pub fn handle(event: &Event, state: &mut WizardState) -> Step {
 
     state.error = None;
 
-    match state.screen {
-        Screen::Form => handle_form(event, key, state),
-        Screen::Columns => handle_columns(event, key, state),
-        Screen::Preview => handle_preview(key, state),
+    let outcome = match state.current_step() {
+        StepId::TableName => handle_table_name(event, key, state),
+        StepId::AutoFeatures => handle_auto_features(key, state),
+        StepId::GenLevel => handle_gen_level(key, state),
+        StepId::Verbs => handle_verbs(key, state),
+        StepId::PerVerbAuth => handle_per_verb_auth(key, state),
+        StepId::PerVerbCrank => handle_per_verb_crank(event, key, state),
+        StepId::Columns => handle_columns(event, key, state),
+        StepId::PreviewCommit => handle_preview(key, state),
+    };
+
+    match outcome {
+        StepOutcome::Continue => Step::Stay,
+        StepOutcome::Next => {
+            // Run the appropriate validator for the step we're leaving.
+            match validate_step_transition(state) {
+                Ok(()) => {}
+                Err(e) => {
+                    state.error = Some(e.to_string());
+                    return Step::Stay;
+                }
+            }
+            state.advance();
+            Step::Stay
+        }
+        StepOutcome::Back => {
+            state.retreat();
+            Step::Stay
+        }
+        StepOutcome::Cancel => {
+            state.cancelled = true;
+            Step::Cancel
+        }
+        StepOutcome::Commit => {
+            // Final validate before signaling commit upstream.
+            match emit::validate(state) {
+                Ok(_t) => Step::Commit,
+                Err(e) => {
+                    state.error = Some(e.to_string());
+                    Step::Stay
+                }
+            }
+        }
+        StepOutcome::Jump(target) => {
+            state.jump_to(target);
+            Step::Stay
+        }
     }
 }
 
-fn handle_form(event: &Event, key: &KeyEvent, state: &mut WizardState) -> Step {
+fn validate_step_transition(state: &WizardState) -> BlastResult<()> {
+    match state.current_step() {
+        StepId::TableName => {
+            emit::validate_form(state)?;
+            Ok(())
+        }
+        StepId::PerVerbCrank => {
+            // Validate every per-verb crank draft up front so the user
+            // can fix bad numerics here, not at commit time.
+            for (verb, draft) in state.per_verb_crank.iter() {
+                match draft.to_policy() {
+                    Ok(_p) => {}
+                    Err(err) => return Err(BlastError::Invalid(format!("verb {:?}: {}", verb, err))),
+                }
+            }
+            Ok(())
+        }
+        _other => Ok(()),
+    }
+}
+
+// --- per-step handlers -----------------------------------------------------
+
+fn handle_table_name(event: &Event, key: &KeyEvent, state: &mut WizardState) -> StepOutcome {
+    match key.code {
+        KeyCode::Enter => StepOutcome::Next,
+        KeyCode::PageUp | KeyCode::BackTab => StepOutcome::Back,
+        _other => {
+            state.table_name.handle_event(event);
+            StepOutcome::Continue
+        }
+    }
+}
+
+fn handle_auto_features(key: &KeyEvent, state: &mut WizardState) -> StepOutcome {
+    let focuses: &[FormFocus] = &[FormFocus::IdPk, FormFocus::CreatedAt, FormFocus::UpdatedAt, FormFocus::SoftDelete, FormFocus::Next];
+    if !focuses.contains(&state.form_focus) {
+        state.form_focus = focuses[0];
+    }
     match key.code {
         KeyCode::Tab | KeyCode::Down => {
-            state.form_focus = state.form_focus.cycle(true);
-            return Step::Stay;
+            state.form_focus = state.form_focus.cycle(focuses, true);
+            return StepOutcome::Continue;
         }
         KeyCode::BackTab | KeyCode::Up => {
-            state.form_focus = state.form_focus.cycle(false);
-            return Step::Stay;
+            state.form_focus = state.form_focus.cycle(focuses, false);
+            return StepOutcome::Continue;
         }
+        KeyCode::PageUp => return StepOutcome::Back,
         _other => {}
     }
 
     match state.form_focus {
-        FormFocus::TableName => {
-            state.table_name.handle_event(event);
-            Step::Stay
-        }
         FormFocus::IdPk => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.id_pk = !state.id_pk;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::CreatedAt => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.created_at = !state.created_at;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::UpdatedAt => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.updated_at = !state.updated_at;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::SoftDelete => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.soft_delete = !state.soft_delete;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
-        FormFocus::GenLevel => {
-            match key.code {
-                KeyCode::Left => state.cycle_gen_level(false),
-                KeyCode::Right | KeyCode::Char(' ') => state.cycle_gen_level(true),
-                _other => {}
+        FormFocus::Next => {
+            if matches!(key.code, KeyCode::Enter) {
+                return StepOutcome::Next;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
+        _other => StepOutcome::Continue,
+    }
+}
+
+fn handle_gen_level(key: &KeyEvent, state: &mut WizardState) -> StepOutcome {
+    match key.code {
+        KeyCode::Left => {
+            state.cycle_gen_level(false);
+            StepOutcome::Continue
+        }
+        KeyCode::Right | KeyCode::Char(' ') => {
+            state.cycle_gen_level(true);
+            StepOutcome::Continue
+        }
+        KeyCode::Enter => StepOutcome::Next,
+        KeyCode::PageUp | KeyCode::BackTab => StepOutcome::Back,
+        _other => StepOutcome::Continue,
+    }
+}
+
+fn handle_verbs(key: &KeyEvent, state: &mut WizardState) -> StepOutcome {
+    let focuses: &[FormFocus] = &[FormFocus::VerbList, FormFocus::VerbGet, FormFocus::VerbCreate, FormFocus::VerbUpdate, FormFocus::VerbDelete, FormFocus::Next];
+    if !focuses.contains(&state.form_focus) {
+        state.form_focus = focuses[0];
+    }
+    match key.code {
+        KeyCode::Tab | KeyCode::Down => {
+            state.form_focus = state.form_focus.cycle(focuses, true);
+            return StepOutcome::Continue;
+        }
+        KeyCode::BackTab | KeyCode::Up => {
+            state.form_focus = state.form_focus.cycle(focuses, false);
+            return StepOutcome::Continue;
+        }
+        KeyCode::PageUp => return StepOutcome::Back,
+        _other => {}
+    }
+
+    match state.form_focus {
         FormFocus::VerbList => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.verbs.list = !state.verbs.list;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::VerbGet => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.verbs.get = !state.verbs.get;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::VerbCreate => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.verbs.create = !state.verbs.create;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::VerbUpdate => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.verbs.update = !state.verbs.update;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::VerbDelete => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.verbs.delete = !state.verbs.delete;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         FormFocus::Next => {
             if matches!(key.code, KeyCode::Enter) {
-                match emit::validate_form(state) {
-                    Ok(_table) => {
-                        state.screen = Screen::Columns;
-                        state.columns_focus = ColumnsFocus::DraftName;
-                    }
-                    Err(e) => state.error = Some(e.to_string()),
-                }
+                return StepOutcome::Next;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
+        _other => StepOutcome::Continue,
     }
 }
 
-fn handle_columns(event: &Event, key: &KeyEvent, state: &mut WizardState) -> Step {
+fn handle_per_verb_auth(key: &KeyEvent, state: &mut WizardState) -> StepOutcome {
+    if state.per_verb_auth.is_empty() {
+        match key.code {
+            KeyCode::Enter => return StepOutcome::Next,
+            KeyCode::PageUp | KeyCode::BackTab => return StepOutcome::Back,
+            _other => return StepOutcome::Continue,
+        }
+    }
+    match key.code {
+        KeyCode::Tab | KeyCode::Down => {
+            state.cycle_auth_verb(true);
+            StepOutcome::Continue
+        }
+        KeyCode::BackTab | KeyCode::Up => {
+            state.cycle_auth_verb(false);
+            StepOutcome::Continue
+        }
+        KeyCode::Left => {
+            cycle_current_auth(state, false);
+            StepOutcome::Continue
+        }
+        KeyCode::Right | KeyCode::Char(' ') => {
+            cycle_current_auth(state, true);
+            StepOutcome::Continue
+        }
+        KeyCode::Enter => StepOutcome::Next,
+        KeyCode::PageUp => StepOutcome::Back,
+        _other => StepOutcome::Continue,
+    }
+}
+
+fn cycle_current_auth(state: &mut WizardState, forward: bool) {
+    let verb = match state.current_auth_verb() {
+        Some(v) => v,
+        None => return,
+    };
+    let current = match state.per_verb_auth.get(&verb) {
+        Some(c) => *c,
+        None => AuthChoice::AuthRequired,
+    };
+    let len = AuthChoice::ALL.len();
+    let mut idx = 0;
+    for (i, c) in AuthChoice::ALL.iter().enumerate() {
+        if *c == current {
+            idx = i;
+            break;
+        }
+    }
+    let next = if forward { (idx + 1) % len } else { (idx + len - 1) % len };
+    state.per_verb_auth.insert(verb, AuthChoice::ALL[next]);
+}
+
+fn handle_per_verb_crank(event: &Event, key: &KeyEvent, state: &mut WizardState) -> StepOutcome {
+    if state.per_verb_crank.is_empty() {
+        match key.code {
+            KeyCode::Enter => return StepOutcome::Next,
+            KeyCode::PageUp | KeyCode::BackTab => return StepOutcome::Back,
+            _other => return StepOutcome::Continue,
+        }
+    }
+
+    match key.code {
+        KeyCode::PageUp => return StepOutcome::Back,
+        KeyCode::Tab => {
+            advance_crank_focus(state, true);
+            return StepOutcome::Continue;
+        }
+        KeyCode::BackTab => {
+            advance_crank_focus(state, false);
+            return StepOutcome::Continue;
+        }
+        KeyCode::Up => {
+            state.cycle_crank_verb(false);
+            state.crank_focus = CrankFocus::Choice;
+            return StepOutcome::Continue;
+        }
+        KeyCode::Down => {
+            state.cycle_crank_verb(true);
+            state.crank_focus = CrankFocus::Choice;
+            return StepOutcome::Continue;
+        }
+        KeyCode::Enter => return StepOutcome::Next,
+        _other => {}
+    }
+
+    let verb = match state.current_crank_verb() {
+        Some(v) => v,
+        None => return StepOutcome::Continue,
+    };
+    let draft_clone = match state.per_verb_crank.get(&verb) {
+        Some(d) => d.clone(),
+        None => return StepOutcome::Continue,
+    };
+
+    let new_draft = update_crank_draft(draft_clone, state.crank_focus, event, key);
+    state.per_verb_crank.insert(verb, new_draft);
+    StepOutcome::Continue
+}
+
+fn update_crank_draft(mut draft: CrankDraft, focus: CrankFocus, event: &Event, key: &KeyEvent) -> CrankDraft {
+    match focus {
+        CrankFocus::Choice => match key.code {
+            KeyCode::Left => draft.cycle_choice(false),
+            KeyCode::Right | KeyCode::Char(' ') => draft.cycle_choice(true),
+            _other => {}
+        },
+        CrankFocus::MaxAttempts => digit_input(&mut draft.max_attempts, event, key),
+        CrankFocus::DelayMs => digit_input(&mut draft.delay_ms, event, key),
+        CrankFocus::DeadlineMs => digit_input(&mut draft.deadline_ms, event, key),
+        CrankFocus::OnlyTransient => match key.code {
+            KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Left | KeyCode::Right => draft.only_transient = !draft.only_transient,
+            _other => {}
+        },
+    }
+    draft
+}
+
+/// Digit-only text input. Accepts 0-9, Backspace, and Delete; ignores everything else.
+/// Defends against the user pasting non-numeric text into a numeric field.
+fn digit_input(input: &mut tui_input::Input, event: &Event, key: &KeyEvent) {
+    match key.code {
+        KeyCode::Char(c) if c.is_ascii_digit() => {
+            input.handle_event(event);
+        }
+        KeyCode::Backspace | KeyCode::Delete | KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => {
+            input.handle_event(event);
+        }
+        _other => {}
+    }
+}
+
+fn advance_crank_focus(state: &mut WizardState, forward: bool) {
+    let order: &[CrankFocus] = &[CrankFocus::Choice, CrankFocus::MaxAttempts, CrankFocus::DelayMs, CrankFocus::DeadlineMs, CrankFocus::OnlyTransient];
+    let len = order.len();
+    let mut idx = 0;
+    for (i, f) in order.iter().enumerate() {
+        if *f == state.crank_focus {
+            idx = i;
+            break;
+        }
+    }
+    state.crank_focus = if forward { order[(idx + 1) % len] } else { order[(idx + len - 1) % len] };
+}
+
+fn handle_columns(event: &Event, key: &KeyEvent, state: &mut WizardState) -> StepOutcome {
     match key.code {
         KeyCode::Tab | KeyCode::Down => {
             state.columns_focus = state.columns_focus.cycle(true);
-            return Step::Stay;
+            return StepOutcome::Continue;
         }
         KeyCode::BackTab | KeyCode::Up => {
             state.columns_focus = state.columns_focus.cycle(false);
-            return Step::Stay;
+            return StepOutcome::Continue;
         }
+        KeyCode::PageUp => return StepOutcome::Back,
         _other => {}
     }
 
     match state.columns_focus {
         ColumnsFocus::DraftName => {
             state.draft.name.handle_event(event);
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::DraftType => {
             match key.code {
@@ -157,19 +415,19 @@ fn handle_columns(event: &Event, key: &KeyEvent, state: &mut WizardState) -> Ste
                 KeyCode::Right | KeyCode::Char(' ') => state.cycle_draft_type(true),
                 _other => {}
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::DraftNotNull => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.draft.not_null = !state.draft.not_null;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::DraftPublicVisible => {
             if matches!(key.code, KeyCode::Char(' ') | KeyCode::Enter) {
                 state.draft.public_visible = !state.draft.public_visible;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::DraftValidator => {
             match key.code {
@@ -177,13 +435,13 @@ fn handle_columns(event: &Event, key: &KeyEvent, state: &mut WizardState) -> Ste
                 KeyCode::Right | KeyCode::Char(' ') => state.draft.cycle_validator(true),
                 _other => {}
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::AddColumn => {
             if matches!(key.code, KeyCode::Enter) {
                 add_draft_column(state);
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::DeleteLast => {
             if matches!(key.code, KeyCode::Enter) {
@@ -191,31 +449,24 @@ fn handle_columns(event: &Event, key: &KeyEvent, state: &mut WizardState) -> Ste
                     state.error = Some("No columns to delete.".to_string());
                 }
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::Back => {
             if matches!(key.code, KeyCode::Enter) {
-                state.screen = Screen::Form;
-                state.form_focus = FormFocus::Next;
+                return StepOutcome::Back;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
         ColumnsFocus::Done => {
             if matches!(key.code, KeyCode::Enter) {
-                match emit::validate(state) {
-                    Ok(_t) => {
-                        state.screen = Screen::Preview;
-                        state.preview_focus = PreviewFocus::Commit;
-                    }
-                    Err(e) => state.error = Some(e.to_string()),
-                }
+                return StepOutcome::Next;
             }
-            Step::Stay
+            StepOutcome::Continue
         }
     }
 }
 
-fn add_draft_column(state: &mut WizardState) {
+pub(super) fn add_draft_column(state: &mut WizardState) {
     let name = state.draft.name.value().trim().to_string();
     if name.is_empty() {
         state.error = Some("Column name is required.".to_string());
@@ -228,7 +479,7 @@ fn add_draft_column(state: &mut WizardState) {
     let ty = match state.current_draft_type() {
         Some(t) => t,
         None => {
-            state.error = Some("No column types available — should never happen.".to_string());
+            state.error = Some("No column types available - should never happen.".to_string());
             return;
         }
     };
@@ -245,21 +496,20 @@ fn add_draft_column(state: &mut WizardState) {
     state.columns_focus = ColumnsFocus::DraftName;
 }
 
-fn handle_preview(key: &KeyEvent, state: &mut WizardState) -> Step {
+fn handle_preview(key: &KeyEvent, _state: &mut WizardState) -> StepOutcome {
     match key.code {
-        KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => {
-            state.preview_focus = state.preview_focus.toggle();
-            Step::Stay
-        }
-        KeyCode::Enter => match state.preview_focus {
-            PreviewFocus::Back => {
-                state.screen = Screen::Columns;
-                state.columns_focus = ColumnsFocus::Done;
-                Step::Stay
-            }
-            PreviewFocus::Commit => Step::Commit,
-        },
-        _other => Step::Stay,
+        KeyCode::Enter => StepOutcome::Commit,
+        KeyCode::PageUp | KeyCode::BackTab | KeyCode::Up => StepOutcome::Back,
+        // Quick jumps: 1 -> TableName, 2 -> AutoFeatures, 3 -> GenLevel, 4 -> Verbs,
+        // 5 -> PerVerbAuth, 6 -> PerVerbCrank, 7 -> Columns. Inactive targets are no-ops.
+        KeyCode::Char('1') => StepOutcome::Jump(StepId::TableName),
+        KeyCode::Char('2') => StepOutcome::Jump(StepId::AutoFeatures),
+        KeyCode::Char('3') => StepOutcome::Jump(StepId::GenLevel),
+        KeyCode::Char('4') => StepOutcome::Jump(StepId::Verbs),
+        KeyCode::Char('5') => StepOutcome::Jump(StepId::PerVerbAuth),
+        KeyCode::Char('6') => StepOutcome::Jump(StepId::PerVerbCrank),
+        KeyCode::Char('7') => StepOutcome::Jump(StepId::Columns),
+        _other => StepOutcome::Continue,
     }
 }
 
