@@ -81,7 +81,7 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
     if is_public {
-        out.push_str(&format!("                <PublicShell brand=\"{label_pretty}\".to_string()>\n"));
+        out.push_str("                <PublicShell brand=crate::cfg().app.name.clone()>\n");
         out.push_str("                    <div class=\"crud-toolbar\">\n");
         out.push_str("                        <div>\n");
         out.push_str(&format!("                            <h2 class=\"crud-toolbar__title\">\"{label_pretty}\"</h2>\n"));

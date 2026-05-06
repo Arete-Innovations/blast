@@ -127,7 +127,6 @@ pub fn render_enum_file(parsed: &ParsedEnum, meta: &EnumMeta) -> String {
     out.push_str("    ];\n");
     out.push_str("}\n\n");
 
-    out.push_str("#[cfg(not(target_arch = \"wasm32\"))]\n");
     out.push_str(&format!("impl crate::structs::vendored::enum_options::EnumOptions for {type_name} {{\n"));
     out.push_str("    fn options() -> &'static [(Self, &'static str, Option<&'static str>)] {\n");
     out.push_str(&format!("        {type_name}::OPTIONS\n"));
@@ -135,21 +134,8 @@ pub fn render_enum_file(parsed: &ParsedEnum, meta: &EnumMeta) -> String {
     out.push_str("    fn as_str(&self) -> &'static str {\n");
     out.push_str(&format!("        {type_name}::as_str(self)\n"));
     out.push_str("    }\n");
-    out.push_str("    fn parse(s: &str) -> Option<Self> {\n");
-    out.push_str(&format!("        {type_name}::parse(s).ok()\n")); // allow: literal '.ok()' inside emitted Rust string — not a real .ok() call site
-    out.push_str("    }\n");
-    out.push_str("}\n\n");
-
-    out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
-    out.push_str(&format!("impl crate::structs::vendored::enum_options::EnumOptions for {type_name} {{\n"));
-    out.push_str("    fn options() -> &'static [(Self, &'static str, Option<&'static str>)] {\n");
-    out.push_str(&format!("        {type_name}::OPTIONS\n"));
-    out.push_str("    }\n");
-    out.push_str("    fn as_str(&self) -> &'static str {\n");
-    out.push_str(&format!("        {type_name}::as_str(self)\n"));
-    out.push_str("    }\n");
-    out.push_str("    fn parse(s: &str) -> Option<Self> {\n");
-    out.push_str(&format!("        {type_name}::parse(s).ok()\n")); // allow: literal '.ok()' inside emitted Rust string — not a real .ok() call site
+    out.push_str("    fn parse(s: &str) -> Result<Self, crate::meltdown::MeltDown> {\n");
+    out.push_str(&format!("        {type_name}::parse(s)\n"));
     out.push_str("    }\n");
     out.push_str("}\n");
 
