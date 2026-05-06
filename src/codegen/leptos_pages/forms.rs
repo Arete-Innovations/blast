@@ -39,7 +39,7 @@ pub fn render_create_page(table: &str, stem: &str, auth: AuthMode) -> String {
     ));
     out.push_str("                        </div>\n");
     out.push_str("                    </div>\n");
-    out.push_str("                    <Card title=Some(\"Details\".to_string())>\n");
+    out.push_str("                    <Card title=\"Details\".to_string()>\n");
     out.push_str(&format!("                        <{form_component}/>\n"));
     out.push_str("                    </Card>\n");
     out.push_str("                </AppShell>\n");
@@ -116,7 +116,7 @@ pub fn render_edit_page(table: &str, stem: &str, auth: AuthMode) -> String {
     ));
     out.push_str("                        </div>\n");
     out.push_str("                    </div>\n");
-    out.push_str("                    <Card title=Some(\"Details\".to_string())>\n");
+    out.push_str("                    <Card title=\"Details\".to_string()>\n");
     out.push_str("                        {move || match item_signal.get() {\n");
     out.push_str("                            None => view! { <Skeleton variant=SkeletonVariant::Card/> }.into_any(),\n");
     out.push_str(&format!(

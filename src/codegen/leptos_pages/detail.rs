@@ -170,7 +170,7 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
     }
     out.push_str("                        </div>\n");
     out.push_str("                    </div>\n");
-    out.push_str("                    <Card title=None>\n");
+    out.push_str("                    <Card>\n");
     out.push_str("                        {move || match item_signal.get() {\n");
     out.push_str("                            None => view! { <Skeleton variant=SkeletonVariant::Card/> }.into_any(),\n");
     out.push_str("                            Some(Ok(item)) => render_detail_item(item).into_any(),\n");

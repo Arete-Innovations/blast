@@ -91,7 +91,7 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
         ));
         out.push_str("                        </div>\n");
         out.push_str("                    </div>\n");
-        out.push_str("                    <Card title=None>\n");
+        out.push_str("                    <Card>\n");
         out.push_str("                        {move || match items_signal.get() {\n");
         out.push_str("                            None => view! { <Skeleton variant=SkeletonVariant::Card/> }.into_any(),\n");
         out.push_str("                            Some(Ok(items)) => render_list_items(items).into_any(),\n");
@@ -123,7 +123,7 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
         }
         out.push_str("                        </div>\n");
         out.push_str("                    </div>\n");
-        out.push_str("                    <Card title=None>\n");
+        out.push_str("                    <Card>\n");
         out.push_str("                        {move || match items_signal.get() {\n");
         out.push_str("                            None => view! { <Skeleton variant=SkeletonVariant::Card/> }.into_any(),\n");
         out.push_str("                            Some(Ok(items)) => render_list_items(items).into_any(),\n");

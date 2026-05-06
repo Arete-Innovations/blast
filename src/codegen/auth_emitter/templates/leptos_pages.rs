@@ -37,7 +37,7 @@ pub fn LoginPage() -> impl IntoView {
             pending.set(false);
             match result {
                 Ok(session) => {
-                    session_store.set(Some(session));
+                    session_store.set(session);
                     toasts.success("Signed in.");
                     navigate.with_value(|nav| nav(RouteName::Dashboard.path().as_ref()));
                 }
@@ -54,7 +54,7 @@ pub fn LoginPage() -> impl IntoView {
     view! {
         <AuthGuard mode=AuthGuardMode::AnonOnly>
             <PageShell layout=PageLayout::Bleed>
-            <AuthCard title="Sign in".to_string() lede=Some("Welcome back. Use your work email.".to_string())>
+            <AuthCard title="Sign in".to_string() lede="Welcome back. Use your work email.".to_string()>
                 <form on:submit=on_submit>
                     <FormGroup label="Email".to_string() for_id="login_email".to_string()>
                         <input
@@ -133,7 +133,7 @@ pub fn RegisterPage() -> impl IntoView {
             pending.set(false);
             match result {
                 Ok(session) => {
-                    session_store.set(Some(session));
+                    session_store.set(session);
                     toasts.success("Welcome.");
                     navigate.with_value(|nav| nav(RouteName::Dashboard.path().as_ref()));
                 }
@@ -150,7 +150,7 @@ pub fn RegisterPage() -> impl IntoView {
     view! {
         <AuthGuard mode=AuthGuardMode::AnonOnly>
             <PageShell layout=PageLayout::Bleed>
-            <AuthCard title="Create account".to_string() lede=Some("One minute, then you're in.".to_string())>
+            <AuthCard title="Create account".to_string() lede="One minute, then you're in.".to_string()>
                 <form on:submit=on_submit>
                     <FormGroup label="Email".to_string() for_id="register_email".to_string()>
                         <input
@@ -212,7 +212,7 @@ pub fn LogoutPage() -> impl IntoView {
         spawn_local(async move {
             match do_logout().await {
                 Ok(()) => {
-                    session_store.set(None);
+                    session_store.clear();
                     toasts.success("Signed out.");
                     navigate.with_value(|nav| nav(RouteName::Login.path().as_ref()));
                 }
@@ -272,7 +272,7 @@ pub fn ProfilePage() -> impl IntoView {
                     </div>
                 </Card>
 
-                <Card title=Some("Identity".to_string())>
+                <Card title="Identity".to_string()>
                     <div class=style::section>
                         <div class=style::row>
                             <span class=style::label>"User ID"</span>
@@ -293,7 +293,7 @@ pub fn ProfilePage() -> impl IntoView {
                     </div>
                 </Card>
 
-                <Card title=Some("Security".to_string())>
+                <Card title="Security".to_string()>
                     <p class=style::identity_email>"Reset your password or revoke active sessions."</p>
                     <div class=style::actions>
                         <Button kind=ButtonKind::Secondary>"Change password"</Button>

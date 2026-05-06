@@ -375,13 +375,13 @@ pub const HTTP_AUTH: &str = r#"use axum::{
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 
 use crate::{
-    cata_log,
     bootstrap::cfg,
+    cata_log,
     flows::generated::auth,
     meltdown::*,
     structs::{
-        vendored::auth::SessionContext,
         generated::auth::{LoginBody, RegisterBody},
+        vendored::auth::SessionContext,
     },
     transport::http::vendored::middleware::rate_limit::with_auth_rate_limit,
     Ctx,
