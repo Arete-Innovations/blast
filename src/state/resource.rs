@@ -232,6 +232,7 @@ pub enum Verb {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerbState {
+    #[serde(default)]
     pub auth: AuthMode,
     #[serde(default)]
     pub list_options: Option<ListOptions>,
@@ -290,6 +291,12 @@ pub enum AuthMode {
     AdminOnly,
     ScopedTo(AuthScopeField),
     Roles(BTreeSet<String>),
+}
+
+impl Default for AuthMode {
+    fn default() -> Self {
+        Self::AuthRequired
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
