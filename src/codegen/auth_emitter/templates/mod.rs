@@ -30,6 +30,8 @@ pub struct User {
     pub created_at: i64,
     pub updated_at: i64,
     pub deleted_at: Option<i64>,
+    pub first_name: String,
+    pub last_name: String,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -38,6 +40,8 @@ pub struct User {
 pub struct NewUser {
     pub email: String,
     pub password_hash: String,
+    pub first_name: String,
+    pub last_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +49,8 @@ pub struct UserPublic {
     pub id: i64,
     pub email: String,
     pub role: UserRole,
+    pub first_name: String,
+    pub last_name: String,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -54,6 +60,8 @@ impl From<&User> for UserPublic {
             id: u.id,
             email: u.email.clone(),
             role: u.role.clone(),
+            first_name: u.first_name.clone(),
+            last_name: u.last_name.clone(),
         }
     }
 }
@@ -61,7 +69,13 @@ impl From<&User> for UserPublic {
 #[cfg(not(target_arch = "wasm32"))]
 impl From<User> for UserPublic {
     fn from(u: User) -> Self {
-        Self { id: u.id, email: u.email, role: u.role }
+        Self {
+            id: u.id,
+            email: u.email,
+            role: u.role,
+            first_name: u.first_name,
+            last_name: u.last_name,
+        }
     }
 }
 "#;
@@ -103,12 +117,16 @@ use crate::structs::{vendored::auth::SessionContext, UserPublic};
 pub struct RegisterInput {
     pub email: String,
     pub password: String,
+    pub first_name: String,
+    pub last_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RegisterBody {
     pub email: String,
     pub password: String,
+    pub first_name: String,
+    pub last_name: String,
 }
 
 pub struct RegisterOutput {
@@ -158,10 +176,18 @@ pub async fn find_by_id(conn: &mut AsyncPgConnection, id: i64) -> Result<Option<
         .map_err(|e| MeltDown::from(e).with_context("operation", "find_user_by_id"))
 }
 
-pub async fn insert_new(conn: &mut AsyncPgConnection, email: &str, password_hash: &str) -> Result<User, MeltDown> {
+pub async fn insert_new(
+    conn: &mut AsyncPgConnection,
+    email: &str,
+    password_hash: &str,
+    first_name: &str,
+    last_name: &str,
+) -> Result<User, MeltDown> {
     let new_user = NewUser {
         email: email.to_string(),
         password_hash: password_hash.to_string(),
+        first_name: first_name.to_string(),
+        last_name: last_name.to_string(),
     };
 
     diesel::insert_into(users_dsl::users)
@@ -188,7 +214,7 @@ pub const ROUTINES_AUTH_LOGIN: &str = r#"use crate::{
     cata_log,
     bootstrap::cfg,
     meltdown::*,
-    models::{vendored::auth::sessions, generated::users},
+    models::vendored::auth::{sessions, users as auth_users},
     services::vendored::{crypto, time},
     structs::{
         vendored::auth::SessionContext,
@@ -201,7 +227,7 @@ pub const ROUTINES_AUTH_LOGIN: &str = r#"use crate::{
 pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> {
     let email = input.email.trim().to_lowercase();
     let mut conn = ctx.conn().await?;
-    let user = users::find_by_email(&mut conn, &email).await?.ok_or_else(MeltDown::auth_rejected)?;
+    let user = auth_users::find_by_email(&mut conn, &email).await?.ok_or_else(MeltDown::auth_rejected)?;
 
     if !crypto::verify_password(&input.password, &user.password_hash)? {
         cata_log!(Warning, format!("Invalid password for email: {}", email));
@@ -213,7 +239,8 @@ pub async fn run(ctx: &Ctx, input: LoginInput) -> Result<LoginOutput, MeltDown> 
     let session_row = sessions::insert_session(&mut conn, user.id, &token, expires_at).await?;
 
     cata_log!(Info, format!("Issued session for user id={}", user.id));
-    let session_ctx = SessionContext::new(session_row.id, user.id, user.role, &token);
+    let extras = crate::services::vendored::session_hooks::build_session_extras(&user);
+    let session_ctx = SessionContext::new(session_row.id, user.id, user.role, &token).with_extras(extras);
     Ok(LoginOutput {
         token,
         user: UserPublic::from(user),
@@ -226,11 +253,11 @@ pub const ROUTINES_AUTH_REGISTER: &str = r#"use crate::{
     cata_log,
     bootstrap::cfg,
     meltdown::*,
-    models::{vendored::auth::sessions, generated::users},
+    models::{generated::users, vendored::auth::{sessions, users as auth_users}},
     services::vendored::{crypto, time},
     structs::{
         vendored::auth::SessionContext,
-        generated::auth::{RegisterInput, RegisterOutput},
+        generated::{auth::{RegisterInput, RegisterOutput}, users::UserInsertable},
         UserPublic,
     },
     Ctx,
@@ -247,19 +274,26 @@ pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, Melt
 
     let mut conn = ctx.conn().await?;
 
-    if users::find_by_email(&mut conn, &email).await?.is_some() {
+    if auth_users::find_by_email(&mut conn, &email).await?.is_some() {
         return Err(MeltDown::validation_failed("email already registered"));
     }
 
     let hash = crypto::hash_password(&input.password)?;
-    let user = users::insert_new(&mut conn, &email, &hash).await?;
+    let insertable = UserInsertable {
+        email: email.clone(),
+        password_hash: hash,
+        first_name: input.first_name.trim().to_string(),
+        last_name: input.last_name.trim().to_string(),
+    };
+    let user = users::create(&mut conn, &insertable).await?;
 
     let token = crypto::mint_session_token();
     let expires_at = time::now_unix() + cfg().auth.session_ttl_secs;
     let session_row = sessions::insert_session(&mut conn, user.id, &token, expires_at).await?;
 
     cata_log!(Info, format!("Registered user id={} email={}", user.id, user.email));
-    let session_ctx = SessionContext::new(session_row.id, user.id, user.role, &token);
+    let extras = crate::services::vendored::session_hooks::build_session_extras(&user);
+    let session_ctx = SessionContext::new(session_row.id, user.id, user.role, &token).with_extras(extras);
     Ok(RegisterOutput {
         token,
         user: UserPublic::from(user),
@@ -287,7 +321,7 @@ pub const ROUTINES_AUTH_ME: &str = r#"use crate::{
 
 pub async fn run(ctx: &Ctx, session: &SessionContext) -> Result<UserPublic, MeltDown> {
     let mut conn = ctx.conn().await?;
-    let user = users::find_by_id(&mut conn, session.user_id).await?.ok_or_else(|| MeltDown::session_invalid("Session user no longer exists"))?;
+    let user = users::get(&mut conn, session.user_id).await?;
     Ok(UserPublic::from(user))
 }
 "#;
@@ -329,6 +363,8 @@ pub async fn run(ctx: &Ctx, input: RegisterInput) -> Result<RegisterOutput, Melt
                 RegisterInput {
                     email: input.email.clone(),
                     password: input.password.clone(),
+                    first_name: input.first_name.clone(),
+                    last_name: input.last_name.clone(),
                 },
             )
         })
@@ -399,6 +435,8 @@ async fn register_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, bo
         auth::register::RegisterInput {
             email: body.email,
             password: body.password,
+            first_name: body.first_name,
+            last_name: body.last_name,
         },
     )
     .await?;
@@ -422,14 +460,14 @@ async fn login_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>, body:
 }
 
 async fn logout_handler(cookies: CookieJar, Extension(ctx): Extension<Ctx>) -> Result<(CookieJar, StatusCode), MeltDown> {
-    let session = ctx.require_session()?;
+    let session = ctx.require_session_pending_ok()?;
     auth::logout::run(&ctx, session).await?;
     let updated = cookies.remove(Cookie::from(cfg().auth.session_cookie_name.clone()));
     Ok((updated, StatusCode::NO_CONTENT))
 }
 
 async fn me_handler(Extension(ctx): Extension<Ctx>) -> Result<Json<SessionContext>, MeltDown> {
-    let session = ctx.require_session()?;
+    let session = ctx.require_session_pending_ok()?;
     Ok(Json(session.clone()))
 }
 

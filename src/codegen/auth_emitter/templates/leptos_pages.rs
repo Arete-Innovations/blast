@@ -114,6 +114,8 @@ pub fn RegisterPage() -> impl IntoView {
 
     let email = RwSignal::new(String::new());
     let password = RwSignal::new(String::new());
+    let first_name = RwSignal::new(String::new());
+    let last_name = RwSignal::new(String::new());
     let pending = RwSignal::new(false);
     let last_error: RwSignal<Option<MeltDown>> = RwSignal::new(None);
 
@@ -127,6 +129,8 @@ pub fn RegisterPage() -> impl IntoView {
         let input = RegisterInput {
             email: email.get_untracked(),
             password: password.get_untracked(),
+            first_name: first_name.get_untracked(),
+            last_name: last_name.get_untracked(),
         };
         spawn_local(async move {
             let result = do_register(input).await;
@@ -152,6 +156,26 @@ pub fn RegisterPage() -> impl IntoView {
             <PageShell layout=PageLayout::Bleed>
             <AuthCard title="Create account".to_string() lede="One minute, then you're in.".to_string()>
                 <form on:submit=on_submit>
+                    <FormGroup label="First name".to_string() for_id="register_first_name".to_string()>
+                        <input
+                            id="register_first_name"
+                            type="text"
+                            autocomplete="given-name"
+                            required=true
+                            prop:value=move || first_name.get()
+                            on:input=move |ev| first_name.set(event_target_value(&ev))
+                        />
+                    </FormGroup>
+                    <FormGroup label="Last name".to_string() for_id="register_last_name".to_string()>
+                        <input
+                            id="register_last_name"
+                            type="text"
+                            autocomplete="family-name"
+                            required=true
+                            prop:value=move || last_name.get()
+                            on:input=move |ev| last_name.set(event_target_value(&ev))
+                        />
+                    </FormGroup>
                     <FormGroup label="Email".to_string() for_id="register_email".to_string()>
                         <input
                             id="register_email"
