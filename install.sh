@@ -13,4 +13,4 @@ export RUSTFLAGS="-A warnings"
 
 cargo test --quiet
 
-cargo install --quiet --path . --root "$HOME/.local" --force
+cargo install --quiet --path . --force
