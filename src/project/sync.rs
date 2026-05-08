@@ -20,7 +20,7 @@ const VENDORED_PATHS: &[&str] = &[
     "src/transport/ws/vendored",
     "src/transport/fuses/vendored",
     "src/models/vendored",
-    "src/services",
+    "src/services/vendored",
     "src/meltdown.rs",
     "src/crank.rs",
     "src/cata_log.rs",
