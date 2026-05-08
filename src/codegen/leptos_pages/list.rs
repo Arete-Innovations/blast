@@ -48,7 +48,7 @@ pub fn render_list_page(resource: &ResourceState, stem: &str, auth: AuthMode) ->
     out.push_str("use crate::views::builders::TableBuilder;\n");
     out.push_str(&helpers_use);
     let component_imports = match is_public {
-        true => "use crate::views::components::{topbar_auth_actions, AuthGuard, AuthGuardMode, Card, EmptyState, ErrorBanner, PageShell, Pagination, PublicShell, Skeleton};\n",
+        true => "use crate::views::components::custom::PublicShell;\nuse crate::views::components::{topbar_auth_actions, AuthGuard, AuthGuardMode, Card, EmptyState, ErrorBanner, PageShell, Pagination, Skeleton};\n",
         false => "use crate::views::components::custom::DefaultAppShell;\nuse crate::views::components::{AuthGuard, AuthGuardMode, Breadcrumb, Card, EmptyState, ErrorBanner, LinkButton, PageShell, Pagination, Skeleton};\n",
     };
     out.push_str(component_imports);
