@@ -26,8 +26,12 @@ fn non_empty(roles: Option<&Vec<Role>>) -> bool {
 
 pub fn render_inventory(nav: &NavConfig, route_table: &BTreeMap<String, ResolvedRoute>) -> String {
     let needs_role_import = nav.sections.iter().any(|s| non_empty(s.roles.as_ref()) || s.entries.iter().any(|e| non_empty(e.roles.as_ref())));
+    let needs_icon_import = nav.sections.iter().any(|s| s.entries.iter().any(|e| icon_lit(e.icon.as_deref()).is_some()));
 
     let mut out = String::new();
+    if needs_icon_import {
+        out.push_str("use crate::structs::custom::icons::IconKind;\n");
+    }
     if needs_role_import {
         out.push_str("use crate::structs::generated::UserRole;\n");
     }
@@ -65,8 +69,43 @@ fn push_entry(out: &mut String, entry: &Entry, route_table: &BTreeMap<String, Re
     out.push_str("            NavEntry {\n");
     out.push_str(&format!("                path: {},\n", lit(&path)));
     out.push_str(&format!("                label: {},\n", lit(&label)));
+    let icon_str = match icon_lit(entry.icon.as_deref()) {
+        Some(variant) => format!("Some(IconKind::{})", variant),
+        None => "None".to_string(),
+    };
+    out.push_str(&format!("                icon: {},\n", icon_str));
     out.push_str(&format!("                roles: {},\n", roles_lit(entry.roles.as_ref())));
     out.push_str("            },\n");
+}
+
+/// Map a state-file icon string ("home", "alert-triangle", "User") to an
+/// `IconKind` variant name in PascalCase. Returns `None` if the input is
+/// missing or empty — codegen emits `None` then.
+fn icon_lit(raw: Option<&str>) -> Option<String> {
+    let s = raw?;
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut out = String::with_capacity(trimmed.len());
+    let mut upper_next = true;
+    for ch in trimmed.chars() {
+        match ch {
+            '-' | '_' | ' ' => upper_next = true,
+            c if upper_next => {
+                for u in c.to_uppercase() {
+                    out.push(u);
+                }
+                upper_next = false;
+            }
+            c => {
+                for l in c.to_lowercase() {
+                    out.push(l);
+                }
+            }
+        }
+    }
+    Some(out)
 }
 
 fn roles_lit(roles: Option<&Vec<Role>>) -> String {

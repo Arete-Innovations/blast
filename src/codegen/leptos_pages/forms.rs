@@ -10,7 +10,7 @@ pub fn render_create_page(table: &str, stem: &str, auth: AuthMode) -> String {
     let mut out = String::new();
     out.push_str("use leptos::prelude::*;\n\n");
     out.push_str("use crate::structs::vendored::leptos::{BreadcrumbItem, ButtonKind, PageLayout, RouteName};\n");
-    out.push_str("use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, LinkButton, PageShell};\n");
+    out.push_str("use crate::views::components::custom::DefaultAppShell;\nuse crate::views::components::{AuthGuard, AuthGuardMode, Breadcrumb, Card, LinkButton, PageShell};\n");
     out.push_str(&format!("use crate::views::components::generated::forms::{table}::{form_component};\n\n"));
 
     out.push_str("#[component]\n");
@@ -18,7 +18,7 @@ pub fn render_create_page(table: &str, stem: &str, auth: AuthMode) -> String {
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"New {label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
+    out.push_str(&format!("                <DefaultAppShell title=\"New {label_pretty}\">\n"));
     out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
     out.push_str(&format!(
         "                        <Breadcrumb items={crumbs}/>\n",
@@ -42,7 +42,7 @@ pub fn render_create_page(table: &str, stem: &str, auth: AuthMode) -> String {
     out.push_str("                    <Card title=\"Details\".to_string()>\n");
     out.push_str(&format!("                        <{form_component}/>\n"));
     out.push_str("                    </Card>\n");
-    out.push_str("                </AppShell>\n");
+    out.push_str("                </DefaultAppShell>\n");
     out.push_str("            </PageShell>\n");
     out.push_str("        </AuthGuard>\n");
     out.push_str("    }\n");
@@ -64,7 +64,7 @@ pub fn render_edit_page(table: &str, stem: &str, auth: AuthMode) -> String {
     out.push_str("use crate::meltdown::MeltDown;\n");
     out.push_str(&format!("use crate::structs::generated::{table}::{public_ty};\n"));
     out.push_str("use crate::structs::vendored::leptos::{BreadcrumbItem, ButtonKind, PageLayout, RouteName, SkeletonVariant};\n");
-    out.push_str("use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, ErrorBanner, LinkButton, PageShell, Skeleton};\n");
+    out.push_str("use crate::views::components::custom::DefaultAppShell;\nuse crate::views::components::{AuthGuard, AuthGuardMode, Breadcrumb, Card, ErrorBanner, LinkButton, PageShell, Skeleton};\n");
     out.push_str(&format!("use crate::views::components::generated::forms::{table}::{form_component};\n"));
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::{loader};\n"));
@@ -95,7 +95,7 @@ pub fn render_edit_page(table: &str, stem: &str, auth: AuthMode) -> String {
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"Edit {label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
+    out.push_str(&format!("                <DefaultAppShell title=\"Edit {label_pretty}\">\n"));
     out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
     out.push_str(&format!(
         "                        <Breadcrumb items={crumbs}/>\n",
@@ -125,7 +125,7 @@ pub fn render_edit_page(table: &str, stem: &str, auth: AuthMode) -> String {
     out.push_str("                            Some(Err(err)) => view! { <ErrorBanner error=err/> }.into_any(),\n");
     out.push_str("                        }}\n");
     out.push_str("                    </Card>\n");
-    out.push_str("                </AppShell>\n");
+    out.push_str("                </DefaultAppShell>\n");
     out.push_str("            </PageShell>\n");
     out.push_str("        </AuthGuard>\n");
     out.push_str("    }\n");

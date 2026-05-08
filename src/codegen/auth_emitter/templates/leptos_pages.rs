@@ -266,7 +266,8 @@ use stylance::import_crate_style;
 
 use crate::structs::vendored::leptos::{AvatarSize, BadgeColor, ButtonKind, PageLayout};
 use crate::views::components::cells::BadgeCell;
-use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, AvatarCell, Button, Card, PageShell};
+use crate::views::components::custom::DefaultAppShell;
+use crate::views::components::{AuthGuard, AuthGuardMode, AvatarCell, Button, Card, PageShell};
 use crate::views::signals::session::use_session;
 
 import_crate_style!(style, "src/transport/leptos/pages/generated/profile.module.scss");
@@ -285,7 +286,7 @@ pub fn ProfilePage() -> impl IntoView {
     view! {
         <AuthGuard mode=AuthGuardMode::Required>
             <PageShell layout=PageLayout::Bleed>
-            <AppShell title="Profile".to_string() topbar_actions=topbar_auth_actions()>
+            <DefaultAppShell title="Profile">
                 <Card>
                     <div class=style::identity>
                         <AvatarCell name="You".to_string() size=AvatarSize::Lg/>
@@ -324,7 +325,7 @@ pub fn ProfilePage() -> impl IntoView {
                         <Button kind=ButtonKind::Danger>"Revoke all sessions"</Button>
                     </div>
                 </Card>
-            </AppShell>
+            </DefaultAppShell>
             </PageShell>
         </AuthGuard>
     }

@@ -57,7 +57,8 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
     out.push_str("use crate::structs::vendored::leptos::{BreadcrumbItem, ButtonKind, PageLayout, RouteName, SkeletonVariant};\n");
     out.push_str("use crate::views::builders::DetailBuilder;\n");
     out.push_str(&helpers_use);
-    out.push_str("use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, Card, ");
+    out.push_str("use crate::views::components::custom::DefaultAppShell;\n");
+    out.push_str("use crate::views::components::{AuthGuard, AuthGuardMode, Breadcrumb, Card, ");
     if has_delete {
         out.push_str("ConfirmDialog, ");
     }
@@ -144,7 +145,7 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
+    out.push_str(&format!("                <DefaultAppShell title=\"{label_pretty}\">\n"));
     out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
     out.push_str(&format!(
         "                        <Breadcrumb items={crumbs}/>\n",
@@ -183,7 +184,7 @@ pub fn render_detail_page(resource: &ResourceState, stem: &str, auth: AuthMode) 
             "                    <ConfirmDialog name=\"confirm_delete\" title=\"Delete {label_pretty}?\".to_string() message=\"This action is permanent and cannot be undone.\".to_string() confirm_label=\"Delete\".to_string() on_confirm=on_delete_confirm/>\n"
         ));
     }
-    out.push_str("                </AppShell>\n");
+    out.push_str("                </DefaultAppShell>\n");
     out.push_str("            </PageShell>\n");
     out.push_str("        </AuthGuard>\n");
     out.push_str("    }\n");
@@ -216,7 +217,7 @@ fn render_detail_page_custom(
         "use crate::views::components::vendored::{cell_module}::{cell_component};\n"
     ));
     out.push_str(
-        "use crate::views::components::{topbar_auth_actions, AppShell, AuthGuard, AuthGuardMode, Breadcrumb, ErrorBanner, PageShell, Skeleton};\n",
+        "use crate::views::components::custom::DefaultAppShell;\nuse crate::views::components::{AuthGuard, AuthGuardMode, Breadcrumb, ErrorBanner, PageShell, Skeleton};\n",
     );
     out.push_str("#[cfg(target_arch = \"wasm32\")]\n");
     out.push_str(&format!("use crate::transport::leptos::data::generated::{table}::{loader};\n"));
@@ -265,7 +266,7 @@ fn render_detail_page_custom(
     out.push_str("    view! {\n");
     out.push_str(&format!("        <AuthGuard mode={auth_mode}>\n"));
     out.push_str("            <PageShell layout=PageLayout::Bleed>\n");
-    out.push_str(&format!("                <AppShell title=\"{label_pretty}\".to_string() topbar_actions=topbar_auth_actions()>\n"));
+    out.push_str(&format!("                <DefaultAppShell title=\"{label_pretty}\">\n"));
     out.push_str("                    <div class=\"crud-page__breadcrumb\">\n");
     out.push_str(&format!(
         "                        <Breadcrumb items={crumbs}/>\n",
@@ -279,7 +280,7 @@ fn render_detail_page_custom(
     ));
     out.push_str("                        Some(Err(err)) => view! { <ErrorBanner error=err/> }.into_any(),\n");
     out.push_str("                    }}\n");
-    out.push_str("                </AppShell>\n");
+    out.push_str("                </DefaultAppShell>\n");
     out.push_str("            </PageShell>\n");
     out.push_str("        </AuthGuard>\n");
     out.push_str("    }\n");

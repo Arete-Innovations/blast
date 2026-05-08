@@ -542,7 +542,7 @@ mod tests {
         assert!(list_body.contains("<PublicShell"), "Public-list page must wrap in PublicShell");
         assert!(!list_body.contains("<Breadcrumb"), "Public-list page must drop admin breadcrumb");
         for (label, body) in [("detail", &detail_body), ("create", &create_body), ("edit", &edit_body)] {
-            assert!(body.contains("<AppShell"), "{label} page must wrap in AppShell");
+            assert!(body.contains("<DefaultAppShell"), "{label} page must wrap in DefaultAppShell");
             assert!(body.contains("<Breadcrumb"), "{label} page must render Breadcrumb");
         }
 
