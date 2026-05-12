@@ -96,20 +96,24 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
     }
 
     progress.step_start("merge Cargo.toml deps");
-    let cargo_upstream = staging.join("Cargo.toml");
-    let cargo_project = project_root.join("Cargo.toml");
-    if cargo_upstream.is_file() && cargo_project.is_file() {
-        let up = std::fs::read_to_string(&cargo_upstream)?;
-        let pj = std::fs::read_to_string(&cargo_project)?;
-        match merge_cargo_toml(&up, &pj) {
-            Ok(merged) if merged != pj => {
-                std::fs::write(&cargo_project, &merged)?;
-                sink.info("merged Cargo.toml deps from catalyst".to_string());
+    if is_frozen("Cargo.toml", &freeze) {
+        sink.info("frozen: skipped Cargo.toml merge".to_string());
+    } else {
+        let cargo_upstream = staging.join("Cargo.toml");
+        let cargo_project = project_root.join("Cargo.toml");
+        if cargo_upstream.is_file() && cargo_project.is_file() {
+            let up = std::fs::read_to_string(&cargo_upstream)?;
+            let pj = std::fs::read_to_string(&cargo_project)?;
+            match merge_cargo_toml(&up, &pj) {
+                Ok(merged) if merged != pj => {
+                    std::fs::write(&cargo_project, &merged)?;
+                    sink.info("merged Cargo.toml deps from catalyst".to_string());
+                }
+                Ok(_unchanged) => {
+                    sink.debug("Cargo.toml deps already in sync".to_string());
+                }
+                Err(e) => sink.warn(format!("Cargo.toml merge skipped: {}", e)),
             }
-            Ok(_unchanged) => {
-                sink.debug("Cargo.toml deps already in sync".to_string());
-            }
-            Err(e) => sink.warn(format!("Cargo.toml merge skipped: {}", e)),
         }
     }
     progress.step_done("merge Cargo.toml deps");
