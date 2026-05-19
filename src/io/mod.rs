@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod events;
+#[cfg(test)]
 pub mod null;
 pub mod traits;
 

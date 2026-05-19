@@ -63,5 +63,4 @@ pub enum ProgressEvent {
     StepStart { label: String },
     StepDone { label: String },
     StepFail { label: String, reason: String },
-    Tick { current: u64, total: u64 },
 }

@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum MenuKind {
-    /// App menu: watch dev/prod + codegen + db + logs + arsenal + exit.
+    /// App menu: watch dev/prod + db + logs + exit.
     App,
     /// Fuses menu: list/toggle/run/logs/live-table — drives the Fuses tab.
     Fuses,
@@ -60,12 +60,11 @@ pub enum Command {
         no_warmup: bool,
     },
 
-    #[command(about = "Create a new Diesel migration skeleton")]
+    #[command(about = "Create a new empty Diesel migration skeleton (up.sql + down.sql)")]
     Migration {
-        /// If provided, write an empty migration skeleton with this name and skip the interactive wizard.
-        /// Migration name must match snake_case (^[a-z][a-z0-9_]*$). Required for non-TTY contexts (CI, scripts).
+        /// Migration name, snake_case (^[a-z][a-z0-9_]*$).
         #[arg(long)]
-        name: Option<String>,
+        name: String,
     },
 
     #[command(about = "Sync vendored framework code from upstream catalyst into this project")]
@@ -73,8 +72,6 @@ pub enum Command {
         /// Use BLAST_CATALYST_DEV_PATH (local catalyst checkout) instead of git URL.
         #[arg(long)]
         dev: bool,
-        #[command(subcommand)]
-        action: Option<SyncAction>,
     },
 
     #[command(about = "Run pending migrations")]
@@ -125,9 +122,6 @@ pub enum Command {
     #[command(about = "Archive release artifact (binary + target/site WASM bundle + .env.example)")]
     Package,
 
-    #[command(about = "Reinstall deps + rerun init pipeline")]
-    Refresh,
-
     #[command(about = "Show top-level help")]
     Help,
 
@@ -137,22 +131,10 @@ pub enum Command {
         cmd: Option<FusesCmd>,
     },
 
-    #[command(about = "Code generation targets")]
-    Gen {
-        #[command(subcommand)]
-        cmd: Option<GenCmd>,
-    },
-
     #[command(about = "Manage blast log files", alias = "logs")]
     Log {
         #[command(subcommand)]
         cmd: LogCmd,
-    },
-
-    #[command(about = "Capability inventory tool")]
-    Arsenal {
-        #[command(subcommand)]
-        cmd: Option<ArsenalCmd>,
     },
 }
 
@@ -178,53 +160,12 @@ pub enum FusesCmd {
 }
 
 #[derive(Debug, Clone, PartialEq, Subcommand)]
-pub enum GenCmd {
-    #[command(about = "Generate structs from schema")]
-    Structs,
-
-    #[command(about = "Generate Rust enums from CREATE TYPE statements in migrations")]
-    Enums {
-        #[arg(value_name = "ENUM_NAME")]
-        resource: Option<String>,
-    },
-
-    #[command(about = "Generate model implementations")]
-    Models,
-
-    #[command(about = "Emit Rust field validators (src/structs/generated/validators)")]
-    Validators {
-        #[arg(value_name = "RESOURCE")]
-        resource: Option<String>,
-    },
-
-    #[command(about = "Run the full codegen pipeline (BE + leptos pages/forms/tables/data/app_routes)")]
-    All,
-}
-
-#[derive(Debug, Clone, PartialEq, Subcommand)]
 pub enum LogCmd {
     #[command(about = "Truncate log files (all or specific)")]
     Truncate { file: Option<String> },
 
     #[command(about = "Interactive TUI log viewer")]
     View { level: String },
-}
-
-#[derive(Debug, Clone, PartialEq, Subcommand)]
-pub enum ArsenalCmd {
-    #[command(about = "Serve capability inventory over MCP stdio")]
-    Serve,
-}
-
-#[derive(Debug, Clone, PartialEq, Subcommand)]
-pub enum SyncAction {
-    #[command(about = "Show diff between frozen local files and what catalyst currently ships")]
-    Diff {
-        /// Path to a single frozen entry. If omitted, walks every entry in the freeze list.
-        path: Option<String>,
-    },
-    #[command(about = "Remove a path from the sync freeze list (next sync will overwrite it)")]
-    Unfreeze { path: String },
 }
 
 #[cfg(test)]
@@ -331,24 +272,19 @@ mod tests {
     }
 
     #[test]
-    fn migration_command_without_name_runs_wizard() {
-        let cli = Cli::try_parse_from(["blast", "migration"]).expect("parse");
+    fn migration_command_requires_name() {
+        let cli = Cli::try_parse_from(["blast", "migration", "--name", "create_widgets"]).expect("parse");
         match cli.cmd {
             Some(Command::Migration { name }) => {
-                assert!(name.is_none(), "no --name → wizard path; got {:?}", name);
+                assert_eq!(name, "create_widgets");
             }
             other => panic!("expected Migration, got {:?}", other),
         }
     }
 
     #[test]
-    fn migration_command_with_name_skips_wizard() {
-        let cli = Cli::try_parse_from(["blast", "migration", "--name", "create_widgets"]).expect("parse");
-        match cli.cmd {
-            Some(Command::Migration { name }) => {
-                assert_eq!(name.as_deref(), Some("create_widgets"), "--name <foo> → non-interactive skeleton path");
-            }
-            other => panic!("expected Migration, got {:?}", other),
-        }
+    fn migration_command_without_name_errors() {
+        let res = Cli::try_parse_from(["blast", "migration"]);
+        assert!(res.is_err(), "migration with no --name should fail to parse");
     }
 }

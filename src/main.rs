@@ -2,9 +2,7 @@ use std::process;
 
 use clap::Parser;
 
-mod arsenal;
 mod build;
-mod codegen;
 mod commands;
 mod configs;
 mod daemon;
@@ -17,17 +15,13 @@ mod fuses_tui;
 mod interactive;
 mod io;
 mod logger;
-mod models;
 mod progress;
 mod project;
-mod schema_parser;
-mod state;
 mod tui_viewer;
-mod wizards;
+mod tui_widgets;
 
 fn main() {
     let mut dep_manager = dependencies::DependencyManager::new();
-
     let cli = commands::Cli::parse();
 
     if cli.verbose {

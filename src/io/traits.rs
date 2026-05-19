@@ -41,16 +41,6 @@ pub trait ProgressExt: Progress {
         self.emit(ProgressEvent::StepDone { label: label.into() });
     }
 
-    fn step_fail(&mut self, label: impl Into<String>, reason: impl Into<String>) {
-        self.emit(ProgressEvent::StepFail {
-            label: label.into(),
-            reason: reason.into(),
-        });
-    }
-
-    fn tick(&mut self, current: u64, total: u64) {
-        self.emit(ProgressEvent::Tick { current, total });
-    }
 }
 
 impl<T: Progress + ?Sized> ProgressExt for T {}

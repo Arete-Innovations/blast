@@ -11,7 +11,7 @@ use tui_input::{backend::crossterm::EventHandler, Input};
 
 use crate::{
     error::{BlastError, BlastResult},
-    wizards::widgets::terminal_guard::TerminalGuard,
+    tui_widgets::terminal_guard::TerminalGuard,
 };
 
 pub fn ask(prompt: &str, default: Option<&str>) -> BlastResult<Option<String>> {

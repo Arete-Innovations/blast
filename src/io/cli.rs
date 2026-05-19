@@ -191,14 +191,6 @@ impl CliProgress {
         self.bar = build_bar(self.total);
     }
 
-    fn tick(&mut self, current: u64, total: u64) {
-        if self.quiet {
-            return;
-        }
-        self.bar.set_length(total);
-        self.bar.set_position(current);
-        self.total = Some(total);
-    }
 }
 
 impl Progress for CliProgress {
@@ -207,7 +199,6 @@ impl Progress for CliProgress {
             ProgressEvent::StepStart { label } => self.step_start(&label),
             ProgressEvent::StepDone { label } => self.step_done(&label),
             ProgressEvent::StepFail { label, reason } => self.step_fail(&label, &reason),
-            ProgressEvent::Tick { current, total } => self.tick(current, total),
         }
     }
 }

@@ -11,7 +11,7 @@ use ratatui::{
 
 use crate::{
     error::{BlastError, BlastResult},
-    wizards::widgets::terminal_guard::TerminalGuard,
+    tui_widgets::terminal_guard::TerminalGuard,
 };
 
 pub fn pick<S: AsRef<str>>(prompt: &str, items: &[S]) -> BlastResult<Option<usize>> {

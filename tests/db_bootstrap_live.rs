@@ -10,9 +10,16 @@
 //!     cargo test --test db_bootstrap_live -- --nocapture
 
 use blast::{
-    io::null::NullSink,
-    project::db_bootstrap::{self, BootstrapArgs, DbAction, RealDbAdmin},
+    io::events::SinkEvent,
+    io::traits::Sink,
+    project::db_bootstrap::{self, BootstrapArgs, RealDbAdmin},
 };
+
+struct NullSink;
+
+impl Sink for NullSink {
+    fn emit(&mut self, _event: SinkEvent) {}
+}
 
 fn admin_url() -> Option<String> {
     std::env::var("BLAST_TEST_DB_URL").ok()
@@ -47,7 +54,6 @@ fn live_bootstrap_creates_and_drops_dbs() {
     let mut sink = NullSink;
     let outcome = db_bootstrap::bootstrap(
         &BootstrapArgs {
-            project_name: project.to_string(),
             db_url: target_url.clone(),
             force: false,
             no_test_db: false,
@@ -57,15 +63,12 @@ fn live_bootstrap_creates_and_drops_dbs() {
     )
     .expect("bootstrap");
 
-    assert_eq!(outcome.primary_action, DbAction::Created);
-    assert_eq!(outcome.test_action, Some(DbAction::Created));
     assert_eq!(outcome.primary_url, target_url);
+    assert!(outcome.test_url.is_some(), "test_url should be set when no_test_db=false");
 
-    // Re-running without --force should refuse... wait, primary is empty so
-    // it gets reused. Confirm that path.
-    let outcome2 = db_bootstrap::bootstrap(
+    // Re-running on now-empty primary should reuse.
+    db_bootstrap::bootstrap(
         &BootstrapArgs {
-            project_name: project.to_string(),
             db_url: target_url.clone(),
             force: false,
             no_test_db: true,
@@ -74,7 +77,6 @@ fn live_bootstrap_creates_and_drops_dbs() {
         &mut sink,
     )
     .expect("re-bootstrap empty db");
-    assert_eq!(outcome2.primary_action, DbAction::Reused);
 
     // Cleanup.
     let parsed = db_bootstrap::parse_url(&target_url).expect("parse");
@@ -94,7 +96,6 @@ fn live_bootstrap_fails_fast_on_unreachable_postgres() {
     // Port 1 is reserved; nothing should answer.
     let err = db_bootstrap::bootstrap(
         &BootstrapArgs {
-            project_name: "doesnt_matter".to_string(),
             db_url: "postgres://nobody:nobody@127.0.0.1:1/whatever".to_string(),
             force: false,
             no_test_db: true,

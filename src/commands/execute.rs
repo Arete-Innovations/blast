@@ -1,7 +1,7 @@
 use clap::CommandFactory;
 
 use crate::{
-    commands::cli::{ArsenalCmd, Cli, Command, FusesCmd, GenCmd, LogCmd},
+    commands::cli::{Cli, Command, FusesCmd, LogCmd},
     configs::Config,
     dependencies::DependencyManager,
     error::{BlastError, BlastResult},
@@ -25,9 +25,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
     match cmd {
         Command::Fuses { cmd: sub } => dispatch_fuses(sub, config),
-        Command::Gen { cmd: sub } => dispatch_gen(sub, config, dep_manager),
         Command::Log { cmd: sub } => dispatch_log(sub, config),
-        Command::Arsenal { cmd: sub } => dispatch_arsenal(sub, config),
 
         Command::Stop => {
             let be_stopped = crate::daemon::stop_server(config)?;
@@ -54,7 +52,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 no_test_db,
                 no_warmup,
                 dev,
-                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress))),
             };
             crate::project::scaffold::create_new_project_with_opts(&name, opts, &mut sink, &mut progress)?;
             Ok(())
@@ -75,7 +72,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                 no_test_db,
                 no_warmup,
                 dev: false,
-                post_seed: Some(std::sync::Arc::new(move |root, sink, progress| crate::commands::scaffold_post_seed::run(root, no_warmup, sink, progress))),
             };
             match name {
                 Some(n) => {
@@ -91,71 +87,30 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
                     crate::project::scaffold::init_in_place_with_opts(&project_name, cwd, opts, &mut sink, &mut progress)?;
                 }
             }
-            // Reload config so subsequent commands see the freshly-scaffolded
-            // project. Best-effort; the freshly-scaffolded project may live in
-            // a different cwd than where blast was invoked from.
             match config.reload_if_modified() {
-                Ok(_unit) => {} // allow: reload_if_modified returns () on success; nothing to bind
+                Ok(_unit) => {}
                 Err(reload_err) => {
                     sink.warn(format!("config reload after init failed (non-fatal): {}", reload_err));
                 }
             }
-            // dep_manager is intentionally unused in this branch — init no
-            // longer runs the legacy codegen pipeline that needed it.
             Ok(())
         }
 
         Command::Cli { menu } => crate::interactive::run_interactive_loop(config, dep_manager, menu),
 
         Command::Migration { name } => {
-            match name {
-                Some(migration_name) => {
-                    let migration_dir = crate::database::write_migration(&migration_name, "", "")?;
-                    let up_path = migration_dir.join("up.sql");
-                    let down_path = migration_dir.join("down.sql");
-                    logger::success(&format!("Migration skeleton written: {} ({})", up_path.display(), down_path.display(),))?;
-                    logger::info("Edit up.sql / down.sql, then run `blast migrate` (and `blast gen schema && blast gen all` if you want codegen).")?;
-                    return Ok(());
-                }
-                None => {} // allow: ERROR:3 forbids `if let Some`; fall through to interactive wizard below
-            }
-
-            let project_root = config.project_dir.clone();
-            let outcome = crate::wizards::new_table::run_picker(&project_root)?;
-            if outcome.cancelled {
-                logger::info("New-table wizard cancelled — nothing written.")?;
-                return Ok(());
-            }
-            logger::success(&format!("Migration written: {} ({})", outcome.up_sql_path.display(), outcome.down_sql_path.display(),))?;
-            logger::success(&format!("Resource state written: {}", outcome.ron_path.display()))?;
-
-            logger::info("→ blast migrate")?;
-            if !crate::database::migrate() {
-                logger::warning("Migrations reported issues; aborting codegen pipeline. Re-run `blast migrate && blast gen all` manually after resolving.")?;
-                return Ok(());
-            }
-
-            logger::info("→ blast gen schema")?;
-            run_schema(config)?;
-
-            logger::info("→ blast gen all")?;
-            run_gen_all(config)?;
-
-            logger::success(&format!("Table '{}' is wired end-to-end.", outcome.table_name))?;
+            let migration_dir = crate::database::write_migration(&name, "", "")?;
+            let up_path = migration_dir.join("up.sql");
+            let down_path = migration_dir.join("down.sql");
+            logger::success(&format!("Migration skeleton written: {} ({})", up_path.display(), down_path.display()))?;
+            logger::info("Edit up.sql / down.sql, then run `blast migrate && blast schema`.")?;
             Ok(())
         }
 
-        Command::Sync { dev, action } => {
+        Command::Sync { dev } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
-            match action {
-                None => crate::project::sync::run_sync(dev, &mut sink, &mut progress)?,
-                Some(crate::commands::cli::SyncAction::Diff { path }) => {
-                    crate::project::sync::run_diff(dev, path.as_deref(), &mut sink, &mut progress)?
-                }
-                Some(crate::commands::cli::SyncAction::Unfreeze { path }) => crate::project::sync::run_unfreeze(&path, &mut sink)?,
-            }
-            Ok(())
+            crate::project::sync::run_sync(dev, &mut sink, &mut progress)
         }
 
         Command::Migrate => {
@@ -188,8 +143,6 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
         Command::Build => crate::build::run_build(config),
         Command::Package => crate::build::run_package(config),
 
-        Command::Refresh => run_refresh(config),
-
         Command::Run => run_dev_server(config),
         Command::RunProd => run_prod_server(config),
 
@@ -201,7 +154,7 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
 
         Command::ToggleEnv => {
             config.toggle_environment()?;
-            logger::info("Run `blast scss`, `blast css`, or `blast js` to rebuild assets with new settings")?;
+            logger::info("Environment flipped — restart watchers/servers as needed")?;
             Ok(())
         }
 
@@ -245,81 +198,6 @@ fn dispatch_fuses(sub: Option<FusesCmd>, config: &Config) -> BlastResult<()> {
     }
 }
 
-fn dispatch_gen(sub: Option<GenCmd>, config: &mut Config, _dep_manager: &mut DependencyManager) -> BlastResult<()> {
-    let Some(target) = sub else {
-        return print_gen_help();
-    };
-    match target {
-        GenCmd::Structs => {
-            let mut sink = crate::io::cli_sink(false, None);
-            let mut progress = crate::io::cli_progress(None);
-            let project_root = config.project_dir.clone();
-            let report = crate::codegen::structs::run(&project_root, &mut sink, &mut progress)?;
-            for p in &report.written {
-                logger::success(&format!("wrote {}", p.display()))?;
-            }
-            logger::info(&format!("structs: {} written, {} skipped", report.written.len(), report.skipped.len(),))?;
-            Ok(())
-        }
-        GenCmd::Enums { resource: _ } => run_gen_enums(config),
-        GenCmd::Models => {
-            if !crate::models::generate(config) {
-                logger::warning("Some model generation issues occurred")?;
-            }
-            Ok(())
-        }
-        GenCmd::Validators { resource } => run_gen_validators(config, resource),
-        GenCmd::All => run_gen_all(config),
-    }
-}
-
-fn run_gen_validators(config: &Config, resource: Option<String>) -> BlastResult<()> {
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    let report = match resource {
-        Some(name) => crate::codegen::validators::run_for_resource(&config.project_dir, &name, &mut sink, &mut progress)?,
-        None => crate::codegen::validators::run(&config.project_dir, &mut sink, &mut progress)?,
-    };
-    logger::info(&format!("validators: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
-    Ok(())
-}
-
-fn run_gen_enums(config: &Config) -> BlastResult<()> {
-    let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
-    let mut progress = crate::io::cli_progress(None);
-    let report = crate::codegen::enums::run(&config.project_dir, &mut sink, &mut progress)?;
-    for p in &report.written {
-        logger::success(&format!("wrote {}", p.display()))?;
-    }
-    logger::info(&format!("enums: {} file(s) written, {} skipped", report.written.len(), report.skipped.len()))?;
-    Ok(())
-}
-
-fn run_gen_all(config: &mut Config) -> BlastResult<()> {
-    let verbose = logger::is_verbose();
-    let mut sink = crate::io::cli_sink(verbose, None);
-    let mut progress = crate::io::cli_progress(None);
-    let args = crate::commands::gen_all::Args { project_root: config.project_dir.clone() };
-    let outcome = crate::commands::gen_all::run(args, config, &mut sink, &mut progress)?;
-    logger::info(&format!(
-        "gen all complete: {} steps, {} files written, {} files skipped",
-        outcome.steps_run, outcome.files_written, outcome.files_skipped
-    ))?;
-    Ok(())
-}
-
-fn print_gen_help() -> BlastResult<()> {
-    let mut cmd = Cli::command();
-    match cmd.find_subcommand_mut("gen") {
-        Some(gen) => {
-            gen.print_help()?;
-            println!();
-        }
-        None => {} // allow: clap always registers the gen subcommand; defensive None arm
-    }
-    Ok(())
-}
-
 fn dispatch_log(sub: LogCmd, config: &Config) -> BlastResult<()> {
     match sub {
         LogCmd::Truncate { file } => {
@@ -337,92 +215,10 @@ fn dispatch_log(sub: LogCmd, config: &Config) -> BlastResult<()> {
     }
 }
 
-fn dispatch_arsenal(sub: Option<ArsenalCmd>, config: &Config) -> BlastResult<()> {
-    match sub {
-        None => {
-            logger::info("Scanning source for arsenal report...")?;
-            let report = crate::arsenal::scanner::scan(&config.project_dir)?;
-            crate::arsenal::report::write_report(&report, &config.project_dir)?;
-            let total_entries: usize = report.layers.values().map(|v| v.len()).sum();
-            logger::success(&format!(
-                "arsenal: {} entries across {} layers, {} routes -> target/arsenal.json",
-                total_entries,
-                report.layers.len(),
-                report.routes.len(),
-            ))?;
-            Ok(())
-        }
-        Some(ArsenalCmd::Serve) => {
-            let report = crate::arsenal::scanner::scan(&config.project_dir)?;
-            crate::arsenal::mcp::serve(report)
-        }
-    }
-}
-
-fn run_schema(config: &Config) -> BlastResult<()> {
+fn run_schema(_config: &Config) -> BlastResult<()> {
     if !crate::database::generate_schema() {
         logger::warning("Some schema generation issues occurred")?;
     }
-    let schema_path = config.project_dir.join("src/database/schema.rs");
-    match crate::schema_parser::parse_schema(&schema_path) {
-        Ok(tables) => {
-            let col_count: usize = tables.iter().map(|t| t.columns.len()).sum();
-            let nullable_count: usize = tables.iter().flat_map(|t| t.columns.iter()).filter(|c| c.nullable).count();
-            logger::info(&format!(
-                "schema: {} tables, {} columns ({} nullable) — pk fields: {}",
-                tables.len(),
-                col_count,
-                nullable_count,
-                tables.iter().map(|t| format!("{}({})", t.name, t.primary_key.join(","))).collect::<Vec<_>>().join(", "),
-            ))?;
-            for t in &tables {
-                logger::debug(&format!(
-                    "  {} cols: {}",
-                    t.name,
-                    t.columns
-                        .iter()
-                        .map(|c| format!("{}:{}{}", c.name, c.diesel_type, if c.nullable { "?" } else { "" }))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ))?;
-            }
-        }
-        Err(e) => {
-            logger::warning(&format!("schema parse warning: {}", e))?;
-        }
-    }
-    Ok(())
-}
-
-fn run_refresh(config: &mut Config) -> BlastResult<()> {
-    let mut progress = logger::create_progress(None);
-
-    progress.set_message("Rolling back migrations...");
-    let rollback_ok = crate::database::rollback_all();
-
-    progress.set_message("Running migrations...");
-    let migrations_ok = crate::database::migrate();
-
-    progress.set_message("Seeding database...");
-    let seed_ok = crate::database::seed();
-
-    progress.set_message("Generating schema...");
-    let schema_ok = crate::database::generate_schema();
-
-    progress.set_message("Generating structs...");
-    let mut sink = crate::io::cli_sink(false, None);
-    let mut structs_progress = crate::io::cli_progress(None);
-    let structs_ok = crate::codegen::structs::run(&config.project_dir, &mut sink, &mut structs_progress).is_ok();
-
-    progress.set_message("Generating models...");
-    let models_ok = crate::models::generate(config);
-
-    if rollback_ok && migrations_ok && seed_ok && schema_ok && structs_ok && models_ok {
-        progress.success("App refresh complete!");
-    } else {
-        progress.error("App refresh completed with some issues");
-    }
-
     Ok(())
 }
 

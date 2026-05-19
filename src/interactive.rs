@@ -1,20 +1,18 @@
 use std::{env, io::Write};
 
 use crate::{
-    commands::{ArsenalCmd, Command, FusesCmd, GenCmd, LogCmd, MenuKind},
+    commands::{Command, FusesCmd, LogCmd, MenuKind},
     configs::Config,
     dependencies::DependencyManager,
     error::{BlastError, BlastResult},
     logger,
-    wizards::widgets::{list_select, text_input},
+    tui_widgets::{list_select, text_input},
 };
 
 const APP_MENU: &[&str] = &[
     // ── app lifecycle ─────────────────────────────────────────────────────────
     "[APP] Watch dev (cargo leptos watch)",
     "[APP] Watch prod (cargo leptos watch --release --precompress)",
-    // ── codegen ───────────────────────────────────────────────────────────────
-    "[CODEGEN] Gen All (full pipeline)",
     "[BUILD] Release build (cargo leptos build --release --precompress)",
     "[E2E] Run end-to-end tests (cargo leptos end-to-end)",
     // ── database ──────────────────────────────────────────────────────────────
@@ -22,12 +20,12 @@ const APP_MENU: &[&str] = &[
     "[DB] Migrate",
     "[DB] Rollback",
     "[DB] Seed",
+    "[DB] Regenerate schema.rs",
+    // ── sync ──────────────────────────────────────────────────────────────────
+    "[SYNC] Sync vendored from catalyst",
     // ── logs ──────────────────────────────────────────────────────────────────
     "[LOG] View logs",
     "[LOG] Truncate Logs",
-    // ── arsenal ───────────────────────────────────────────────────────────────
-    "[ARSENAL] Scan & Write JSON",
-    "[ARSENAL] Serve MCP (stdio)",
     // ── exit ──────────────────────────────────────────────────────────────────
     "[Exit] Kill Session",
 ];
@@ -92,15 +90,19 @@ fn resolve_app(label: &str) -> BlastResult<SelectionOutcome> {
     let cmd = match label {
         "[APP] Watch dev (cargo leptos watch)" => Command::Watch,
         "[APP] Watch prod (cargo leptos watch --release --precompress)" => Command::WatchProd,
-
-        "[CODEGEN] Gen All (full pipeline)" => Command::Gen { cmd: Some(GenCmd::All) },
         "[BUILD] Release build (cargo leptos build --release --precompress)" => Command::Build,
         "[E2E] Run end-to-end tests (cargo leptos end-to-end)" => Command::E2e,
 
-        "[DB] New Migration" => Command::Migration { name: None },
+        "[DB] New Migration" => match text_input::ask("Migration name (snake_case)", None)? {
+            Some(name) if !name.trim().is_empty() => Command::Migration { name: name.trim().to_string() },
+            _empty_or_cancel => return Ok(SelectionOutcome::Cancelled),
+        },
         "[DB] Migrate" => Command::Migrate,
         "[DB] Rollback" => Command::Rollback,
         "[DB] Seed" => Command::Seed { file: None },
+        "[DB] Regenerate schema.rs" => Command::Schema,
+
+        "[SYNC] Sync vendored from catalyst" => Command::Sync { dev: false },
 
         "[LOG] View logs" => match text_input::ask("Log level (error/warn/info/debug)", Some("info"))? {
             Some(level) if !level.trim().is_empty() => Command::Log {
@@ -109,9 +111,6 @@ fn resolve_app(label: &str) -> BlastResult<SelectionOutcome> {
             _empty_or_cancel => return Ok(SelectionOutcome::Cancelled),
         },
         "[LOG] Truncate Logs" => Command::Log { cmd: LogCmd::Truncate { file: None } },
-
-        "[ARSENAL] Scan & Write JSON" => Command::Arsenal { cmd: None },
-        "[ARSENAL] Serve MCP (stdio)" => Command::Arsenal { cmd: Some(ArsenalCmd::Serve) },
 
         "[Exit] Kill Session" => return Ok(SelectionOutcome::Quit),
 
@@ -210,7 +209,7 @@ pub fn run_interactive_loop(config: &mut Config, dep_manager: &mut DependencyMan
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{ArsenalCmd, FusesCmd, GenCmd, LogCmd};
+    use crate::commands::{FusesCmd, LogCmd};
 
     fn unwrap_resolved(label: &str, kind: MenuKind) -> Command {
         match resolve_selection(label, kind).expect("resolve_selection ok") {
@@ -240,20 +239,18 @@ mod tests {
         let non_interactive: &[&str] = &[
             "[APP] Watch dev (cargo leptos watch)",
             "[APP] Watch prod (cargo leptos watch --release --precompress)",
-            "[CODEGEN] Gen All (full pipeline)",
             "[BUILD] Release build (cargo leptos build --release --precompress)",
             "[E2E] Run end-to-end tests (cargo leptos end-to-end)",
-            "[DB] New Migration",
             "[DB] Migrate",
             "[DB] Rollback",
             "[DB] Seed",
+            "[DB] Regenerate schema.rs",
+            "[SYNC] Sync vendored from catalyst",
             "[LOG] Truncate Logs",
-            "[ARSENAL] Scan & Write JSON",
-            "[ARSENAL] Serve MCP (stdio)",
             "[Exit] Kill Session",
         ];
 
-        let interactive_labels: &[&str] = &["[LOG] View logs"];
+        let interactive_labels: &[&str] = &["[DB] New Migration", "[LOG] View logs"];
 
         let all_handled: Vec<&str> = non_interactive.iter().chain(interactive_labels.iter()).copied().collect();
 
@@ -292,11 +289,11 @@ mod tests {
     fn app_menu_routing_spot_check() {
         assert!(matches!(unwrap_resolved("[APP] Watch dev (cargo leptos watch)", MenuKind::App), Command::Watch));
         assert!(matches!(unwrap_resolved("[APP] Watch prod (cargo leptos watch --release --precompress)", MenuKind::App), Command::WatchProd));
-        assert!(matches!(unwrap_resolved("[CODEGEN] Gen All (full pipeline)", MenuKind::App), Command::Gen { cmd: Some(GenCmd::All) }));
         assert!(matches!(unwrap_resolved("[BUILD] Release build (cargo leptos build --release --precompress)", MenuKind::App), Command::Build));
         assert!(matches!(unwrap_resolved("[E2E] Run end-to-end tests (cargo leptos end-to-end)", MenuKind::App), Command::E2e));
+        assert!(matches!(unwrap_resolved("[DB] Regenerate schema.rs", MenuKind::App), Command::Schema));
+        assert!(matches!(unwrap_resolved("[SYNC] Sync vendored from catalyst", MenuKind::App), Command::Sync { dev: false }));
         assert!(matches!(unwrap_resolved("[LOG] Truncate Logs", MenuKind::App), Command::Log { cmd: LogCmd::Truncate { file: None } }));
-        assert!(matches!(unwrap_resolved("[ARSENAL] Serve MCP (stdio)", MenuKind::App), Command::Arsenal { cmd: Some(ArsenalCmd::Serve) }));
         assert_quit("[Exit] Kill Session", MenuKind::App);
     }
 

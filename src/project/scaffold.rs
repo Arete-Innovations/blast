@@ -98,8 +98,6 @@ pub struct Args {
     pub env_test_body: Option<String>,
 }
 
-pub type PostSeedHook = dyn Fn(&Path, &mut dyn Sink, &mut dyn Progress) -> BlastResult<usize>;
-
 #[derive(Default)]
 pub struct NewOptions {
     pub db_url: Option<String>,
@@ -108,7 +106,6 @@ pub struct NewOptions {
     pub no_warmup: bool,
     /// Use local catalyst from `BLAST_CATALYST_DEV_PATH` instead of git URL.
     pub dev: bool,
-    pub post_seed: Option<std::sync::Arc<PostSeedHook>>,
 }
 
 pub struct Outcome {
@@ -193,19 +190,8 @@ fn create_with_target(project_name: &str, project_root: PathBuf, opts: NewOption
     };
 
     match run(args, sink, progress) {
-        Ok(mut out) => {
+        Ok(out) => {
             sink.success(format!("project `{}` created at {} ({} files written)", project_name, out.project_root.display(), out.files_written));
-
-            match opts.post_seed.as_deref() {
-                Some(hook) => match hook(&out.project_root, sink, progress) {
-                    Ok(extra_written) => out.files_written += extra_written,
-                    Err(e) => {
-                        sink.error(format!("post-seed pipeline failed: {}", e));
-                        return Err(e);
-                    }
-                },
-                None => {} // allow: no post-seed hook (lib/test path); skip silently
-            }
 
             match post_install::run(&out.project_root, opts.no_warmup, sink, progress) {
                 Ok(()) => {
@@ -238,7 +224,6 @@ fn pre_create_db(project_name: &str, opts: &NewOptions, sink: &mut dyn Sink) -> 
 
     let mut admin = RealDbAdmin;
     let bargs = BootstrapArgs {
-        project_name: project_name.to_string(),
         db_url,
         force: opts.force,
         no_test_db: opts.no_test_db,
@@ -278,33 +263,10 @@ pub fn run(args: Args, sink: &mut dyn Sink, progress: &mut dyn Progress) -> Blas
     write_env_files(&args, &mut count)?;
     progress.step_done("write env files");
 
-    // Catalyst ships its own full `build.rs` (lint engine + stylance bootstrap +
-    // layer enforcement). The clone preserves it. Don't overwrite with a stub.
-
-    progress.step_start("seed empty stylance index");
-    seed_stylance_placeholder(&args.project_root)?;
-    count += 1;
-    progress.step_done("seed empty stylance index");
-
     Ok(Outcome {
         project_root: args.project_root,
         files_written: count,
     })
-}
-
-/// `style/main.scss` does `@use "generated/stylance"` which Dart Sass resolves
-/// at `cargo leptos build` time — BEFORE `cargo build` runs catalyst's `build.rs`
-/// (which calls `stylance` to populate the file). Without a placeholder, the
-/// first leptos build fails on missing stylesheet. We seed an empty file so
-/// Sass succeeds; build.rs overwrites it with real hashed CSS on first compile.
-fn seed_stylance_placeholder(project_root: &Path) -> BlastResult<()> {
-    let dir = project_root.join("style").join("generated");
-    fs::create_dir_all(&dir)?;
-    let bundle = dir.join("stylance.scss");
-    if !bundle.exists() {
-        fs::write(&bundle, "// placeholder — overwritten by stylance-cli on first cargo build\n")?;
-    }
-    Ok(())
 }
 
 fn clone_framework(source: &Source, project_root: &Path, sink: &mut dyn Sink) -> BlastResult<()> {
@@ -744,7 +706,6 @@ email = false
             no_test_db: true,
             no_warmup: false,
             dev: false,
-            post_seed: None,
         };
         let result = create_new_project_with_opts("dup", opts, &mut sink, &mut progress);
 
@@ -767,7 +728,6 @@ email = false
             no_test_db: true,
             no_warmup: false,
             dev: false,
-            post_seed: None,
         };
         let result = init_in_place_with_opts("workspace", target, opts, &mut sink, &mut progress);
         assert!(result.is_err());

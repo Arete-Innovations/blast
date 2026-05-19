@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use diesel::{pg::PgConnection, prelude::*};
+use diesel::pg::PgConnection;
 
 use crate::{database::connection::establish_connection, progress::ProgressManager};
 
@@ -172,54 +172,3 @@ fn run_seed_file(connection: &mut PgConnection, file_name: &str) -> bool {
     }
 }
 
-fn split_sql_into_statements(sql: &str) -> Vec<String> {
-    let mut statements = Vec::new();
-    let mut current_statement = String::new();
-    let mut in_string = false;
-    let mut in_comment = false;
-    let mut chars = sql.chars().peekable();
-
-    loop {
-        let Some(c) = chars.next() else { break };
-        match c {
-            '\'' => {
-                if !in_comment && chars.peek() != Some(&'\'') {
-                    in_string = !in_string;
-                }
-                current_statement.push(c);
-            }
-            '-' => {
-                current_statement.push(c);
-                if !in_string && chars.peek() == Some(&'-') {
-                    in_comment = true;
-                    let Some(n) = chars.next() else { continue };
-                    current_statement.push(n);
-                }
-            }
-            '\n' => {
-                current_statement.push(c);
-                if in_comment {
-                    in_comment = false;
-                }
-            }
-            ';' => {
-                if !in_string && !in_comment {
-                    current_statement.push(c);
-                    statements.push(current_statement);
-                    current_statement = String::new();
-                } else {
-                    current_statement.push(c);
-                }
-            }
-            other => {
-                current_statement.push(other);
-            }
-        }
-    }
-
-    if !current_statement.trim().is_empty() {
-        statements.push(current_statement);
-    }
-
-    statements
-}

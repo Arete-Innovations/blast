@@ -20,18 +20,9 @@ use crate::{
 
 const ADMIN_DB: &str = "postgres";
 
-/// Result of one DB lifecycle decision (created vs reused vs recreated).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DbAction {
-    Created,
-    Reused,
-    Recreated,
-}
-
 /// Args for the bootstrap entry point. Mirrors the CLI args.
 #[derive(Debug, Clone)]
 pub struct BootstrapArgs {
-    pub project_name: String,
     /// User-supplied URL (from `--db-url` or interactive prompt). Already
     /// resolved by the caller.
     pub db_url: String,
@@ -44,9 +35,7 @@ pub struct BootstrapArgs {
 #[derive(Debug, Clone)]
 pub struct BootstrapOutcome {
     pub primary_url: String,
-    pub primary_action: DbAction,
     pub test_url: Option<String>,
-    pub test_action: Option<DbAction>,
 }
 
 // ---------------------------------------------------------------------------
@@ -265,25 +254,23 @@ pub fn bootstrap(args: &BootstrapArgs, admin: &mut dyn DbAdmin, sink: &mut dyn S
     sink.info(format!("verifying Postgres reachable at {}", mask_for_error(&parsed.rebuild())));
     admin.ping(&admin_target)?;
 
-    let primary_action = ensure_clean_db(&parsed, args.force, admin, sink)?;
+    ensure_clean_db(&parsed, args.force, admin, sink)?;
 
-    let (test_url_str, test_action) = if args.no_test_db {
-        (None, None)
+    let test_url_str = if args.no_test_db {
+        None
     } else {
         let test_parsed = test_url(&parsed);
-        let action = ensure_clean_db(&test_parsed, args.force, admin, sink)?;
-        (Some(test_parsed.rebuild()), Some(action))
+        ensure_clean_db(&test_parsed, args.force, admin, sink)?;
+        Some(test_parsed.rebuild())
     };
 
     Ok(BootstrapOutcome {
         primary_url: parsed.rebuild(),
-        primary_action,
         test_url: test_url_str,
-        test_action,
     })
 }
 
-fn ensure_clean_db(parsed: &ParsedUrl, force: bool, admin: &mut dyn DbAdmin, sink: &mut dyn Sink) -> BlastResult<DbAction> {
+fn ensure_clean_db(parsed: &ParsedUrl, force: bool, admin: &mut dyn DbAdmin, sink: &mut dyn Sink) -> BlastResult<()> {
     let admin_target = admin_url(parsed);
     let target_url = parsed.rebuild();
     let dbname = &parsed.dbname;
@@ -292,17 +279,15 @@ fn ensure_clean_db(parsed: &ParsedUrl, force: bool, admin: &mut dyn DbAdmin, sin
     if !exists {
         sink.info(format!("creating database `{}`", dbname));
         admin.create_database(&admin_target, dbname)?;
-        return Ok(DbAction::Created);
+        return Ok(());
     }
 
-    // DB exists. Check if it's empty.
     let table_count = admin.count_public_tables(&target_url)?;
     if table_count == 0 {
         sink.info(format!("reusing empty database `{}`", dbname));
-        return Ok(DbAction::Reused);
+        return Ok(());
     }
 
-    // DB exists with tables. Refuse without --force.
     if !force {
         return Err(BlastError::Project(format!(
             "database `{}` exists and has {} table(s). Was this a typo? Re-run with `--force` to drop and recreate, or pass `--db-url` with a different database name.",
@@ -313,7 +298,7 @@ fn ensure_clean_db(parsed: &ParsedUrl, force: bool, admin: &mut dyn DbAdmin, sin
     sink.warn(format!("--force: dropping and recreating database `{}` ({} table(s) destroyed)", dbname, table_count));
     admin.drop_database(&admin_target, dbname)?;
     admin.create_database(&admin_target, dbname)?;
-    Ok(DbAction::Recreated)
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -436,7 +421,6 @@ mod tests {
 
     fn args(name: &str, force: bool, no_test_db: bool) -> BootstrapArgs {
         BootstrapArgs {
-            project_name: name.to_string(),
             db_url: format!("postgres://u:p@h/{}", name),
             force,
             no_test_db,
@@ -448,8 +432,7 @@ mod tests {
         let mut admin = FakeAdmin::default();
         let mut sink = NullSink;
         let outcome = bootstrap(&args("acme", false, true), &mut admin, &mut sink).expect("ok");
-        assert_eq!(outcome.primary_action, DbAction::Created);
-        assert_eq!(outcome.test_action, None);
+        assert!(outcome.test_url.is_none());
         assert_eq!(admin.creates, vec!["acme".to_string()]);
         assert!(admin.drops.is_empty());
     }
@@ -459,8 +442,6 @@ mod tests {
         let mut admin = FakeAdmin::default();
         let mut sink = NullSink;
         let outcome = bootstrap(&args("acme", false, false), &mut admin, &mut sink).expect("ok");
-        assert_eq!(outcome.primary_action, DbAction::Created);
-        assert_eq!(outcome.test_action, Some(DbAction::Created));
         assert_eq!(outcome.test_url.as_deref(), Some("postgres://u:p@h/acme_test"));
         assert_eq!(admin.creates, vec!["acme".to_string(), "acme_test".to_string()]);
     }
@@ -470,8 +451,7 @@ mod tests {
         let mut admin = FakeAdmin::default();
         admin.databases.insert("acme".to_string(), 0);
         let mut sink = NullSink;
-        let outcome = bootstrap(&args("acme", false, true), &mut admin, &mut sink).expect("ok");
-        assert_eq!(outcome.primary_action, DbAction::Reused);
+        bootstrap(&args("acme", false, true), &mut admin, &mut sink).expect("ok");
         assert!(admin.creates.is_empty());
     }
 
@@ -493,8 +473,7 @@ mod tests {
         let mut admin = FakeAdmin::default();
         admin.databases.insert("acme".to_string(), 7);
         let mut sink = NullSink;
-        let outcome = bootstrap(&args("acme", true, true), &mut admin, &mut sink).expect("ok");
-        assert_eq!(outcome.primary_action, DbAction::Recreated);
+        bootstrap(&args("acme", true, true), &mut admin, &mut sink).expect("ok");
         assert_eq!(admin.drops, vec!["acme".to_string()]);
         assert_eq!(admin.creates, vec!["acme".to_string()]);
     }
@@ -508,18 +487,16 @@ mod tests {
         let mut sink = NullSink;
         let err = bootstrap(&args("acme", false, false), &mut admin, &mut sink).expect_err("must fail");
         assert!(format!("{}", err).contains("ping failed"));
-        // Crucially: nothing was created.
         assert!(admin.creates.is_empty());
     }
 
     #[test]
     fn bootstrap_test_db_independently_force_recreates() {
         let mut admin = FakeAdmin::default();
-        // primary missing, test populated.
         admin.databases.insert("acme_test".to_string(), 3);
         let mut sink = NullSink;
-        let outcome = bootstrap(&args("acme", true, false), &mut admin, &mut sink).expect("ok");
-        assert_eq!(outcome.primary_action, DbAction::Created);
-        assert_eq!(outcome.test_action, Some(DbAction::Recreated));
+        bootstrap(&args("acme", true, false), &mut admin, &mut sink).expect("ok");
+        assert_eq!(admin.drops, vec!["acme_test".to_string()]);
+        assert_eq!(admin.creates, vec!["acme".to_string(), "acme_test".to_string()]);
     }
 }
