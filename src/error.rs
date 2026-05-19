@@ -14,29 +14,11 @@ pub enum BlastError {
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("ron parse: {0}")]
-    RonDe(#[from] ron::error::SpannedError),
-
-    #[error("ron ser: {0}")]
-    RonSer(#[from] ron::Error),
-
     #[error("toml parse: {0}")]
     TomlDe(#[from] toml::de::Error),
 
     #[error("toml ser: {0}")]
     TomlSer(#[from] toml::ser::Error),
-
-    #[error("http: {0}")]
-    Http(#[from] reqwest::Error),
-
-    #[error("regex: {0}")]
-    Regex(#[from] regex::Error),
-
-    #[error("walk: {0}")]
-    Walk(#[from] walkdir::Error),
-
-    #[error("notify: {0}")]
-    Notify(#[from] notify::Error),
 
     #[error("env: {0}")]
     Env(#[from] std::env::VarError),
