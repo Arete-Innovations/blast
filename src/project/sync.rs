@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::error::{BlastError, BlastResult};
@@ -9,11 +10,11 @@ const VENDORED_PATHS: &[&str] = &[
     "src/services/vendored",
     "src/structs/vendored",
     "src/views/vendored",
-    "catalyst-derive",
     "build.rs",
+    "catalyst-derive",
 ];
 
-pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<()> {
+pub fn run_sync(dev: bool, dry_run: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> BlastResult<()> {
     let project_root = std::env::current_dir()?;
     if !project_root.join("Cargo.toml").is_file() {
         return Err(BlastError::Project(format!("no Cargo.toml in {} — run from project root", project_root.display())));
@@ -34,7 +35,7 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
     }
 
     let temp = tempfile::tempdir()?;
-    let staging: std::path::PathBuf = match &source {
+    let staging: PathBuf = match &source {
         Source::LocalCopy { path, .. } => {
             sink.info(format!("blast sync: reading working tree at {} (dev mode — no git clone)", path.display()));
             path.clone()
@@ -49,8 +50,12 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
         }
     };
 
-    progress.step_start("rsync vendored paths");
-    let mut copied = 0usize;
+    let step_label = match dry_run {
+        true => "dry-run diff vendored paths",
+        false => "rsync vendored paths",
+    };
+    progress.step_start(step_label);
+    let mut touched = 0usize;
     for rel in VENDORED_PATHS {
         let src = staging.join(rel);
         if !src.exists() {
@@ -58,13 +63,23 @@ pub fn run_sync(dev: bool, sink: &mut dyn Sink, progress: &mut dyn Progress) -> 
             continue;
         }
         let dst = project_root.join(rel);
-        wipe_then_copy(&src, &dst)?;
-        copied += 1;
-        sink.info(format!("synced {}", rel));
+        match dry_run {
+            true => {
+                touched += dry_run_path(&src, &dst, rel, sink)?;
+            }
+            false => {
+                wipe_then_copy(&src, &dst)?;
+                touched += 1;
+                sink.info(format!("synced {}", rel));
+            }
+        }
     }
-    progress.step_done("rsync vendored paths");
+    progress.step_done(step_label);
 
-    sink.success(format!("blast sync: {} path(s) synced from catalyst", copied));
+    match dry_run {
+        true => sink.success(format!("blast sync --dry-run: {} file(s) would change (nothing was written)", touched)),
+        false => sink.success(format!("blast sync: {} path(s) synced from catalyst", touched)),
+    }
     Ok(())
 }
 
@@ -141,4 +156,98 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> BlastResult<()> {
         }
     }
     Ok(())
+}
+
+fn dry_run_path(src: &Path, dst: &Path, rel: &str, sink: &mut dyn Sink) -> BlastResult<usize> {
+    if src.is_file() {
+        return dry_run_file(src, dst, rel, sink);
+    }
+    if !src.is_dir() {
+        return Err(BlastError::Project(format!("source path is neither file nor dir: {}", src.display())));
+    }
+    let src_paths = collect_relative_paths(src)?;
+    let dst_paths = match dst.exists() {
+        true => collect_relative_paths(dst)?,
+        false => BTreeSet::new(),
+    };
+    let mut changed = 0usize;
+    for f in &src_paths {
+        let src_file = src.join(f);
+        let dst_file = dst.join(f);
+        let rel_label = format!("{}/{}", rel, f.display());
+        match dst_file.exists() {
+            true => match files_equal(&src_file, &dst_file)? {
+                true => sink.debug(format!("  [same]   {}", rel_label)),
+                false => {
+                    sink.info(format!("  [WRITE]  {}", rel_label));
+                    changed += 1;
+                }
+            },
+            false => {
+                sink.info(format!("  [CREATE] {}", rel_label));
+                changed += 1;
+            }
+        }
+    }
+    for f in dst_paths.difference(&src_paths) {
+        sink.info(format!("  [DELETE] {}/{}", rel, f.display()));
+        changed += 1;
+    }
+    Ok(changed)
+}
+
+fn dry_run_file(src: &Path, dst: &Path, rel: &str, sink: &mut dyn Sink) -> BlastResult<usize> {
+    match dst.exists() {
+        true => match files_equal(src, dst)? {
+            true => {
+                sink.debug(format!("  [same]   {}", rel));
+                Ok(0)
+            }
+            false => {
+                sink.info(format!("  [WRITE]  {}", rel));
+                Ok(1)
+            }
+        },
+        false => {
+            sink.info(format!("  [CREATE] {}", rel));
+            Ok(1)
+        }
+    }
+}
+
+fn collect_relative_paths(root: &Path) -> BlastResult<BTreeSet<PathBuf>> {
+    let mut out = BTreeSet::new();
+    walk(root, root, &mut out)?;
+    Ok(out)
+}
+
+fn walk(root: &Path, current: &Path, out: &mut BTreeSet<PathBuf>) -> BlastResult<()> {
+    for entry_res in std::fs::read_dir(current)? {
+        let entry = entry_res?;
+        let path = entry.path();
+        let kind = entry.file_type()?;
+        match kind.is_dir() {
+            true => walk(root, &path, out)?,
+            false => {
+                let rel = path.strip_prefix(root).map_err(|e| {
+                    BlastError::Project(format!("strip_prefix({}, {}): {}", path.display(), root.display(), e))
+                })?;
+                out.insert(rel.to_path_buf());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn files_equal(a: &Path, b: &Path) -> BlastResult<bool> {
+    let am = std::fs::metadata(a)?;
+    let bm = std::fs::metadata(b)?;
+    match am.len() == bm.len() {
+        false => Ok(false),
+        true => {
+            let av = std::fs::read(a)?;
+            let bv = std::fs::read(b)?;
+            Ok(av == bv)
+        }
+    }
 }

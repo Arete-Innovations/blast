@@ -72,6 +72,9 @@ pub enum Command {
         /// Use BLAST_CATALYST_DEV_PATH (local catalyst checkout) instead of git URL.
         #[arg(long)]
         dev: bool,
+        /// Don't write anything — just report what would change (CREATE / WRITE / DELETE / same).
+        #[arg(long)]
+        dry_run: bool,
     },
 
     #[command(about = "Run pending migrations")]

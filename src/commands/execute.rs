@@ -107,10 +107,10 @@ pub fn execute(cmd: Command, config: &mut Config, dep_manager: &mut DependencyMa
             Ok(())
         }
 
-        Command::Sync { dev } => {
+        Command::Sync { dev, dry_run } => {
             let mut sink = crate::io::cli_sink(logger::is_verbose(), None);
             let mut progress = crate::io::cli_progress(None);
-            crate::project::sync::run_sync(dev, &mut sink, &mut progress)
+            crate::project::sync::run_sync(dev, dry_run, &mut sink, &mut progress)
         }
 
         Command::Migrate => {

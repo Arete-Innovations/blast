@@ -102,7 +102,7 @@ fn resolve_app(label: &str) -> BlastResult<SelectionOutcome> {
         "[DB] Seed" => Command::Seed { file: None },
         "[DB] Regenerate schema.rs" => Command::Schema,
 
-        "[SYNC] Sync vendored from catalyst" => Command::Sync { dev: false },
+        "[SYNC] Sync vendored from catalyst" => Command::Sync { dev: false, dry_run: false },
 
         "[LOG] View logs" => match text_input::ask("Log level (error/warn/info/debug)", Some("info"))? {
             Some(level) if !level.trim().is_empty() => Command::Log {
@@ -292,7 +292,7 @@ mod tests {
         assert!(matches!(unwrap_resolved("[BUILD] Release build (cargo leptos build --release --precompress)", MenuKind::App), Command::Build));
         assert!(matches!(unwrap_resolved("[E2E] Run end-to-end tests (cargo leptos end-to-end)", MenuKind::App), Command::E2e));
         assert!(matches!(unwrap_resolved("[DB] Regenerate schema.rs", MenuKind::App), Command::Schema));
-        assert!(matches!(unwrap_resolved("[SYNC] Sync vendored from catalyst", MenuKind::App), Command::Sync { dev: false }));
+        assert!(matches!(unwrap_resolved("[SYNC] Sync vendored from catalyst", MenuKind::App), Command::Sync { dev: false, dry_run: false }));
         assert!(matches!(unwrap_resolved("[LOG] Truncate Logs", MenuKind::App), Command::Log { cmd: LogCmd::Truncate { file: None } }));
         assert_quit("[Exit] Kill Session", MenuKind::App);
     }
